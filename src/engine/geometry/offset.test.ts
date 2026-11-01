@@ -441,4 +441,102 @@ describe('Geometry Offset Engine (Milestone 02 Corrective Pass)', () => {
       assert.strictEqual(hasClosingBridge, false, 'Must not insert an automatic closing bridge');
     });
   });
+
+  describe('Milestone 02.2: Corner Join Matrix & Geometric Verification', () => {
+    it('handles obtuse line-to-line corners with clean miter intersections', () => {
+      // 135 degree obtuse corner
+      const seg1 = new LineSegment('obt-1', { x: 0, y: 0 }, { x: 10, y: 0 }, 1.5);
+      const seg2 = new LineSegment('obt-2', { x: 10, y: 0 }, { x: 17.07, y: 7.07 }, 1.5);
+
+      const off1 = offsetLineSegment(seg1, 1.5);
+      const off2 = offsetLineSegment(seg2, 1.5);
+
+      const joined = joinOffsetSegmentsAtCorner(off1, off2, 2.5);
+      assert.strictEqual(joined.length, 2, 'Obtuse corner must form direct miter without beveling');
+      const gap = distance(joined[0].end, joined[1].start);
+      assert.ok(gap < 0.01, 'Miter corner must have zero coordinate gap');
+      assert.ok(Number.isFinite(joined[0].end.x) && Number.isFinite(joined[0].end.y));
+    });
+
+    it('handles nearly parallel / collinear sequential segments smoothly', () => {
+      // Two nearly parallel lines along horizontal with slight 0.1mm deviation
+      const seg1 = new LineSegment('par-1', { x: 0, y: 0 }, { x: 10, y: 0 }, 1.5);
+      const seg2 = new LineSegment('par-2', { x: 10, y: 0 }, { x: 20, y: 0.01 }, 1.5);
+
+      const off1 = offsetLineSegment(seg1, 1.5);
+      const off2 = offsetLineSegment(seg2, 1.5);
+
+      const joined = joinOffsetSegmentsAtCorner(off1, off2, 2.5);
+      assert.ok(joined.length >= 2);
+      const gap = distance(joined[0].end, joined[1].start);
+      assert.ok(gap < 0.05, `Gap (${gap} cm) must be continuous`);
+    });
+
+    it('handles line-to-curve convex corner joins without distorting curve control points', () => {
+      // Line followed by curve turning away (convex corner)
+      const line = new LineSegment('l-in', { x: 0, y: 15 }, { x: 10, y: 15 }, 1.5);
+      const curve = new CubicBezierCurve('c-out', { x: 10, y: 15 }, { x: 15, y: 10 }, { x: 20, y: 5 }, { x: 20, y: 0 }, 1.5);
+
+      const offLine = offsetLineSegment(line, 1.5);
+      const offCurveRes = offsetCubicBezier(curve, 1.5);
+      const offCurve = offCurveRes.segments[0];
+
+      const joined = joinOffsetSegmentsAtCorner(offLine, offCurve, 2.5);
+      assert.ok(joined.length >= 2);
+
+      // Curve segment in joined must be pristine
+      const curveInJoined = joined.find(s => s.type === 'bezier') as CubicBezierCurve;
+      assert.ok(curveInJoined);
+      assert.strictEqual(curveInJoined.cp1.x, offCurve.cp1.x);
+      assert.strictEqual(curveInJoined.cp1.y, offCurve.cp1.y);
+      assert.strictEqual(curveInJoined.cp2.x, offCurve.cp2.x);
+      assert.strictEqual(curveInJoined.cp2.y, offCurve.cp2.y);
+      assert.strictEqual(curveInJoined.p0.x, offCurve.p0.x);
+      assert.strictEqual(curveInJoined.p3.x, offCurve.p3.x);
+    });
+
+    it('ensures all coordinates in cutting contour are strictly finite and non-NaN', () => {
+      const contour = new GeometricContour('finite-test', [
+        new LineSegment('base', { x: 0, y: 0 }, { x: 15, y: 0 }, 1.5),
+        new LineSegment('side', { x: 15, y: 0 }, { x: 15, y: 30 }, 1.5),
+        new CubicBezierCurve('top-curve', { x: 15, y: 30 }, { x: 10, y: 28 }, { x: 5, y: 28 }, { x: 0, y: 30 }, 1.5),
+        new LineSegment('close', { x: 0, y: 30 }, { x: 0, y: 0 }, 0, true)
+      ], true);
+
+      const res = generateCuttingContour(contour);
+      assert.strictEqual(res.status, 'success');
+
+      for (const seg of res.cuttingContour.segments) {
+        assert.ok(Number.isFinite(seg.start.x), `Segment ${seg.id} start.x must be finite`);
+        assert.ok(Number.isFinite(seg.start.y), `Segment ${seg.id} start.y must be finite`);
+        assert.ok(Number.isFinite(seg.end.x), `Segment ${seg.id} end.x must be finite`);
+        assert.ok(Number.isFinite(seg.end.y), `Segment ${seg.id} end.y must be finite`);
+        if (seg.type === 'bezier') {
+          const b = seg as CubicBezierCurve;
+          assert.ok(Number.isFinite(b.cp1.x));
+          assert.ok(Number.isFinite(b.cp1.y));
+          assert.ok(Number.isFinite(b.cp2.x));
+          assert.ok(Number.isFinite(b.cp2.y));
+        }
+      }
+    });
+
+    it('documents that Bezier offset error is a sampled estimate evaluated across parameter points', () => {
+      const curve = new CubicBezierCurve(
+        'sample-dev-test',
+        { x: 0, y: 0 },
+        { x: 5, y: 10 },
+        { x: 10, y: 15 },
+        { x: 20, y: 15 }
+      );
+
+      const res = offsetCubicBezier(curve, 1.5, 0.05);
+      assert.strictEqual(res.status, 'success');
+      // The offset algorithm evaluates residual error across 5 interior sample parameters [0.15, 0.35, 0.5, 0.65, 0.85]
+      // This is a sampled estimate, not an analytical closed-form bound.
+      assert.ok(Number.isFinite(res.maxDeviationCm));
+      assert.ok(res.maxDeviationCm <= 0.05);
+      assert.strictEqual(res.toleranceExceeded, false);
+    });
+  });
 });

@@ -292,39 +292,46 @@ test('Regression: all skirt silhouettes (straight, a-line, flared, pencil) draft
   }
 });
 
-test('Validation engine blocks production readiness and fails if cutting contour offset fails (Milestone 02.1 negative test)', () => {
+test('Milestone 02.2 Acceptance: Real offset failure propagation blocks production readiness end-to-end', () => {
   const measurements = STANDARD_SIZING_SYSTEM.sizes.M;
-  const pieces = draftSkirtBlock(measurements, baseDesign);
 
-  // Simulate offset failure on front piece
-  const pieceWithFailedOffset: PatternPiece = {
-    ...pieces[0],
-    offsetResult: {
-      status: 'failure',
-      cuttingContour: pieces[0].cuttingContour!,
-      maxDeviationCm: 0.12,
-      toleranceExceeded: true,
-      approximationMethod: 'test',
-      diagnostics: [
-        {
-          sourceSegmentId: 'fs-side-hip',
-          status: 'failure',
-          maxDeviationCm: 0.12,
-          toleranceCm: 0.05,
-          failureReason: 'Maximum subdivision depth exceeded'
-        }
-      ],
-      warnings: ['Max depth exceeded'],
-      errors: ['Failed to approximate offset within 0.05cm']
-    }
-  };
+  // 1. Execute actual drafting workflow with strict manufacturing tolerance (1 micron = 0.0001 cm)
+  // that genuine high-curvature hip curve cannot achieve within MAX_SUBDIVISION_DEPTH
+  const strictPieces = draftSkirtBlock(measurements, baseDesign, {
+    bezierToleranceCm: 0.0001
+  });
 
-  const report = validatePatternDraft([pieceWithFailedOffset, pieces[1]]);
-  assert.equal(report.isValid, false);
-  assert.equal(report.isProductionReady, false);
+  const frontPiece = strictPieces[0];
+  const backPiece = strictPieces[1];
+
+  // 2. Verify actual offset engine reported failure on real geometry without mocks
+  assert.ok(frontPiece.offsetResult, 'PatternPiece must have actual offsetResult attached');
+  assert.equal(frontPiece.offsetResult.status, 'failure', 'Real offset engine must report failure');
+  assert.equal(frontPiece.offsetResult.toleranceExceeded, true);
+  assert.ok(frontPiece.offsetResult.diagnostics && frontPiece.offsetResult.diagnostics.length > 0);
+
+  // 3. Confirm failure diagnostics identify the specific curved segment (fs-side-hip) and subdivision depth
+  const failureDiag = frontPiece.offsetResult.diagnostics.find(d => d.status === 'failure');
+  assert.ok(failureDiag, 'Must contain real segment failure diagnostic');
+  assert.ok(failureDiag.sourceSegmentId.startsWith('fs-side-hip'), 'Diagnostic must identify real hip curve segment');
+  assert.ok(failureDiag.maxDeviationCm > 0.0001, 'Reported deviation must exceed the requested 0.0001 cm tolerance');
+  assert.ok(failureDiag.failureReason?.includes('maximum subdivision depth'), 'Reason must document subdivision depth limit');
+
+  // 4. Confirm stitching contour remains strictly uncorrupted and unchanged
+  assert.equal(frontPiece.stitchingContour?.segments.length, 9, 'Stitching contour segment count must remain intact');
+  const originalStitchHip = frontPiece.stitchingContour?.segments.find(s => s.id === 'fs-side-hip');
+  assert.ok(originalStitchHip, 'Stitching hip curve must exist');
+  assert.equal(originalStitchHip.type, 'bezier');
+
+  // 5. Confirm validation engine rejects the affected draft through standard validatePatternDraft()
+  const report = validatePatternDraft(strictPieces);
+  assert.equal(report.isValid, false, 'Validation report must declare draft invalid');
+  assert.equal(report.isProductionReady, false, 'Production readiness must be strictly false');
   assert.equal(report.status, 'invalid');
-  const offsetFailCheck = report.checks.find(c => c.errorCode === 'VAL-OFFSET-FAILED');
-  assert.ok(offsetFailCheck, 'Must record VAL-OFFSET-FAILED check');
+
+  const offsetFailCheck = report.checks.find(c => c.errorCode === 'VAL-OFFSET-FAILED' && c.segmentIds?.some(id => id.startsWith('fs-side-hip')));
+  assert.ok(offsetFailCheck, 'Must record genuine VAL-OFFSET-FAILED check identifying the affected segment IDs');
   assert.equal(offsetFailCheck.status, 'fail');
   assert.equal(offsetFailCheck.category, 'offset');
+  assert.ok(offsetFailCheck.message.includes('fs-side-hip'));
 });

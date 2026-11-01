@@ -13,6 +13,8 @@ export interface SkirtDraftOptions {
   seamAllowanceCm?: number;
   hemAllowanceCm?: number;
   waistAllowanceCm?: number;
+  bezierToleranceCm?: number;
+  miterLimit?: number;
 }
 
 /**
@@ -36,6 +38,8 @@ export function draftSkirtBlock(
   const sideSeamAllowance = options.seamAllowanceCm ?? 1.5;
   const waistAllowance = options.waistAllowanceCm ?? 1.0;
   const hemAllowance = options.hemAllowanceCm ?? 3.0;
+  const bezierToleranceCm = options.bezierToleranceCm ?? 0.05;
+  const miterLimit = options.miterLimit ?? 2.5;
 
   // Calculate finished dimensions
   const dims = calculateGarmentDimensions(measurements, design.easeProfile, design.fabric);
@@ -216,7 +220,8 @@ export function draftSkirtBlock(
   // Mathematically generate Cutting Contour using true normal offsets and corner joins
   const frontOffsetResult = generateCuttingContour(frontStitchingContour, {
     defaultAllowanceCm: sideSeamAllowance,
-    bezierToleranceCm: 0.05
+    bezierToleranceCm,
+    miterLimit
   });
 
   const frontPiece: PatternPiece = {
@@ -374,7 +379,8 @@ export function draftSkirtBlock(
 
   const backOffsetResult = generateCuttingContour(backStitchingContour, {
     defaultAllowanceCm: sideSeamAllowance,
-    bezierToleranceCm: 0.05
+    bezierToleranceCm,
+    miterLimit
   });
 
   const backPiece: PatternPiece = {
