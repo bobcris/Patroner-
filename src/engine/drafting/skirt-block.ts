@@ -3,40 +3,50 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BodyMeasurements, DesignSpecification, EaseProfile, PatternPiece, Point, SeamLine } from '../../types';
-import { approximateBezierLength, computeBoundingBox, distance } from '../geometry/math';
+import { BodyMeasurements, DesignSpecification, PatternPiece, Point, SeamLine } from '../../types';
+import { approximateBezierLength, computeBoundingBox, distance, normalize, vector } from '../geometry/math';
+import { generateCuttingContour } from '../geometry/offset';
+import { CubicBezierCurve, GeometricContour, LineSegment } from '../geometry/primitives';
 import { calculateGarmentDimensions } from '../measurements/standards';
 
 export interface SkirtDraftOptions {
   seamAllowanceCm?: number;
   hemAllowanceCm?: number;
+  waistAllowanceCm?: number;
 }
 
 /**
  * Deterministic drafting algorithm for a standard skirt block (Front & Back panels).
  * Follows industry-standard anthropometric pattern construction principles (Aldrich / Armstrong).
  * 
- * All internal coordinate calculations are in centimetres (cm).
- * Origin (0,0) is placed at the top-left (Waistline at Center Front/Back).
+ * Mathematical Architecture (Milestone 02):
+ * 1. Geometry-First: The stitching line defines the construction as a structured GeometricContour.
+ * 2. True Offsets: The cutting contour is mathematically generated from the stitching contour
+ *    using parallel normal offsets, miter/bevel corner intersections, and fold-edge handling.
+ * 3. Seam-to-Geometry Linkage: All SeamLine measurements and tangents are derived directly
+ *    from their underlying geometric segments, guaranteeing synchronization.
+ * 4. Center-Line Tangency: Center Front and Center Back enforce strict 90.0° perpendicularity.
+ * 5. Dart Parity: Left and right dart legs have identical mathematical length from apex.
  */
 export function draftSkirtBlock(
   measurements: BodyMeasurements,
   design: DesignSpecification,
   options: SkirtDraftOptions = {}
 ): PatternPiece[] {
-  const seamAllowance = options.seamAllowanceCm ?? 1.5;
+  const sideSeamAllowance = options.seamAllowanceCm ?? 1.5;
+  const waistAllowance = options.waistAllowanceCm ?? 1.0;
   const hemAllowance = options.hemAllowanceCm ?? 3.0;
 
   // Calculate finished dimensions
   const dims = calculateGarmentDimensions(measurements, design.easeProfile, design.fabric);
-  const totalLength = design.lengthCm || measurements.skirtLength || 62;
-  const waistToHip = measurements.waistToHip || 20;
+  const totalLength = design.lengthCm || measurements.skirtLength || 64;
+  const waistToHip = measurements.waistToHip || 20.5;
 
   // 1/4 of finished circumferences
   const quarterWaist = dims.garmentWaistCm / 4;
   const quarterHip = dims.garmentHipCm / 4;
 
-  // Total waist-to-hip suppression needed per quarter:
+  // Total waist-to-hip suppression needed per quarter
   const suppression = Math.max(0, quarterHip - quarterWaist);
 
   // Common side seam suppression:
@@ -47,13 +57,25 @@ export function draftSkirtBlock(
 
   // Darts absorb remaining suppression
   const remainingSuppression = Math.max(0, suppression - sideSuppression);
-  const frontDartWidth = Math.max(1.0, Math.min(2.2, remainingSuppression * 0.8));
+  
+  // Front Dart geometry
+  const frontDartWidth = Math.max(1.0, Math.min(2.0, remainingSuppression * 0.75));
   const frontDartLength = 9.5; // cm depth
-  const frontDartPlacementX = 8.5; // cm from center front
+  const frontDartPlacementX = 8.5; // cm from Center Front
+  const frontDartApex: Point = { x: frontDartPlacementX, y: frontDartLength };
+  // Symmetrical Y-depth at waist to ensure exact leg length parity
+  const frontDartWaistY = -0.15;
+  const frontDartLeft: Point = { x: frontDartPlacementX - frontDartWidth / 2, y: frontDartWaistY };
+  const frontDartRight: Point = { x: frontDartPlacementX + frontDartWidth / 2, y: frontDartWaistY };
 
+  // Back Dart geometry
   const backDartWidth = Math.max(1.2, Math.min(3.0, remainingSuppression));
   const backDartLength = 13.0; // cm depth
   const backDartPlacementX = quarterWaist * 0.45; // ~midway along back waist
+  const backDartApex: Point = { x: backDartPlacementX, y: backDartLength };
+  const backDartWaistY = -0.15;
+  const backDartLeft: Point = { x: backDartPlacementX - backDartWidth / 2, y: backDartWaistY };
+  const backDartRight: Point = { x: backDartPlacementX + backDartWidth / 2, y: backDartWaistY };
 
   // Flare adjustment based on silhouette
   let hemFlareCm = 0;
@@ -65,110 +87,137 @@ export function draftSkirtBlock(
     hemFlareCm = -1.8;
   }
 
-  // ==========================================
-  // 1. FRONT SKIRT PANEL DRAFTING
-  // ==========================================
-  // Points (origin at Center Front Waist: 0, 0)
+  // Hip point on side seam
+  const sideHip: Point = { x: quarterHip, y: waistToHip };
+
+  // Side hem point:
+  // When side seam is flared outward, the side hem is lifted slightly (by hemLift)
+  // to preserve side-seam lower length and square the hem with the side seam
+  const lowerNominalLength = totalLength - waistToHip;
+  const sideSeamLowerHypot = Math.hypot(hemFlareCm, lowerNominalLength);
+  const hemLift = hemFlareCm !== 0 ? Math.max(0, sideSeamLowerHypot - lowerNominalLength) : 0;
+  const sideHem: Point = {
+    x: quarterHip + hemFlareCm,
+    y: Number((totalLength - hemLift).toFixed(2))
+  };
+
+  // Cubic Bezier control points for side hip curve (identical for front and back)
+  const hipCp1: Point = {
+    x: Number((sideWaistX + (sideHip.x - sideWaistX) * 0.4).toFixed(2)),
+    y: Number((sideWaistY + (sideHip.y - sideWaistY) * 0.3).toFixed(2))
+  };
+  const hipCp2: Point = {
+    x: Number((sideHip.x + 0.3).toFixed(2)),
+    y: Number((sideHip.y - 4.0).toFixed(2))
+  };
+
+  // =========================================================================
+  // 1. FRONT SKIRT PANEL: STRUCTURED GEOMETRIC CONTOUR
+  // =========================================================================
   const cfWaist: Point = { x: 0, y: 0 };
-  const cfHip: Point = { x: 0, y: waistToHip };
+  const cfSquareEnd: Point = { x: 3.5, y: 0 }; // Strict 90° squaring zone (3.5cm)
   const cfHem: Point = { x: 0, y: totalLength };
+  const cfHemSquareEnd: Point = { x: 4.0, y: totalLength }; // Strict 90° squaring zone at hem (4.0cm)
 
-  const frontSideWaist: Point = { x: sideWaistX, y: sideWaistY };
-
-  // Front Hip side point
-  const frontSideHip: Point = { x: quarterHip, y: waistToHip };
-
-  // Front Hem side point
-  const frontSideHem: Point = { x: quarterHip + hemFlareCm, y: totalLength };
-
-  // Front Dart Points
-  const frontDartApex: Point = { x: frontDartPlacementX, y: frontDartLength };
-  const frontDartLeft: Point = { x: frontDartPlacementX - frontDartWidth / 2, y: -0.2 };
-  const frontDartRight: Point = { x: frontDartPlacementX + frontDartWidth / 2, y: -0.3 };
-
-  // Bezier control points for front hip curve (from side waist to side hip)
-  const frontHipCp1: Point = {
-    x: frontSideWaist.x + (frontSideHip.x - frontSideWaist.x) * 0.4,
-    y: frontSideWaist.y + (frontSideHip.y - frontSideWaist.y) * 0.3
-  };
-  const frontHipCp2: Point = {
-    x: frontSideHip.x + 0.3,
-    y: frontSideHip.y - 4.0
-  };
-
-  const frontHipCurveLength = approximateBezierLength(
-    frontSideWaist,
-    frontHipCp1,
-    frontHipCp2,
-    frontSideHip
+  // Construct individual geometric segments for Front Stitching Line
+  const fsFold = new LineSegment('fs-cf-fold', cfWaist, cfHem, 0, true, 'fs-center-front');
+  const fsHemSquare = new LineSegment('fs-hem-square', cfHem, cfHemSquareEnd, hemAllowance, false, 'fs-hem');
+  const fsHemCurve = new LineSegment('fs-hem-curve', cfHemSquareEnd, sideHem, hemAllowance, false, 'fs-hem');
+  const fsSideLower = new LineSegment('fs-side-lower', sideHem, sideHip, sideSeamAllowance, false, 'fs-side-seam');
+  const fsSideHip = new CubicBezierCurve(
+    'fs-side-hip',
+    sideHip,
+    hipCp2,
+    hipCp1,
+    { x: sideWaistX, y: sideWaistY },
+    sideSeamAllowance,
+    false,
+    'fs-side-seam'
   );
-  const frontLowerSideSeamLength = distance(frontSideHip, frontSideHem);
-  const frontTotalSideSeamLength = Number((frontHipCurveLength + frontLowerSideSeamLength).toFixed(2));
+  const fsWaistSide = new LineSegment('fs-waist-side', { x: sideWaistX, y: sideWaistY }, frontDartRight, waistAllowance, false, 'fs-waist');
+  const fsDartCap = new LineSegment('fs-dart-cap', frontDartRight, frontDartLeft, waistAllowance, false, 'fs-waist');
+  const fsWaistDartToSquare = new LineSegment('fs-waist-mid', frontDartLeft, cfSquareEnd, waistAllowance, false, 'fs-waist');
+  const fsWaistSquare = new LineSegment('fs-waist-square', cfSquareEnd, cfWaist, waistAllowance, false, 'fs-waist');
 
-  // Front Seamlines
+  const frontStitchingContour = new GeometricContour(
+    'front-skirt-stitching',
+    [
+      fsFold,
+      fsHemSquare,
+      fsHemCurve,
+      fsSideLower,
+      fsSideHip,
+      fsWaistSide,
+      fsDartCap,
+      fsWaistDartToSquare,
+      fsWaistSquare
+    ],
+    true
+  );
+
+  // Derive seamline metrics directly from geometric segments
+  const frontTotalSideSeamLength = Number((fsSideLower.lengthCm() + fsSideHip.lengthCm()).toFixed(2));
+  const frontHemTotalLength = Number((fsHemSquare.lengthCm() + fsHemCurve.lengthCm()).toFixed(2));
+  const frontWaistSewLength = Number((fsWaistSide.lengthCm() + fsWaistDartToSquare.lengthCm() + fsWaistSquare.lengthCm()).toFixed(2));
+
   const frontSeams: SeamLine[] = [
     {
       id: 'fs-center-front',
       name: 'Center Front (Fold)',
       startPoint: cfWaist,
       endPoint: cfHem,
-      lengthCm: totalLength,
-      type: 'straight'
+      lengthCm: fsFold.lengthCm(),
+      type: 'straight',
+      startTangent: fsFold.tangentAt(0),
+      endTangent: fsFold.tangentAt(1),
+      segmentId: 'fs-cf-fold',
+      segmentIds: ['fs-cf-fold']
     },
     {
       id: 'fs-hem',
       name: 'Front Hem',
       startPoint: cfHem,
-      endPoint: frontSideHem,
-      lengthCm: Number(distance(cfHem, frontSideHem).toFixed(2)),
-      type: 'straight'
+      endPoint: sideHem,
+      lengthCm: frontHemTotalLength,
+      type: hemFlareCm === 0 ? 'straight' : 'curved',
+      startTangent: fsHemSquare.tangentAt(0),
+      endTangent: fsHemCurve.tangentAt(1),
+      segmentId: 'fs-hem-curve',
+      segmentIds: ['fs-hem-square', 'fs-hem-curve']
     },
     {
       id: 'fs-side-seam',
       name: 'Front Side Seam',
-      startPoint: frontSideHem,
-      endPoint: frontSideWaist,
+      startPoint: sideHem,
+      endPoint: { x: sideWaistX, y: sideWaistY },
       lengthCm: frontTotalSideSeamLength,
       type: 'curved',
+      startTangent: fsSideLower.tangentAt(0),
+      endTangent: fsSideHip.tangentAt(1),
       pairedPieceId: 'piece-skirt-back',
-      pairedSeamName: 'Back Side Seam'
+      pairedSeamName: 'Back Side Seam',
+      segmentId: 'fs-side-hip',
+      segmentIds: ['fs-side-lower', 'fs-side-hip']
     },
     {
       id: 'fs-waist',
       name: 'Front Waistline',
-      startPoint: frontSideWaist,
+      startPoint: { x: sideWaistX, y: sideWaistY },
       endPoint: cfWaist,
-      lengthCm: Number((quarterWaist).toFixed(2)),
-      type: 'curved'
+      lengthCm: frontWaistSewLength,
+      type: 'curved',
+      startTangent: fsWaistSide.tangentAt(0),
+      endTangent: fsWaistSquare.tangentAt(1),
+      segmentId: 'fs-waist-square',
+      segmentIds: ['fs-waist-side', 'fs-waist-mid', 'fs-waist-square']
     }
   ];
 
-  // Build Front Cut & Sew SVG Path data
-  // Cut path incorporates seam allowances (0 on fold CF, 3cm hem, 1.5cm side seam, 1.0cm waist)
-  const frontSewPath = `M ${cfWaist.x} ${cfWaist.y} ` +
-    `L ${frontDartLeft.x} ${frontDartLeft.y} ` +
-    `L ${frontDartApex.x} ${frontDartApex.y} ` +
-    `L ${frontDartRight.x} ${frontDartRight.y} ` +
-    `L ${frontSideWaist.x} ${frontSideWaist.y} ` +
-    `C ${frontHipCp1.x} ${frontHipCp1.y}, ${frontHipCp2.x} ${frontHipCp2.y}, ${frontSideHip.x} ${frontSideHip.y} ` +
-    `L ${frontSideHem.x} ${frontSideHem.y} ` +
-    `L ${cfHem.x} ${cfHem.y} ` +
-    `Z`;
-
-  const frontCutPath = `M ${cfWaist.x} ${cfWaist.y - 1.0} ` +
-    `L ${frontSideWaist.x + seamAllowance * 0.8} ${frontSideWaist.y - 1.0} ` +
-    `C ${frontHipCp1.x + seamAllowance} ${frontHipCp1.y}, ${frontHipCp2.x + seamAllowance} ${frontHipCp2.y}, ${frontSideHip.x + seamAllowance} ${frontSideHip.y} ` +
-    `L ${frontSideHem.x + seamAllowance} ${frontSideHem.y + hemAllowance} ` +
-    `L ${cfHem.x} ${cfHem.y + hemAllowance} ` +
-    `Z`;
-
-  const frontBounding = computeBoundingBox([
-    cfWaist,
-    frontSideWaist,
-    frontSideHip,
-    frontSideHem,
-    cfHem
-  ]);
+  // Mathematically generate Cutting Contour using true normal offsets and corner joins
+  const frontOffsetResult = generateCuttingContour(frontStitchingContour, {
+    defaultAllowanceCm: sideSeamAllowance,
+    bezierToleranceCm: 0.05
+  });
 
   const frontPiece: PatternPiece = {
     id: 'piece-skirt-front',
@@ -178,9 +227,11 @@ export function draftSkirtBlock(
     cutCount: 1,
     onFold: true,
     material: 'self',
-    sewPathData: frontSewPath,
-    cutPathData: frontCutPath,
-    seamAllowanceWidthCm: seamAllowance,
+    sewPathData: frontStitchingContour.toSvgPath(),
+    cutPathData: frontOffsetResult.cuttingContour.toSvgPath(),
+    seamAllowanceWidthCm: sideSeamAllowance,
+    stitchingContour: frontStitchingContour,
+    cuttingContour: frontOffsetResult.cuttingContour,
     grainline: {
       start: { x: quarterHip * 0.45, y: waistToHip },
       end: { x: quarterHip * 0.45, y: totalLength - 8 },
@@ -199,7 +250,7 @@ export function draftSkirtBlock(
     notches: [
       {
         id: 'notch-front-hip',
-        position: frontSideHip,
+        position: sideHip,
         normalAngleDeg: 0,
         type: 'single',
         label: 'Hip Notch'
@@ -213,109 +264,117 @@ export function draftSkirtBlock(
       }
     ],
     seams: frontSeams,
-    boundingBox: frontBounding,
-    description: 'Front panel drafted on fold. Contains 1 waist dart and contoured hip curve.'
+    boundingBox: frontStitchingContour.boundingBox(),
+    description: 'Front panel drafted on fold with true geometric offsets, strict 90° center tangency, and verified seam-geometry linkage.'
   };
 
-  // ==========================================
-  // 2. BACK SKIRT PANEL DRAFTING
-  // ==========================================
-  // Back panel features center back seam with zipper notch and 1 back dart
+  // =========================================================================
+  // 2. BACK SKIRT PANEL: STRUCTURED GEOMETRIC CONTOUR
+  // =========================================================================
   const cbWaist: Point = { x: 0, y: 0 };
-  const cbHip: Point = { x: 0, y: waistToHip };
+  const cbSquareEnd: Point = { x: 3.5, y: 0 }; // Strict 90° squaring zone (3.5cm)
   const cbHem: Point = { x: 0, y: totalLength };
+  const cbHemSquareEnd: Point = { x: 4.0, y: totalLength }; // Strict 90° squaring zone at hem (4.0cm)
 
-  const backSideWaist: Point = { x: sideWaistX, y: sideWaistY };
+  // Center Back has 1.5cm seam allowance for invisible zipper (not on fold)
+  const cbAllowance = 1.5;
 
-  const backSideHip: Point = { x: quarterHip, y: waistToHip };
-  const backSideHem: Point = { x: quarterHip + hemFlareCm, y: totalLength };
-
-  // Back Dart Points
-  const backDartApex: Point = { x: backDartPlacementX, y: backDartLength };
-  const backDartLeft: Point = { x: backDartPlacementX - backDartWidth / 2, y: -0.2 };
-  const backDartRight: Point = { x: backDartPlacementX + backDartWidth / 2, y: -0.3 };
-
-  // Matching back hip curve
-  const backHipCp1: Point = {
-    x: backSideWaist.x + (backSideHip.x - backSideWaist.x) * 0.4,
-    y: backSideWaist.y + (backSideHip.y - backSideWaist.y) * 0.3
-  };
-  const backHipCp2: Point = {
-    x: backSideHip.x + 0.3,
-    y: backSideHip.y - 4.0
-  };
-
-  const backHipCurveLength = approximateBezierLength(
-    backSideWaist,
-    backHipCp1,
-    backHipCp2,
-    backSideHip
+  const bsCbSeam = new LineSegment('bs-cb-seam', cbWaist, cbHem, cbAllowance, false, 'bs-center-back');
+  const bsHemSquare = new LineSegment('bs-hem-square', cbHem, cbHemSquareEnd, hemAllowance, false, 'bs-hem');
+  const bsHemCurve = new LineSegment('bs-hem-curve', cbHemSquareEnd, sideHem, hemAllowance, false, 'bs-hem');
+  const bsSideLower = new LineSegment('bs-side-lower', sideHem, sideHip, sideSeamAllowance, false, 'bs-side-seam');
+  const bsSideHip = new CubicBezierCurve(
+    'bs-side-hip',
+    sideHip,
+    hipCp2,
+    hipCp1,
+    { x: sideWaistX, y: sideWaistY },
+    sideSeamAllowance,
+    false,
+    'bs-side-seam'
   );
-  const backLowerSideSeamLength = distance(backSideHip, backSideHem);
-  const backTotalSideSeamLength = Number((backHipCurveLength + backLowerSideSeamLength).toFixed(2));
+  const bsWaistSide = new LineSegment('bs-waist-side', { x: sideWaistX, y: sideWaistY }, backDartRight, waistAllowance, false, 'bs-waist');
+  const bsDartCap = new LineSegment('bs-dart-cap', backDartRight, backDartLeft, waistAllowance, false, 'bs-waist');
+  const bsWaistDartToSquare = new LineSegment('bs-waist-mid', backDartLeft, cbSquareEnd, waistAllowance, false, 'bs-waist');
+  const bsWaistSquare = new LineSegment('bs-waist-square', cbSquareEnd, cbWaist, waistAllowance, false, 'bs-waist');
 
-  // Back Seamlines
+  const backStitchingContour = new GeometricContour(
+    'back-skirt-stitching',
+    [
+      bsCbSeam,
+      bsHemSquare,
+      bsHemCurve,
+      bsSideLower,
+      bsSideHip,
+      bsWaistSide,
+      bsDartCap,
+      bsWaistDartToSquare,
+      bsWaistSquare
+    ],
+    true
+  );
+
+  const backTotalSideSeamLength = Number((bsSideLower.lengthCm() + bsSideHip.lengthCm()).toFixed(2));
+  const backHemTotalLength = Number((bsHemSquare.lengthCm() + bsHemCurve.lengthCm()).toFixed(2));
+  const backWaistSewLength = Number((bsWaistSide.lengthCm() + bsWaistDartToSquare.lengthCm() + bsWaistSquare.lengthCm()).toFixed(2));
+
   const backSeams: SeamLine[] = [
     {
       id: 'bs-center-back',
       name: 'Center Back Seam (Zipper)',
       startPoint: cbWaist,
       endPoint: cbHem,
-      lengthCm: totalLength,
-      type: 'straight'
+      lengthCm: bsCbSeam.lengthCm(),
+      type: 'straight',
+      startTangent: bsCbSeam.tangentAt(0),
+      endTangent: bsCbSeam.tangentAt(1),
+      segmentId: 'bs-cb-seam',
+      segmentIds: ['bs-cb-seam']
     },
     {
       id: 'bs-hem',
       name: 'Back Hem',
       startPoint: cbHem,
-      endPoint: backSideHem,
-      lengthCm: Number(distance(cbHem, backSideHem).toFixed(2)),
-      type: 'straight'
+      endPoint: sideHem,
+      lengthCm: backHemTotalLength,
+      type: hemFlareCm === 0 ? 'straight' : 'curved',
+      startTangent: bsHemSquare.tangentAt(0),
+      endTangent: bsHemCurve.tangentAt(1),
+      segmentId: 'bs-hem-curve',
+      segmentIds: ['bs-hem-square', 'bs-hem-curve']
     },
     {
       id: 'bs-side-seam',
       name: 'Back Side Seam',
-      startPoint: backSideHem,
-      endPoint: backSideWaist,
+      startPoint: sideHem,
+      endPoint: { x: sideWaistX, y: sideWaistY },
       lengthCm: backTotalSideSeamLength,
       type: 'curved',
+      startTangent: bsSideLower.tangentAt(0),
+      endTangent: bsSideHip.tangentAt(1),
       pairedPieceId: 'piece-skirt-front',
-      pairedSeamName: 'Front Side Seam'
+      pairedSeamName: 'Front Side Seam',
+      segmentId: 'bs-side-hip',
+      segmentIds: ['bs-side-lower', 'bs-side-hip']
     },
     {
       id: 'bs-waist',
       name: 'Back Waistline',
-      startPoint: backSideWaist,
+      startPoint: { x: sideWaistX, y: sideWaistY },
       endPoint: cbWaist,
-      lengthCm: Number((quarterWaist).toFixed(2)),
-      type: 'curved'
+      lengthCm: backWaistSewLength,
+      type: 'curved',
+      startTangent: bsWaistSide.tangentAt(0),
+      endTangent: bsWaistSquare.tangentAt(1),
+      segmentId: 'bs-waist-square',
+      segmentIds: ['bs-waist-side', 'bs-waist-mid', 'bs-waist-square']
     }
   ];
 
-  const backSewPath = `M ${cbWaist.x} ${cbWaist.y} ` +
-    `L ${backDartLeft.x} ${backDartLeft.y} ` +
-    `L ${backDartApex.x} ${backDartApex.y} ` +
-    `L ${backDartRight.x} ${backDartRight.y} ` +
-    `L ${backSideWaist.x} ${backSideWaist.y} ` +
-    `C ${backHipCp1.x} ${backHipCp1.y}, ${backHipCp2.x} ${backHipCp2.y}, ${backSideHip.x} ${backSideHip.y} ` +
-    `L ${backSideHem.x} ${backSideHem.y} ` +
-    `L ${cbHem.x} ${cbHem.y} ` +
-    `Z`;
-
-  const backCutPath = `M ${cbWaist.x - seamAllowance} ${cbWaist.y - 1.0} ` +
-    `L ${backSideWaist.x + seamAllowance * 0.8} ${backSideWaist.y - 1.0} ` +
-    `C ${backHipCp1.x + seamAllowance} ${backHipCp1.y}, ${backHipCp2.x + seamAllowance} ${backHipCp2.y}, ${backSideHip.x + seamAllowance} ${backSideHip.y} ` +
-    `L ${backSideHem.x + seamAllowance} ${backSideHem.y + hemAllowance} ` +
-    `L ${cbHem.x - seamAllowance} ${cbHem.y + hemAllowance} ` +
-    `Z`;
-
-  const backBounding = computeBoundingBox([
-    cbWaist,
-    backSideWaist,
-    backSideHip,
-    backSideHem,
-    cbHem
-  ]);
+  const backOffsetResult = generateCuttingContour(backStitchingContour, {
+    defaultAllowanceCm: sideSeamAllowance,
+    bezierToleranceCm: 0.05
+  });
 
   const backPiece: PatternPiece = {
     id: 'piece-skirt-back',
@@ -325,9 +384,11 @@ export function draftSkirtBlock(
     cutCount: 2, // Cut 1 pair (left & right)
     onFold: false,
     material: 'self',
-    sewPathData: backSewPath,
-    cutPathData: backCutPath,
-    seamAllowanceWidthCm: seamAllowance,
+    sewPathData: backStitchingContour.toSvgPath(),
+    cutPathData: backOffsetResult.cuttingContour.toSvgPath(),
+    seamAllowanceWidthCm: sideSeamAllowance,
+    stitchingContour: backStitchingContour,
+    cuttingContour: backOffsetResult.cuttingContour,
     grainline: {
       start: { x: quarterHip * 0.45, y: waistToHip },
       end: { x: quarterHip * 0.45, y: totalLength - 8 },
@@ -346,7 +407,7 @@ export function draftSkirtBlock(
     notches: [
       {
         id: 'notch-back-hip',
-        position: backSideHip,
+        position: sideHip,
         normalAngleDeg: 0,
         type: 'double',
         label: 'Back Hip Double Notch'
@@ -360,8 +421,8 @@ export function draftSkirtBlock(
       }
     ],
     seams: backSeams,
-    boundingBox: backBounding,
-    description: 'Back panel (cut 1 pair). Contains 1 deep waist dart, zipper notch at CB, and double notch at side hip.'
+    boundingBox: backStitchingContour.boundingBox(),
+    description: 'Back panel (cut 1 pair) with true offset cutting contours, 1.5cm zipper allowance, and verified seam-geometry linkage.'
   };
 
   return [frontPiece, backPiece];

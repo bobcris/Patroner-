@@ -123,10 +123,10 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         <div className="space-y-1">
           <div className="flex items-center gap-2 font-mono text-xs">
             <span className="text-neutral-400">STATUS:</span>
-            {validation.isProductionReady ? (
-              <Badge variant="success" size="sm">CERTIFIED PRODUCTION READY</Badge>
+            {validation.isValid ? (
+              <Badge variant="success" size="sm">SAMPLE CUT VALIDATED</Badge>
             ) : (
-              <Badge variant="warning" size="sm">VALIDATION WARNINGS PRESENT</Badge>
+              <Badge variant="danger" size="sm">GEOMETRY REVISION REQUIRED</Badge>
             )}
             <span className="text-neutral-400">|</span>
             <span className="text-neutral-300">DRAFT REF: {currentSpec.id}</span>
@@ -135,13 +135,16 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
             Tech Pack for: {currentSpec.name} (Size {activeSize})
           </h3>
           <p className="text-xs text-neutral-400">
-            Validated against European ISO 13402 anthropometric standards with {currentSpec.easeProfile} ease profile.
+            {validation.declaration}
           </p>
         </div>
 
         <div className="font-mono text-right text-xs">
-          <div className="text-neutral-400">ENGINE SCORE</div>
-          <div className="text-2xl font-bold text-emerald-400">{validation.overallScore}/100</div>
+          <div className="text-neutral-400">VALIDATED CRITERIA</div>
+          <div className="text-xl font-bold text-emerald-400">
+            {validation.passedCount} / {validation.checks.length}
+          </div>
+          <span className="text-[10px] text-neutral-400 block mt-0.5">CHECKS PASSED</span>
         </div>
       </div>
 

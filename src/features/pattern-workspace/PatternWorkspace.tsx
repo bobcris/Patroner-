@@ -498,23 +498,34 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   Validation Engine
                 </h3>
               </div>
-              {validationReport.isProductionReady ? (
-                <Badge variant="success" size="md">PRODUCTION READY</Badge>
-              ) : validationReport.isValid ? (
-                <Badge variant="warning" size="md">GEOMETRY VALID</Badge>
+              {validationReport.status === 'validated' ? (
+                <Badge variant="success" size="md">PROTOTYPE VALIDATED</Badge>
+              ) : validationReport.status === 'incomplete' ? (
+                <Badge variant="warning" size="md">DRAFT INCOMPLETE</Badge>
               ) : (
-                <Badge variant="danger" size="md">VALIDATION FAILED</Badge>
+                <Badge variant="danger" size="md">GEOMETRY INVALID</Badge>
               )}
             </div>
 
-            {/* Score */}
+            {/* Score / Implemented Checks Summary */}
             <div className="flex items-baseline justify-between font-mono bg-neutral-900 text-white p-3 rounded">
-              <span className="text-xs uppercase text-neutral-400">ENGINE SCORE:</span>
-              <span className="text-lg font-bold">{validationReport.overallScore}/100</span>
+              <span className="text-xs uppercase text-neutral-400">IMPLEMENTED CHECKS:</span>
+              <span className="text-base font-bold text-emerald-400">
+                {validationReport.passedCount} / {validationReport.checks.length} PASSED
+              </span>
+            </div>
+
+            {/* Declaration Note */}
+            <div className="p-2.5 bg-neutral-100 rounded text-[11px] font-mono text-neutral-800 border border-neutral-200">
+              <span className="font-semibold block text-neutral-900 text-[10px] uppercase">STATUS DECLARATION:</span>
+              <p className="mt-0.5">{validationReport.declaration}</p>
             </div>
 
             {/* Validation Checklist */}
             <div className="space-y-2 text-xs">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block">
+                Evaluated Geometric Constraints
+              </span>
               {validationReport.checks.map(chk => (
                 <div
                   key={chk.id}
@@ -553,14 +564,22 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               ))}
             </div>
 
-            {/* Production readiness declaration */}
-            <div className="p-3 bg-neutral-50 rounded border border-neutral-200 text-[11px] text-neutral-600 space-y-1">
-              <span className="font-mono font-semibold text-neutral-800 uppercase block">
-                Deterministic Guarantee
+            {/* Unassessed Industrial Constraints (Honesty Disclosure) */}
+            <div className="p-3 bg-stone-50 rounded border border-stone-200 text-[11px] space-y-2">
+              <span className="font-mono font-semibold text-neutral-800 uppercase block text-[10px]">
+                Unassessed Industrial Conditions ({validationReport.unassessedConditions.length})
               </span>
-              <p>
-                Patroner strictly checks paired seamline lengths and dart leg symmetries. No pattern piece is certified for cutting without passing all engineering thresholds.
+              <p className="text-neutral-500 text-[10px]">
+                The following criteria are required for full industrial production certification and are scheduled for subsequent engineering milestones:
               </p>
+              <ul className="space-y-1.5 text-neutral-600 text-[10px]">
+                {validationReport.unassessedConditions.map(u => (
+                  <li key={u.id} className="border-l-2 border-stone-300 pl-2">
+                    <strong className="text-neutral-800">{u.name}:</strong> {u.reason}
+                    <span className="block text-neutral-400 font-mono text-[9px]">Target: {u.milestonePrerequisite}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>

@@ -131,8 +131,12 @@ export interface SeamLine {
   lengthCm: number;
   type: 'straight' | 'curved';
   pathData?: string;
+  startTangent?: Point;
+  endTangent?: Point;
   pairedPieceId?: string;
   pairedSeamName?: string;
+  segmentId?: string;
+  segmentIds?: string[];
 }
 
 export interface BoundingBox {
@@ -168,11 +172,22 @@ export interface PatternPiece {
   boundingBox: BoundingBox;
   drillHoles?: Point[];
   description: string;
+  stitchingContour?: any;
+  cuttingContour?: any;
+}
+
+export type ValidationStatus = 'validated' | 'invalid' | 'incomplete' | 'not_assessed';
+
+export interface UnassessedCondition {
+  id: string;
+  name: string;
+  reason: string;
+  milestonePrerequisite: string;
 }
 
 export interface ValidationCheck {
   id: string;
-  category: 'seam-match' | 'dart-closure' | 'grainline' | 'allowance' | 'geometry';
+  category: 'seam-match' | 'dart-closure' | 'grainline' | 'allowance' | 'geometry' | 'tangency' | 'contour-integrity';
   name: string;
   status: 'pass' | 'warning' | 'fail';
   measuredValue?: string;
@@ -183,11 +198,17 @@ export interface ValidationCheck {
 }
 
 export interface ValidationReport {
+  status: ValidationStatus;
   isValid: boolean;
   isProductionReady: boolean;
+  statusLabel: string;
   timestamp: string;
-  overallScore: number; // 0 - 100
+  passedCount: number;
+  warningCount: number;
+  failureCount: number;
   checks: ValidationCheck[];
+  unassessedConditions: UnassessedCondition[];
+  declaration: string;
 }
 
 export interface PatternDraft {
