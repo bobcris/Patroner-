@@ -222,7 +222,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 const xOffset = index === 0 ? 30 : 250;
                 const yOffset = 40;
                 const isSelected = selectedPiece.id === piece.id;
-                const pieceHasErrors = validationReport.checks.some(
+                const isOffsetFailed = piece.offsetResult?.status === 'failure';
+                const pieceHasErrors = isOffsetFailed || validationReport.checks.some(
                   c => c.status === 'fail' && (c.name.includes(piece.pieceCode) || c.id.includes(piece.id))
                 );
 
@@ -496,6 +497,20 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 <span className="text-neutral-500">Seam Allowance:</span>
                 <span className="font-semibold text-neutral-900">{selectedPiece.seamAllowanceWidthCm} cm</span>
               </div>
+              {selectedPiece.offsetResult && (
+                <div className="flex justify-between items-center pt-1 border-t border-neutral-200">
+                  <span className="text-neutral-500">Offset Engine:</span>
+                  <span className={`font-semibold text-[11px] ${
+                    selectedPiece.offsetResult.status === 'success'
+                      ? 'text-emerald-700'
+                      : selectedPiece.offsetResult.status === 'warning'
+                      ? 'text-amber-700'
+                      : 'text-rose-700'
+                  }`}>
+                    {selectedPiece.offsetResult.status.toUpperCase()} ({selectedPiece.offsetResult.maxDeviationCm} cm)
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Seams Table */}

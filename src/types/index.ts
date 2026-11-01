@@ -3,7 +3,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { GeometricContour } from '../engine/geometry/primitives';
+
 export type GarmentCategory = 'skirt' | 'bodice' | 'trouser' | 'dress';
+
+export type OffsetStatus = 'success' | 'warning' | 'failure';
+
+export interface SegmentOffsetDiagnostic {
+  sourceSegmentId: string;
+  status: OffsetStatus;
+  maxDeviationCm: number;
+  toleranceCm: number;
+  failureReason?: string;
+}
+
+export interface OffsetResult {
+  status: OffsetStatus;
+  cuttingContour: GeometricContour;
+  maxDeviationCm: number;
+  toleranceExceeded: boolean;
+  approximationMethod: string;
+  diagnostics?: SegmentOffsetDiagnostic[];
+  warnings: string[];
+  errors: string[];
+}
 
 export type Silhouette = 
   | 'a-line' 
@@ -172,8 +195,9 @@ export interface PatternPiece {
   boundingBox: BoundingBox;
   drillHoles?: Point[];
   description: string;
-  stitchingContour?: any;
-  cuttingContour?: any;
+  stitchingContour?: GeometricContour;
+  cuttingContour?: GeometricContour;
+  offsetResult?: OffsetResult;
 }
 
 export type ValidationStatus = 'validated' | 'invalid' | 'incomplete' | 'not_assessed';
@@ -187,7 +211,7 @@ export interface UnassessedCondition {
 
 export interface ValidationCheck {
   id: string;
-  category: 'seam-match' | 'dart-closure' | 'grainline' | 'allowance' | 'geometry' | 'tangency' | 'contour-integrity';
+  category: 'seam-match' | 'dart-closure' | 'grainline' | 'allowance' | 'geometry' | 'tangency' | 'contour-integrity' | 'offset';
   name: string;
   status: 'pass' | 'warning' | 'fail';
   errorCode?: string;

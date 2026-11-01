@@ -337,4 +337,108 @@ describe('Geometry Offset Engine (Milestone 02 Corrective Pass)', () => {
       assert.strictEqual(hemCut.seamAllowanceCm, 3.0);
     });
   });
+
+  describe('Milestone 02.1: Geometry Acceptance Gate & Fail-Safe Verification', () => {
+    it('Priority 1: returns structured failure status and diagnostics when tolerance cannot be achieved', () => {
+      // Extremely sharp S-curve with impossible tolerance requirement (0.0001 cm = 1 micron)
+      const sharpCurve = new CubicBezierCurve(
+        'sharp-s',
+        { x: 0, y: 0 },
+        { x: 2, y: 15 },
+        { x: -2, y: 15 },
+        { x: 0, y: 30 }
+      );
+
+      const res = offsetCubicBezier(sharpCurve, 1.5, 0.0001); // Strict 1-micron tolerance
+      assert.strictEqual(res.status, 'failure');
+      assert.strictEqual(res.toleranceExceeded, true);
+      assert.ok(res.maxDeviationCm > 0.0001);
+      assert.ok(res.diagnostics.length > 0);
+      assert.strictEqual(res.diagnostics[0].status, 'failure');
+      assert.ok(res.diagnostics[0].failureReason?.includes('maximum subdivision depth'));
+
+      // Stitching curve must remain completely uncorrupted
+      assert.strictEqual(sharpCurve.p0.x, 0);
+      assert.strictEqual(sharpCurve.p0.y, 0);
+      assert.strictEqual(sharpCurve.p3.x, 0);
+      assert.strictEqual(sharpCurve.p3.y, 30);
+    });
+
+    it('Priority 2: preserves Bezier control points and tangents on convex miter join (no arbitrary endpoint relocation)', () => {
+      const curve = new CubicBezierCurve('c-test', { x: 0, y: 0 }, { x: 5, y: 10 }, { x: 10, y: 15 }, { x: 15, y: 15 });
+      const line = new LineSegment('l-test', { x: 15, y: 15 }, { x: 25, y: 15 });
+
+      const offsetCurveRes = offsetCubicBezier(curve, 1.0);
+      const offCurve = offsetCurveRes.segments[offsetCurveRes.segments.length - 1];
+      const offLine = offsetLineSegment(line, 1.0);
+
+      const joined = joinOffsetSegmentsAtCorner(offCurve, offLine, 2.5);
+
+      // Joined should consist of [offCurve, miterLine, offLine] or [offCurve, offLine]
+      // Most importantly: the curve's p0, cp1, cp2, p3 must NOT have had p3 relocated!
+      const joinedCurve = joined[0] as CubicBezierCurve;
+      assert.strictEqual(joinedCurve.type, 'bezier');
+      assert.strictEqual(joinedCurve.p0.x, offCurve.p0.x);
+      assert.strictEqual(joinedCurve.p0.y, offCurve.p0.y);
+      assert.strictEqual(joinedCurve.p3.x, offCurve.p3.x);
+      assert.strictEqual(joinedCurve.p3.y, offCurve.p3.y);
+      assert.strictEqual(joinedCurve.cp1.x, offCurve.cp1.x);
+      assert.strictEqual(joinedCurve.cp2.x, offCurve.cp2.x);
+
+      // If a miter connector was added, verify its role is 'miter'
+      if (joined.length === 3) {
+        assert.strictEqual(joined[1].role, 'miter');
+      }
+    });
+
+    it('Priority 2: trims concave corners using De Casteljau subdivision on Bezier curves', () => {
+      // Two curves forming a concave corner where offset curves cross before endpoints
+      const curve1 = new CubicBezierCurve('c1', { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 15, y: 5 }, { x: 15, y: 15 });
+      const curve2 = new CubicBezierCurve('c2', { x: 15, y: 15 }, { x: 15, y: 25 }, { x: 10, y: 30 }, { x: 0, y: 30 });
+
+      const off1 = offsetCubicBezier(curve1, 1.0).segments[0];
+      const off2 = offsetCubicBezier(curve2, 1.0).segments[0];
+
+      const joined = joinOffsetSegmentsAtCorner(off1, off2, 2.5);
+      assert.ok(joined.length >= 2);
+      // Vertex continuity between trimmed segments
+      const gap = distance(joined[0].end, joined[1].start);
+      assert.ok(gap < 0.05, `Trimmed curves gap (${gap} cm) must be continuous`);
+    });
+
+    it('Priority 4: distinguishes zero seam allowance from fold semantics', () => {
+      // Normal edge with 0 allowance (e.g. edge tape)
+      const normalZeroLine = new LineSegment('zero-tape', { x: 0, y: 0 }, { x: 10, y: 0 }, 0, false);
+      const offNormal = offsetLineSegment(normalZeroLine, 0);
+
+      assert.strictEqual(offNormal.isFold, false, 'Non-fold edge with 0 allowance must retain isFold: false');
+      assert.strictEqual(offNormal.role, 'offset');
+
+      // Explicit fold edge
+      const foldLine = new LineSegment('cf-fold', { x: 0, y: 0 }, { x: 0, y: 40 }, 0, true);
+      const offFold = offsetLineSegment(foldLine, 0);
+
+      assert.strictEqual(offFold.isFold, true, 'Fold edge must retain isFold: true');
+      assert.strictEqual(offFold.role, 'stitching');
+    });
+
+    it('Priority 5: reports structured failure for unexplained closure gaps without masking with bridges', () => {
+      // Open contour with large gap between last and first segment
+      const openContour = new GeometricContour('open-test', [
+        new LineSegment('s1', { x: 0, y: 0 }, { x: 10, y: 0 }, 1.0),
+        new LineSegment('s2', { x: 10, y: 0 }, { x: 10, y: 10 }, 1.0),
+        new LineSegment('s3', { x: 10, y: 10 }, { x: 0, y: 10 }, 1.0)
+        // Missing left edge: gap of 10cm back to (0,0)
+      ], true);
+
+      const res = generateCuttingContour(openContour);
+      assert.strictEqual(res.status, 'failure', 'Unexplained gap must produce status failure');
+      assert.strictEqual(res.toleranceExceeded, true);
+      assert.ok(res.errors.some(e => e.includes('Unresolved cutting contour closure gap')));
+
+      // Must NOT contain an automatic 'closing-bridge' masking the failure
+      const hasClosingBridge = res.cuttingContour.segments.some(s => s.id.includes('closing-bridge'));
+      assert.strictEqual(hasClosingBridge, false, 'Must not insert an automatic closing bridge');
+    });
+  });
 });

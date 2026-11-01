@@ -212,9 +212,9 @@ export function validateContourIntegrity(
     });
   }
 
-  // 5. Curve-Aware Self-Intersection Detection
-  // We discretize each segment into linear sub-segments (1 for lines, 10 for Bezier curves)
-  // and check for cross-intersection between non-adjacent sub-segments.
+  // 5. Curve-Aware Self-Intersection Detection (Milestone 02.1 Priority 3)
+  // We discretize segments using adaptive flatness subdivision (0.05cm geometric tolerance)
+  // and check for cross-intersections across curve-curve, curve-line, and single-curve loops.
   const subSegments: PolylineSubSegment[] = [];
   let subIndex = 0;
 
@@ -228,7 +228,8 @@ export function validateContourIntegrity(
       });
     } else {
       const bez = seg as CubicBezierCurve;
-      const samples = bez.samplePoints(10);
+      // Adaptive flattening based on chord-to-control-point maximum perpendicular deviation
+      const samples = bez.flatten(0.05);
       for (let s = 0; s < samples.length - 1; s++) {
         subSegments.push({
           parentSegmentId: seg.id,

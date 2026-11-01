@@ -3,14 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Point } from '../../types';
+import { OffsetResult, OffsetStatus, Point, SegmentOffsetDiagnostic } from '../../types';
 import {
-  approximateBezierLength,
-  cubicBezierPoint,
-  cubicBezierTangent,
   distance,
   dotProduct,
-  normalize,
   vector
 } from './math';
 import {
@@ -28,15 +24,6 @@ export interface OffsetOptions {
   bezierToleranceCm?: number; // Maximum allowable deviation for Bezier offset approximation (default 0.05 cm = 0.5mm)
 }
 
-export interface OffsetResult {
-  cuttingContour: GeometricContour;
-  maxDeviationCm: number;
-  toleranceExceeded: boolean;
-  approximationMethod: string;
-  warnings: string[];
-  errors: string[];
-}
-
 export const BEZIER_OFFSET_TOLERANCE_CM = 0.05; // 0.5 mm industrial tolerance
 export const MAX_SUBDIVISION_DEPTH = 5; // Up to 32 sub-curves per segment for high-curvature regions
 
@@ -49,13 +36,17 @@ export const DEFAULT_OFFSET_OPTIONS: Required<OffsetOptions> = {
 /**
  * Offsets a straight line segment by distance d along its outward unit normal.
  * For a straight line, the constant-distance offset is mathematically exact.
+ * 
+ * Fold Semantics (Milestone 02.1 Priority 4):
+ * - If line.isFold === true: explicitly designated fold edge. Receives 0cm allowance and role 'stitching'.
+ * - If allowanceCm === 0 && !line.isFold: non-fold raw or bound edge with 0 allowance. Receives role 'offset' and isFold remains false.
  */
 export function offsetLineSegment(
   line: LineSegment,
   allowanceCm: number,
   outwardSign = 1
 ): LineSegment {
-  if (line.isFold || allowanceCm === 0) {
+  if (line.isFold) {
     return new LineSegment(
       `${line.id}-cut`,
       line.start,
@@ -65,6 +56,19 @@ export function offsetLineSegment(
       line.seamId,
       line.id,
       'stitching'
+    );
+  }
+
+  if (allowanceCm === 0) {
+    return new LineSegment(
+      `${line.id}-cut`,
+      line.start,
+      line.end,
+      0,
+      false,
+      line.seamId,
+      line.id,
+      'offset'
     );
   }
 
@@ -94,10 +98,13 @@ export function offsetLineSegment(
  * Offset result for a single cubic Bezier curve.
  */
 export interface BezierOffsetResult {
+  status: OffsetStatus;
   segments: CubicBezierCurve[];
   maxDeviationCm: number;
   toleranceExceeded: boolean;
+  diagnostics: SegmentOffsetDiagnostic[];
   warnings: string[];
+  errors: string[];
 }
 
 /**
@@ -115,7 +122,9 @@ export interface BezierOffsetResult {
  * 4. If max deviation <= tolerance, accept the fitted segment.
  * 5. If deviation > tolerance and depth < MAX_SUBDIVISION_DEPTH, subdivide curve at t=0.5 via
  *    De Casteljau algorithm and recursively offset both halves.
- * 6. If depth >= MAX_SUBDIVISION_DEPTH and deviation > tolerance, return structured failure/warning.
+ * 6. If depth >= MAX_SUBDIVISION_DEPTH and deviation > tolerance:
+ *    Return structured failure status ('failure'), populate diagnostic provenance with deviation and reason,
+ *    and flag toleranceExceeded = true (Milestone 02.1 Priority 1).
  */
 export function offsetCubicBezier(
   curve: CubicBezierCurve,
@@ -124,8 +133,9 @@ export function offsetCubicBezier(
   depth = 0,
   outwardSign = 1
 ): BezierOffsetResult {
-  if (curve.isFold || allowanceCm === 0) {
+  if (curve.isFold) {
     return {
+      status: 'success',
       segments: [
         new CubicBezierCurve(
           `${curve.id}-cut`,
@@ -142,7 +152,48 @@ export function offsetCubicBezier(
       ],
       maxDeviationCm: 0,
       toleranceExceeded: false,
-      warnings: []
+      diagnostics: [
+        {
+          sourceSegmentId: curve.id,
+          status: 'success',
+          maxDeviationCm: 0,
+          toleranceCm
+        }
+      ],
+      warnings: [],
+      errors: []
+    };
+  }
+
+  if (allowanceCm === 0) {
+    return {
+      status: 'success',
+      segments: [
+        new CubicBezierCurve(
+          `${curve.id}-cut`,
+          curve.p0,
+          curve.cp1,
+          curve.cp2,
+          curve.p3,
+          0,
+          false,
+          curve.seamId,
+          curve.id,
+          'offset'
+        )
+      ],
+      maxDeviationCm: 0,
+      toleranceExceeded: false,
+      diagnostics: [
+        {
+          sourceSegmentId: curve.id,
+          status: 'success',
+          maxDeviationCm: 0,
+          toleranceCm
+        }
+      ],
+      warnings: [],
+      errors: []
     };
   }
 
@@ -192,14 +243,20 @@ export function offsetCubicBezier(
       x: basePt.x + baseN.x * allowanceCm,
       y: basePt.y + baseN.y * allowanceCm
     };
-    const approxPt = cubicBezierPoint(p0Prime, p1Prime, p2Prime, p3Prime, t);
-    const dev = distance(truePt, approxPt);
+    const approxPt = curve.pointAt(t); // placeholder for compiler
+    void approxPt;
+    // Cubic bezier evaluation for approx curve:
+    const mt = 1 - t;
+    const ax = mt * mt * mt * p0Prime.x + 3 * mt * mt * t * p1Prime.x + 3 * mt * t * t * p2Prime.x + t * t * t * p3Prime.x;
+    const ay = mt * mt * mt * p0Prime.y + 3 * mt * mt * t * p1Prime.y + 3 * mt * t * t * p2Prime.y + t * t * t * p3Prime.y;
+    const dev = distance(truePt, { x: ax, y: ay });
     if (dev > maxDev) maxDev = dev;
   }
 
-  // If within tolerance or maximum subdivision depth reached
+  // If within tolerance
   if (maxDev <= toleranceCm) {
     return {
+      status: 'success',
       segments: [
         new CubicBezierCurve(
           `${curve.id}-cut${depth > 0 ? `-${depth}` : ''}`,
@@ -216,14 +273,25 @@ export function offsetCubicBezier(
       ],
       maxDeviationCm: Number(maxDev.toFixed(4)),
       toleranceExceeded: false,
-      warnings: []
+      diagnostics: [
+        {
+          sourceSegmentId: curve.id,
+          status: 'success',
+          maxDeviationCm: Number(maxDev.toFixed(4)),
+          toleranceCm
+        }
+      ],
+      warnings: [],
+      errors: []
     };
   }
 
   if (depth >= MAX_SUBDIVISION_DEPTH) {
+    // Fail-safe acceptance gate (Milestone 02.1 Priority 1):
     // Maximum subdivision depth exceeded without achieving tolerance
-    const warn = `Cubic Bézier segment [${curve.id}] reached maximum subdivision depth (${MAX_SUBDIVISION_DEPTH}) with max deviation ${maxDev.toFixed(4)} cm exceeding tolerance (${toleranceCm} cm).`;
+    const reason = `Cubic Bézier segment [${curve.id}] reached maximum subdivision depth (${MAX_SUBDIVISION_DEPTH}) with max deviation ${maxDev.toFixed(4)} cm exceeding tolerance (${toleranceCm} cm).`;
     return {
+      status: 'failure',
       segments: [
         new CubicBezierCurve(
           `${curve.id}-cut-maxdepth`,
@@ -240,53 +308,58 @@ export function offsetCubicBezier(
       ],
       maxDeviationCm: Number(maxDev.toFixed(4)),
       toleranceExceeded: true,
-      warnings: [warn]
+      diagnostics: [
+        {
+          sourceSegmentId: curve.id,
+          status: 'failure',
+          maxDeviationCm: Number(maxDev.toFixed(4)),
+          toleranceCm,
+          failureReason: reason
+        }
+      ],
+      warnings: [reason],
+      errors: [reason]
     };
   }
 
-  // De Casteljau subdivision at t = 0.5
-  const p0 = curve.p0;
-  const p1 = curve.cp1;
-  const p2 = curve.cp2;
-  const p3 = curve.p3;
-
-  const p01 = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-  const p12 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-  const p23 = { x: (p2.x + p3.x) / 2, y: (p2.y + p3.y) / 2 };
-
-  const p012 = { x: (p01.x + p12.x) / 2, y: (p01.y + p12.y) / 2 };
-  const p123 = { x: (p12.x + p23.x) / 2, y: (p12.y + p23.y) / 2 };
-
-  const mid = { x: (p012.x + p123.x) / 2, y: (p012.y + p123.y) / 2 };
-
-  const leftCurve = new CubicBezierCurve(`${curve.id}-L`, p0, p01, p012, mid, allowanceCm, false, curve.seamId, curve.id);
-  const rightCurve = new CubicBezierCurve(`${curve.id}-R`, mid, p123, p23, p3, allowanceCm, false, curve.seamId, curve.id);
+  // De Casteljau subdivision at t = 0.5 using the method on CubicBezierCurve
+  const { left: leftCurve, right: rightCurve } = curve.subdivide(0.5);
 
   const leftRes = offsetCubicBezier(leftCurve, allowanceCm, toleranceCm, depth + 1, outwardSign);
   const rightRes = offsetCubicBezier(rightCurve, allowanceCm, toleranceCm, depth + 1, outwardSign);
 
+  const combinedStatus: OffsetStatus = (leftRes.status === 'failure' || rightRes.status === 'failure')
+    ? 'failure'
+    : (leftRes.status === 'warning' || rightRes.status === 'warning')
+    ? 'warning'
+    : 'success';
+
   return {
+    status: combinedStatus,
     segments: [...leftRes.segments, ...rightRes.segments],
     maxDeviationCm: Math.max(leftRes.maxDeviationCm, rightRes.maxDeviationCm),
     toleranceExceeded: leftRes.toleranceExceeded || rightRes.toleranceExceeded,
-    warnings: [...leftRes.warnings, ...rightRes.warnings]
+    diagnostics: [...leftRes.diagnostics, ...rightRes.diagnostics],
+    warnings: [...leftRes.warnings, ...rightRes.warnings],
+    errors: [...leftRes.errors, ...rightRes.errors]
   };
 }
 
 /**
  * Universal corner join between two consecutive offset segments.
- * Supports:
- * - Convex corners (miter join with miter limit enforcement, bevel fallback on acute angles)
- * - Concave corners (trimming overlapping ends without self-intersection loops)
- * - Nearly parallel or collinear segments (direct bridge)
- * - Curve-to-line, line-to-curve, curve-to-curve
+ * 
+ * Curve-Safe Corner Joins (Milestone 02.1 Priority 2):
+ * - Eliminates arbitrary endpoint relocation on Béziers without adjusting control points.
+ * - Trims concave corners using De Casteljau subdivision at parameterized closest points.
+ * - For convex corners, preserves original Bézier curves intact and inserts explicit 'miter' or 'bevel' connectors.
+ * - Detects degenerate or parallel tangent intersections safely.
  */
 export function joinOffsetSegmentsAtCorner(
   seg1: GeometricSegment,
   seg2: GeometricSegment,
   miterLimit = 2.5
 ): GeometricSegment[] {
-  // If consecutive segments already share start/end coordinates (continuous)
+  // If consecutive segments already share start/end coordinates within 0.02cm
   if (distance(seg1.end, seg2.start) < 0.02) {
     return [seg1, seg2];
   }
@@ -299,18 +372,27 @@ export function joinOffsetSegmentsAtCorner(
   const intersection = lineLineIntersection(seg1.end, t1, seg2.start, t2);
 
   if (!intersection) {
-    // Parallel or collinear offset edges: connect directly with a bridge segment
-    const bridge = new LineSegment(
-      `${seg1.id}-bridge`,
-      seg1.end,
-      seg2.start,
-      seg1.seamAllowanceCm,
-      false,
-      seg1.seamId,
-      seg1.id,
-      'bridge'
-    );
-    return [seg1, bridge, seg2];
+    // Parallel or collinear offset edges
+    if (distance(seg1.end, seg2.start) < 0.05) {
+      if (seg1.type === 'line') {
+        const snappedSeg1 = new LineSegment(
+          seg1.id,
+          seg1.start,
+          seg2.start,
+          seg1.seamAllowanceCm,
+          seg1.isFold,
+          seg1.seamId,
+          seg1.sourceSegmentId,
+          seg1.role
+        );
+        return [snappedSeg1, seg2];
+      }
+      return [seg1, seg2];
+    }
+
+    // When tangents are parallel and not continuous, do not invent an artificial bridge.
+    // Return segments as-is so the join failure is truthfully recorded and flagged.
+    return [seg1, seg2];
   }
 
   const d1 = distance(seg1.end, intersection);
@@ -343,28 +425,132 @@ export function joinOffsetSegmentsAtCorner(
 
   if (isConcave) {
     // Concave corner: the offset lines cross before the endpoints.
-    // Trim segments to intersection point to avoid loop/spike.
-    const trimmedSeg1 = seg1.type === 'line'
-      ? new LineSegment(seg1.id, seg1.start, intersection, seg1.seamAllowanceCm, seg1.isFold, seg1.seamId, seg1.sourceSegmentId, 'offset')
-      : new CubicBezierCurve(seg1.id, (seg1 as CubicBezierCurve).p0, (seg1 as CubicBezierCurve).cp1, (seg1 as CubicBezierCurve).cp2, intersection, seg1.seamAllowanceCm, seg1.isFold, seg1.seamId, seg1.sourceSegmentId, 'offset');
+    // Trim segments cleanly using De Casteljau subdivision on Bezier curves!
+    let trimmedSeg1: GeometricSegment;
+    if (seg1.type === 'line') {
+      trimmedSeg1 = new LineSegment(
+        seg1.id,
+        seg1.start,
+        intersection,
+        seg1.seamAllowanceCm,
+        seg1.isFold,
+        seg1.seamId,
+        seg1.sourceSegmentId,
+        'offset'
+      );
+    } else {
+      const bez1 = seg1 as CubicBezierCurve;
+      const tTrim1 = bez1.closestParamToPoint(intersection);
+      const { left } = bez1.subdivide(tTrim1);
+      trimmedSeg1 = left;
+    }
 
-    const trimmedSeg2 = seg2.type === 'line'
-      ? new LineSegment(seg2.id, intersection, seg2.end, seg2.seamAllowanceCm, seg2.isFold, seg2.seamId, seg2.sourceSegmentId, 'offset')
-      : new CubicBezierCurve(seg2.id, intersection, (seg2 as CubicBezierCurve).cp1, (seg2 as CubicBezierCurve).cp2, (seg2 as CubicBezierCurve).p3, seg2.seamAllowanceCm, seg2.isFold, seg2.seamId, seg2.sourceSegmentId, 'offset');
+    let trimmedSeg2: GeometricSegment;
+    if (seg2.type === 'line') {
+      trimmedSeg2 = new LineSegment(
+        seg2.id,
+        intersection,
+        seg2.end,
+        seg2.seamAllowanceCm,
+        seg2.isFold,
+        seg2.seamId,
+        seg2.sourceSegmentId,
+        'offset'
+      );
+    } else {
+      const bez2 = seg2 as CubicBezierCurve;
+      const tTrim2 = bez2.closestParamToPoint(intersection);
+      const { right } = bez2.subdivide(tTrim2);
+      trimmedSeg2 = right;
+    }
+
+    const gap = distance(trimmedSeg1.end, trimmedSeg2.start);
+    if (gap > 0.02) {
+      const bridge = new LineSegment(
+        `${seg1.id}-trim-bridge`,
+        trimmedSeg1.end,
+        trimmedSeg2.start,
+        allowance,
+        false,
+        seg1.seamId,
+        seg1.id,
+        'bevel'
+      );
+      return [trimmedSeg1, bridge, trimmedSeg2];
+    }
 
     return [trimmedSeg1, trimmedSeg2];
   }
 
-  // Miter join: adjust seg1 end and seg2 start to meet at miter intersection point
-  const adjustedSeg1 = seg1.type === 'line'
-    ? new LineSegment(seg1.id, seg1.start, intersection, seg1.seamAllowanceCm, seg1.isFold, seg1.seamId, seg1.sourceSegmentId, 'offset')
-    : new CubicBezierCurve(seg1.id, (seg1 as CubicBezierCurve).p0, (seg1 as CubicBezierCurve).cp1, (seg1 as CubicBezierCurve).cp2, intersection, seg1.seamAllowanceCm, seg1.isFold, seg1.seamId, seg1.sourceSegmentId, 'offset');
+  // Convex miter join:
+  // For straight lines, extending the endpoints to the intersection is mathematically exact.
+  // For Bezier curves, keep the curve geometry pristine (do not relocate endpoints without adjusting control points!),
+  // and insert a straight 'miter' segment connecting the curve endpoint to the miter intersection.
+  const result: GeometricSegment[] = [];
 
-  const adjustedSeg2 = seg2.type === 'line'
-    ? new LineSegment(seg2.id, intersection, seg2.end, seg2.seamAllowanceCm, seg2.isFold, seg2.seamId, seg2.sourceSegmentId, 'offset')
-    : new CubicBezierCurve(seg2.id, intersection, (seg2 as CubicBezierCurve).cp1, (seg2 as CubicBezierCurve).cp2, (seg2 as CubicBezierCurve).p3, seg2.seamAllowanceCm, seg2.isFold, seg2.seamId, seg2.sourceSegmentId, 'offset');
+  if (seg1.type === 'line') {
+    result.push(
+      new LineSegment(
+        seg1.id,
+        seg1.start,
+        intersection,
+        seg1.seamAllowanceCm,
+        seg1.isFold,
+        seg1.seamId,
+        seg1.sourceSegmentId,
+        'offset'
+      )
+    );
+  } else {
+    result.push(seg1);
+    if (distance(seg1.end, intersection) >= 0.01) {
+      result.push(
+        new LineSegment(
+          `${seg1.id}-miter-1`,
+          seg1.end,
+          intersection,
+          allowance,
+          false,
+          seg1.seamId,
+          seg1.id,
+          'miter'
+        )
+      );
+    }
+  }
 
-  return [adjustedSeg1, adjustedSeg2];
+  if (seg2.type === 'line') {
+    result.push(
+      new LineSegment(
+        seg2.id,
+        intersection,
+        seg2.end,
+        seg2.seamAllowanceCm,
+        seg2.isFold,
+        seg2.seamId,
+        seg2.sourceSegmentId,
+        'offset'
+      )
+    );
+  } else {
+    if (distance(intersection, seg2.start) >= 0.01) {
+      result.push(
+        new LineSegment(
+          `${seg2.id}-miter-2`,
+          intersection,
+          seg2.start,
+          allowance,
+          false,
+          seg2.seamId,
+          seg2.id,
+          'miter'
+        )
+      );
+    }
+    result.push(seg2);
+  }
+
+  return result;
 }
 
 /**
@@ -382,17 +568,13 @@ export function connectSeamToFold(
   foldSeg: GeometricSegment,
   direction: 'seam-to-fold' | 'fold-to-seam'
 ): GeometricSegment[] {
-  // Fold line representation: P_fold(s) = foldSeg.start + s * u_fold
   const uFold = foldSeg.tangentAt(0);
 
   if (direction === 'seam-to-fold') {
-    // Seam ends at seamSeg.end; next is foldSeg starting at foldSeg.start.
-    // The offset cutting line of seamSeg extends along its tangent to intersect the infinite fold line.
     const tSeam = seamSeg.tangentAt(1);
     const inter = lineLineIntersection(seamSeg.end, tSeam, foldSeg.start, uFold);
 
     const cornerPt: Point = inter || {
-      // Fallback: perpendicular projection onto fold line
       x: foldSeg.start.x + uFold.x * dotProduct(vector(foldSeg.start, seamSeg.end), uFold),
       y: foldSeg.start.y + uFold.y * dotProduct(vector(foldSeg.start, seamSeg.end), uFold)
     };
@@ -424,12 +606,10 @@ export function connectSeamToFold(
     }
     return connectors;
   } else {
-    // foldSeg ends at foldSeg.end; next is seamSeg starting at seamSeg.start.
     const tSeam = seamSeg.tangentAt(0);
     const inter = lineLineIntersection(foldSeg.end, uFold, seamSeg.start, tSeam);
 
     const cornerPt: Point = inter || {
-      // Fallback: perpendicular projection onto fold line
       x: foldSeg.end.x + uFold.x * dotProduct(vector(foldSeg.end, seamSeg.start), uFold),
       y: foldSeg.end.y + uFold.y * dotProduct(vector(foldSeg.end, seamSeg.start), uFold)
     };
@@ -468,11 +648,12 @@ export function connectSeamToFold(
  * 
  * Rules:
  * 1. Checks and normalizes contour winding so the offset is guaranteed to expand outward.
- * 2. Segments with isFold=true receive 0cm seam allowance and remain on the fold line.
+ * 2. Explicit fold edges (isFold === true) receive 0cm seam allowance and remain on the fold line.
  * 3. Regular seamlines receive their specified seamAllowanceCm.
  * 4. Corner joins between sequential segments are resolved with miter/bevel or fold connectors.
  * 5. Full geometric traceability is maintained (sourceSegmentId, role, seamAllowanceCm).
- * 6. Maximum deviation is tracked; if tolerance is exceeded, it is flagged in the result.
+ * 6. Maximum deviation is tracked; if tolerance is exceeded or closure fails, status is 'failure'.
+ * 7. Unexplained gaps are reported as errors rather than masked by automatic closing bridges (Milestone 02.1 Priority 5).
  */
 export function generateCuttingContour(
   stitchingContour: GeometricContour,
@@ -481,16 +662,19 @@ export function generateCuttingContour(
   const opts: Required<OffsetOptions> = { ...DEFAULT_OFFSET_OPTIONS, ...options };
   const warnings: string[] = [];
   const errors: string[] = [];
+  const diagnostics: SegmentOffsetDiagnostic[] = [];
   let maxDeviation = 0;
   let toleranceExceeded = false;
 
   if (!stitchingContour.segments || stitchingContour.segments.length === 0) {
     errors.push('Cannot offset empty stitching contour.');
     return {
+      status: 'failure',
       cuttingContour: new GeometricContour('empty-cut', []),
       maxDeviationCm: 0,
       toleranceExceeded: false,
       approximationMethod: 'none',
+      diagnostics: [],
       warnings,
       errors
     };
@@ -511,14 +695,22 @@ export function generateCuttingContour(
     if (seg.type === 'line') {
       const lineSeg = seg as LineSegment;
       rawOffsetSegments.push(offsetLineSegment(lineSeg, allowance, outwardSign));
+      diagnostics.push({
+        sourceSegmentId: seg.id,
+        status: 'success',
+        maxDeviationCm: 0,
+        toleranceCm: opts.bezierToleranceCm
+      });
     } else {
       const bezSeg = seg as CubicBezierCurve;
       const res = offsetCubicBezier(bezSeg, allowance, opts.bezierToleranceCm, 0, outwardSign);
       rawOffsetSegments.push(...res.segments);
+      diagnostics.push(...res.diagnostics);
       if (res.maxDeviationCm > maxDeviation) maxDeviation = res.maxDeviationCm;
-      if (res.toleranceExceeded) {
+      if (res.toleranceExceeded || res.status === 'failure') {
         toleranceExceeded = true;
         warnings.push(...res.warnings);
+        errors.push(...res.errors);
       }
     }
   }
@@ -529,7 +721,7 @@ export function generateCuttingContour(
 
   for (let i = 0; i < n; i++) {
     const curr = rawOffsetSegments[i];
-    const next = rawOffsetSegments[(i + 1) % n];
+    const next = (i + 1) % n === 0 ? finalSegments[0] : rawOffsetSegments[(i + 1) % n];
 
     // Push current segment
     finalSegments.push(curr);
@@ -541,44 +733,72 @@ export function generateCuttingContour(
 
     // Corner resolution
     if (curr.isFold && !next.isFold) {
-      // Fold segment meeting an offset seam (arbitrary fold vector)
       const foldConnectors = connectSeamToFold(next, curr, 'fold-to-seam');
       finalSegments.push(...foldConnectors);
     } else if (!curr.isFold && next.isFold) {
-      // Offset seam meeting a fold segment (arbitrary fold vector)
       const foldConnectors = connectSeamToFold(curr, next, 'seam-to-fold');
       finalSegments.push(...foldConnectors);
     } else {
-      // General seam-to-seam corner (miter or bevel)
       const joined = joinOffsetSegmentsAtCorner(curr, next, opts.miterLimit);
-      if (joined.length === 2) {
-        // Miter: replace curr with joined[0], and set next in raw array or insert
+      if (joined.length >= 2) {
         finalSegments[finalSegments.length - 1] = joined[0];
-        rawOffsetSegments[(i + 1) % n] = joined[1];
-      } else if (joined.length === 3) {
-        // Bevel: insert bevel connector between curr and next
-        finalSegments.push(joined[1]);
+        for (let k = 1; k < joined.length - 1; k++) {
+          finalSegments.push(joined[k]);
+        }
+        if ((i + 1) % n === 0) {
+          finalSegments[0] = joined[joined.length - 1];
+        } else {
+          rawOffsetSegments[(i + 1) % n] = joined[joined.length - 1];
+        }
+
+        // Verify corner resolution: if joined segments still have an unresolved gap > 0.05cm, flag failure
+        const cornerResolved = (joined.length === 2 && distance(joined[0].end, joined[1].start) < 0.05) ||
+          (joined.length > 2 && distance(joined[0].end, joined[1].start) < 0.05 && distance(joined[joined.length - 2].end, joined[joined.length - 1].start) < 0.05);
+
+        if (!cornerResolved) {
+          const cornerGap = distance(joined[0].end, joined[joined.length - 1].start);
+          errors.push(`Unresolved corner gap (${cornerGap.toFixed(2)} cm) between [${curr.id}] and [${next.id}]. Corner joining failed to resolve.`);
+          toleranceExceeded = true;
+        }
       }
     }
   }
 
-  // Step 3: Ensure closed contour continuity between last segment end and first segment start
+  // Step 3: Check closed contour continuity between last segment end and first segment start
   if (stitchingContour.isClosed && finalSegments.length > 1) {
-    const closingGap = distance(finalSegments[finalSegments.length - 1].end, finalSegments[0].start);
-    if (closingGap > 0.02) {
-      const closingBridge = new LineSegment(
-        `${finalSegments[finalSegments.length - 1].id}-closing-bridge`,
-        finalSegments[finalSegments.length - 1].end,
-        finalSegments[0].start,
-        finalSegments[0].seamAllowanceCm,
-        false,
-        undefined,
-        undefined,
-        'bridge'
-      );
-      finalSegments.push(closingBridge);
+    const lastSeg = finalSegments[finalSegments.length - 1];
+    const firstSeg = finalSegments[0];
+    const closingGap = distance(lastSeg.end, firstSeg.start);
+
+    if (closingGap > 0.001 && closingGap <= 0.05) {
+      // Minor coordinate tolerance (<= 0.5 mm): snap final segment end to first segment start
+      if (lastSeg.type === 'line') {
+        finalSegments[finalSegments.length - 1] = new LineSegment(
+          lastSeg.id,
+          lastSeg.start,
+          firstSeg.start,
+          lastSeg.seamAllowanceCm,
+          lastSeg.isFold,
+          lastSeg.seamId,
+          lastSeg.sourceSegmentId,
+          lastSeg.role
+        );
+      }
+    } else if (closingGap > 0.05) {
+      // Unexplained gap: corner join failed to close the contour.
+      // In accordance with Milestone 02.1 Priority 5, do NOT mask corner-joining failures
+      // with an automatic closing bridge. Flag a structured failure.
+      const err = `Unresolved cutting contour closure gap (${closingGap.toFixed(2)} cm) between segment [${lastSeg.id}] and [${firstSeg.id}]. Corner joining failed to close contour.`;
+      errors.push(err);
+      toleranceExceeded = true;
     }
   }
+
+  const overallStatus: OffsetStatus = errors.length > 0 || toleranceExceeded
+    ? 'failure'
+    : warnings.length > 0
+    ? 'warning'
+    : 'success';
 
   const cuttingContour = new GeometricContour(
     `${stitchingContour.id}-cutting`,
@@ -587,10 +807,12 @@ export function generateCuttingContour(
   );
 
   return {
+    status: overallStatus,
     cuttingContour,
     maxDeviationCm: Number(maxDeviation.toFixed(4)),
     toleranceExceeded,
     approximationMethod: 'Adaptive cubic Bezier normal offset with arbitrary-vector fold squaring and miter/bevel joins',
+    diagnostics,
     warnings,
     errors
   };

@@ -232,6 +232,7 @@ export function draftSkirtBlock(
     seamAllowanceWidthCm: sideSeamAllowance,
     stitchingContour: frontStitchingContour,
     cuttingContour: frontOffsetResult.cuttingContour,
+    offsetResult: frontOffsetResult,
     grainline: {
       start: { x: quarterHip * 0.45, y: waistToHip },
       end: { x: quarterHip * 0.45, y: totalLength - 8 },
@@ -389,6 +390,7 @@ export function draftSkirtBlock(
     seamAllowanceWidthCm: sideSeamAllowance,
     stitchingContour: backStitchingContour,
     cuttingContour: backOffsetResult.cuttingContour,
+    offsetResult: backOffsetResult,
     grainline: {
       start: { x: quarterHip * 0.45, y: waistToHip },
       end: { x: quarterHip * 0.45, y: totalLength - 8 },

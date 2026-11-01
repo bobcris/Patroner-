@@ -178,4 +178,50 @@ describe('Contour Integrity Validator (Milestone 02 Corrective Pass)', () => {
       assert.ok(cutting.totalLengthCm() > originalStitchLength);
     });
   });
+
+  describe('Milestone 02.1: Adaptive Curve Intersection & Fold Acceptance', () => {
+    it('Priority 3: detects self-crossing loops within a single high-curvature Bezier segment', () => {
+      // Loop curve (alpha-curve) where the curve loops over itself:
+      // p0=(-10,0), cp1=(20, 20), cp2=(-20, 20), p3=(10,0) - loops over itself in the interior
+      const loopContour = new GeometricContour('loop-curve-contour', [
+        new CubicBezierCurve('alpha-loop', { x: -10, y: 0 }, { x: 20, y: 20 }, { x: -20, y: 20 }, { x: 10, y: 0 })
+      ], false);
+
+      const res = validateContourIntegrity(loopContour, 'Alpha Loop');
+      assert.strictEqual(res.isValid, false);
+      const selfCheck = res.checks.find(c => c.errorCode === 'VAL-SELF-INTERSECT');
+      assert.ok(selfCheck, 'Adaptive discretization must detect self-crossing loop within single curve');
+      assert.strictEqual(selfCheck.status, 'fail');
+    });
+
+    it('Priority 3: validates close curve-to-curve near-tangent geometry without false positives', () => {
+      // Two curved segments that approach closely but do NOT cross
+      const closeCurves = new GeometricContour('close-curves', [
+        new CubicBezierCurve('top-curve', { x: 0, y: 0 }, { x: 10, y: 4 }, { x: 20, y: 4 }, { x: 30, y: 0 }),
+        new LineSegment('right-edge', { x: 30, y: 0 }, { x: 30, y: 20 }),
+        new CubicBezierCurve('bottom-curve', { x: 30, y: 20 }, { x: 20, y: 6 }, { x: 10, y: 6 }, { x: 0, y: 20 }),
+        new LineSegment('left-edge', { x: 0, y: 20 }, { x: 0, y: 0 })
+      ], true);
+
+      const res = validateContourIntegrity(closeCurves, 'Close Curves');
+      assert.strictEqual(res.isValid, true, 'Non-intersecting proximity must not produce false self-intersections');
+      const selfCheck = res.checks.find(c => c.errorCode === 'VAL-SELF-INTERSECT');
+      assert.strictEqual(selfCheck, undefined);
+    });
+
+    it('Priority 4: permits zero seam allowance on non-fold edges without error', () => {
+      // Non-fold edge with 0 allowance (e.g. hem with separate binding tape)
+      const validZeroAllowance = new GeometricContour('valid-zero', [
+        new LineSegment('fold-cf', { x: 0, y: 0 }, { x: 0, y: 30 }, 0, true),
+        new LineSegment('raw-hem', { x: 0, y: 30 }, { x: 20, y: 30 }, 0, false), // 0cm, isFold: false
+        new LineSegment('side-seam', { x: 20, y: 30 }, { x: 20, y: 0 }, 1.5, false),
+        new LineSegment('waist-seam', { x: 20, y: 0 }, { x: 0, y: 0 }, 1.0, false)
+      ], true);
+
+      const res = validateContourIntegrity(validZeroAllowance, 'Valid Zero Allowance');
+      assert.strictEqual(res.isValid, true);
+      const foldErrors = res.checks.filter(c => c.errorCode === 'VAL-FOLD-ALLOWANCE');
+      assert.strictEqual(foldErrors.length, 0);
+    });
+  });
 });

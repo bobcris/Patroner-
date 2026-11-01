@@ -291,3 +291,40 @@ test('Regression: all skirt silhouettes (straight, a-line, flared, pencil) draft
     assert.equal(report.failureCount, 0, `Silhouette "${sil}" must have 0 failures`);
   }
 });
+
+test('Validation engine blocks production readiness and fails if cutting contour offset fails (Milestone 02.1 negative test)', () => {
+  const measurements = STANDARD_SIZING_SYSTEM.sizes.M;
+  const pieces = draftSkirtBlock(measurements, baseDesign);
+
+  // Simulate offset failure on front piece
+  const pieceWithFailedOffset: PatternPiece = {
+    ...pieces[0],
+    offsetResult: {
+      status: 'failure',
+      cuttingContour: pieces[0].cuttingContour!,
+      maxDeviationCm: 0.12,
+      toleranceExceeded: true,
+      approximationMethod: 'test',
+      diagnostics: [
+        {
+          sourceSegmentId: 'fs-side-hip',
+          status: 'failure',
+          maxDeviationCm: 0.12,
+          toleranceCm: 0.05,
+          failureReason: 'Maximum subdivision depth exceeded'
+        }
+      ],
+      warnings: ['Max depth exceeded'],
+      errors: ['Failed to approximate offset within 0.05cm']
+    }
+  };
+
+  const report = validatePatternDraft([pieceWithFailedOffset, pieces[1]]);
+  assert.equal(report.isValid, false);
+  assert.equal(report.isProductionReady, false);
+  assert.equal(report.status, 'invalid');
+  const offsetFailCheck = report.checks.find(c => c.errorCode === 'VAL-OFFSET-FAILED');
+  assert.ok(offsetFailCheck, 'Must record VAL-OFFSET-FAILED check');
+  assert.equal(offsetFailCheck.status, 'fail');
+  assert.equal(offsetFailCheck.category, 'offset');
+});

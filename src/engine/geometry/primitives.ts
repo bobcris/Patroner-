@@ -154,6 +154,119 @@ export class CubicBezierCurve implements BaseSegment {
     return pts;
   }
 
+  /**
+   * Performs De Casteljau subdivision at parameter t in [0, 1].
+   * Retains semantic attributes (seamAllowanceCm, isFold, seamId, sourceSegmentId, role).
+   */
+  subdivide(t: number): { left: CubicBezierCurve; right: CubicBezierCurve } {
+    const clampedT = Math.max(0, Math.min(1, t));
+    const p0 = this.p0;
+    const p1 = this.cp1;
+    const p2 = this.cp2;
+    const p3 = this.p3;
+
+    const p01 = { x: p0.x + (p1.x - p0.x) * clampedT, y: p0.y + (p1.y - p0.y) * clampedT };
+    const p12 = { x: p1.x + (p2.x - p1.x) * clampedT, y: p1.y + (p2.y - p1.y) * clampedT };
+    const p23 = { x: p2.x + (p3.x - p2.x) * clampedT, y: p2.y + (p3.y - p2.y) * clampedT };
+
+    const p012 = { x: p01.x + (p12.x - p01.x) * clampedT, y: p01.y + (p12.y - p01.y) * clampedT };
+    const p123 = { x: p12.x + (p23.x - p12.x) * clampedT, y: p12.y + (p23.y - p12.y) * clampedT };
+
+    const mid = { x: p012.x + (p123.x - p012.x) * clampedT, y: p012.y + (p123.y - p012.y) * clampedT };
+
+    const left = new CubicBezierCurve(
+      `${this.id}-L`,
+      p0,
+      p01,
+      p012,
+      mid,
+      this.seamAllowanceCm,
+      this.isFold,
+      this.seamId,
+      this.sourceSegmentId,
+      this.role
+    );
+
+    const right = new CubicBezierCurve(
+      `${this.id}-R`,
+      mid,
+      p123,
+      p23,
+      p3,
+      this.seamAllowanceCm,
+      this.isFold,
+      this.seamId,
+      this.sourceSegmentId,
+      this.role
+    );
+
+    return { left, right };
+  }
+
+  /**
+   * Recursively flattens the Bezier curve into points within the given geometric flatness tolerance (cm).
+   * Uses chord-to-control-point maximum perpendicular deviation.
+   */
+  flatten(flatnessToleranceCm = 0.05, maxDepth = 6): Point[] {
+    const distToChord = (p: Point, a: Point, b: Point): number => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1e-10) {
+        return Math.hypot(p.x - a.x, p.y - a.y);
+      }
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
+      return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    };
+
+    const d1 = distToChord(this.cp1, this.p0, this.p3);
+    const d2 = distToChord(this.cp2, this.p0, this.p3);
+    const maxDev = Math.max(d1, d2);
+
+    if (maxDev <= flatnessToleranceCm || maxDepth <= 0) {
+      return [this.p0, this.p3];
+    }
+
+    const { left, right } = this.subdivide(0.5);
+    const leftPts = left.flatten(flatnessToleranceCm, maxDepth - 1);
+    const rightPts = right.flatten(flatnessToleranceCm, maxDepth - 1);
+
+    return [...leftPts, ...rightPts.slice(1)];
+  }
+
+  /**
+   * Determines the curve parameter t in [0, 1] that minimizes the Euclidean distance to a target point.
+   */
+  closestParamToPoint(target: Point, samples = 20): number {
+    let bestT = 0;
+    let minD = Infinity;
+    const n = Math.max(5, samples);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const pt = this.pointAt(t);
+      const d = distance(pt, target);
+      if (d < minD) {
+        minD = d;
+        bestT = t;
+      }
+    }
+
+    let leftT = Math.max(0, bestT - 1 / n);
+    let rightT = Math.min(1, bestT + 1 / n);
+    for (let iter = 0; iter < 12; iter++) {
+      const m1 = leftT + (rightT - leftT) / 3;
+      const m2 = rightT - (rightT - leftT) / 3;
+      const d1 = distance(this.pointAt(m1), target);
+      const d2 = distance(this.pointAt(m2), target);
+      if (d1 < d2) {
+        rightT = m2;
+      } else {
+        leftT = m1;
+      }
+    }
+    return (leftT + rightT) / 2;
+  }
+
   toSvgPath(includeMove = false): string {
     const move = includeMove ? `M ${this.p0.x.toFixed(2)} ${this.p0.y.toFixed(2)} ` : '';
     return `${move}C ${this.cp1.x.toFixed(2)} ${this.cp1.y.toFixed(2)}, ${this.cp2.x.toFixed(2)} ${this.cp2.y.toFixed(2)}, ${this.p3.x.toFixed(2)} ${this.p3.y.toFixed(2)}`;
@@ -204,16 +317,15 @@ export class GeometricContour {
   }
 
   /**
-   * Returns a dense polyline representation of the contour by sampling curved segments.
+   * Returns a dense polyline representation of the contour by adaptively flattening curved segments.
    */
-  toPolyline(samplesPerCurve = 16): Point[] {
+  toPolyline(samplesPerCurve = 16, flatnessToleranceCm = 0.05): Point[] {
     const poly: Point[] = [];
     for (const seg of this.segments) {
       if (seg.type === 'line') {
         poly.push(seg.start);
       } else {
-        const samples = (seg as CubicBezierCurve).samplePoints(samplesPerCurve);
-        // Exclude the last point because the next segment starts there
+        const samples = (seg as CubicBezierCurve).flatten(flatnessToleranceCm);
         for (let i = 0; i < samples.length - 1; i++) {
           poly.push(samples[i]);
         }

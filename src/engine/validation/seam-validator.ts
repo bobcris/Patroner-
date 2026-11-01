@@ -420,6 +420,49 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
         message: 'Piece lacks explicit geometric cutting contour primitive.'
       });
     }
+
+    // Offset Diagnostic Acceptance Gate (Milestone 02.1 Priority 1)
+    if (piece.offsetResult) {
+      if (piece.offsetResult.status === 'failure') {
+        checks.push({
+          id: `val-offset-failed-${piece.id}`,
+          errorCode: 'VAL-OFFSET-FAILED',
+          category: 'offset',
+          severity: 'error',
+          segmentIds: piece.offsetResult.diagnostics?.filter(d => d.status === 'failure').map(d => d.sourceSegmentId),
+          name: `Cutting Seam Allowance Offset: [${piece.pieceCode}] ${piece.name}`,
+          status: 'fail',
+          deviationCm: piece.offsetResult.maxDeviationCm,
+          toleranceCm: 0.05,
+          message: `Cutting contour offset generation failed for ${piece.name}: ${piece.offsetResult.errors.join('; ')}`,
+          suggestedAction: 'Review curve curvature and tolerance settings. Failed cutting geometry cannot be certified for industrial production.'
+        });
+      } else if (piece.offsetResult.status === 'warning') {
+        checks.push({
+          id: `val-offset-warn-${piece.id}`,
+          category: 'offset',
+          severity: 'warning',
+          name: `Cutting Seam Allowance Offset: [${piece.pieceCode}] ${piece.name}`,
+          status: 'warning',
+          deviationCm: piece.offsetResult.maxDeviationCm,
+          toleranceCm: 0.05,
+          message: `Cutting contour generated with warnings: ${piece.offsetResult.warnings.join('; ')}`
+        });
+      } else {
+        checks.push({
+          id: `val-offset-pass-${piece.id}`,
+          category: 'offset',
+          severity: 'info',
+          name: `Cutting Seam Allowance Offset: [${piece.pieceCode}] ${piece.name}`,
+          status: 'pass',
+          measuredValue: `Max deviation: ${piece.offsetResult.maxDeviationCm.toFixed(4)} cm`,
+          expectedValue: '<= 0.05 cm',
+          deviationCm: piece.offsetResult.maxDeviationCm,
+          toleranceCm: 0.05,
+          message: `Cutting contour offset mathematically validated within tolerance (${piece.offsetResult.maxDeviationCm.toFixed(4)} cm <= 0.05 cm).`
+        });
+      }
+    }
   });
 
   // 9. Seam Segment Geometric Derivation Check
