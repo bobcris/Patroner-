@@ -190,6 +190,10 @@ export interface ValidationCheck {
   category: 'seam-match' | 'dart-closure' | 'grainline' | 'allowance' | 'geometry' | 'tangency' | 'contour-integrity';
   name: string;
   status: 'pass' | 'warning' | 'fail';
+  errorCode?: string;
+  severity?: 'error' | 'warning' | 'info';
+  segmentIds?: string[];
+  suggestedAction?: string;
   measuredValue?: string;
   expectedValue?: string;
   deviationCm?: number;

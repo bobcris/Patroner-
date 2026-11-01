@@ -7,18 +7,21 @@ import { BoundingBox, Point } from '../../types';
 import { approximateBezierLength, cubicBezierPoint, cubicBezierTangent, distance, normalize, vector } from './math';
 
 export type SegmentType = 'line' | 'bezier';
+export type SegmentRole = 'stitching' | 'offset' | 'miter' | 'bevel' | 'fold-extension' | 'bridge';
 
 export interface BaseSegment {
   id: string;
   type: SegmentType;
   seamId?: string;
+  sourceSegmentId?: string;
+  role?: SegmentRole;
   isFold?: boolean;
   seamAllowanceCm: number;
   start: Point;
   end: Point;
   lengthCm(): number;
   tangentAt(t: number): Point;
-  normalAt(t: number): Point;
+  normalAt(t: number, outwardSign?: number): Point;
   pointAt(t: number): Point;
   toSvgPath(includeMove?: boolean): string;
 }
@@ -32,7 +35,9 @@ export class LineSegment implements BaseSegment {
     public readonly end: Point,
     public readonly seamAllowanceCm: number = 1.5,
     public readonly isFold: boolean = false,
-    public readonly seamId?: string
+    public readonly seamId?: string,
+    public readonly sourceSegmentId?: string,
+    public readonly role: SegmentRole = isFold ? 'stitching' : 'offset'
   ) {}
 
   lengthCm(): number {
@@ -40,23 +45,32 @@ export class LineSegment implements BaseSegment {
   }
 
   tangentAt(_t = 0): Point {
-    return normalize(vector(this.start, this.end));
+    const v = vector(this.start, this.end);
+    const len = Math.hypot(v.x, v.y);
+    if (len < 1e-9) {
+      return { x: 1, y: 0 }; // Default unit vector for degenerate zero-length line
+    }
+    return { x: v.x / len, y: v.y / len };
   }
 
   /**
-   * Outward unit normal for counter-clockwise contour (Down-Right-Up-Left in screen space):
-   * Given tangent (tx, ty), outward normal is (-ty, tx)
+   * Outward unit normal for screen-space traversal (X right, Y down):
+   * For standard clockwise traversal, outward normal is (-ty, tx).
+   * outwardSign allows inverting normal if contour winding is counter-clockwise.
    */
-  normalAt(_t = 0): Point {
+  normalAt(_t = 0, outwardSign = 1): Point {
     const t = this.tangentAt();
-    return { x: -t.y, y: t.x };
+    return {
+      x: -t.y * outwardSign,
+      y: t.x * outwardSign
+    };
   }
 
   pointAt(t: number): Point {
     const clampedT = Math.max(0, Math.min(1, t));
     return {
-      x: Number((this.start.x + (this.end.x - this.start.x) * clampedT).toFixed(2)),
-      y: Number((this.start.y + (this.end.y - this.start.y) * clampedT).toFixed(2))
+      x: Number((this.start.x + (this.end.x - this.start.x) * clampedT).toFixed(3)),
+      y: Number((this.start.y + (this.end.y - this.start.y) * clampedT).toFixed(3))
     };
   }
 
@@ -77,7 +91,9 @@ export class CubicBezierCurve implements BaseSegment {
     public readonly p3: Point,
     public readonly seamAllowanceCm: number = 1.5,
     public readonly isFold: boolean = false,
-    public readonly seamId?: string
+    public readonly seamId?: string,
+    public readonly sourceSegmentId?: string,
+    public readonly role: SegmentRole = isFold ? 'stitching' : 'offset'
   ) {}
 
   get start(): Point {
@@ -96,13 +112,46 @@ export class CubicBezierCurve implements BaseSegment {
     return cubicBezierPoint(this.p0, this.cp1, this.cp2, this.p3, Math.max(0, Math.min(1, t)));
   }
 
+  /**
+   * Evaluates unit tangent at t.
+   * Handles degenerate control points (e.g. p0 === cp1 or cp2 === p3) safely.
+   */
   tangentAt(t: number): Point {
-    return cubicBezierTangent(this.p0, this.cp1, this.cp2, this.p3, Math.max(0, Math.min(1, t)));
+    const clampedT = Math.max(0, Math.min(1, t));
+    let tan = cubicBezierTangent(this.p0, this.cp1, this.cp2, this.p3, clampedT);
+    const len = Math.hypot(tan.x, tan.y);
+
+    if (len < 1e-7) {
+      // Degenerate tangent at t=0 or t=1, fallback to secant or intermediate control vector
+      if (clampedT < 0.5) {
+        const v1 = vector(this.p0, this.cp2);
+        if (Math.hypot(v1.x, v1.y) > 1e-7) return normalize(v1);
+        return normalize(vector(this.p0, this.p3));
+      } else {
+        const v2 = vector(this.cp1, this.p3);
+        if (Math.hypot(v2.x, v2.y) > 1e-7) return normalize(v2);
+        return normalize(vector(this.p0, this.p3));
+      }
+    }
+
+    return tan;
   }
 
-  normalAt(t: number): Point {
+  normalAt(t: number, outwardSign = 1): Point {
     const tan = this.tangentAt(t);
-    return { x: -tan.y, y: tan.x };
+    return {
+      x: -tan.y * outwardSign,
+      y: tan.x * outwardSign
+    };
+  }
+
+  samplePoints(numSamples = 16): Point[] {
+    const pts: Point[] = [];
+    const count = Math.max(2, numSamples);
+    for (let i = 0; i <= count; i++) {
+      pts.push(this.pointAt(i / count));
+    }
+    return pts;
   }
 
   toSvgPath(includeMove = false): string {
@@ -154,6 +203,56 @@ export class GeometricContour {
     return pts;
   }
 
+  /**
+   * Returns a dense polyline representation of the contour by sampling curved segments.
+   */
+  toPolyline(samplesPerCurve = 16): Point[] {
+    const poly: Point[] = [];
+    for (const seg of this.segments) {
+      if (seg.type === 'line') {
+        poly.push(seg.start);
+      } else {
+        const samples = (seg as CubicBezierCurve).samplePoints(samplesPerCurve);
+        // Exclude the last point because the next segment starts there
+        for (let i = 0; i < samples.length - 1; i++) {
+          poly.push(samples[i]);
+        }
+      }
+    }
+    return poly;
+  }
+
+  /**
+   * Computes the signed area of the contour using the Shoelace formula on sampled vertices.
+   * In screen space (X right, Y down):
+   * - A negative signed area indicates Clockwise (CW) traversal.
+   * - A positive signed area indicates Counter-Clockwise (CCW) traversal.
+   */
+  signedArea(): number {
+    const poly = this.toPolyline(16);
+    const n = poly.length;
+    if (n < 3) return 0;
+
+    let area = 0;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      area += poly[i].x * poly[j].y - poly[j].x * poly[i].y;
+    }
+    return area / 2;
+  }
+
+  getWinding(): 'clockwise' | 'counter-clockwise' | 'collinear' {
+    const area = this.signedArea();
+    if (Math.abs(area) < 1e-4) return 'collinear';
+    // In SVG / screen coordinate system (Y increases downwards):
+    // Standard shoelace formula: negative area is CLOCKWISE, positive is COUNTER_CLOCKWISE
+    return area < 0 ? 'clockwise' : 'counter-clockwise';
+  }
+
+  isWindingClockwise(): boolean {
+    return this.getWinding() === 'clockwise';
+  }
+
   boundingBox(): BoundingBox {
     let minX = Infinity;
     let minY = Infinity;
@@ -163,7 +262,7 @@ export class GeometricContour {
     for (const seg of this.segments) {
       const pts = seg.type === 'line' 
         ? [seg.start, seg.end] 
-        : [seg.start, seg.cp1, seg.cp2, seg.end];
+        : (seg as CubicBezierCurve).samplePoints(10);
 
       for (const p of pts) {
         if (p.x < minX) minX = p.x;
@@ -201,7 +300,7 @@ export function lineLineIntersection(
 ): Point | null {
   const det = v1.x * v2.y - v1.y * v2.x;
   // Parallel or collinear lines
-  if (Math.abs(det) < 1e-9) {
+  if (Math.abs(det) < 1e-8) {
     return null;
   }
 
@@ -210,8 +309,8 @@ export function lineLineIntersection(
   const s = (dx * v2.y - dy * v2.x) / det;
 
   return {
-    x: Number((p1.x + s * v1.x).toFixed(2)),
-    y: Number((p1.y + s * v1.y).toFixed(2))
+    x: Number((p1.x + s * v1.x).toFixed(3)),
+    y: Number((p1.y + s * v1.y).toFixed(3))
   };
 }
 
@@ -226,10 +325,10 @@ export function doSegmentsIntersect(
 ): boolean {
   // Segments sharing an endpoint touch at a vertex rather than self-intersecting
   if (
-    distance(p1, p3) < 0.05 ||
-    distance(p1, p4) < 0.05 ||
-    distance(p2, p3) < 0.05 ||
-    distance(p2, p4) < 0.05
+    distance(p1, p3) < 0.02 ||
+    distance(p1, p4) < 0.02 ||
+    distance(p2, p3) < 0.02 ||
+    distance(p2, p4) < 0.02
   ) {
     return false;
   }

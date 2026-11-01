@@ -222,6 +222,9 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 const xOffset = index === 0 ? 30 : 250;
                 const yOffset = 40;
                 const isSelected = selectedPiece.id === piece.id;
+                const pieceHasErrors = validationReport.checks.some(
+                  c => c.status === 'fail' && (c.name.includes(piece.pieceCode) || c.id.includes(piece.id))
+                );
 
                 return (
                   <g
@@ -249,12 +252,38 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     {showSeamAllowance && (
                       <path
                         d={piece.cutPathData}
-                        fill={isSelected ? '#FAF8F5' : '#FFFFFF'}
-                        stroke={isSelected ? '#09090b' : '#52525b'}
-                        strokeWidth="0.7"
+                        fill={isSelected ? (pieceHasErrors ? '#FEF2F2' : '#FAF8F5') : (pieceHasErrors ? '#FFF5F5' : '#FFFFFF')}
+                        stroke={pieceHasErrors ? '#ef4444' : (isSelected ? '#09090b' : '#52525b')}
+                        strokeWidth={pieceHasErrors ? '1.2' : '0.7'}
+                        strokeDasharray={pieceHasErrors ? '2.5 1' : undefined}
                         strokeLinejoin="round"
                         className="transition-colors"
                       />
+                    )}
+
+                    {/* Invalid Geometry Warning Badge inside Canvas */}
+                    {pieceHasErrors && (
+                      <g>
+                        <rect
+                          x={piece.boundingBox.widthCm * 0.2}
+                          y={piece.boundingBox.heightCm * 0.15}
+                          width={piece.boundingBox.widthCm * 0.6}
+                          height={5}
+                          fill="#ef4444"
+                          rx="0.5"
+                        />
+                        <text
+                          x={piece.boundingBox.widthCm * 0.5}
+                          y={piece.boundingBox.heightCm * 0.15 + 3.2}
+                          textAnchor="middle"
+                          fontSize="2"
+                          fontFamily="monospace"
+                          fontWeight="bold"
+                          fill="#ffffff"
+                        >
+                          INVALID GEOMETRY DETECTED
+                        </text>
+                      </g>
                     )}
 
                     {/* Sew Path (Interior Stitch Line) */}
@@ -409,21 +438,27 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           {/* Piece Selector Buttons */}
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono text-neutral-500 uppercase">Select Piece:</span>
-            {pieces.map(piece => (
-              <button
-                key={piece.id}
-                data-testid={`piece-btn-${piece.id}`}
-                aria-label={`Select ${piece.name}`}
-                onClick={() => setSelectedPieceId(piece.id)}
-                className={`px-3 py-1.5 text-xs font-mono rounded border cursor-pointer transition-colors ${
-                  selectedPiece.id === piece.id
-                    ? 'bg-neutral-900 text-white border-neutral-900 font-semibold'
-                    : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
-                }`}
-              >
-                [{piece.pieceCode}] {piece.name} ({piece.onFold ? 'Fold' : `Cut ${piece.cutCount}`})
-              </button>
-            ))}
+            {pieces.map(piece => {
+              const hasErrors = validationReport.checks.some(
+                c => c.status === 'fail' && (c.name.includes(piece.pieceCode) || c.id.includes(piece.id))
+              );
+              return (
+                <button
+                  key={piece.id}
+                  data-testid={`piece-btn-${piece.id}`}
+                  aria-label={`Select ${piece.name}`}
+                  onClick={() => setSelectedPieceId(piece.id)}
+                  className={`px-3 py-1.5 text-xs font-mono rounded border cursor-pointer transition-colors flex items-center gap-1.5 ${
+                    selectedPiece.id === piece.id
+                      ? 'bg-neutral-900 text-white border-neutral-900 font-semibold'
+                      : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                  }`}
+                >
+                  {hasErrors && <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />}
+                  [{piece.pieceCode}] {piece.name} ({piece.onFold ? 'Fold' : `Cut ${piece.cutCount}`})
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -557,9 +592,21 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     </div>
                   )}
 
+                  {chk.errorCode && (
+                    <div className="font-mono text-[9px] text-rose-700 font-bold mt-0.5">
+                      CODE: {chk.errorCode}
+                    </div>
+                  )}
+
                   <p className="text-[11px] text-neutral-600 mt-0.5">
                     {chk.message}
                   </p>
+
+                  {chk.suggestedAction && chk.status === 'fail' && (
+                    <div className="mt-1.5 p-1.5 bg-rose-100/70 rounded text-[10px] font-mono text-rose-900 border border-rose-200">
+                      <strong>ACTION:</strong> {chk.suggestedAction}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
