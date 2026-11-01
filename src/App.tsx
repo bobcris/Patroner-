@@ -8,6 +8,7 @@ import { BodyMeasurements, DesignSpecification, StandardSize } from './types';
 import { INITIAL_CONCEPTS } from './domain/design/curated-concepts';
 import { STANDARD_SIZING_SYSTEM } from './engine/measurements/standards';
 import { draftSkirtBlock } from './engine/drafting/skirt-block';
+import { draftBodiceBlock } from './engine/drafting/bodice-block';
 import { validatePatternDraft } from './engine/validation/seam-validator';
 import { Header, WorkspaceTab } from './components/layout/Header';
 import { FashionStudio } from './features/fashion-studio/FashionStudio';
@@ -23,7 +24,9 @@ export default function App() {
   const [measurements, setMeasurements] = useState<BodyMeasurements>(STANDARD_SIZING_SYSTEM.sizes.M);
 
   // Compute live validation status for current draft
-  const pieces = draftSkirtBlock(measurements, currentSpec);
+  const pieces = currentSpec.garmentCategory === 'bodice'
+    ? draftBodiceBlock(measurements, currentSpec)
+    : draftSkirtBlock(measurements, currentSpec);
   const validation = validatePatternDraft(pieces);
 
   const handleUpdateMeasurements = (m: BodyMeasurements, sizeLabel: StandardSize | 'custom') => {

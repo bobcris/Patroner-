@@ -6,8 +6,9 @@
 import React, { useState } from 'react';
 import { BodyMeasurements, DesignSpecification, PatternDraft, PatternPiece } from '../../types';
 import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
+import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
-import { calculateGarmentDimensions } from '../../engine/measurements/standards';
+import { calculateGarmentDimensions, calculateBodiceGarmentDimensions } from '../../engine/measurements/standards';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import {
@@ -50,12 +51,18 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   // Canvas zoom & pan state
   const [zoom, setZoom] = useState(1.4);
   const [pan, setPan] = useState({ x: 40, y: 30 });
-  const [selectedPieceId, setSelectedPieceId] = useState<string>('piece-skirt-front');
+  const [selectedPieceId, setSelectedPieceId] = useState<string>(
+    currentSpec.garmentCategory === 'bodice' ? 'piece-bodice-front' : 'piece-skirt-front'
+  );
 
   // Deterministic draft generation
-  const pieces = draftSkirtBlock(measurements, currentSpec);
+  const pieces = currentSpec.garmentCategory === 'bodice'
+    ? draftBodiceBlock(measurements, currentSpec)
+    : draftSkirtBlock(measurements, currentSpec);
   const validationReport = validatePatternDraft(pieces);
-  const garmentDims = calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric);
+  const garmentDims = currentSpec.garmentCategory === 'bodice'
+    ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric)
+    : calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric);
 
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) || pieces[0];
 

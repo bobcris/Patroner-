@@ -107,6 +107,22 @@ export interface BodyMeasurements {
   frontWaistLength?: number;
   acrossBack?: number;
   shoulderLength?: number;
+  /**
+   * Anatomical neck base circumference in cm (standard: 34-42 cm)
+   */
+  neckCircumference?: number;
+  /**
+   * Bust apex-to-apex distance (bust span) in cm (standard: 16-22 cm)
+   */
+  bustSpan?: number;
+  /**
+   * Side neck point to bust apex distance in cm (standard: 24-30 cm)
+   */
+  bustHeight?: number;
+  /**
+   * Nape to scye depth line distance in cm (standard: 19-25 cm)
+   */
+  armholeDepth?: number;
 }
 
 export type StandardSize = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL';

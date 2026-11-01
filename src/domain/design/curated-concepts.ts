@@ -100,5 +100,58 @@ export const INITIAL_CONCEPTS: DesignSpecification[] = [
       technicalAdvice: 'The flared side seam produces graceful movement. Ensure grainline is aligned strictly parallel to center front fold.',
       disclaimer: 'AI-generated design concept. Construction parameters and measurements must be verified and approved prior to physical cutting.'
     }
+  },
+  {
+    id: 'concept-bodice-01',
+    name: 'Atelier Tailored Structured Bodice Block',
+    prompt: 'Classical tailored basic bodice sloper in virgin wool crepe with calibrated bust-to-waist suppression, contour vertical waist darts, and Aldrich scye depth alignment.',
+    garmentCategory: 'bodice',
+    silhouette: 'tailored',
+    fabric: PRESET_FABRICS[0], // Virgin Wool Crepe
+    color: {
+      name: 'Parchment Ivory',
+      hex: '#F4F1EA'
+    },
+    easeProfile: 'classic',
+    lengthCm: 42,
+    constructionFeatures: [
+      {
+        id: 'feat-b01',
+        category: 'dart',
+        name: 'Front Contour Waist Dart',
+        description: 'Centered below bust point apex (stopping 2.5cm below apex) to contour breast elevation.',
+        patternImpact: 'Absorbs calibrated front waist suppression; exact mathematical leg length parity.'
+      },
+      {
+        id: 'feat-b02',
+        category: 'dart',
+        name: 'Back Scapula Waist Dart',
+        description: 'Vertical dart terminating 3.5cm below scye depth line to shape the thoracic curvature.',
+        patternImpact: 'Absorbs back waist suppression; exact mathematical leg length parity.'
+      },
+      {
+        id: 'feat-b03',
+        category: 'closure',
+        name: 'Center Back Seam with Concealed Zipper',
+        description: '1.5cm seam allowance on CB for industrial zip installation.',
+        patternImpact: '1.5cm cut offset along Center Back line.'
+      }
+    ],
+    designNotes: [
+      'Front panel cut on fold along Center Front with 0cm allowance and 90° tangency.',
+      'Back panel cut in 2 pieces with 1.5cm seam allowance on Center Back.',
+      'Side seam lengths and shoulder seam lengths between Front and Back match within 0.05cm.'
+    ],
+    isApproved: true,
+    approvedAt: '2026-11-01T12:00:00Z',
+    version: 1,
+    aiEstimates: {
+      suggestedSilhouette: 'Tailored Structured Bodice Sloper',
+      styleConfidenceScore: 97,
+      suggestedFabrics: ['Virgin Wool Crepe', 'Artisanal Belgian Linen', 'Japanese Compact Cotton Twill'],
+      technicalAdvice: 'Ensure exact side seam matching between front and back panels. Press front darts toward Center Front and back darts toward Center Back.',
+      disclaimer: 'AI-generated design concept. Construction parameters and measurements must be verified and approved prior to physical cutting.'
+    }
   }
 ];
+

@@ -135,12 +135,13 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
   });
 
   // 3. Center Front Fold Tangency (90.0° Perpendicularity Check)
-  // Ensures that when cut on fold and opened, waistline and hemline form smooth C1 curves
+  // Ensures that when cut on fold and opened, waistline, hemline, and neckline form smooth C1 curves
   const frontPiece = pieces.find(p => p.onFold);
   if (frontPiece) {
-    const cfSeam = frontPiece.seams.find(s => s.id === 'fs-center-front' || s.name.includes('Center Front'));
-    const waistSeam = frontPiece.seams.find(s => s.id === 'fs-waist' || s.name.includes('Waist'));
-    const hemSeam = frontPiece.seams.find(s => s.id === 'fs-hem' || s.name.includes('Hem'));
+    const cfSeam = frontPiece.seams.find(s => s.id.includes('center-front') || s.name.includes('Center Front'));
+    const waistSeam = frontPiece.seams.find(s => s.id.includes('waist') || s.name.includes('Waist'));
+    const hemSeam = frontPiece.seams.find(s => s.id.includes('hem') || s.name.includes('Hem'));
+    const neckSeam = frontPiece.seams.find(s => s.id.includes('neck') || s.name.includes('Neckline'));
 
     if (cfSeam) {
       const foldVec = vector(cfSeam.startPoint, cfSeam.endPoint); // Fold direction (0, 1)
@@ -175,7 +176,7 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
         }
       }
 
-      // Check hem tangency at Center Front
+      // Check hem tangency at Center Front (for skirts/dresses)
       if (hemSeam && hemSeam.startTangent) {
         const hemDeparture = hemSeam.startTangent;
         const perp = checkPerpendicularity(foldVec, hemDeparture, TANGENCY_TOLERANCE_DEG);
@@ -203,15 +204,45 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
           });
         }
       }
+
+      // Check neckline tangency at Center Front (for bodices/dresses)
+      if (neckSeam && neckSeam.endTangent) {
+        const neckDeparture = { x: -neckSeam.endTangent.x, y: -neckSeam.endTangent.y };
+        const perp = checkPerpendicularity(foldVec, neckDeparture, TANGENCY_TOLERANCE_DEG);
+
+        if (!perp.isPerpendicular) {
+          checks.push({
+            id: 'val-tangency-cf-neck',
+            category: 'tangency',
+            name: 'Center Front Neckline Fold Tangency',
+            status: 'fail',
+            measuredValue: `${perp.measuredAngleDeg}°`,
+            expectedValue: `90.0° ± ${TANGENCY_TOLERANCE_DEG}°`,
+            deviationCm: perp.deviationDeg,
+            toleranceCm: TANGENCY_TOLERANCE_DEG,
+            message: `Neckline departs CF fold at ${perp.measuredAngleDeg}°. Will create a notch or peak at neckline when unfolded.`
+          });
+        } else {
+          checks.push({
+            id: 'val-tangency-cf-neck',
+            category: 'tangency',
+            name: 'Center Front Neckline Fold Tangency',
+            status: 'pass',
+            measuredValue: `${perp.measuredAngleDeg}° (perpendicular)`,
+            message: 'Neckline meets Center Front fold at exact 90.0° tangency. Guarantees smooth continuous neck opening.'
+          });
+        }
+      }
     }
   }
 
   // 4. Center Back Seam Tangency (90.0° Perpendicularity Check)
   const backPiece = pieces.find(p => !p.onFold && (p.pieceCode.includes('B') || p.id.includes('back')));
   if (backPiece) {
-    const cbSeam = backPiece.seams.find(s => s.id === 'bs-center-back' || s.name.includes('Center Back'));
-    const waistSeam = backPiece.seams.find(s => s.id === 'bs-waist' || s.name.includes('Waist'));
-    const hemSeam = backPiece.seams.find(s => s.id === 'bs-hem' || s.name.includes('Hem'));
+    const cbSeam = backPiece.seams.find(s => s.id.includes('center-back') || s.name.includes('Center Back'));
+    const waistSeam = backPiece.seams.find(s => s.id.includes('waist') || s.name.includes('Waist'));
+    const hemSeam = backPiece.seams.find(s => s.id.includes('hem') || s.name.includes('Hem'));
+    const neckSeam = backPiece.seams.find(s => s.id.includes('neck') || s.name.includes('Neckline'));
 
     if (cbSeam) {
       const cbVec = vector(cbSeam.startPoint, cbSeam.endPoint);
@@ -268,6 +299,34 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
             status: 'pass',
             measuredValue: `${perp.measuredAngleDeg}° (perpendicular)`,
             message: 'Hemline meets Center Back seam at exact 90.0° tangency.'
+          });
+        }
+      }
+
+      if (neckSeam && neckSeam.endTangent) {
+        const neckDeparture = { x: -neckSeam.endTangent.x, y: -neckSeam.endTangent.y };
+        const perp = checkPerpendicularity(cbVec, neckDeparture, TANGENCY_TOLERANCE_DEG);
+
+        if (!perp.isPerpendicular) {
+          checks.push({
+            id: 'val-tangency-cb-neck',
+            category: 'tangency',
+            name: 'Center Back Neckline Seam Tangency',
+            status: 'fail',
+            measuredValue: `${perp.measuredAngleDeg}°`,
+            expectedValue: `90.0° ± ${TANGENCY_TOLERANCE_DEG}°`,
+            deviationCm: perp.deviationDeg,
+            toleranceCm: TANGENCY_TOLERANCE_DEG,
+            message: `Neckline meets CB seam at ${perp.measuredAngleDeg}°. Back neck will create a notch or peak.`
+          });
+        } else {
+          checks.push({
+            id: 'val-tangency-cb-neck',
+            category: 'tangency',
+            name: 'Center Back Neckline Seam Tangency',
+            status: 'pass',
+            measuredValue: `${perp.measuredAngleDeg}° (perpendicular)`,
+            message: 'Neckline meets Center Back seam at exact 90.0° tangency.'
           });
         }
       }

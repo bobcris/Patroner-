@@ -6,8 +6,9 @@
 import React from 'react';
 import { BodyMeasurements, DesignSpecification } from '../../types';
 import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
+import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
-import { calculateGarmentDimensions } from '../../engine/measurements/standards';
+import { calculateGarmentDimensions, calculateBodiceGarmentDimensions } from '../../engine/measurements/standards';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import {
@@ -34,9 +35,13 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   activeSize,
   onNavigateToCAD
 }) => {
-  const pieces = draftSkirtBlock(measurements, currentSpec);
+  const pieces = currentSpec.garmentCategory === 'bodice'
+    ? draftBodiceBlock(measurements, currentSpec)
+    : draftSkirtBlock(measurements, currentSpec);
   const validation = validatePatternDraft(pieces);
-  const dims = calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric);
+  const dims = currentSpec.garmentCategory === 'bodice'
+    ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric)
+    : calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric);
 
   // Approximate fabric yield calculation for a standard 140cm bolt width
   const fabricYieldMeters = Number(((currentSpec.lengthCm + 15) / 100 * 1.15).toFixed(2));
@@ -234,24 +239,49 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
           <div className="space-y-3 font-mono text-xs">
             <div className="p-3 bg-neutral-50 rounded border border-neutral-200 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Waist Circumference:</span>
-                <span className="font-bold text-neutral-900">{dims.garmentWaistCm} cm</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Low Hip Circumference:</span>
-                <span className="font-bold text-neutral-900">{dims.garmentHipCm} cm</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Finished Total Length:</span>
-                <span className="font-bold text-neutral-900">{dims.totalLengthCm} cm</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Waist Suppression (Darts):</span>
-                <span className="font-bold text-neutral-900">
-                  {((dims.garmentHipCm - dims.garmentWaistCm) / 2).toFixed(1)} cm
-                </span>
-              </div>
+              {'garmentBustCm' in dims ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Bust Circumference:</span>
+                    <span className="font-bold text-neutral-900">{dims.garmentBustCm} cm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Waist Circumference:</span>
+                    <span className="font-bold text-neutral-900">{dims.garmentWaistCm} cm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Center Front Length:</span>
+                    <span className="font-bold text-neutral-900">{currentSpec.lengthCm} cm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Bust-to-Waist Suppression:</span>
+                    <span className="font-bold text-neutral-900">
+                      {((dims.garmentBustCm - dims.garmentWaistCm) / 2).toFixed(1)} cm
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Waist Circumference:</span>
+                    <span className="font-bold text-neutral-900">{dims.garmentWaistCm} cm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Low Hip Circumference:</span>
+                    <span className="font-bold text-neutral-900">{dims.garmentHipCm} cm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Finished Total Length:</span>
+                    <span className="font-bold text-neutral-900">{dims.totalLengthCm} cm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Waist Suppression (Darts):</span>
+                    <span className="font-bold text-neutral-900">
+                      {((dims.garmentHipCm - dims.garmentWaistCm) / 2).toFixed(1)} cm
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 text-[11px]">

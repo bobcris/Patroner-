@@ -178,7 +178,7 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
                     }`}
                   >
                     <span>{cat}</span>
-                    {cat === 'skirt' ? (
+                    {cat === 'skirt' || cat === 'bodice' ? (
                       <span className="text-[9px] font-mono text-emerald-400">CAD READY</span>
                     ) : (
                       <span className="text-[9px] font-mono text-neutral-400">SPECS ONLY</span>
