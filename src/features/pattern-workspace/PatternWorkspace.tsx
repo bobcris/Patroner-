@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { BodyMeasurements, DesignSpecification, PatternDraft, PatternPiece } from '../../types';
+import { BodiceDartStyle, BodyMeasurements, DesignSpecification, PatternDraft, PatternPiece } from '../../types';
 import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
 import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
@@ -40,6 +40,11 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   onNavigateToProduction,
   onNavigateToMeasurements
 }) => {
+  // Dart style configuration for bodice
+  const [bodiceDartStyle, setBodiceDartStyle] = useState<BodiceDartStyle>(
+    currentSpec.dartStyle ?? 'waist'
+  );
+
   // Layer visibility toggles
   const [showSeamAllowance, setShowSeamAllowance] = useState(true);
   const [showSewLines, setShowSewLines] = useState(true);
@@ -57,7 +62,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
   // Deterministic draft generation
   const pieces = currentSpec.garmentCategory === 'bodice'
-    ? draftBodiceBlock(measurements, currentSpec)
+    ? draftBodiceBlock(measurements, currentSpec, { dartStyle: bodiceDartStyle })
     : draftSkirtBlock(measurements, currentSpec);
   const validationReport = validatePatternDraft(pieces);
   const garmentDims = currentSpec.garmentCategory === 'bodice'
@@ -115,6 +120,51 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           </Button>
         </div>
       </div>
+
+      {/* Bodice Dart Manipulation Toolbar (Milestone 04.1) */}
+      {currentSpec.garmentCategory === 'bodice' && (
+        <div className="bg-white border border-neutral-200 rounded-sm p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] uppercase tracking-wider font-mono bg-neutral-900 text-white px-2 py-0.5 rounded">
+                DART MANIPULATION CORE
+              </span>
+              <span className="text-xs font-mono text-neutral-500">RADIAL PIVOTING &amp; INTAKE CONSERVATION</span>
+            </div>
+            <h3 className="text-sm font-semibold text-neutral-900">
+              Active Bodice Dart Configuration
+            </h3>
+            <p className="text-xs text-neutral-600 mt-0.5">
+              Transfer dart intake between waist, side seam, shoulder, and diagonal french positions while preserving exact 3D volume.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: 'waist', label: 'Waist Dart', desc: 'Standard basic block' },
+              { id: 'side-bust', label: 'Side Bust Dart', desc: 'Underarm side seam' },
+              { id: 'shoulder', label: 'Shoulder Dart', desc: 'Mid-shoulder seam' },
+              { id: 'french', label: 'French Dart', desc: 'Low diagonal side' },
+              { id: 'waist-and-side', label: 'Dual Dart (50/50)', desc: 'Split waist + side' },
+            ].map(cfg => (
+              <button
+                key={cfg.id}
+                onClick={() => setBodiceDartStyle(cfg.id as BodiceDartStyle)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-xs border transition-all cursor-pointer flex flex-col items-start ${
+                  bodiceDartStyle === cfg.id
+                    ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                    : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50'
+                }`}
+              >
+                <span className="font-semibold">{cfg.label}</span>
+                <span className={`text-[10px] ${bodiceDartStyle === cfg.id ? 'text-neutral-300' : 'text-neutral-500'}`}>
+                  {cfg.desc}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main CAD Interface */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

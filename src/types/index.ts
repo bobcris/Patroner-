@@ -64,6 +64,13 @@ export interface GarmentConstructionFeature {
   patternImpact: string;
 }
 
+export type BodiceDartStyle =
+  | 'waist'           // Standard basic block: vertical waist dart
+  | 'side-bust'       // Underarm / side-seam bust dart
+  | 'shoulder'        // Shoulder seam dart
+  | 'french'          // Low diagonal side seam dart to apex
+  | 'waist-and-side'; // Combined dual dart: 50% waist, 50% side bust
+
 export interface DesignSpecification {
   id: string;
   name: string;
@@ -77,6 +84,7 @@ export interface DesignSpecification {
   };
   easeProfile: EaseProfile;
   lengthCm: number;
+  dartStyle?: BodiceDartStyle;
   constructionFeatures: GarmentConstructionFeature[];
   designNotes: string[];
   isApproved: boolean;

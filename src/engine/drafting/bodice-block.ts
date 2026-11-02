@@ -4,6 +4,7 @@
  */
 
 import {
+  BodiceDartStyle,
   BodyMeasurements,
   Dart,
   DesignSpecification,
@@ -17,8 +18,10 @@ import { approximateBezierLength, computeBoundingBox, distance } from '../geomet
 import { generateCuttingContour } from '../geometry/offset';
 import { CubicBezierCurve, GeometricContour, LineSegment } from '../geometry/primitives';
 import { calculateBodiceGarmentDimensions, validateBodiceMeasurements } from '../measurements/standards';
+import { constructFrontBodiceWithDart } from './dart-manipulation';
 
 export interface BodiceDraftOptions {
+  dartStyle?: BodiceDartStyle;   // dart manipulation configuration (default: 'waist')
   seamAllowanceCm?: number;      // side seam allowance (default: 1.5 cm)
   waistAllowanceCm?: number;     // waistline allowance (default: 1.0 cm)
   neckAllowanceCm?: number;      // neckline allowance (default: 1.0 cm)
@@ -165,11 +168,8 @@ export function draftBodiceBlock(
   const cfWaistSquareEnd: Point = { x: 2.5, y: frontWaistLength }; // 2.5cm perpendicular zone
   const cfNeck: Point = { x: 0, y: frontNeckDepth };
 
-  // Front Waist Dart (Apex placed 2.5cm below true bust point)
-  const fDartApexY = Number((bustHeight + 2.5).toFixed(2));
-  const fDartApex: Point = { x: halfBustSpan, y: fDartApexY };
-  const fDartLeft: Point = { x: Number((halfBustSpan - frontDartWidth / 2).toFixed(2)), y: frontWaistLength };
-  const fDartRight: Point = { x: Number((halfBustSpan + frontDartWidth / 2).toFixed(2)), y: frontWaistLength };
+  const dartStyle: BodiceDartStyle = options.dartStyle ?? design.dartStyle ?? 'waist';
+  const trueApex: Point = { x: halfBustSpan, y: bustHeight };
 
   // Front Armhole Curve (Cubic Bézier passing chest level)
   // Across chest point at 65% scye depth
@@ -194,135 +194,45 @@ export function draftBodiceBlock(
     y: frontNeckDepth
   };
 
-  // Assemble Front Stitching Segments (Clockwise: CF Fold -> Waist -> Side -> Armhole -> Shoulder -> Neckline)
-  const fbFold = new LineSegment('fb-cf-fold', cfNeck, cfWaist, 0, true, 'fb-center-front');
-  const fbWaistSquare = new LineSegment('fb-waist-square', cfWaist, cfWaistSquareEnd, waistAllowance, false, 'fb-waist');
-  const fbWaistMid = new LineSegment('fb-waist-mid', cfWaistSquareEnd, fDartLeft, waistAllowance, false, 'fb-waist');
-  const fbDartCap = new LineSegment('fb-dart-cap', fDartLeft, fDartRight, waistAllowance, false, 'fb-waist');
-  const fbWaistSide = new LineSegment('fb-waist-side', fDartRight, fSideWaist, waistAllowance, false, 'fb-waist');
-  const fbSideSeam = new LineSegment('fb-side-seam', fSideWaist, fUnderarm, sideSeamAllowance, false, 'fb-side-seam');
-  const fbArmhole = new CubicBezierCurve('fb-armhole', fUnderarm, fArmholeCp2, fArmholeCp1, fShoulderTip, armholeAllowance, false, 'fb-armhole');
-  const fbShoulder = new LineSegment('fb-shoulder', fShoulderTip, fNeckShoulder, shoulderAllowance, false, 'fb-shoulder');
-  const fbNeckCurve = new CubicBezierCurve('fb-neck-curve', fNeckShoulder, fNeckCp1, fNeckCp2, cfNeck, neckAllowance, false, 'fb-neck');
-
-  const frontStitchingContour = new GeometricContour(
-    'front-bodice-stitching',
-    [
-      fbFold,
-      fbWaistSquare,
-      fbWaistMid,
-      fbDartCap,
-      fbWaistSide,
-      fbSideSeam,
-      fbArmhole,
-      fbShoulder,
-      fbNeckCurve
-    ],
-    true
+  // Construct front bodice with deterministic dart manipulation
+  const frontDartResult = constructFrontBodiceWithDart(
+    {
+      cfNeck,
+      cfWaist,
+      cfWaistSquareEnd,
+      fSideWaist,
+      fUnderarm,
+      fShoulderTip,
+      fNeckShoulder,
+      trueApex,
+      frontDartWidth,
+      backSideSeamLength,
+      backShoulderLength: shoulderLength,
+      frontWaistLength,
+      scyeY,
+      halfBustSpan,
+      bustHeight,
+      acrossBack,
+      chestY,
+      chestHalfWidth,
+      fArmholeCp1,
+      fArmholeCp2,
+      fNeckCp1,
+      fNeckCp2,
+      sideSeamAllowance,
+      waistAllowance,
+      armholeAllowance,
+      shoulderAllowance,
+      neckAllowance
+    },
+    dartStyle
   );
 
-  const frontOffsetResult = generateCuttingContour(frontStitchingContour, {
+  const frontOffsetResult = generateCuttingContour(frontDartResult.stitchingContour, {
     defaultAllowanceCm: sideSeamAllowance,
     bezierToleranceCm,
     miterLimit
   });
-
-  const frontWaistDart: Dart = {
-    id: 'dart-front-waist',
-    apex: fDartApex,
-    legLeft: fDartLeft,
-    legRight: fDartRight,
-    widthCm: frontDartWidth,
-    lengthCm: Number(distance(fDartApex, fDartLeft).toFixed(2))
-  };
-
-  const frontNotches: Notch[] = [
-    {
-      id: 'notch-fb-cf-fold',
-      position: { x: 0, y: Number(((frontNeckDepth + frontWaistLength) / 2).toFixed(2)) },
-      normalAngleDeg: 180,
-      type: 'fold',
-      label: 'CF FOLD'
-    },
-    {
-      id: 'notch-fb-chest',
-      position: { x: chestHalfWidth, y: chestY },
-      normalAngleDeg: 0,
-      type: 'single',
-      label: 'CHEST / ARMHOLE'
-    },
-    {
-      id: 'notch-fb-side-waist',
-      position: fSideWaist,
-      normalAngleDeg: -90,
-      type: 'single',
-      label: 'WAIST MATCH'
-    }
-  ];
-
-  const frontSeams: SeamLine[] = [
-    {
-      id: 'fb-center-front',
-      name: 'Center Front (Fold)',
-      startPoint: cfNeck,
-      endPoint: cfWaist,
-      lengthCm: fbFold.lengthCm(),
-      type: 'straight',
-      segmentId: 'fb-cf-fold'
-    },
-    {
-      id: 'fb-waist',
-      name: 'Front Waist',
-      startPoint: cfWaist,
-      endPoint: fSideWaist,
-      lengthCm: Number((fbWaistSquare.lengthCm() + fbWaistMid.lengthCm() + fbDartCap.lengthCm() + fbWaistSide.lengthCm()).toFixed(2)),
-      type: 'straight',
-      startTangent: { x: 1, y: 0 },
-      endTangent: { x: 1, y: 0 },
-      segmentIds: ['fb-waist-square', 'fb-waist-mid', 'fb-dart-cap', 'fb-waist-side']
-    },
-    {
-      id: 'fb-side-seam',
-      name: 'Front Side Seam',
-      startPoint: fSideWaist,
-      endPoint: fUnderarm,
-      lengthCm: fbSideSeam.lengthCm(),
-      type: 'straight',
-      pairedPieceId: 'piece-bodice-back',
-      pairedSeamName: 'Back Side Seam',
-      segmentId: 'fb-side-seam'
-    },
-    {
-      id: 'fb-armhole-seam',
-      name: 'Front Armhole',
-      startPoint: fUnderarm,
-      endPoint: fShoulderTip,
-      lengthCm: fbArmhole.lengthCm(),
-      type: 'curved',
-      segmentId: 'fb-armhole'
-    },
-    {
-      id: 'fb-shoulder-seam',
-      name: 'Front Shoulder Seam',
-      startPoint: fShoulderTip,
-      endPoint: fNeckShoulder,
-      lengthCm: fbShoulder.lengthCm(),
-      type: 'straight',
-      pairedPieceId: 'piece-bodice-back',
-      pairedSeamName: 'Back Shoulder Seam',
-      segmentId: 'fb-shoulder'
-    },
-    {
-      id: 'fb-neck',
-      name: 'Front Neckline',
-      startPoint: fNeckShoulder,
-      endPoint: cfNeck,
-      lengthCm: Number(fbNeckCurve.lengthCm().toFixed(2)),
-      type: 'curved',
-      endTangent: { x: -1, y: 0 },
-      segmentIds: ['fb-neck-curve']
-    }
-  ];
 
   const frontGrainline: GrainLine = {
     start: { x: Number((halfBustSpan * 0.6).toFixed(2)), y: Number((scyeY * 0.8).toFixed(2)) },
@@ -343,16 +253,16 @@ export function draftBodiceBlock(
     onFold: true,
     material: 'self',
     cutPathData: frontOffsetResult.cuttingContour.toSvgPath(),
-    sewPathData: frontStitchingContour.toSvgPath(),
+    sewPathData: frontDartResult.stitchingContour.toSvgPath(),
     seamAllowanceWidthCm: sideSeamAllowance,
     grainline: frontGrainline,
-    darts: [frontWaistDart],
-    notches: frontNotches,
-    seams: frontSeams,
+    darts: frontDartResult.darts,
+    notches: frontDartResult.notches,
+    seams: frontDartResult.seams,
     boundingBox: frontBoundingBox,
-    drillHoles: [fDartApex],
-    description: `Front bodice panel cut on fold with contour waist dart and 90° perpendicular fold tangency. Drafted for ${design.silhouette} profile with ${dims.appliedBustEaseCm}cm bust ease.`,
-    stitchingContour: frontStitchingContour,
+    drillHoles: frontDartResult.drillHoles,
+    description: `Front bodice panel cut on fold with ${frontDartResult.descriptionNote} 90° perpendicular fold tangency. Drafted for ${design.silhouette} profile with ${dims.appliedBustEaseCm}cm bust ease.`,
+    stitchingContour: frontDartResult.stitchingContour,
     cuttingContour: frontOffsetResult.cuttingContour,
     offsetResult: frontOffsetResult
   };
