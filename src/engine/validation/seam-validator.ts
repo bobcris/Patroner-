@@ -401,6 +401,50 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
           return;
         }
 
+        // Differentiate intentional sleeve cap ease from rigid 1-to-1 seam matching
+        const isSleeveCap = seam.name.includes('Sleeve Cap') || pairedSeam.name.includes('Sleeve Cap');
+        if (isSleeveCap) {
+          const capLength = seam.name.includes('Sleeve Cap') ? seam.lengthCm : pairedSeam.lengthCm;
+          const armholeLength = seam.name.includes('Sleeve Cap') ? pairedSeam.lengthCm : seam.lengthCm;
+          const ease = Number((capLength - armholeLength).toFixed(2));
+
+          if (ease < -0.2) {
+            checks.push({
+              id: `val-seam-diff-${seam.id}`,
+              category: 'seam-match',
+              name: `Sleeve Cap Ease: ${seam.name} vs ${pairedSeam.name}`,
+              status: 'fail',
+              measuredValue: `Cap: ${capLength.toFixed(2)} cm, Armhole: ${armholeLength.toFixed(2)} cm (Ease: ${ease} cm)`,
+              expectedValue: `Ease >= 0.0 cm`,
+              deviationCm: Math.abs(ease),
+              toleranceCm: 0.2,
+              message: `Sleeve cap length is smaller than armhole by ${Math.abs(ease)} cm. Sleeve cannot be set in without pulling.`
+            });
+          } else if (ease > 3.0) {
+            checks.push({
+              id: `val-seam-diff-${seam.id}`,
+              category: 'seam-match',
+              name: `Sleeve Cap Ease: ${seam.name} vs ${pairedSeam.name}`,
+              status: 'warning',
+              measuredValue: `Cap: ${capLength.toFixed(2)} cm, Armhole: ${armholeLength.toFixed(2)} cm (Ease: +${ease} cm)`,
+              expectedValue: `Ease <= 2.8 cm (per half-cap)`,
+              deviationCm: ease,
+              toleranceCm: 2.8,
+              message: `Sleeve cap ease (+${ease} cm) is high. Ensure fabric has adequate crimp/malleability.`
+            });
+          } else {
+            checks.push({
+              id: `val-seam-match-${seam.id}`,
+              category: 'seam-match',
+              name: `Sleeve Cap Ease: ${seam.name} vs ${pairedSeam.name}`,
+              status: 'pass',
+              measuredValue: `Cap: ${capLength.toFixed(2)} cm, Armhole: ${armholeLength.toFixed(2)} cm (Ease: +${ease} cm)`,
+              message: `Sleeve cap ease (+${ease} cm) verified within acceptable range for set-in tailored sleeve.`
+            });
+          }
+          return;
+        }
+
         const delta = Math.abs(seam.lengthCm - pairedSeam.lengthCm);
         if (delta > SEAM_TOLERANCE_CM) {
           checks.push({
@@ -577,6 +621,123 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
       });
     }
   });
+
+  // 10. Sleeve Construction & Tangency Checks (Milestone 04.2)
+  const sleevePiece = pieces.find(p => p.id === 'piece-sleeve' || p.pieceCode.includes('SLV'));
+  if (sleevePiece) {
+    // 10.1 Inseam Parity
+    const frontInseam = sleevePiece.seams.find(s => s.id === 'slv-front-inseam' || s.name.includes('Front Underarm Inseam'));
+    const backInseam = sleevePiece.seams.find(s => s.id === 'slv-back-inseam' || s.name.includes('Back Underarm Inseam'));
+
+    if (frontInseam && backInseam) {
+      const inseamDelta = Math.abs(frontInseam.lengthCm - backInseam.lengthCm);
+      if (inseamDelta > SEAM_TOLERANCE_CM) {
+        checks.push({
+          id: 'val-slv-inseam-parity',
+          category: 'seam-match',
+          name: 'Sleeve Inseam Parity',
+          status: 'fail',
+          measuredValue: `Front: ${frontInseam.lengthCm.toFixed(2)} cm, Back: ${backInseam.lengthCm.toFixed(2)} cm (Delta: ${inseamDelta.toFixed(3)} cm)`,
+          expectedValue: `Delta <= ${SEAM_TOLERANCE_CM} cm`,
+          deviationCm: Number(inseamDelta.toFixed(3)),
+          toleranceCm: SEAM_TOLERANCE_CM,
+          message: `Sleeve front and back inseam lengths differ by ${inseamDelta.toFixed(2)} cm. Causes sleeve twist upon assembly.`
+        });
+      } else {
+        checks.push({
+          id: 'val-slv-inseam-parity',
+          category: 'seam-match',
+          name: 'Sleeve Inseam Parity',
+          status: 'pass',
+          measuredValue: `Front: ${frontInseam.lengthCm.toFixed(2)} cm, Back: ${backInseam.lengthCm.toFixed(2)} cm (Delta: ${inseamDelta.toFixed(3)} cm)`,
+          deviationCm: Number(inseamDelta.toFixed(3)),
+          toleranceCm: SEAM_TOLERANCE_CM,
+          message: `Sleeve front and back underarm inseams match with exact parity (delta: ${inseamDelta.toFixed(3)} cm <= 0.05 cm).`
+        });
+      }
+    }
+
+    // 10.2 Crown Horizontal Tangency
+    const frontCapSeam = sleevePiece.seams.find(s => s.id === 'slv-front-cap-seam' || s.name.includes('Front Sleeve Cap'));
+    const backCapSeam = sleevePiece.seams.find(s => s.id === 'slv-back-cap-seam' || s.name.includes('Back Sleeve Cap'));
+
+    if (frontCapSeam && frontCapSeam.startTangent) {
+      // Tangent departure from horizontal (y = 0)
+      const departureAngle = Math.abs(Math.atan2(frontCapSeam.startTangent.y, frontCapSeam.startTangent.x) * (180 / Math.PI));
+      if (departureAngle > TANGENCY_TOLERANCE_DEG) {
+        checks.push({
+          id: 'val-slv-crown-tangency-front',
+          category: 'tangency',
+          name: 'Sleeve Crown Tangency (Front Cap)',
+          status: 'fail',
+          measuredValue: `${departureAngle.toFixed(2)}°`,
+          expectedValue: `0.0° ± ${TANGENCY_TOLERANCE_DEG}°`,
+          deviationCm: departureAngle,
+          toleranceCm: TANGENCY_TOLERANCE_DEG,
+          message: `Front sleeve cap departs crown apex at ${departureAngle.toFixed(2)}° from horizontal. Will create a shoulder dimple.`
+        });
+      } else {
+        checks.push({
+          id: 'val-slv-crown-tangency-front',
+          category: 'tangency',
+          name: 'Sleeve Crown Tangency (Front Cap)',
+          status: 'pass',
+          measuredValue: `${departureAngle.toFixed(2)}° (horizontal C1)`,
+          message: 'Front sleeve cap departs crown apex with exact horizontal C1 tangency.'
+        });
+      }
+    }
+
+    // 10.3 Total Sleeve Cap Ease vs Bodice Armholes
+    const bodiceF = pieces.find(p => p.id === 'piece-bodice-front' || p.pieceCode.includes('BOD-F'));
+    const bodiceB = pieces.find(p => p.id === 'piece-bodice-back' || p.pieceCode.includes('BOD-B'));
+
+    if (bodiceF && bodiceB && frontCapSeam && backCapSeam) {
+      const fArmhole = bodiceF.seams.find(s => s.id === 'fb-armhole-seam' || s.segmentId === 'fb-armhole' || s.name.includes('Armhole'));
+      const bArmhole = bodiceB.seams.find(s => s.id === 'bb-armhole-seam' || s.segmentId === 'bb-armhole' || s.name.includes('Armhole'));
+
+      if (fArmhole && bArmhole) {
+        const totalBodiceArmhole = Number((fArmhole.lengthCm + bArmhole.lengthCm).toFixed(2));
+        const totalSleeveCap = Number((frontCapSeam.lengthCm + backCapSeam.lengthCm).toFixed(2));
+        const netEase = Number((totalSleeveCap - totalBodiceArmhole).toFixed(2));
+
+        if (netEase < 0) {
+          checks.push({
+            id: 'val-slv-total-cap-ease',
+            category: 'seam-match',
+            name: 'Total Sleeve Cap Ease',
+            status: 'fail',
+            measuredValue: `Cap: ${totalSleeveCap.toFixed(2)} cm, Scye: ${totalBodiceArmhole.toFixed(2)} cm (Ease: ${netEase.toFixed(2)} cm)`,
+            expectedValue: 'Ease >= 0.0 cm',
+            deviationCm: Math.abs(netEase),
+            toleranceCm: 0.0,
+            message: `Total sleeve cap length (${totalSleeveCap} cm) is shorter than bodice armholes (${totalBodiceArmhole} cm).`
+          });
+        } else if (netEase > 4.5) {
+          checks.push({
+            id: 'val-slv-total-cap-ease',
+            category: 'seam-match',
+            name: 'Total Sleeve Cap Ease',
+            status: 'warning',
+            measuredValue: `Cap: ${totalSleeveCap.toFixed(2)} cm, Scye: ${totalBodiceArmhole.toFixed(2)} cm (Ease: +${netEase.toFixed(2)} cm)`,
+            expectedValue: 'Ease <= 4.0 cm',
+            deviationCm: netEase,
+            toleranceCm: 4.0,
+            message: `Total sleeve cap ease (+${netEase} cm) is high for tailored setting. Fabric must be mouldable with steam.`
+          });
+        } else {
+          checks.push({
+            id: 'val-slv-total-cap-ease',
+            category: 'seam-match',
+            name: 'Total Sleeve Cap Ease',
+            status: 'pass',
+            measuredValue: `Cap: ${totalSleeveCap.toFixed(2)} cm, Scye: ${totalBodiceArmhole.toFixed(2)} cm (Ease: +${netEase.toFixed(2)} cm)`,
+            message: `Total sleeve cap ease (+${netEase.toFixed(2)} cm) verified within acceptable tailored parameters.`
+          });
+        }
+      }
+    }
+  }
 
   const failureCount = checks.filter(c => c.status === 'fail').length;
   const warningCount = checks.filter(c => c.status === 'warning').length;

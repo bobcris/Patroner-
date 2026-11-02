@@ -71,6 +71,8 @@ export type BodiceDartStyle =
   | 'french'          // Low diagonal side seam dart to apex
   | 'waist-and-side'; // Combined dual dart: 50% waist, 50% side bust
 
+export type SleeveEaseStrategy = 'tailored' | 'classic' | 'fitted' | 'flat';
+
 export interface DesignSpecification {
   id: string;
   name: string;
@@ -85,6 +87,7 @@ export interface DesignSpecification {
   easeProfile: EaseProfile;
   lengthCm: number;
   dartStyle?: BodiceDartStyle;
+  sleeveEaseStrategy?: SleeveEaseStrategy;
   constructionFeatures: GarmentConstructionFeature[];
   designNotes: string[];
   isApproved: boolean;
@@ -131,6 +134,26 @@ export interface BodyMeasurements {
    * Nape to scye depth line distance in cm (standard: 19-25 cm)
    */
   armholeDepth?: number;
+  /**
+   * Maximum girth of the upper arm (biceps) in cm (standard: 26-39 cm)
+   */
+  bicepsCircumference?: number;
+  /**
+   * Circumference at elbow joint in cm (standard: 23-32 cm)
+   */
+  elbowCircumference?: number;
+  /**
+   * Circumference at wrist bone level in cm (standard: 15-20 cm)
+   */
+  wristCircumference?: number;
+  /**
+   * Shoulder tip to wrist bone length over slightly flexed elbow in cm (standard: 56-64 cm)
+   */
+  sleeveLength?: number;
+  /**
+   * Shoulder tip to elbow point distance in cm (standard: 31-38 cm)
+   */
+  armLengthToElbow?: number;
 }
 
 export type StandardSize = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL';

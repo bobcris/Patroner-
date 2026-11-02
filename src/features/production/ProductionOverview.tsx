@@ -4,9 +4,10 @@
  */
 
 import React from 'react';
-import { BodyMeasurements, DesignSpecification } from '../../types';
+import { BodyMeasurements, DesignSpecification, PatternPiece } from '../../types';
 import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
 import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
+import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
 import { calculateGarmentDimensions, calculateBodiceGarmentDimensions } from '../../engine/measurements/standards';
 import { Button } from '../../components/ui/Button';
@@ -35,9 +36,22 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   activeSize,
   onNavigateToCAD
 }) => {
-  const pieces = currentSpec.garmentCategory === 'bodice'
-    ? draftBodiceBlock(measurements, currentSpec)
-    : draftSkirtBlock(measurements, currentSpec);
+  let pieces: PatternPiece[] = [];
+  if (currentSpec.garmentCategory === 'bodice') {
+    const bodicePieces = draftBodiceBlock(measurements, currentSpec);
+    try {
+      const sleeveResult = draftSleeveBlock(measurements, currentSpec, {
+        strategy: currentSpec.sleeveEaseStrategy ?? 'classic',
+        bodicePieces
+      });
+      pieces = [...bodicePieces, sleeveResult.piece];
+    } catch {
+      pieces = bodicePieces;
+    }
+  } else {
+    pieces = draftSkirtBlock(measurements, currentSpec);
+  }
+
   const validation = validatePatternDraft(pieces);
   const dims = currentSpec.garmentCategory === 'bodice'
     ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric)
@@ -46,38 +60,71 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   // Approximate fabric yield calculation for a standard 140cm bolt width
   const fabricYieldMeters = Number(((currentSpec.lengthCm + 15) / 100 * 1.15).toFixed(2));
 
-  const assemblySteps = [
-    {
-      step: 1,
-      title: 'Stay-stitching & Interfacing',
-      instruction: 'Apply 1.2cm stay-tape or stay-stitch along front and back waistlines at 0.8cm from cut edge to prevent stretching during handling.'
-    },
-    {
-      step: 2,
-      title: 'Waist Dart Construction',
-      instruction: 'Fold and pin front waist dart pair and back waist dart. Stitch from waistline tapering precisely to apex drill holes. Press front darts toward Center Front; press back darts toward Center Back.'
-    },
-    {
-      step: 3,
-      title: 'Center Back Seam & Invisible Zipper',
-      instruction: 'Finish raw edges of Center Back panels. Insert concealed invisible zipper from upper waist down to the 18cm zipper stop notch. Stitch remaining CB seam below zipper to hem.'
-    },
-    {
-      step: 4,
-      title: 'Side Seam Assembly',
-      instruction: 'Align Front Skirt Panel to Back Skirt Panels with right sides together. Match waistline, hip notches (at 20cm depth), and hem edges. Stitch at 1.5cm seam allowance. Press seams open flat.'
-    },
-    {
-      step: 5,
-      title: 'Waist Finishing',
-      instruction: 'Attach internal grosgrain ribbon facing or waistband along waist seamline at 1.0cm allowance. Understitch facing and secure to zipper tape.'
-    },
-    {
-      step: 6,
-      title: 'Hem Completion',
-      instruction: 'Turn up 3.0cm hem allowance, press crisp fold, and finish with blind catch-stitch or double needle machine hem.'
-    }
-  ];
+  const assemblySteps = currentSpec.garmentCategory === 'bodice'
+    ? [
+        {
+          step: 1,
+          title: 'Stay-stitching & Stabilization',
+          instruction: 'Stay-stitch front and back neckline and armhole scye curves at 0.8cm from cut edge to prevent distortion during handling.'
+        },
+        {
+          step: 2,
+          title: 'Dart Construction',
+          instruction: 'Stitch front waist and bust darts, and back shoulder and waist darts tapering smoothly to punch holes. Press front darts down/inward; press back darts toward center back.'
+        },
+        {
+          step: 3,
+          title: 'Shoulder Seam Assembly',
+          instruction: 'Pin and stitch front and back shoulder seams with 1.2cm seam allowance with stabilizing stay-tape. Press seam open flat.'
+        },
+        {
+          step: 4,
+          title: 'Side Seams & Sleeve Inseam',
+          instruction: 'Stitch bodice side seams at 1.2cm allowance and press open. Stitch sleeve underarm inseam (matching front and back underarm edges) and press open.'
+        },
+        {
+          step: 5,
+          title: 'Sleeve Cap Easing & Insertion',
+          instruction: 'Run two rows of ease stitching along sleeve cap between notches. Distribute cap ease over the crown, align single front notch to front scye, double back notch to back scye, and apex notch to shoulder seam. Stitch at 1.2cm and press sleeve cap seam head.'
+        },
+        {
+          step: 6,
+          title: 'Finishing & Hems',
+          instruction: 'Turn up 3.0cm sleeve wrist hem and blind stitch or topstitch. Finish neckline with fitted bias facing or collar and insert closure.'
+        }
+      ]
+    : [
+        {
+          step: 1,
+          title: 'Stay-stitching & Interfacing',
+          instruction: 'Apply 1.2cm stay-tape or stay-stitch along front and back waistlines at 0.8cm from cut edge to prevent stretching during handling.'
+        },
+        {
+          step: 2,
+          title: 'Waist Dart Construction',
+          instruction: 'Fold and pin front waist dart pair and back waist dart. Stitch from waistline tapering precisely to apex drill holes. Press front darts toward Center Front; press back darts toward Center Back.'
+        },
+        {
+          step: 3,
+          title: 'Center Back Seam & Invisible Zipper',
+          instruction: 'Finish raw edges of Center Back panels. Insert concealed invisible zipper from upper waist down to the 18cm zipper stop notch. Stitch remaining CB seam below zipper to hem.'
+        },
+        {
+          step: 4,
+          title: 'Side Seam Assembly',
+          instruction: 'Align Front Skirt Panel to Back Skirt Panels with right sides together. Match waistline, hip notches (at 20cm depth), and hem edges. Stitch at 1.5cm seam allowance. Press seams open flat.'
+        },
+        {
+          step: 5,
+          title: 'Waist Finishing',
+          instruction: 'Attach internal grosgrain ribbon facing or waistband along waist seamline at 1.0cm allowance. Understitch facing and secure to zipper tape.'
+        },
+        {
+          step: 6,
+          title: 'Hem Completion',
+          instruction: 'Turn up 3.0cm hem allowance, press crisp fold, and finish with blind catch-stitch or double needle machine hem.'
+        }
+      ];
 
   const handlePrint = () => {
     window.print();
@@ -184,20 +231,37 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
             <div className="p-2.5 bg-neutral-50 rounded border border-neutral-200">
               <span className="text-neutral-400 uppercase text-[10px] block">ALLOWANCE STANDARDS</span>
-              <div className="grid grid-cols-3 gap-2 mt-1 text-center">
-                <div className="bg-white p-1.5 rounded border border-neutral-200">
-                  <span className="text-[10px] text-neutral-500 block">WAIST</span>
-                  <span className="font-bold text-neutral-900">1.0 cm</span>
+              {currentSpec.garmentCategory === 'bodice' ? (
+                <div className="grid grid-cols-3 gap-2 mt-1 text-center">
+                  <div className="bg-white p-1.5 rounded border border-neutral-200">
+                    <span className="text-[10px] text-neutral-500 block">NECK/ARMHOLE</span>
+                    <span className="font-bold text-neutral-900">1.0 cm</span>
+                  </div>
+                  <div className="bg-white p-1.5 rounded border border-neutral-200">
+                    <span className="text-[10px] text-neutral-500 block">SEAMS/INSEAM</span>
+                    <span className="font-bold text-neutral-900">1.2 cm</span>
+                  </div>
+                  <div className="bg-white p-1.5 rounded border border-neutral-200">
+                    <span className="text-[10px] text-neutral-500 block">WRIST HEM</span>
+                    <span className="font-bold text-neutral-900">3.0 cm</span>
+                  </div>
                 </div>
-                <div className="bg-white p-1.5 rounded border border-neutral-200">
-                  <span className="text-[10px] text-neutral-500 block">SIDE SEAM</span>
-                  <span className="font-bold text-neutral-900">1.5 cm</span>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 mt-1 text-center">
+                  <div className="bg-white p-1.5 rounded border border-neutral-200">
+                    <span className="text-[10px] text-neutral-500 block">WAIST</span>
+                    <span className="font-bold text-neutral-900">1.0 cm</span>
+                  </div>
+                  <div className="bg-white p-1.5 rounded border border-neutral-200">
+                    <span className="text-[10px] text-neutral-500 block">SIDE SEAM</span>
+                    <span className="font-bold text-neutral-900">1.5 cm</span>
+                  </div>
+                  <div className="bg-white p-1.5 rounded border border-neutral-200">
+                    <span className="text-[10px] text-neutral-500 block">HEM</span>
+                    <span className="font-bold text-neutral-900">3.0 cm</span>
+                  </div>
                 </div>
-                <div className="bg-white p-1.5 rounded border border-neutral-200">
-                  <span className="text-[10px] text-neutral-500 block">HEM</span>
-                  <span className="font-bold text-neutral-900">3.0 cm</span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

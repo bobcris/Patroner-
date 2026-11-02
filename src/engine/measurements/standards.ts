@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BodyMeasurements, EaseProfile, FabricProperty, SizingStandard, StandardSize } from '../../types';
+import { BodyMeasurements, EaseProfile, FabricProperty, SizingStandard, SleeveEaseStrategy, StandardSize } from '../../types';
 
 /**
  * Standard sizing table based on European ISO/EN 13402 anthropometric conventions.
@@ -30,7 +30,12 @@ export const STANDARD_SIZING_SYSTEM: SizingStandard = {
       neckCircumference: 34.5,
       bustSpan: 17.0,
       bustHeight: 24.5,
-      armholeDepth: 19.5
+      armholeDepth: 19.5,
+      bicepsCircumference: 26.0,
+      elbowCircumference: 23.0,
+      wristCircumference: 15.0,
+      sleeveLength: 57.0,
+      armLengthToElbow: 32.0
     },
     S: {
       unit: 'cm',
@@ -47,7 +52,12 @@ export const STANDARD_SIZING_SYSTEM: SizingStandard = {
       neckCircumference: 35.5,
       bustSpan: 17.5,
       bustHeight: 25.0,
-      armholeDepth: 20.0
+      armholeDepth: 20.0,
+      bicepsCircumference: 27.5,
+      elbowCircumference: 24.0,
+      wristCircumference: 15.5,
+      sleeveLength: 58.0,
+      armLengthToElbow: 33.0
     },
     M: {
       unit: 'cm',
@@ -64,7 +74,12 @@ export const STANDARD_SIZING_SYSTEM: SizingStandard = {
       neckCircumference: 36.5,
       bustSpan: 18.5,
       bustHeight: 26.0,
-      armholeDepth: 21.0
+      armholeDepth: 21.0,
+      bicepsCircumference: 29.5,
+      elbowCircumference: 25.5,
+      wristCircumference: 16.5,
+      sleeveLength: 59.5,
+      armLengthToElbow: 34.0
     },
     L: {
       unit: 'cm',
@@ -81,7 +96,12 @@ export const STANDARD_SIZING_SYSTEM: SizingStandard = {
       neckCircumference: 38.0,
       bustSpan: 19.5,
       bustHeight: 27.0,
-      armholeDepth: 22.0
+      armholeDepth: 22.0,
+      bicepsCircumference: 32.0,
+      elbowCircumference: 27.0,
+      wristCircumference: 17.5,
+      sleeveLength: 61.0,
+      armLengthToElbow: 35.0
     },
     XL: {
       unit: 'cm',
@@ -98,7 +118,12 @@ export const STANDARD_SIZING_SYSTEM: SizingStandard = {
       neckCircumference: 39.5,
       bustSpan: 20.5,
       bustHeight: 28.0,
-      armholeDepth: 23.0
+      armholeDepth: 23.0,
+      bicepsCircumference: 35.0,
+      elbowCircumference: 29.0,
+      wristCircumference: 18.5,
+      sleeveLength: 62.0,
+      armLengthToElbow: 36.0
     },
     XXL: {
       unit: 'cm',
@@ -115,7 +140,12 @@ export const STANDARD_SIZING_SYSTEM: SizingStandard = {
       neckCircumference: 41.5,
       bustSpan: 22.0,
       bustHeight: 29.5,
-      armholeDepth: 24.5
+      armholeDepth: 24.5,
+      bicepsCircumference: 38.5,
+      elbowCircumference: 31.5,
+      wristCircumference: 20.0,
+      sleeveLength: 63.0,
+      armLengthToElbow: 37.0
     }
   }
 };
@@ -405,4 +435,163 @@ export function calculateBodiceGarmentDimensions(
     appliedWaistEaseCm: appliedWaistEase
   };
 }
+
+/**
+ * Sleeve ease parameters by strategy.
+ * Sleeve cap ease is the intentional difference between sleeve cap seam length and bodice armhole length.
+ */
+export const SLEEVE_EASE_TABLE: Record<
+  SleeveEaseStrategy,
+  {
+    capEaseMinCm: number;
+    capEaseMaxCm: number;
+    recommendedCapEaseCm: number;
+    bicepsEaseCm: number;
+    wristEaseCm: number;
+    description: string;
+  }
+> = {
+  tailored: {
+    capEaseMinCm: 2.0,
+    capEaseMaxCm: 3.8,
+    recommendedCapEaseCm: 2.8,
+    bicepsEaseCm: 5.0,
+    wristEaseCm: 4.5,
+    description: 'Structured tailored sleeve with crown ease (+2.0 to +3.8cm) for wool/suiting fabrics.'
+  },
+  classic: {
+    capEaseMinCm: 1.2,
+    capEaseMaxCm: 2.5,
+    recommendedCapEaseCm: 1.8,
+    bicepsEaseCm: 4.0,
+    wristEaseCm: 4.0,
+    description: 'Standard woven sleeve with comfortable daywear ease (+1.2 to +2.5cm cap ease).'
+  },
+  fitted: {
+    capEaseMinCm: 0.6,
+    capEaseMaxCm: 1.6,
+    recommendedCapEaseCm: 1.0,
+    bicepsEaseCm: 2.8,
+    wristEaseCm: 3.0,
+    description: 'Close-fitting sleeve with reduced cap ease (+0.6 to +1.6cm) for slight stretch or sleek silhouettes.'
+  },
+  flat: {
+    capEaseMinCm: 0.0,
+    capEaseMaxCm: 0.8,
+    recommendedCapEaseCm: 0.4,
+    bicepsEaseCm: 2.0,
+    wristEaseCm: 2.5,
+    description: 'Flat / casual shirt sleeve with minimal or zero crown ease (+0.0 to +0.8cm).'
+  }
+};
+
+/**
+ * Validates anatomical plausibility of sleeve body measurements.
+ * Rejects non-finite, missing, zero, negative, and physically contradictory inputs.
+ */
+export function validateSleeveMeasurements(m: Partial<BodyMeasurements>): MeasurementValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // 1. Biceps Circumference
+  if (m.bicepsCircumference === undefined || m.bicepsCircumference === null) {
+    errors.push('Biceps circumference is required for sleeve drafting.');
+  } else if (!Number.isFinite(m.bicepsCircumference) || m.bicepsCircumference <= 0) {
+    errors.push(`Biceps circumference must be a positive finite number (received: ${m.bicepsCircumference}).`);
+  } else if (m.bicepsCircumference < 20 || m.bicepsCircumference > 60) {
+    errors.push(`Biceps circumference (${m.bicepsCircumference} cm) falls outside anatomical boundary (20 cm to 60 cm).`);
+  }
+
+  // 2. Wrist Circumference
+  if (m.wristCircumference === undefined || m.wristCircumference === null) {
+    errors.push('Wrist circumference is required for sleeve drafting.');
+  } else if (!Number.isFinite(m.wristCircumference) || m.wristCircumference <= 0) {
+    errors.push(`Wrist circumference must be a positive finite number (received: ${m.wristCircumference}).`);
+  } else if (m.wristCircumference < 11 || m.wristCircumference > 30) {
+    errors.push(`Wrist circumference (${m.wristCircumference} cm) falls outside anatomical boundary (11 cm to 30 cm).`);
+  } else if (m.bicepsCircumference && m.wristCircumference >= m.bicepsCircumference) {
+    errors.push(`Wrist circumference (${m.wristCircumference} cm) cannot equal or exceed biceps circumference (${m.bicepsCircumference} cm).`);
+  }
+
+  // 3. Sleeve Length
+  if (m.sleeveLength === undefined || m.sleeveLength === null) {
+    errors.push('Sleeve length is required for sleeve drafting.');
+  } else if (!Number.isFinite(m.sleeveLength) || m.sleeveLength <= 0) {
+    errors.push(`Sleeve length must be a positive finite number (received: ${m.sleeveLength}).`);
+  } else if (m.sleeveLength < 45 || m.sleeveLength > 85) {
+    errors.push(`Sleeve length (${m.sleeveLength} cm) falls outside anatomical boundary (45 cm to 85 cm).`);
+  }
+
+  // 4. Optional Elbow Circumference
+  if (m.elbowCircumference !== undefined && m.elbowCircumference !== null) {
+    if (!Number.isFinite(m.elbowCircumference) || m.elbowCircumference <= 0) {
+      errors.push(`Elbow circumference must be a positive finite number (received: ${m.elbowCircumference}).`);
+    } else if (m.elbowCircumference < 16 || m.elbowCircumference > 45) {
+      errors.push(`Elbow circumference (${m.elbowCircumference} cm) falls outside anatomical boundary (16 cm to 45 cm).`);
+    }
+  }
+
+  // 5. Optional Arm Length to Elbow
+  if (m.armLengthToElbow !== undefined && m.armLengthToElbow !== null) {
+    if (!Number.isFinite(m.armLengthToElbow) || m.armLengthToElbow <= 0) {
+      errors.push(`Arm length to elbow must be a positive finite number (received: ${m.armLengthToElbow}).`);
+    } else if (m.armLengthToElbow < 24 || m.armLengthToElbow > 50) {
+      errors.push(`Arm length to elbow (${m.armLengthToElbow} cm) falls outside anatomical boundary (24 cm to 50 cm).`);
+    } else if (m.sleeveLength && m.armLengthToElbow >= m.sleeveLength - 10) {
+      errors.push(`Arm length to elbow (${m.armLengthToElbow} cm) must be at least 10 cm shorter than total sleeve length (${m.sleeveLength} cm).`);
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+/**
+ * Pure calculation to determine finished sleeve garment dimensions from body measurements,
+ * sleeve ease strategy, and fabric stretch compensation.
+ */
+export function calculateSleeveGarmentDimensions(
+  body: BodyMeasurements,
+  strategy: SleeveEaseStrategy = 'classic',
+  fabric?: FabricProperty
+): {
+  garmentBicepsCm: number;
+  garmentWristCm: number;
+  totalSleeveLengthCm: number;
+  targetCapEaseCm: number;
+  appliedBicepsEaseCm: number;
+  appliedWristEaseCm: number;
+  strategy: SleeveEaseStrategy;
+} {
+  const baseEase = SLEEVE_EASE_TABLE[strategy];
+
+  let stretchFactor = 1.0;
+  if (fabric?.stretch === 'low-stretch') {
+    stretchFactor = 0.85;
+  } else if (fabric?.stretch === 'high-stretch') {
+    stretchFactor = 0.5;
+  }
+
+  const appliedBicepsEase = Number((baseEase.bicepsEaseCm * stretchFactor).toFixed(1));
+  const appliedWristEase = Number((baseEase.wristEaseCm * stretchFactor).toFixed(1));
+  const targetCapEase = Number((baseEase.recommendedCapEaseCm * stretchFactor).toFixed(2));
+
+  const biceps = body.bicepsCircumference ?? 29.5;
+  const wrist = body.wristCircumference ?? 16.5;
+  const length = body.sleeveLength ?? 59.5;
+
+  return {
+    garmentBicepsCm: Number((biceps + appliedBicepsEase).toFixed(1)),
+    garmentWristCm: Number((wrist + appliedWristEase).toFixed(1)),
+    totalSleeveLengthCm: length,
+    targetCapEaseCm: targetCapEase,
+    appliedBicepsEaseCm: appliedBicepsEase,
+    appliedWristEaseCm: appliedWristEase,
+    strategy
+  };
+}
+
 
