@@ -3,9 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { PatternPiece, UnassessedCondition, ValidationCheck, ValidationReport, ValidationStatus } from '../../types';
+import { PatternPiece, Point, UnassessedCondition, ValidationCheck, ValidationReport, ValidationStatus } from '../../types';
 import { validateContourIntegrity } from '../geometry/contour-validator';
 import { checkPerpendicularity, distance, vector } from '../geometry/math';
+import { CubicBezierCurve } from '../geometry/primitives';
+import { computeArcLengthFromStart } from '../drafting/sleeve-block';
 
 export const SEAM_TOLERANCE_CM = 0.2; // Maximum allowable variance between paired seams (2mm)
 export const DART_LEG_TOLERANCE_CM = 0.1; // Maximum leg length variance (1mm)
@@ -812,43 +814,142 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
       }
     }
 
-    // 10.6 Sleeve Construction Notch Topology & Pairing
+    // 10.6 Sleeve Internal Notch Topology & Geometry
     const crownNotch = sleevePiece.notches.find(n => n.id === 'notch-slv-crown');
     const frontNotch = sleevePiece.notches.find(n => n.id === 'notch-slv-front-armhole');
     const backDoubleNotch = sleevePiece.notches.filter(n => n.id.includes('notch-slv-back-armhole'));
     const elbowNotches = sleevePiece.notches.filter(n => n.id.includes('elbow'));
 
-    const missingNotches: string[] = [];
-    if (!crownNotch) missingNotches.push('Crown apex notch (shoulder match at apex (0,0))');
-    if (!frontNotch) missingNotches.push('Front scye single notch');
-    if (backDoubleNotch.length < 2) missingNotches.push('Back scye double notch');
-    if (elbowNotches.length < 2) missingNotches.push('Elbow level match notches');
-
-    // If bodice pieces are present, verify bodice pairing scye notches
-    if (bodiceF && !bodiceF.notches.some(n => n.id.includes('chest') || (n.label && n.label.includes('CHEST')))) {
-      missingNotches.push('Front bodice chest-level pairing notch');
+    const internalNotchErrors: string[] = [];
+    if (!crownNotch) {
+      internalNotchErrors.push('Missing crown apex shoulder notch');
+    } else {
+      const crownDist = distance(crownNotch.position, { x: 0, y: 0 });
+      if (crownDist > 0.05) {
+        internalNotchErrors.push(`Crown notch is displaced by ${crownDist.toFixed(2)} cm from crown apex (0,0). Must align exactly with crown apex.`);
+      }
     }
-    if (bodiceB && bodiceB.notches.filter(n => n.id.includes('across-back')).length < 2) {
-      missingNotches.push('Back bodice across-back double pairing notches');
+    if (!frontNotch) internalNotchErrors.push('Missing front scye single notch');
+    if (backDoubleNotch.length < 2) internalNotchErrors.push('Missing back scye double notches');
+    if (elbowNotches.length < 2) internalNotchErrors.push('Missing elbow level match notches');
+
+    // Elbow parity check along underarm inseam
+    const elbF = sleevePiece.notches.find(n => n.id === 'notch-slv-elbow-front');
+    const elbB = sleevePiece.notches.find(n => n.id === 'notch-slv-elbow-back');
+    if (elbF && elbB && frontInseam && backInseam) {
+      const distF = distance(frontInseam.startPoint, elbF.position);
+      const distB = distance(backInseam.endPoint, elbB.position);
+      const elbowDelta = Math.abs(distF - distB);
+      if (elbowDelta > 0.1) {
+        internalNotchErrors.push(`Elbow notch inseam mismatch: front ${distF.toFixed(2)} cm, back ${distB.toFixed(2)} cm (delta: ${elbowDelta.toFixed(2)} cm > 0.1 cm)`);
+      }
     }
 
-    if (missingNotches.length > 0) {
+    if (internalNotchErrors.length > 0) {
       checks.push({
-        id: 'val-slv-notch-correspondence',
+        id: 'val-slv-notch-internal',
         category: 'geometry',
-        name: 'Sleeve Construction Notch Topology & Pairing',
+        name: 'Sleeve Internal Notch Placement & Parity',
         status: 'fail',
-        message: `Sleeve/bodice assembly missing construction notches: ${missingNotches.join(', ')}.`
+        message: `Sleeve internal notch placement errors: ${internalNotchErrors.join('; ')}`
       });
     } else {
       checks.push({
-        id: 'val-slv-notch-correspondence',
+        id: 'val-slv-notch-internal',
         category: 'geometry',
-        name: 'Sleeve Construction Notch Topology & Pairing',
+        name: 'Sleeve Internal Notch Placement & Parity',
         status: 'pass',
-        measuredValue: `${sleevePiece.notches.length} sleeve notches verified`,
-        message: 'Verified topology of crown shoulder alignment notch at apex, front scye single notch pairing with bodice chest notch, back scye double notches pairing with back bodice notches, and front/back inseam elbow alignment notches.'
+        measuredValue: `${sleevePiece.notches.length} internal sleeve notches verified`,
+        message: 'Verified internal sleeve notches: crown notch strictly at apex (0,0), front scye single notch, back scye double notch, and elbow notches with underarm parity.'
       });
+    }
+
+    // 10.7 Sleeve-to-Bodice Notch Correspondence
+    if (!bodiceF || !bodiceB) {
+      checks.push({
+        id: 'val-slv-notch-correspondence',
+        category: 'seam-match',
+        name: 'Sleeve-to-Bodice Notch Correspondence',
+        status: 'warning',
+        expectedValue: 'Bodice front and back panels present in assembly',
+        message: 'Bodice pieces are absent from draft. Sleeve-to-bodice scye notch correspondence cannot be assessed.'
+      });
+    } else {
+      const fbNotch = bodiceF.notches.find(n => n.id.includes('chest') || (n.label && n.label.includes('CHEST')));
+      const bbNotches = bodiceB.notches.filter(n => n.id.includes('across-back') || (n.label && n.label.includes('BACK SCYE')));
+
+      if (!fbNotch || bbNotches.length < 2 || !frontNotch || backDoubleNotch.length < 2) {
+        checks.push({
+          id: 'val-slv-notch-correspondence',
+          category: 'geometry',
+          name: 'Sleeve Construction Notch Topology & Pairing',
+          status: 'fail',
+          message: `Sleeve/bodice assembly missing construction pairing notches (front bodice chest notch: ${!!fbNotch}, back bodice across-back notches: ${bbNotches.length}/2).`
+        });
+      } else {
+        // Measure arc-length correspondence
+        let deltaFront = 0;
+        let deltaBack = 0;
+
+        const slvFrontCurve = sleevePiece.stitchingContour?.segments.find(s => s.id === 'sleeve-front-cap');
+        const slvBackCurve = sleevePiece.stitchingContour?.segments.find(s => s.id === 'sleeve-back-cap');
+        const fbArmholeCurve = bodiceF.stitchingContour?.segments.find(s => s.id === 'fb-armhole');
+        const bbArmholeCurve = bodiceB.stitchingContour?.segments.find(s => s.id === 'bb-armhole');
+
+        if (
+          slvFrontCurve instanceof CubicBezierCurve &&
+          slvBackCurve instanceof CubicBezierCurve &&
+          fbArmholeCurve instanceof CubicBezierCurve &&
+          bbArmholeCurve instanceof CubicBezierCurve
+        ) {
+          // Front scye distance from underarm:
+          // slvFrontCurve starts at apex (0,0) and ends at uFront.
+          const slvFromCrown = computeArcLengthFromStart(slvFrontCurve, frontNotch.position);
+          const slvFrontFromUnderarm = slvFrontCurve.lengthCm() - slvFromCrown;
+          // fbArmholeCurve starts at fUnderarm.
+          const bodiceFrontFromUnderarm = computeArcLengthFromStart(fbArmholeCurve, fbNotch.position);
+          deltaFront = Math.abs(slvFrontFromUnderarm - bodiceFrontFromUnderarm);
+
+          // Back scye distance from underarm:
+          // slvBackCurve starts at uBack.
+          const avgSlvBackPos: Point = {
+            x: (backDoubleNotch[0].position.x + backDoubleNotch[1].position.x) / 2,
+            y: (backDoubleNotch[0].position.y + backDoubleNotch[1].position.y) / 2
+          };
+          const slvBackFromUnderarm = computeArcLengthFromStart(slvBackCurve, avgSlvBackPos);
+          // bbArmholeCurve starts at bUnderarm.
+          const avgBodiceBackPos: Point = {
+            x: (bbNotches[0].position.x + bbNotches[1].position.x) / 2,
+            y: (bbNotches[0].position.y + bbNotches[1].position.y) / 2
+          };
+          const bodiceBackFromUnderarm = computeArcLengthFromStart(bbArmholeCurve, avgBodiceBackPos);
+          deltaBack = Math.abs(slvBackFromUnderarm - bodiceBackFromUnderarm);
+        }
+
+        const notchToleranceCm = 0.3;
+        if (deltaFront > notchToleranceCm || deltaBack > notchToleranceCm) {
+          checks.push({
+            id: 'val-slv-notch-correspondence',
+            category: 'geometry',
+            name: 'Sleeve Construction Notch Topology & Pairing',
+            status: 'fail',
+            measuredValue: `Front scye delta: ${deltaFront.toFixed(2)} cm, Back scye delta: ${deltaBack.toFixed(2)} cm`,
+            expectedValue: `Delta <= ${notchToleranceCm.toFixed(2)} cm`,
+            deviationCm: Number(Math.max(deltaFront, deltaBack).toFixed(2)),
+            toleranceCm: notchToleranceCm,
+            message: `Sleeve-to-bodice scye notch geometric correspondence failed: ${deltaFront > notchToleranceCm ? `front scye notch delta ${deltaFront.toFixed(2)} cm exceeds ${notchToleranceCm} cm. ` : ''}${deltaBack > notchToleranceCm ? `back scye notch delta ${deltaBack.toFixed(2)} cm exceeds ${notchToleranceCm} cm.` : ''}`
+          });
+        } else {
+          checks.push({
+            id: 'val-slv-notch-correspondence',
+            category: 'geometry',
+            name: 'Sleeve Construction Notch Topology & Pairing',
+            status: 'pass',
+            measuredValue: `Front delta: ${deltaFront.toFixed(2)} cm, Back delta: ${deltaBack.toFixed(2)} cm`,
+            message: 'Verified topology of crown shoulder alignment notch at apex, front scye single notch pairing with bodice chest notch, back scye double notches pairing with back bodice notches, and front/back inseam elbow alignment notches.'
+          });
+        }
+      }
     }
   }
 

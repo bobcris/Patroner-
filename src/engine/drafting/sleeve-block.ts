@@ -6,6 +6,7 @@
 import {
   BodyMeasurements,
   DesignSpecification,
+  FabricProperty,
   GrainLine,
   Notch,
   PatternPiece,
@@ -15,6 +16,7 @@ import {
 } from '../../types';
 import { approximateBezierLength, computeBoundingBox, distance } from '../geometry/math';
 import { generateCuttingContour } from '../geometry/offset';
+import { validateContourIntegrity } from '../geometry/contour-validator';
 import { CubicBezierCurve, GeometricContour, LineSegment } from '../geometry/primitives';
 import {
   calculateSleeveGarmentDimensions,
@@ -39,6 +41,52 @@ export interface ArmholeContext {
   totalArmholeLengthCm: number;
   frontScyeDepthCm: number;
   backScyeDepthCm: number;
+  frontChestNotchArcLengthCm: number;
+  backAcrossBackNotchArcLengthCm: number;
+}
+
+/**
+ * Computes the arc length along a CubicBezierCurve from its start point (t=0)
+ * to the closest point projected from a given reference point.
+ */
+export function computeArcLengthFromStart(curve: CubicBezierCurve, pt: Point): number {
+  let bestT = 0;
+  let bestDist = Infinity;
+  const steps = 100;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const p = curve.pointAt(t);
+    const d = distance(p, pt);
+    if (d < bestDist) {
+      bestDist = d;
+      bestT = t;
+    }
+  }
+  return Number(curve.subdivide(bestT).left.lengthCm().toFixed(2));
+}
+
+/**
+ * Finds the parameter t and point on a CubicBezierCurve at a specified arc length from start (p0).
+ * Uses binary search over subdivision lengths for deterministic convergence.
+ */
+export function findPointAtArcLength(curve: CubicBezierCurve, targetArcLengthCm: number): { t: number; point: Point } {
+  const totalLen = curve.lengthCm();
+  const clampedLen = Math.max(0.1, Math.min(totalLen - 0.1, targetArcLengthCm));
+  let low = 0;
+  let high = 1;
+  let mid = 0.5;
+
+  for (let iter = 0; iter < 16; iter++) {
+    mid = (low + high) / 2;
+    const len = curve.subdivide(mid).left.lengthCm();
+    if (len < clampedLen) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  return { t: mid, point: curve.pointAt(mid) };
 }
 
 export interface SleeveDiagnostics {
@@ -71,7 +119,7 @@ export interface SleeveDiagnostics {
 }
 
 /**
- * Extracts exact armhole curve lengths and depths from bodice pattern pieces.
+ * Extracts exact armhole curve lengths, depths, and notch arc lengths from bodice pattern pieces.
  * If pieces are not provided, drafts the bodice block internally to obtain
  * identical mathematical measurements.
  */
@@ -132,12 +180,38 @@ export function extractArmholeContext(
   const fUnderarmY = fArmholeSeam ? Math.max(fArmholeSeam.startPoint.y, fArmholeSeam.endPoint.y) : 21.0;
   const bUnderarmY = bArmholeSeam ? Math.max(bArmholeSeam.startPoint.y, bArmholeSeam.endPoint.y) : 21.0;
 
+  // Extract chest and across-back notch arc-lengths along armhole curves from underarm
+  let frontChestNotchArcLengthCm = Number((frontArmholeLengthCm * 0.52).toFixed(2));
+  let backAcrossBackNotchArcLengthCm = Number((backArmholeLengthCm * 0.52).toFixed(2));
+
+  const fChestNotch = frontPiece.notches.find(
+    n => n.id.includes('chest') || (n.label && n.label.includes('CHEST'))
+  );
+  const fArmholeSeg = frontPiece.stitchingContour?.segments.find(s => s.id === 'fb-armhole');
+  if (fChestNotch && fArmholeSeg instanceof CubicBezierCurve) {
+    frontChestNotchArcLengthCm = computeArcLengthFromStart(fArmholeSeg, fChestNotch.position);
+  }
+
+  const bAcrossBackNotches = backPiece.notches.filter(
+    n => n.id.includes('across-back') || (n.label && n.label.includes('BACK SCYE'))
+  );
+  const bArmholeSeg = backPiece.stitchingContour?.segments.find(s => s.id === 'bb-armhole');
+  if (bAcrossBackNotches.length > 0 && bArmholeSeg instanceof CubicBezierCurve) {
+    const avgPos: Point = {
+      x: bAcrossBackNotches.reduce((sum, n) => sum + n.position.x, 0) / bAcrossBackNotches.length,
+      y: bAcrossBackNotches.reduce((sum, n) => sum + n.position.y, 0) / bAcrossBackNotches.length
+    };
+    backAcrossBackNotchArcLengthCm = computeArcLengthFromStart(bArmholeSeg, avgPos);
+  }
+
   return {
     frontArmholeLengthCm,
     backArmholeLengthCm,
     totalArmholeLengthCm,
     frontScyeDepthCm: Number(fUnderarmY.toFixed(2)),
-    backScyeDepthCm: Number(bUnderarmY.toFixed(2))
+    backScyeDepthCm: Number(bUnderarmY.toFixed(2)),
+    frontChestNotchArcLengthCm,
+    backAcrossBackNotchArcLengthCm
   };
 }
 
@@ -390,15 +464,23 @@ export function draftSleeveBlock(
   });
 
   // 12. Production Notches
-  // Notch 1: Crown single notch (aligns with bodice shoulder seam)
-  // Notch 2: Front armhole single notch (placed at ~7.0cm along curve from underarm)
-  // Notch 3: Back armhole double notch (placed at ~8.0cm along curve from underarm)
+  // Notch 1: Crown single notch (aligns with bodice shoulder seam at crown apex)
+  // Notch 2: Front armhole single notch (matches front bodice chest notch arc-length from underarm)
+  // Notch 3: Back armhole double notch (matches back bodice across-back notches arc-length from underarm)
   // Notch 4: Elbow level match notches on front and back inseams
-  const frontNotchT = 0.72; // ~70-75% along curve from crown (i.e. close to underarm)
-  const frontNotchPos = frontCapCurve.pointAt(frontNotchT);
 
-  const backNotchT = 0.28; // ~28% along curve from back underarm
-  const backNotchPos = backCapCurve.pointAt(backNotchT);
+  // Crown notch strictly at apex (0, 0)
+  const crownApexPos: Point = { x: 0, y: 0 };
+
+  // Front scye notch: placed along frontCapCurve so arc length from uFront matches armhole.frontChestNotchArcLengthCm
+  const targetFrontNotchDist = armhole.frontChestNotchArcLengthCm;
+  const frontLenFromCrown = Math.max(0.5, frontCapLength - targetFrontNotchDist);
+  const { point: frontNotchPos } = findPointAtArcLength(frontCapCurve, frontLenFromCrown);
+
+  // Back scye double notch: placed along backCapCurve so arc length from uBack matches armhole.backAcrossBackNotchArcLengthCm
+  const targetBackNotchDist = armhole.backAcrossBackNotchArcLengthCm;
+  const bNotch1Pos = findPointAtArcLength(backCapCurve, Math.max(0.5, targetBackNotchDist - 0.5)).point;
+  const bNotch2Pos = findPointAtArcLength(backCapCurve, Math.min(backCapLength - 0.5, targetBackNotchDist + 0.5)).point;
 
   const elbowY = armLengthToElbow;
   const elbowFrontT = Math.min(1.0, Math.max(0.0, (elbowY - capHeight) / (sleeveLength - capHeight)));
@@ -414,7 +496,7 @@ export function draftSleeveBlock(
   const notches: Notch[] = [
     {
       id: 'notch-slv-crown',
-      position: crownApex,
+      position: crownApexPos,
       normalAngleDeg: -90,
       type: 'single',
       label: 'SHOULDER MATCH (CROWN)'
@@ -428,14 +510,14 @@ export function draftSleeveBlock(
     },
     {
       id: 'notch-slv-back-armhole-1',
-      position: { x: backNotchPos.x - 0.4, y: backNotchPos.y },
+      position: bNotch1Pos,
       normalAngleDeg: 135,
       type: 'double',
       label: 'BACK SCYE DOUBLE NOTCH 1'
     },
     {
       id: 'notch-slv-back-armhole-2',
-      position: { x: backNotchPos.x + 0.4, y: backNotchPos.y },
+      position: bNotch2Pos,
       normalAngleDeg: 135,
       type: 'double',
       label: 'BACK SCYE DOUBLE NOTCH 2'
@@ -591,6 +673,14 @@ export function draftSleeveBlock(
   return { piece, diagnostics };
 }
 
+export type SleeveTargetStatus =
+  | 'target-compliant'
+  | 'elevated-ease'
+  | 'high-crimp-warning'
+  | 'insufficient-ease'
+  | 'negative-ease-invalid'
+  | 'excessive-ease-invalid';
+
 export interface SleeveCapCompatibilityResult {
   strategy: SleeveEaseStrategy;
   frontArmholeLengthCm: number;
@@ -608,30 +698,109 @@ export interface SleeveCapCompatibilityResult {
   frontResidualCm: number;
   backResidualCm: number;
   totalResidualCm: number;
-  /** True if sleeve cap is geometrically sewable without gathering or pulling bodice scye (0 <= ease <= 5.0cm) */
+
+  /**
+   * Strategy's recommended ease envelope [min, max] cm.
+   * This represents an intentional design/silhouette recommendation, NOT an error tolerance.
+   */
+  recommendedEaseRangeCm: { min: number; max: number };
+  /** @deprecated Retained alias for recommendedEaseRangeCm */
+  targetToleranceRangeCm: { min: number; max: number };
+
+  /**
+   * Front ease validity: true if front sleeve cap seam is not shorter than front armhole (actualFrontEase >= 0).
+   * NOTE: This is an ease-based assembly condition, not a 3D physical fit certification.
+   */
+  isFrontEaseValid: boolean;
+
+  /**
+   * Back ease validity: true if back sleeve cap seam is not shorter than back armhole (actualBackEase >= 0).
+   */
+  isBackEaseValid: boolean;
+
+  /**
+   * Total assembly ease validity: true if frontEase >= 0, backEase >= 0, and totalEase <= 5.0 cm.
+   */
+  isTotalAssemblyEaseValid: boolean;
+
+  /**
+   * Canonical ease-based assembly validity gate (all 3 ease criteria satisfied).
+   */
+  isAssemblyEaseValid: boolean;
+
+  /**
+   * Backward-compatibility aliases for assembly ease validity.
+   * Documented explicitly as ease-based assembly gates, NOT full geometric curve or fit certifications.
+   */
   isGeometricallyValid: boolean;
   isFrontGeometricallyValid: boolean;
   isBackGeometricallyValid: boolean;
-  /** True if actual total ease falls within the strategy-specific recommended window [capEaseMinCm, capEaseMaxCm] */
-  isTargetCompliant: boolean;
-  targetToleranceRangeCm: { min: number; max: number };
-  targetStatus: 'target-compliant' | 'elevated-ease' | 'high-crimp-warning' | 'insufficient-ease' | 'negative-ease-invalid';
-  /** Geometric assembly viability (retained for backward compatibility; does NOT denote target convergence) */
   isFrontCompliant: boolean;
   isBackCompliant: boolean;
   isTotalCompliant: boolean;
+
+  /**
+   * Strategy target compliance: true strictly when the sleeve satisfies assembly ease validity
+   * AND actual total ease falls within recommendedEaseRangeCm [min, max].
+   * An invalid assembly is NEVER marked target compliant.
+   */
+  isTargetCompliant: boolean;
+
+  /**
+   * Provisional assessment of front/back ease distribution.
+   * Based on adult anatomical proportion (front 35-55% of total ease).
+   */
+  frontBackAllocationStatus: 'provisional-proportional' | 'imbalanced' | 'unassessed';
+
+  /**
+   * Granular boundary status classification.
+   */
+  targetStatus: SleeveTargetStatus;
+
+  /**
+   * Genuine geometric contour validation if stitchingContour is provided on the sleeve piece.
+   * Validates closure, coordinate continuity, and absence of self-intersections.
+   */
+  overallSleeveGeometryValid?: boolean;
+  contourIntegrityDiagnostics?: {
+    isClosed: boolean;
+    hasSelfIntersection: boolean;
+    isFinite: boolean;
+    details?: string;
+  };
+
+  /**
+   * Fabric stretch compensation factor applied to target ease (default 1.0 for rigid/woven).
+   */
+  fabricStretchFactor?: number;
+}
+
+export interface CompatibilityOptions {
+  strategy?: SleeveEaseStrategy;
+  fabric?: FabricProperty;
+  customTargetEaseCm?: number;
 }
 
 /**
  * Mathematically evaluates sleeve-cap to bodice armhole compatibility.
  * Checks front and back independently: Sleeve Cap Seam = Armhole Seam + Intended Ease.
- * Computes exact numerical residuals and distinguishes geometric validity from target compliance.
+ * Computes exact numerical residuals and distinguishes ease assembly validity from target compliance.
+ *
+ * By default, evaluation is fabric-independent (assumes non-stretch woven textile with stretch factor 1.0).
+ * When `fabric` is supplied in options, target cap ease and recommended envelope are scaled by
+ * the fabric stretch factor, matching calculateSleeveGarmentDimensions.
  */
 export function evaluateSleeveCapCompatibility(
   sleevePiece: PatternPiece,
   bodicePieces: PatternPiece[],
-  strategy: SleeveEaseStrategy = 'classic'
+  strategyOrOptions: SleeveEaseStrategy | CompatibilityOptions = 'classic'
 ): SleeveCapCompatibilityResult {
+  const options: CompatibilityOptions =
+    typeof strategyOrOptions === 'string'
+      ? { strategy: strategyOrOptions }
+      : strategyOrOptions;
+
+  const strategy: SleeveEaseStrategy = options.strategy ?? 'classic';
   const armhole = extractArmholeContext(bodicePieces);
   const frontCapSeam = sleevePiece.seams.find(
     s => s.id === 'slv-front-cap-seam' || s.name.includes('Front Sleeve Cap')
@@ -645,7 +814,23 @@ export function evaluateSleeveCapCompatibility(
   }
 
   const baseEase = SLEEVE_EASE_TABLE[strategy];
-  const targetTotalEase = baseEase.recommendedCapEaseCm;
+
+  // Fabric stretch compensation
+  let stretchFactor = 1.0;
+  if (options.fabric?.stretch === 'low-stretch') {
+    stretchFactor = 0.85;
+  } else if (options.fabric?.stretch === 'high-stretch') {
+    stretchFactor = 0.5;
+  }
+
+  const recommendedEaseRangeCm = {
+    min: Number((baseEase.capEaseMinCm * stretchFactor).toFixed(2)),
+    max: Number((baseEase.capEaseMaxCm * stretchFactor).toFixed(2))
+  };
+
+  const targetTotalEase = options.customTargetEaseCm !== undefined
+    ? options.customTargetEaseCm
+    : Number((baseEase.recommendedCapEaseCm * stretchFactor).toFixed(2));
   const targetFrontEase = Number((targetTotalEase * 0.45).toFixed(2));
   const targetBackEase = Number((targetTotalEase * 0.55).toFixed(2));
 
@@ -657,26 +842,60 @@ export function evaluateSleeveCapCompatibility(
   const backResidual = Number((actualBackEase - targetBackEase).toFixed(2));
   const totalResidual = Number((actualTotalEase - targetTotalEase).toFixed(2));
 
-  const isFrontGeometricallyValid = actualFrontEase >= 0;
-  const isBackGeometricallyValid = actualBackEase >= 0;
-  const isGeometricallyValid = isFrontGeometricallyValid && isBackGeometricallyValid && actualTotalEase <= 5.0;
+  // Ease-based assembly validity gates
+  const isFrontEaseValid = actualFrontEase >= 0;
+  const isBackEaseValid = actualBackEase >= 0;
+  const isTotalAssemblyEaseValid = isFrontEaseValid && isBackEaseValid && actualTotalEase >= 0 && actualTotalEase <= 5.0;
+  const isAssemblyEaseValid = isTotalAssemblyEaseValid;
 
-  const targetToleranceRangeCm = { min: baseEase.capEaseMinCm, max: baseEase.capEaseMaxCm };
-  const isTargetCompliant = actualTotalEase >= baseEase.capEaseMinCm && actualTotalEase <= baseEase.capEaseMaxCm;
-
-  let targetStatus: 'target-compliant' | 'elevated-ease' | 'high-crimp-warning' | 'insufficient-ease' | 'negative-ease-invalid';
-  if (actualTotalEase < 0) {
+  // Granular boundary status classification
+  let targetStatus: SleeveTargetStatus;
+  if (!isFrontEaseValid || !isBackEaseValid || actualTotalEase < 0) {
     targetStatus = 'negative-ease-invalid';
-  } else if (actualTotalEase < baseEase.capEaseMinCm) {
+  } else if (actualTotalEase > 5.0) {
+    targetStatus = 'excessive-ease-invalid';
+  } else if (actualTotalEase < recommendedEaseRangeCm.min) {
     targetStatus = 'insufficient-ease';
-  } else if (actualTotalEase <= baseEase.capEaseMaxCm) {
+  } else if (actualTotalEase <= recommendedEaseRangeCm.max) {
     targetStatus = 'target-compliant';
   } else if (actualTotalEase <= 4.5) {
     targetStatus = 'elevated-ease';
-  } else if (actualTotalEase <= 5.0) {
-    targetStatus = 'high-crimp-warning';
   } else {
-    targetStatus = 'elevated-ease';
+    // 4.5 < actualTotalEase <= 5.0
+    targetStatus = 'high-crimp-warning';
+  }
+
+  // Target compliance: MUST be assembly-valid AND within the recommended envelope
+  const isTargetCompliant = isAssemblyEaseValid && targetStatus === 'target-compliant';
+
+  // Front/Back allocation assessment
+  let frontBackAllocationStatus: 'provisional-proportional' | 'imbalanced' | 'unassessed' = 'unassessed';
+  if (isAssemblyEaseValid && actualTotalEase > 0) {
+    const frontRatio = actualFrontEase / actualTotalEase;
+    if (frontRatio >= 0.35 && frontRatio <= 0.55) {
+      frontBackAllocationStatus = 'provisional-proportional';
+    } else {
+      frontBackAllocationStatus = 'imbalanced';
+    }
+  }
+
+  // Overall geometric contour validation (if contour is present on piece)
+  let overallSleeveGeometryValid: boolean | undefined = undefined;
+  let contourIntegrityDiagnostics: { isClosed: boolean; hasSelfIntersection: boolean; isFinite: boolean; details?: string } | undefined = undefined;
+
+  if (sleevePiece.stitchingContour) {
+    const contourReport = validateContourIntegrity(sleevePiece.stitchingContour);
+    const hasSelfIntersection = contourReport.checks.some(c => c.errorCode === 'VAL-CONTOUR-SELF-INTERSECTION' && c.status === 'fail');
+    const isClosed = !contourReport.checks.some(c => (c.errorCode === 'VAL-CONTOUR-CLOSURE' || c.errorCode === 'VAL-CONTOUR-DISCONTINUITY') && c.status === 'fail');
+    const isFinite = !contourReport.checks.some(c => c.errorCode === 'VAL-CONTOUR-NON-FINITE' && c.status === 'fail');
+
+    overallSleeveGeometryValid = contourReport.isValid;
+    contourIntegrityDiagnostics = {
+      isClosed,
+      hasSelfIntersection,
+      isFinite,
+      details: contourReport.errors.length > 0 ? contourReport.errors.join('; ') : 'Contour closed, valid segment continuity, no self-intersections'
+    };
   }
 
   return {
@@ -696,14 +915,23 @@ export function evaluateSleeveCapCompatibility(
     frontResidualCm: frontResidual,
     backResidualCm: backResidual,
     totalResidualCm: totalResidual,
-    isGeometricallyValid,
-    isFrontGeometricallyValid,
-    isBackGeometricallyValid,
+    recommendedEaseRangeCm,
+    targetToleranceRangeCm: recommendedEaseRangeCm,
+    isFrontEaseValid,
+    isBackEaseValid,
+    isTotalAssemblyEaseValid,
+    isAssemblyEaseValid,
+    isGeometricallyValid: isAssemblyEaseValid,
+    isFrontGeometricallyValid: isFrontEaseValid,
+    isBackGeometricallyValid: isBackEaseValid,
+    isFrontCompliant: isFrontEaseValid,
+    isBackCompliant: isBackEaseValid,
+    isTotalCompliant: isAssemblyEaseValid,
     isTargetCompliant,
-    targetToleranceRangeCm,
+    frontBackAllocationStatus,
     targetStatus,
-    isFrontCompliant: isFrontGeometricallyValid,
-    isBackCompliant: isBackGeometricallyValid,
-    isTotalCompliant: isGeometricallyValid
+    overallSleeveGeometryValid,
+    contourIntegrityDiagnostics,
+    fabricStretchFactor: stretchFactor
   };
 }

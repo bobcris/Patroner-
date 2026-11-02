@@ -5,7 +5,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { BodyMeasurements, DesignSpecification, SleeveEaseStrategy, StandardSize } from '../../types';
+import { BodyMeasurements, DesignSpecification, Notch, PatternPiece, SleeveEaseStrategy, StandardSize } from '../../types';
 import { INITIAL_CONCEPTS } from '../../domain/design/curated-concepts';
 import {
   STANDARD_SIZING_SYSTEM,
@@ -571,6 +571,271 @@ describe('Milestone 04.2: Deterministic Sleeve Drafting Engine', () => {
       assert.ok(notchCheck, 'Missing val-slv-notch-correspondence check');
       assert.strictEqual(notchCheck.status, 'pass');
       assert.ok(notchCheck.message.includes('pairing with bodice chest notch'));
+    });
+  });
+
+  // =========================================================================
+  // 14. MILESTONE 04.2.2.1: FINAL COMPATIBILITY & NOTCH CORRESPONDENCE
+  // =========================================================================
+  describe('14. Milestone 04.2.2.1: Final Compatibility & Notch Correspondence Reconciliation', () => {
+    const bodicePieces = draftBodiceBlock(validMeasurements, bodiceConcept);
+    const armholeCtx = extractArmholeContext(bodicePieces);
+
+    // Helper to build a mock sleeve piece with custom seam lengths and notches
+    function createMockSleevePiece(
+      frontCapLen: number,
+      backCapLen: number,
+      notchOverrides?: Partial<Notch>[]
+    ) {
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+
+      const updatedSeams = piece.seams.map(s => {
+        if (s.id === 'slv-front-cap-seam') return { ...s, lengthCm: frontCapLen };
+        if (s.id === 'slv-back-cap-seam') return { ...s, lengthCm: backCapLen };
+        return s;
+      });
+
+      let updatedNotches = [...piece.notches];
+      if (notchOverrides) {
+        notchOverrides.forEach(ov => {
+          const idx = updatedNotches.findIndex(n => n.id === ov.id);
+          if (idx !== -1) {
+            updatedNotches[idx] = { ...updatedNotches[idx], ...ov };
+          }
+        });
+      }
+
+      return {
+        ...piece,
+        seams: updatedSeams,
+        notches: updatedNotches
+      };
+    }
+
+    it('evaluates every strategy minimum and maximum target boundaries accurately', () => {
+      const strategies: SleeveEaseStrategy[] = ['tailored', 'classic', 'fitted', 'flat'];
+      const table = {
+        tailored: { min: 2.0, max: 3.8 },
+        classic: { min: 1.2, max: 2.5 },
+        fitted: { min: 0.6, max: 1.6 },
+        flat: { min: 0.0, max: 0.8 }
+      };
+
+      strategies.forEach(st => {
+        const bounds = table[st];
+
+        // 1. Exactly at minimum
+        const mockAtMin = createMockSleevePiece(
+          armholeCtx.frontArmholeLengthCm + bounds.min * 0.45,
+          armholeCtx.backArmholeLengthCm + bounds.min * 0.55
+        );
+        const auditMin = evaluateSleeveCapCompatibility(mockAtMin, bodicePieces, st);
+        assert.strictEqual(auditMin.isTargetCompliant, true, `${st} at min should be compliant`);
+        assert.strictEqual(auditMin.targetStatus, 'target-compliant');
+        assert.strictEqual(auditMin.isAssemblyEaseValid, true);
+
+        // 2. Exactly at maximum
+        const mockAtMax = createMockSleevePiece(
+          armholeCtx.frontArmholeLengthCm + bounds.max * 0.45,
+          armholeCtx.backArmholeLengthCm + bounds.max * 0.55
+        );
+        const auditMax = evaluateSleeveCapCompatibility(mockAtMax, bodicePieces, st);
+        assert.strictEqual(auditMax.isTargetCompliant, true, `${st} at max should be compliant`);
+        assert.strictEqual(auditMax.targetStatus, 'target-compliant');
+
+        // 3. Just below minimum (if min > 0)
+        if (bounds.min > 0.1) {
+          const mockBelow = createMockSleevePiece(
+            armholeCtx.frontArmholeLengthCm + (bounds.min - 0.2) * 0.45,
+            armholeCtx.backArmholeLengthCm + (bounds.min - 0.2) * 0.55
+          );
+          const auditBelow = evaluateSleeveCapCompatibility(mockBelow, bodicePieces, st);
+          assert.strictEqual(auditBelow.isTargetCompliant, false);
+          assert.strictEqual(auditBelow.targetStatus, 'insufficient-ease');
+        }
+
+        // 4. Just above maximum
+        const mockAbove = createMockSleevePiece(
+          armholeCtx.frontArmholeLengthCm + (bounds.max + 0.3) * 0.45,
+          armholeCtx.backArmholeLengthCm + (bounds.max + 0.3) * 0.55
+        );
+        const auditAbove = evaluateSleeveCapCompatibility(mockAbove, bodicePieces, st);
+        assert.strictEqual(auditAbove.isTargetCompliant, false);
+        assert.ok(auditAbove.targetStatus === 'elevated-ease' || auditAbove.targetStatus === 'high-crimp-warning');
+      });
+    });
+
+    it('distinguishes target compliance from positive geometric ease', () => {
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { strategy: 'classic', bodicePieces });
+      const audit = evaluateSleeveCapCompatibility(piece, bodicePieces, 'classic');
+
+      assert.strictEqual(audit.isAssemblyEaseValid, true);
+      assert.strictEqual(audit.isGeometricallyValid, true);
+      assert.strictEqual(audit.isTargetCompliant, false);
+      assert.strictEqual(audit.targetStatus, 'elevated-ease');
+    });
+
+    it('rejects front/back ease imbalance with negative front ease', () => {
+      // Front cap shorter than front armhole by 0.4 cm, but back cap has +2.4 cm ease (net total ease: +2.0 cm)
+      const mockImbalancedFront = createMockSleevePiece(
+        armholeCtx.frontArmholeLengthCm - 0.4,
+        armholeCtx.backArmholeLengthCm + 2.4
+      );
+      const audit = evaluateSleeveCapCompatibility(mockImbalancedFront, bodicePieces, 'classic');
+
+      assert.strictEqual(audit.isFrontEaseValid, false);
+      assert.strictEqual(audit.isBackEaseValid, true);
+      assert.strictEqual(audit.isAssemblyEaseValid, false);
+      assert.strictEqual(audit.isTargetCompliant, false);
+      assert.strictEqual(audit.targetStatus, 'negative-ease-invalid');
+    });
+
+    it('rejects front/back ease imbalance with negative back ease', () => {
+      // Back cap shorter than back armhole by 0.3 cm, but front cap has +2.3 cm ease (net total ease: +2.0 cm)
+      const mockImbalancedBack = createMockSleevePiece(
+        armholeCtx.frontArmholeLengthCm + 2.3,
+        armholeCtx.backArmholeLengthCm - 0.3
+      );
+      const audit = evaluateSleeveCapCompatibility(mockImbalancedBack, bodicePieces, 'classic');
+
+      assert.strictEqual(audit.isFrontEaseValid, true);
+      assert.strictEqual(audit.isBackEaseValid, false);
+      assert.strictEqual(audit.isAssemblyEaseValid, false);
+      assert.strictEqual(audit.isTargetCompliant, false);
+      assert.strictEqual(audit.targetStatus, 'negative-ease-invalid');
+    });
+
+    it('rejects total ease exceeding 5.0 cm assembly limit', () => {
+      const mockExcessive = createMockSleevePiece(
+        armholeCtx.frontArmholeLengthCm + 2.6,
+        armholeCtx.backArmholeLengthCm + 2.7 // total ease: 5.3 cm
+      );
+      const audit = evaluateSleeveCapCompatibility(mockExcessive, bodicePieces, 'tailored');
+
+      assert.strictEqual(audit.isTotalAssemblyEaseValid, false);
+      assert.strictEqual(audit.isAssemblyEaseValid, false);
+      assert.strictEqual(audit.isTargetCompliant, false);
+      assert.strictEqual(audit.targetStatus, 'excessive-ease-invalid');
+    });
+
+    it('enforces consistency: an invalid assembly can NEVER be target compliant', () => {
+      const invalidCases = [
+        createMockSleevePiece(armholeCtx.frontArmholeLengthCm - 0.2, armholeCtx.backArmholeLengthCm + 2.0),
+        createMockSleevePiece(armholeCtx.frontArmholeLengthCm + 2.0, armholeCtx.backArmholeLengthCm - 0.2),
+        createMockSleevePiece(armholeCtx.frontArmholeLengthCm + 3.0, armholeCtx.backArmholeLengthCm + 3.0)
+      ];
+
+      invalidCases.forEach(mock => {
+        const audit = evaluateSleeveCapCompatibility(mock, bodicePieces, 'classic');
+        assert.strictEqual(audit.isAssemblyEaseValid, false);
+        assert.strictEqual(audit.isTargetCompliant, false);
+      });
+    });
+
+    it('handles missing bodice pieces in notch correspondence with structured warning', () => {
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+      // Validate with ONLY sleeve piece (bodice absent)
+      const report = validatePatternDraft([piece]);
+
+      const correspondenceCheck = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(correspondenceCheck, 'Missing val-slv-notch-correspondence check');
+      assert.strictEqual(correspondenceCheck.status, 'warning');
+      assert.ok(correspondenceCheck.message.includes('Bodice pieces are absent'));
+
+      // Internal notch check should still pass
+      const internalCheck = report.checks.find(c => c.id === 'val-slv-notch-internal');
+      assert.ok(internalCheck, 'Missing val-slv-notch-internal check');
+      assert.strictEqual(internalCheck.status, 'pass');
+    });
+
+    it('fails internal notch check when crown notch is displaced from apex', () => {
+      const displacedCrown = createMockSleevePiece(
+        armholeCtx.frontArmholeLengthCm + 1.5,
+        armholeCtx.backArmholeLengthCm + 1.5,
+        [{ id: 'notch-slv-crown', position: { x: 1.2, y: 0.5 } }]
+      );
+
+      const report = validatePatternDraft([...bodicePieces, displacedCrown]);
+      const internalCheck = report.checks.find(c => c.id === 'val-slv-notch-internal');
+      assert.ok(internalCheck);
+      assert.strictEqual(internalCheck.status, 'fail');
+      assert.ok(internalCheck.message.includes('Crown notch is displaced'));
+    });
+
+    it('fails correspondence check when front or back scye notch is shifted', () => {
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+      const fNotch = piece.notches.find(n => n.id === 'notch-slv-front-armhole')!;
+      // Displace front scye notch by 2.0 cm
+      const misalignedSleeve = createMockSleevePiece(
+        armholeCtx.frontArmholeLengthCm + 1.5,
+        armholeCtx.backArmholeLengthCm + 1.5,
+        [{ id: 'notch-slv-front-armhole', position: { x: fNotch.position.x + 2.0, y: fNotch.position.y } }]
+      );
+
+      const report = validatePatternDraft([...bodicePieces, misalignedSleeve]);
+      const correspondenceCheck = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(correspondenceCheck);
+      assert.strictEqual(correspondenceCheck.status, 'fail');
+      assert.ok(correspondenceCheck.message.includes('Sleeve-to-bodice scye notch geometric correspondence failed'));
+    });
+
+    it('verifies genuine sleeve-to-bodice notch correspondence on default draft', () => {
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+      const report = validatePatternDraft([...bodicePieces, piece]);
+
+      const internalCheck = report.checks.find(c => c.id === 'val-slv-notch-internal');
+      assert.ok(internalCheck);
+      assert.strictEqual(internalCheck.status, 'pass');
+
+      const correspondenceCheck = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(correspondenceCheck);
+      assert.strictEqual(correspondenceCheck.status, 'pass');
+      assert.ok(correspondenceCheck.message.includes('Verified topology'));
+    });
+
+    it('evaluates fabric-specific ease compensation when fabric property is provided', () => {
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+      const lowStretchFabric = {
+        id: 'low-stretch-wool',
+        name: 'Low Stretch Wool',
+        composition: '98% Wool, 2% Elastane',
+        weight: 'medium' as const,
+        stretch: 'low-stretch' as const,
+        recommendedEaseCm: { waist: 2.0, hip: 3.0, bust: 3.5 },
+        drapeDescription: 'Slight give.'
+      };
+
+      const auditRigid = evaluateSleeveCapCompatibility(piece, bodicePieces, 'classic');
+      const auditStretch = evaluateSleeveCapCompatibility(piece, bodicePieces, {
+        strategy: 'classic',
+        fabric: lowStretchFabric
+      });
+
+      // Rigid: stretch factor 1.0
+      assert.strictEqual(auditRigid.fabricStretchFactor, 1.0);
+      assert.strictEqual(auditRigid.recommendedEaseRangeCm.min, 1.2);
+      assert.strictEqual(auditRigid.recommendedEaseRangeCm.max, 2.5);
+
+      // Low stretch: stretch factor 0.85
+      assert.strictEqual(auditStretch.fabricStretchFactor, 0.85);
+      assert.strictEqual(auditStretch.recommendedEaseRangeCm.min, Number((1.2 * 0.85).toFixed(2))); // 1.02
+      assert.strictEqual(auditStretch.recommendedEaseRangeCm.max, Number((2.5 * 0.85).toFixed(2))); // 2.12
+      assert.strictEqual(auditStretch.targetTotalEaseCm, Number((1.8 * 0.85).toFixed(2))); // 1.53
+    });
+
+    it('produces deterministic output across repeated evaluations', () => {
+      const { piece: pieceA, diagnostics: diagA } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+      const { piece: pieceB, diagnostics: diagB } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+
+      assert.deepStrictEqual(diagA, diagB);
+      assert.strictEqual(pieceA.notches.length, pieceB.notches.length);
+      for (let i = 0; i < pieceA.notches.length; i++) {
+        assert.deepStrictEqual(pieceA.notches[i].position, pieceB.notches[i].position);
+      }
+
+      const auditA = evaluateSleeveCapCompatibility(pieceA, bodicePieces, 'classic');
+      const auditB = evaluateSleeveCapCompatibility(pieceB, bodicePieces, 'classic');
+      assert.deepStrictEqual(auditA, auditB);
     });
   });
 });
