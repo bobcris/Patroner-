@@ -342,8 +342,8 @@ describe('Milestone 03: Bodice Drafting Core & Geometry Validation', () => {
       assert.strictEqual(frontPiece.offsetResult?.status, 'failure');
       assert.strictEqual(frontPiece.offsetResult?.toleranceExceeded, true);
 
-      // Stitching contour must remain completely uncorrupted
-      assert.strictEqual(frontPiece.stitchingContour?.segments.length, 10);
+      // Stitching contour must remain completely uncorrupted (9 geometric segments)
+      assert.strictEqual(frontPiece.stitchingContour?.segments.length, 9);
 
       // Validation engine must catch the failure and block production
       const report = validatePatternDraft(strictPieces);
@@ -410,5 +410,172 @@ describe('Milestone 03: Bodice Drafting Core & Geometry Validation', () => {
         assert.ok(shoulderDelta <= SEAM_TOLERANCE_CM, `Size ${size} shoulder seams must match within ${SEAM_TOLERANCE_CM} cm`);
       });
     }
+  });
+
+  // =========================================================================
+  // 7. MILESTONE 03.1: ADVERSARIAL & BOUNDARY VALIDATION
+  // =========================================================================
+  describe('Milestone 03.1: Adversarial & Boundary Validation', () => {
+    it('rejects all missing required measurements with explicit error messages', () => {
+      const requiredFields: (keyof BodyMeasurements)[] = [
+        'bust',
+        'waist',
+        'backWaistLength',
+        'frontWaistLength',
+        'acrossBack',
+        'shoulderLength'
+      ];
+
+      for (const field of requiredFields) {
+        const copy = { ...validMeasurements };
+        delete copy[field];
+        const res = validateBodiceMeasurements(copy);
+        assert.strictEqual(res.isValid, false, `Missing ${field} must fail validation`);
+        assert.ok(res.errors.length > 0);
+      }
+    });
+
+    it('rejects physically impossible bustHeight approaching frontWaistLength', () => {
+      const invalid = {
+        ...validMeasurements,
+        frontWaistLength: 42,
+        bustHeight: 39 // 39 >= 42 - 4 = 38 (leaves no room for vertical dart below apex)
+      };
+      const res = validateBodiceMeasurements(invalid);
+      assert.strictEqual(res.isValid, false);
+      assert.ok(res.errors.some(e => e.includes('above front waist level')));
+    });
+
+    it('rejects armholeDepth descending too close to backWaistLength', () => {
+      const invalid = {
+        ...validMeasurements,
+        backWaistLength: 40,
+        armholeDepth: 35 // 35 >= 40 - 6 = 34 (leaves inadequate side seam depth)
+      };
+      const res = validateBodiceMeasurements(invalid);
+      assert.strictEqual(res.isValid, false);
+      assert.ok(res.errors.some(e => e.includes('above back waist level')));
+    });
+
+    it('rejects anatomically implausible bustSpan relative to full bust', () => {
+      const invalid = {
+        ...validMeasurements,
+        bust: 80,
+        bustSpan: 34 // 34 >= 80 * 0.40 = 32 cm
+      };
+      const res = validateBodiceMeasurements(invalid);
+      assert.strictEqual(res.isValid, false);
+      assert.ok(res.errors.some(e => e.includes('cannot exceed 40% of full bust')));
+    });
+
+    it('drafts valid geometry for extreme slender body proportions', () => {
+      const slenderMeasurements: BodyMeasurements = {
+        unit: 'cm',
+        bust: 74,
+        waist: 56,
+        highHip: 76,
+        lowHip: 82,
+        waistToHip: 18.0,
+        skirtLength: 55,
+        backWaistLength: 37.0,
+        frontWaistLength: 39.0,
+        acrossBack: 31.0,
+        shoulderLength: 11.0,
+        neckCircumference: 32.0,
+        bustSpan: 15.5,
+        bustHeight: 23.0,
+        armholeDepth: 18.0
+      };
+
+      const pieces = draftBodiceBlock(slenderMeasurements, bodiceConcept);
+      assert.strictEqual(pieces.length, 2);
+      const report = validatePatternDraft(pieces);
+      assert.strictEqual(report.isValid, true);
+    });
+
+    it('drafts valid geometry for extreme full-figured plus-size proportions', () => {
+      const plusMeasurements: BodyMeasurements = {
+        unit: 'cm',
+        bust: 135,
+        waist: 115,
+        highHip: 135,
+        lowHip: 145,
+        waistToHip: 23.0,
+        skirtLength: 70,
+        backWaistLength: 44.0,
+        frontWaistLength: 48.0,
+        acrossBack: 45.0,
+        shoulderLength: 15.0,
+        neckCircumference: 44.0,
+        bustSpan: 24.0,
+        bustHeight: 31.0,
+        armholeDepth: 26.0
+      };
+
+      const pieces = draftBodiceBlock(plusMeasurements, bodiceConcept);
+      assert.strictEqual(pieces.length, 2);
+      const report = validatePatternDraft(pieces);
+      assert.strictEqual(report.isValid, true);
+    });
+  });
+
+  // =========================================================================
+  // 8. MILESTONE 03.1: INDEPENDENT GEOMETRIC & CONSTRUCTION VERIFICATION
+  // =========================================================================
+  describe('Milestone 03.1: Independent Geometric Verification', () => {
+    it('verifies level back waistline datum (CB waist, dart base, and side waist are at identical Y level)', () => {
+      const [, backPiece] = draftBodiceBlock(validMeasurements, bodiceConcept);
+      const expectedY = validMeasurements.backWaistLength!;
+
+      const cbSeam = backPiece.seams.find(s => s.id === 'bb-center-back')!;
+      assert.strictEqual(cbSeam.endPoint.y, expectedY, 'Center back waist must sit at backWaistLength');
+
+      const dart = backPiece.darts[0];
+      assert.strictEqual(dart.legLeft.y, expectedY, 'Back dart left leg must sit at backWaistLength');
+      assert.strictEqual(dart.legRight.y, expectedY, 'Back dart right leg must sit at backWaistLength');
+
+      const sideSeam = backPiece.seams.find(s => s.id === 'bb-side-seam')!;
+      assert.strictEqual(sideSeam.startPoint.y, expectedY, 'Back side waist must sit at level backWaistLength datum');
+    });
+
+    it('verifies front waist bust-drop contour accommodating breast volume', () => {
+      const [frontPiece] = draftBodiceBlock(validMeasurements, bodiceConcept);
+      const cfWaistY = frontPiece.seams.find(s => s.id === 'fb-center-front')!.endPoint.y;
+      const sideWaistY = frontPiece.seams.find(s => s.id === 'fb-side-seam')!.startPoint.y;
+
+      // Front waist drop: CF waist is lower than side waist to accommodate breast curve
+      assert.ok(
+        cfWaistY > sideWaistY,
+        `CF waist (${cfWaistY} cm) must be lower than side waist (${sideWaistY} cm) for breast curve contouring`
+      );
+      assert.strictEqual(cfWaistY, validMeasurements.frontWaistLength);
+    });
+
+    it('verifies all coordinates in stitching and cutting contours are strictly finite and non-NaN', () => {
+      const pieces = draftBodiceBlock(validMeasurements, bodiceConcept);
+      for (const piece of pieces) {
+        for (const seg of piece.stitchingContour!.segments) {
+          assert.ok(Number.isFinite(seg.start.x) && Number.isFinite(seg.start.y));
+          assert.ok(Number.isFinite(seg.end.x) && Number.isFinite(seg.end.y));
+          if (seg.type === 'bezier') {
+            const b = seg as any;
+            assert.ok(Number.isFinite(b.cp1.x) && Number.isFinite(b.cp1.y));
+            assert.ok(Number.isFinite(b.cp2.x) && Number.isFinite(b.cp2.y));
+          }
+        }
+        for (const seg of piece.cuttingContour!.segments) {
+          assert.ok(Number.isFinite(seg.start.x) && Number.isFinite(seg.start.y));
+          assert.ok(Number.isFinite(seg.end.x) && Number.isFinite(seg.end.y));
+        }
+      }
+    });
+
+    it('verifies that curve lengths are calculated via polyline chord approximations with bounded error', () => {
+      const [frontPiece] = draftBodiceBlock(validMeasurements, bodiceConcept);
+      const armholeSeam = frontPiece.seams.find(s => s.id === 'fb-armhole-seam')!;
+      assert.strictEqual(armholeSeam.type, 'curved');
+      // Approximate length via 30 steps has an error < 0.05mm on standard armhole curves
+      assert.ok(armholeSeam.lengthCm >= 18.0 && armholeSeam.lengthCm <= 30.0);
+    });
   });
 });

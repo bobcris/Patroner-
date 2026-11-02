@@ -11,9 +11,9 @@ import { BodyMeasurements, EaseProfile, FabricProperty, SizingStandard, Standard
  * Ease is not embedded in these body measurements; ease is calculated dynamically.
  */
 export const STANDARD_SIZING_SYSTEM: SizingStandard = {
-  standardName: 'Patroner ISO Standard Sizing Chart v1.0',
-  system: 'European ISO/EN 13402 Reference Table (cm)',
-  description: 'Documented European anthropometric base chart. All values represent naked body dimensions in cm before ease.',
+  standardName: 'Patroner European Anthropometric Sizing Reference v1.0',
+  system: 'European Anthropometric Reference Table (aligned with EN 13402 base intervals & Aldrich proportions)',
+  description: 'Documented European anthropometric reference table based on EN 13402 base circumferences (bust/waist/hip) with Aldrich/Hohenstein secondary anatomical proportions in cm. All values represent body dimensions before ease.',
   sizes: {
     XS: {
       unit: 'cm',
@@ -321,27 +321,42 @@ export function validateBodiceMeasurements(m: Partial<BodyMeasurements>): Measur
     }
   }
 
-  if (m.bustSpan !== undefined) {
-    if (!Number.isFinite(m.bustSpan) || m.bustSpan <= 0) {
-      errors.push(`Bust span (apex-to-apex distance) must be a positive finite number (received: ${m.bustSpan}).`);
-    } else if (m.bustSpan < 12 || m.bustSpan > 30) {
-      errors.push(`Bust span (${m.bustSpan} cm) falls outside boundary (12 cm to 30 cm).`);
-    }
-  }
-
   if (m.bustHeight !== undefined) {
     if (!Number.isFinite(m.bustHeight) || m.bustHeight <= 0) {
       errors.push(`Bust height (side neck to apex) must be a positive finite number (received: ${m.bustHeight}).`);
-    } else if (m.bustHeight < 18 || m.bustHeight > 42) {
-      errors.push(`Bust height (${m.bustHeight} cm) falls outside boundary (18 cm to 42 cm).`);
+    } else {
+      if (m.bustHeight < 18 || m.bustHeight > 42) {
+        errors.push(`Bust height (${m.bustHeight} cm) falls outside boundary (18 cm to 42 cm).`);
+      }
+      if (m.frontWaistLength && Number.isFinite(m.frontWaistLength) && m.bustHeight >= m.frontWaistLength - 4.0) {
+        errors.push(`Bust height (${m.bustHeight} cm) must be at least 4 cm above front waist level (${m.frontWaistLength} cm) to permit vertical waist dart construction.`);
+      }
+    }
+  }
+
+  if (m.bustSpan !== undefined) {
+    if (!Number.isFinite(m.bustSpan) || m.bustSpan <= 0) {
+      errors.push(`Bust span (apex-to-apex distance) must be a positive finite number (received: ${m.bustSpan}).`);
+    } else {
+      if (m.bustSpan < 12 || m.bustSpan > 30) {
+        errors.push(`Bust span (${m.bustSpan} cm) falls outside boundary (12 cm to 30 cm).`);
+      }
+      if (m.bust && Number.isFinite(m.bust) && m.bustSpan >= m.bust * 0.40) {
+        errors.push(`Bust span (${m.bustSpan} cm) cannot exceed 40% of full bust circumference (${m.bust} cm).`);
+      }
     }
   }
 
   if (m.armholeDepth !== undefined) {
     if (!Number.isFinite(m.armholeDepth) || m.armholeDepth <= 0) {
       errors.push(`Armhole depth must be a positive finite number (received: ${m.armholeDepth}).`);
-    } else if (m.armholeDepth < 14 || m.armholeDepth > 32) {
-      errors.push(`Armhole depth (${m.armholeDepth} cm) falls outside boundary (14 cm to 32 cm).`);
+    } else {
+      if (m.armholeDepth < 14 || m.armholeDepth > 32) {
+        errors.push(`Armhole depth (${m.armholeDepth} cm) falls outside boundary (14 cm to 32 cm).`);
+      }
+      if (m.backWaistLength && Number.isFinite(m.backWaistLength) && m.armholeDepth >= m.backWaistLength - 6.0) {
+        errors.push(`Armhole depth (${m.armholeDepth} cm) must be at least 6 cm above back waist level (${m.backWaistLength} cm) to provide adequate side torso length.`);
+      }
     }
   }
 

@@ -129,7 +129,7 @@ export type StandardSize = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL';
 
 export interface SizingStandard {
   standardName: string;
-  system: 'European ISO/EN 13402 Reference Table (cm)';
+  system: string;
   sizes: Record<StandardSize, BodyMeasurements>;
   description: string;
 }

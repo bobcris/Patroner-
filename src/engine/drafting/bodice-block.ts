@@ -142,19 +142,19 @@ export function draftBodiceBlock(
   const fUnderarm: Point = { x: frontQuarterBust, y: scyeY };
   const bUnderarm: Point = { x: backQuarterBust, y: scyeY };
 
-  // 8. Front Side Seam & Waist Placement
-  const fSideWaistX = Number((frontQuarterBust - frontSideSuppression).toFixed(2));
-  const fSideWaistY = frontWaistLength;
-  const fSideWaist: Point = { x: fSideWaistX, y: fSideWaistY };
-  const frontSideSeamLength = Number(distance(fUnderarm, fSideWaist).toFixed(2));
-
-  // 9. Back Side Seam Placement (Matched to Front Side Seam Length for 0.0mm Discrepancy)
+  // 8. Back Side Seam Placement (Anatomical spine-to-waist datum: level back waist)
   const bSideWaistX = Number((backQuarterBust - backSideSuppression).toFixed(2));
-  const bDeltaX = bSideWaistX - bUnderarm.x;
-  // Solve vertical drop so hypotenuse exactly equals frontSideSeamLength
-  const bDeltaY = Math.sqrt(Math.max(1.0, frontSideSeamLength * frontSideSeamLength - bDeltaX * bDeltaX));
-  const bSideWaistY = Number((scyeY + bDeltaY).toFixed(2));
+  const bSideWaistY = backWaistLength;
   const bSideWaist: Point = { x: bSideWaistX, y: bSideWaistY };
+  const backSideSeamLength = Number(distance(bUnderarm, bSideWaist).toFixed(2));
+
+  // 9. Front Side Seam Placement (Matched to Back Side Seam Length for 0.0mm Discrepancy)
+  const fSideWaistX = Number((frontQuarterBust - frontSideSuppression).toFixed(2));
+  const fDeltaX = fSideWaistX - fUnderarm.x;
+  // Solve vertical drop so hypotenuse exactly equals backSideSeamLength
+  const fDeltaY = Math.sqrt(Math.max(1.0, backSideSeamLength * backSideSeamLength - fDeltaX * fDeltaX));
+  const fSideWaistY = Number((scyeY + fDeltaY).toFixed(2));
+  const fSideWaist: Point = { x: fSideWaistX, y: fSideWaistY };
 
   // =========================================================================
   // 10. FRONT BODICE CONSTRUCTION
@@ -164,7 +164,6 @@ export function draftBodiceBlock(
   const cfWaist: Point = { x: 0, y: frontWaistLength };
   const cfWaistSquareEnd: Point = { x: 2.5, y: frontWaistLength }; // 2.5cm perpendicular zone
   const cfNeck: Point = { x: 0, y: frontNeckDepth };
-  const cfNeckSquareEnd: Point = { x: 2.0, y: frontNeckDepth }; // 2.0cm perpendicular zone
 
   // Front Waist Dart (Apex placed 2.5cm below true bust point)
   const fDartApexY = Number((bustHeight + 2.5).toFixed(2));
@@ -191,7 +190,7 @@ export function draftBodiceBlock(
     y: Number((fNeckShoulder.y + (frontNeckDepth - fNeckShoulder.y) * 0.55).toFixed(2))
   };
   const fNeckCp2: Point = {
-    x: Number((cfNeckSquareEnd.x + (fNeckShoulder.x - cfNeckSquareEnd.x) * 0.25).toFixed(2)),
+    x: Number((neckWidth * 0.40).toFixed(2)),
     y: frontNeckDepth
   };
 
@@ -204,8 +203,7 @@ export function draftBodiceBlock(
   const fbSideSeam = new LineSegment('fb-side-seam', fSideWaist, fUnderarm, sideSeamAllowance, false, 'fb-side-seam');
   const fbArmhole = new CubicBezierCurve('fb-armhole', fUnderarm, fArmholeCp2, fArmholeCp1, fShoulderTip, armholeAllowance, false, 'fb-armhole');
   const fbShoulder = new LineSegment('fb-shoulder', fShoulderTip, fNeckShoulder, shoulderAllowance, false, 'fb-shoulder');
-  const fbNeckCurve = new CubicBezierCurve('fb-neck-curve', fNeckShoulder, fNeckCp1, fNeckCp2, cfNeckSquareEnd, neckAllowance, false, 'fb-neck');
-  const fbNeckSquare = new LineSegment('fb-neck-square', cfNeckSquareEnd, cfNeck, neckAllowance, false, 'fb-neck');
+  const fbNeckCurve = new CubicBezierCurve('fb-neck-curve', fNeckShoulder, fNeckCp1, fNeckCp2, cfNeck, neckAllowance, false, 'fb-neck');
 
   const frontStitchingContour = new GeometricContour(
     'front-bodice-stitching',
@@ -218,8 +216,7 @@ export function draftBodiceBlock(
       fbSideSeam,
       fbArmhole,
       fbShoulder,
-      fbNeckCurve,
-      fbNeckSquare
+      fbNeckCurve
     ],
     true
   );
@@ -320,10 +317,10 @@ export function draftBodiceBlock(
       name: 'Front Neckline',
       startPoint: fNeckShoulder,
       endPoint: cfNeck,
-      lengthCm: Number((fbNeckCurve.lengthCm() + fbNeckSquare.lengthCm()).toFixed(2)),
+      lengthCm: Number(fbNeckCurve.lengthCm().toFixed(2)),
       type: 'curved',
       endTangent: { x: -1, y: 0 },
-      segmentIds: ['fb-neck-curve', 'fb-neck-square']
+      segmentIds: ['fb-neck-curve']
     }
   ];
 
@@ -365,7 +362,6 @@ export function draftBodiceBlock(
   // =========================================================================
 
   const cbNeck: Point = { x: 0, y: backNeckDepth };
-  const cbNeckSquareEnd: Point = { x: 2.0, y: backNeckDepth }; // 2.0cm perpendicular zone
   const cbWaist: Point = { x: 0, y: backWaistLength };
   const cbWaistSquareEnd: Point = { x: 2.5, y: backWaistLength }; // 2.5cm perpendicular zone
 
@@ -394,7 +390,7 @@ export function draftBodiceBlock(
     y: Number((bNeckShoulder.y + backNeckDepth * 0.4).toFixed(2))
   };
   const bNeckCp2: Point = {
-    x: Number((cbNeckSquareEnd.x + (bNeckShoulder.x - cbNeckSquareEnd.x) * 0.2).toFixed(2)),
+    x: Number((neckWidth * 0.35).toFixed(2)),
     y: backNeckDepth
   };
 
@@ -407,8 +403,7 @@ export function draftBodiceBlock(
   const bbSideSeam = new LineSegment('bb-side-seam', bSideWaist, bUnderarm, sideSeamAllowance, false, 'bb-side-seam');
   const bbArmhole = new CubicBezierCurve('bb-armhole', bUnderarm, bArmholeCp2, bArmholeCp1, bShoulderTip, armholeAllowance, false, 'bb-armhole');
   const bbShoulder = new LineSegment('bb-shoulder', bShoulderTip, bNeckShoulder, shoulderAllowance, false, 'bb-shoulder');
-  const bbNeckCurve = new CubicBezierCurve('bb-neck-curve', bNeckShoulder, bNeckCp1, bNeckCp2, cbNeckSquareEnd, neckAllowance, false, 'bb-neck');
-  const bbNeckSquare = new LineSegment('bb-neck-square', cbNeckSquareEnd, cbNeck, neckAllowance, false, 'bb-neck');
+  const bbNeckCurve = new CubicBezierCurve('bb-neck-curve', bNeckShoulder, bNeckCp1, bNeckCp2, cbNeck, neckAllowance, false, 'bb-neck');
 
   const backStitchingContour = new GeometricContour(
     'back-bodice-stitching',
@@ -421,8 +416,7 @@ export function draftBodiceBlock(
       bbSideSeam,
       bbArmhole,
       bbShoulder,
-      bbNeckCurve,
-      bbNeckSquare
+      bbNeckCurve
     ],
     true
   );
@@ -523,10 +517,10 @@ export function draftBodiceBlock(
       name: 'Back Neckline',
       startPoint: bNeckShoulder,
       endPoint: cbNeck,
-      lengthCm: Number((bbNeckCurve.lengthCm() + bbNeckSquare.lengthCm()).toFixed(2)),
+      lengthCm: Number(bbNeckCurve.lengthCm().toFixed(2)),
       type: 'curved',
       endTangent: { x: -1, y: 0 },
-      segmentIds: ['bb-neck-curve', 'bb-neck-square']
+      segmentIds: ['bb-neck-curve']
     }
   ];
 
@@ -557,7 +551,7 @@ export function draftBodiceBlock(
     seams: backSeams,
     boundingBox: backBoundingBox,
     drillHoles: [bDartApex],
-    description: `Back bodice panel cut in 2 pieces with scapula contour waist dart, double sleeve alignment notch, and matched side seam length (${frontSideSeamLength}cm).`,
+    description: `Back bodice panel cut in 2 pieces with scapula contour waist dart, double sleeve alignment notch, and matched side seam length (${backSideSeamLength}cm).`,
     stitchingContour: backStitchingContour,
     cuttingContour: backOffsetResult.cuttingContour,
     offsetResult: backOffsetResult
