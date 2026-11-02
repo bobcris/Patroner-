@@ -608,6 +608,15 @@ export interface SleeveCapCompatibilityResult {
   frontResidualCm: number;
   backResidualCm: number;
   totalResidualCm: number;
+  /** True if sleeve cap is geometrically sewable without gathering or pulling bodice scye (0 <= ease <= 5.0cm) */
+  isGeometricallyValid: boolean;
+  isFrontGeometricallyValid: boolean;
+  isBackGeometricallyValid: boolean;
+  /** True if actual total ease falls within the strategy-specific recommended window [capEaseMinCm, capEaseMaxCm] */
+  isTargetCompliant: boolean;
+  targetToleranceRangeCm: { min: number; max: number };
+  targetStatus: 'target-compliant' | 'elevated-ease' | 'high-crimp-warning' | 'insufficient-ease' | 'negative-ease-invalid';
+  /** Geometric assembly viability (retained for backward compatibility; does NOT denote target convergence) */
   isFrontCompliant: boolean;
   isBackCompliant: boolean;
   isTotalCompliant: boolean;
@@ -616,7 +625,7 @@ export interface SleeveCapCompatibilityResult {
 /**
  * Mathematically evaluates sleeve-cap to bodice armhole compatibility.
  * Checks front and back independently: Sleeve Cap Seam = Armhole Seam + Intended Ease.
- * Computes exact numerical residuals.
+ * Computes exact numerical residuals and distinguishes geometric validity from target compliance.
  */
 export function evaluateSleeveCapCompatibility(
   sleevePiece: PatternPiece,
@@ -648,6 +657,28 @@ export function evaluateSleeveCapCompatibility(
   const backResidual = Number((actualBackEase - targetBackEase).toFixed(2));
   const totalResidual = Number((actualTotalEase - targetTotalEase).toFixed(2));
 
+  const isFrontGeometricallyValid = actualFrontEase >= 0;
+  const isBackGeometricallyValid = actualBackEase >= 0;
+  const isGeometricallyValid = isFrontGeometricallyValid && isBackGeometricallyValid && actualTotalEase <= 5.0;
+
+  const targetToleranceRangeCm = { min: baseEase.capEaseMinCm, max: baseEase.capEaseMaxCm };
+  const isTargetCompliant = actualTotalEase >= baseEase.capEaseMinCm && actualTotalEase <= baseEase.capEaseMaxCm;
+
+  let targetStatus: 'target-compliant' | 'elevated-ease' | 'high-crimp-warning' | 'insufficient-ease' | 'negative-ease-invalid';
+  if (actualTotalEase < 0) {
+    targetStatus = 'negative-ease-invalid';
+  } else if (actualTotalEase < baseEase.capEaseMinCm) {
+    targetStatus = 'insufficient-ease';
+  } else if (actualTotalEase <= baseEase.capEaseMaxCm) {
+    targetStatus = 'target-compliant';
+  } else if (actualTotalEase <= 4.5) {
+    targetStatus = 'elevated-ease';
+  } else if (actualTotalEase <= 5.0) {
+    targetStatus = 'high-crimp-warning';
+  } else {
+    targetStatus = 'elevated-ease';
+  }
+
   return {
     strategy,
     frontArmholeLengthCm: armhole.frontArmholeLengthCm,
@@ -665,8 +696,14 @@ export function evaluateSleeveCapCompatibility(
     frontResidualCm: frontResidual,
     backResidualCm: backResidual,
     totalResidualCm: totalResidual,
-    isFrontCompliant: actualFrontEase >= 0,
-    isBackCompliant: actualBackEase >= 0,
-    isTotalCompliant: actualTotalEase >= 0 && actualTotalEase <= 5.0
+    isGeometricallyValid,
+    isFrontGeometricallyValid,
+    isBackGeometricallyValid,
+    isTargetCompliant,
+    targetToleranceRangeCm,
+    targetStatus,
+    isFrontCompliant: isFrontGeometricallyValid,
+    isBackCompliant: isBackGeometricallyValid,
+    isTotalCompliant: isGeometricallyValid
   };
 }

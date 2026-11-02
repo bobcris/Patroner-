@@ -294,7 +294,7 @@ describe('Milestone 04.2: Deterministic Sleeve Drafting Engine', () => {
       assert.strictEqual(audit.isTotalCompliant, true);
     });
 
-    it('documents front and back ease across all 4 ease strategies', () => {
+    it('documents front and back ease across all 4 ease strategies with exact mathematical reconciliation', () => {
       const strategies: SleeveEaseStrategy[] = ['tailored', 'classic', 'fitted', 'flat'];
       const bodicePieces = draftBodiceBlock(validMeasurements, bodiceConcept);
 
@@ -311,9 +311,78 @@ describe('Milestone 04.2: Deterministic Sleeve Drafting Engine', () => {
         assert.ok(diagnostics.backEaseResidualCm !== undefined);
         assert.ok(diagnostics.totalEaseResidualCm !== undefined);
 
+        // Core Mathematical Identities:
+        // 1. frontEase = frontCapLength - frontArmholeLength
+        const expectedFrontEase = Number((audit.frontCapLengthCm - audit.frontArmholeLengthCm).toFixed(2));
+        assert.strictEqual(audit.actualFrontEaseCm, expectedFrontEase);
+        assert.strictEqual(diagnostics.frontCapEaseCm, expectedFrontEase);
+
+        // 2. backEase = backCapLength - backArmholeLength
+        const expectedBackEase = Number((audit.backCapLengthCm - audit.backArmholeLengthCm).toFixed(2));
+        assert.strictEqual(audit.actualBackEaseCm, expectedBackEase);
+        assert.strictEqual(diagnostics.backCapEaseCm, expectedBackEase);
+
+        // 3. totalEase = frontEase + backEase
+        const expectedTotalEase = Number((expectedFrontEase + expectedBackEase).toFixed(2));
+        assert.strictEqual(audit.actualTotalEaseCm, expectedTotalEase);
+        assert.strictEqual(diagnostics.capEaseCm, expectedTotalEase);
+
+        // 4. frontResidual = frontEase - targetFrontEase
+        const expectedFrontResidual = Number((expectedFrontEase - audit.targetFrontEaseCm).toFixed(2));
+        assert.strictEqual(audit.frontResidualCm, expectedFrontResidual);
+        assert.strictEqual(diagnostics.frontEaseResidualCm, expectedFrontResidual);
+
+        // 5. backResidual = backEase - targetBackEase
+        const expectedBackResidual = Number((expectedBackEase - audit.targetBackEaseCm).toFixed(2));
+        assert.strictEqual(audit.backResidualCm, expectedBackResidual);
+        assert.strictEqual(diagnostics.backEaseResidualCm, expectedBackResidual);
+
+        // 6. totalResidual = totalEase - targetTotalEase
+        const expectedTotalResidual = Number((expectedTotalEase - audit.targetTotalEaseCm).toFixed(2));
+        assert.strictEqual(audit.totalResidualCm, expectedTotalResidual);
+        assert.strictEqual(diagnostics.totalEaseResidualCm, expectedTotalResidual);
+
         // Cap ease must strictly decrease from tailored to flat
         assert.ok(audit.actualTotalEaseCm > 0, `Ease for ${st} must be positive: ${audit.actualTotalEaseCm}`);
       });
+    });
+
+    it('verifies that positive ease does not automatically mean target compliance', () => {
+      const bodicePieces = draftBodiceBlock(validMeasurements, bodiceConcept);
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, {
+        strategy: 'classic',
+        bodicePieces
+      });
+
+      const audit = evaluateSleeveCapCompatibility(piece, bodicePieces, 'classic');
+
+      // Geometric validity: positive ease within physical gatherable boundary
+      assert.strictEqual(audit.isGeometricallyValid, true);
+      assert.ok(audit.actualTotalEaseCm > 0);
+
+      // Target compliance: must NOT be true merely because ease is positive!
+      // For Size M Classic, actual ease is 3.26cm which exceeds [1.2, 2.5]cm target window.
+      assert.strictEqual(audit.isTargetCompliant, false);
+      assert.strictEqual(audit.targetStatus, 'elevated-ease');
+      assert.notStrictEqual(audit.isGeometricallyValid, audit.isTargetCompliant);
+    });
+
+    it('validates that seam-validator thresholds match diagnostic messages exactly', () => {
+      const bodicePieces = draftBodiceBlock(validMeasurements, bodiceConcept);
+      // Test tailored strategy which produces netEase > 4.5 cm (+4.78 cm)
+      const tailoredSpec = { ...bodiceConcept, sleeveEaseStrategy: 'tailored' as const };
+      const { piece: tailoredSleeve } = draftSleeveBlock(validMeasurements, tailoredSpec, {
+        strategy: 'tailored',
+        bodicePieces
+      });
+
+      const validation = validatePatternDraft([...bodicePieces, tailoredSleeve]);
+      const totalCheck = validation.checks.find(c => c.id === 'val-slv-total-cap-ease');
+      assert.ok(totalCheck, 'Missing val-slv-total-cap-ease check');
+      assert.strictEqual(totalCheck.status, 'warning');
+      assert.strictEqual(totalCheck.expectedValue, 'Ease <= 4.5 cm');
+      assert.strictEqual(totalCheck.toleranceCm, 4.5);
+      assert.ok(totalCheck.message.includes('exceeds 4.5 cm'));
     });
   });
 
@@ -477,6 +546,31 @@ describe('Milestone 04.2: Deterministic Sleeve Drafting Engine', () => {
       assert.ok(elbF && elbB, 'Missing elbow notches');
       assert.strictEqual(elbF.position.y, validMeasurements.armLengthToElbow);
       assert.strictEqual(elbB.position.y, validMeasurements.armLengthToElbow);
+    });
+
+    it('verifies sleeve scye notches pair with corresponding bodice chest and back scye notches', () => {
+      const bodice = draftBodiceBlock(validMeasurements, bodiceConcept);
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces: bodice });
+
+      const frontBodice = bodice.find(p => p.id === 'piece-bodice-front');
+      const backBodice = bodice.find(p => p.id === 'piece-bodice-back');
+      assert.ok(frontBodice && backBodice);
+
+      // Verify front bodice has chest-level notch
+      const fbNotch = frontBodice.notches.find(n => n.id.includes('chest'));
+      assert.ok(fbNotch, 'Front bodice must contain chest notch');
+      assert.strictEqual(fbNotch.type, 'single');
+
+      // Verify back bodice has across-back double notch
+      const bbNotches = backBodice.notches.filter(n => n.id.includes('across-back'));
+      assert.strictEqual(bbNotches.length, 2, 'Back bodice must contain double across-back notch');
+
+      // Verify validation check val-slv-notch-correspondence passes with full assembly
+      const validation = validatePatternDraft([...bodice, piece]);
+      const notchCheck = validation.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(notchCheck, 'Missing val-slv-notch-correspondence check');
+      assert.strictEqual(notchCheck.status, 'pass');
+      assert.ok(notchCheck.message.includes('pairing with bodice chest notch'));
     });
   });
 });

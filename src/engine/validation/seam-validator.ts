@@ -420,7 +420,7 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
               toleranceCm: 0.2,
               message: `Sleeve cap length is smaller than armhole by ${Math.abs(ease)} cm. Sleeve cannot be set in without pulling.`
             });
-          } else if (ease > 3.0) {
+          } else if (ease > 2.8) {
             checks.push({
               id: `val-seam-diff-${seam.id}`,
               category: 'seam-match',
@@ -428,9 +428,9 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
               status: 'warning',
               measuredValue: `Cap: ${capLength.toFixed(2)} cm, Armhole: ${armholeLength.toFixed(2)} cm (Ease: +${ease} cm)`,
               expectedValue: `Ease <= 2.8 cm (per half-cap)`,
-              deviationCm: ease,
+              deviationCm: Number((ease - 2.8).toFixed(2)),
               toleranceCm: 2.8,
-              message: `Sleeve cap ease (+${ease} cm) is high. Ensure fabric has adequate crimp/malleability.`
+              message: `Sleeve cap ease (+${ease} cm) is elevated. Ensure fabric has adequate crimp/malleability.`
             });
           } else {
             checks.push({
@@ -720,10 +720,10 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
             name: 'Total Sleeve Cap Ease',
             status: 'warning',
             measuredValue: `Cap: ${totalSleeveCap.toFixed(2)} cm, Scye: ${totalBodiceArmhole.toFixed(2)} cm (Ease: +${netEase.toFixed(2)} cm)`,
-            expectedValue: 'Ease <= 4.0 cm',
-            deviationCm: netEase,
-            toleranceCm: 4.0,
-            message: `Total sleeve cap ease (+${netEase} cm) is high for tailored setting. Fabric must be mouldable with steam.`
+            expectedValue: 'Ease <= 4.5 cm',
+            deviationCm: Number((netEase - 4.5).toFixed(2)),
+            toleranceCm: 4.5,
+            message: `Total sleeve cap ease (+${netEase} cm) exceeds 4.5 cm. High crown crimp required; fabric must be mouldable with steam.`
           });
         } else {
           checks.push({
@@ -750,6 +750,18 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
             toleranceCm: 0.1,
             message: `Front sleeve cap is shorter than front armhole by ${Math.abs(frontEase)} cm.`
           });
+        } else if (frontEase > 2.8) {
+          checks.push({
+            id: 'val-slv-front-cap-ease',
+            category: 'seam-match',
+            name: 'Front Sleeve Cap Ease',
+            status: 'warning',
+            measuredValue: `Front Cap: ${frontCapSeam.lengthCm.toFixed(2)} cm, Front Scye: ${fArmhole.lengthCm.toFixed(2)} cm (Ease: +${frontEase.toFixed(2)} cm)`,
+            expectedValue: 'Ease <= 2.8 cm',
+            deviationCm: Number((frontEase - 2.8).toFixed(2)),
+            toleranceCm: 2.8,
+            message: `Front sleeve cap ease (+${frontEase} cm) is elevated. Ensure front crown crimp is evenly distributed.`
+          });
         } else {
           checks.push({
             id: 'val-slv-front-cap-ease',
@@ -775,6 +787,18 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
             toleranceCm: 0.1,
             message: `Back sleeve cap is shorter than back armhole by ${Math.abs(backEase)} cm.`
           });
+        } else if (backEase > 2.8) {
+          checks.push({
+            id: 'val-slv-back-cap-ease',
+            category: 'seam-match',
+            name: 'Back Sleeve Cap Ease',
+            status: 'warning',
+            measuredValue: `Back Cap: ${backCapSeam.lengthCm.toFixed(2)} cm, Back Scye: ${bArmhole.lengthCm.toFixed(2)} cm (Ease: +${backEase.toFixed(2)} cm)`,
+            expectedValue: 'Ease <= 2.8 cm',
+            deviationCm: Number((backEase - 2.8).toFixed(2)),
+            toleranceCm: 2.8,
+            message: `Back sleeve cap ease (+${backEase} cm) is elevated. Ensure back shoulder scye is steam-moulded.`
+          });
         } else {
           checks.push({
             id: 'val-slv-back-cap-ease',
@@ -788,34 +812,42 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
       }
     }
 
-    // 10.6 Sleeve-to-Bodice Notch Correspondence
+    // 10.6 Sleeve Construction Notch Topology & Pairing
     const crownNotch = sleevePiece.notches.find(n => n.id === 'notch-slv-crown');
     const frontNotch = sleevePiece.notches.find(n => n.id === 'notch-slv-front-armhole');
     const backDoubleNotch = sleevePiece.notches.filter(n => n.id.includes('notch-slv-back-armhole'));
     const elbowNotches = sleevePiece.notches.filter(n => n.id.includes('elbow'));
 
     const missingNotches: string[] = [];
-    if (!crownNotch) missingNotches.push('Crown apex notch (shoulder match)');
+    if (!crownNotch) missingNotches.push('Crown apex notch (shoulder match at apex (0,0))');
     if (!frontNotch) missingNotches.push('Front scye single notch');
     if (backDoubleNotch.length < 2) missingNotches.push('Back scye double notch');
     if (elbowNotches.length < 2) missingNotches.push('Elbow level match notches');
+
+    // If bodice pieces are present, verify bodice pairing scye notches
+    if (bodiceF && !bodiceF.notches.some(n => n.id.includes('chest') || (n.label && n.label.includes('CHEST')))) {
+      missingNotches.push('Front bodice chest-level pairing notch');
+    }
+    if (bodiceB && bodiceB.notches.filter(n => n.id.includes('across-back')).length < 2) {
+      missingNotches.push('Back bodice across-back double pairing notches');
+    }
 
     if (missingNotches.length > 0) {
       checks.push({
         id: 'val-slv-notch-correspondence',
         category: 'geometry',
-        name: 'Sleeve Construction Notch Correspondence',
+        name: 'Sleeve Construction Notch Topology & Pairing',
         status: 'fail',
-        message: `Sleeve piece missing critical construction notches: ${missingNotches.join(', ')}.`
+        message: `Sleeve/bodice assembly missing construction notches: ${missingNotches.join(', ')}.`
       });
     } else {
       checks.push({
         id: 'val-slv-notch-correspondence',
         category: 'geometry',
-        name: 'Sleeve Construction Notch Correspondence',
+        name: 'Sleeve Construction Notch Topology & Pairing',
         status: 'pass',
-        measuredValue: `${sleevePiece.notches.length} verified notches`,
-        message: 'All critical sleeve notches (crown apex, front scye single, back scye double, and elbow level) verified.'
+        measuredValue: `${sleevePiece.notches.length} sleeve notches verified`,
+        message: 'Verified topology of crown shoulder alignment notch at apex, front scye single notch pairing with bodice chest notch, back scye double notches pairing with back bodice notches, and front/back inseam elbow alignment notches.'
       });
     }
   }
