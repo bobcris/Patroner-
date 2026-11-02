@@ -735,7 +735,88 @@ export function validatePatternDraft(pieces: PatternPiece[]): ValidationReport {
             message: `Total sleeve cap ease (+${netEase.toFixed(2)} cm) verified within acceptable tailored parameters.`
           });
         }
+
+        // 10.4 Front Sleeve Cap Ease
+        const frontEase = Number((frontCapSeam.lengthCm - fArmhole.lengthCm).toFixed(2));
+        if (frontEase < -0.1) {
+          checks.push({
+            id: 'val-slv-front-cap-ease',
+            category: 'seam-match',
+            name: 'Front Sleeve Cap Ease',
+            status: 'fail',
+            measuredValue: `Front Cap: ${frontCapSeam.lengthCm.toFixed(2)} cm, Front Scye: ${fArmhole.lengthCm.toFixed(2)} cm (Ease: ${frontEase.toFixed(2)} cm)`,
+            expectedValue: 'Ease >= 0.0 cm',
+            deviationCm: Math.abs(frontEase),
+            toleranceCm: 0.1,
+            message: `Front sleeve cap is shorter than front armhole by ${Math.abs(frontEase)} cm.`
+          });
+        } else {
+          checks.push({
+            id: 'val-slv-front-cap-ease',
+            category: 'seam-match',
+            name: 'Front Sleeve Cap Ease',
+            status: 'pass',
+            measuredValue: `Front Cap: ${frontCapSeam.lengthCm.toFixed(2)} cm, Front Scye: ${fArmhole.lengthCm.toFixed(2)} cm (Ease: +${frontEase.toFixed(2)} cm)`,
+            message: `Front sleeve cap ease (+${frontEase.toFixed(2)} cm) verified.`
+          });
+        }
+
+        // 10.5 Back Sleeve Cap Ease
+        const backEase = Number((backCapSeam.lengthCm - bArmhole.lengthCm).toFixed(2));
+        if (backEase < -0.1) {
+          checks.push({
+            id: 'val-slv-back-cap-ease',
+            category: 'seam-match',
+            name: 'Back Sleeve Cap Ease',
+            status: 'fail',
+            measuredValue: `Back Cap: ${backCapSeam.lengthCm.toFixed(2)} cm, Back Scye: ${bArmhole.lengthCm.toFixed(2)} cm (Ease: ${backEase.toFixed(2)} cm)`,
+            expectedValue: 'Ease >= 0.0 cm',
+            deviationCm: Math.abs(backEase),
+            toleranceCm: 0.1,
+            message: `Back sleeve cap is shorter than back armhole by ${Math.abs(backEase)} cm.`
+          });
+        } else {
+          checks.push({
+            id: 'val-slv-back-cap-ease',
+            category: 'seam-match',
+            name: 'Back Sleeve Cap Ease',
+            status: 'pass',
+            measuredValue: `Back Cap: ${backCapSeam.lengthCm.toFixed(2)} cm, Back Scye: ${bArmhole.lengthCm.toFixed(2)} cm (Ease: +${backEase.toFixed(2)} cm)`,
+            message: `Back sleeve cap ease (+${backEase.toFixed(2)} cm) verified.`
+          });
+        }
       }
+    }
+
+    // 10.6 Sleeve-to-Bodice Notch Correspondence
+    const crownNotch = sleevePiece.notches.find(n => n.id === 'notch-slv-crown');
+    const frontNotch = sleevePiece.notches.find(n => n.id === 'notch-slv-front-armhole');
+    const backDoubleNotch = sleevePiece.notches.filter(n => n.id.includes('notch-slv-back-armhole'));
+    const elbowNotches = sleevePiece.notches.filter(n => n.id.includes('elbow'));
+
+    const missingNotches: string[] = [];
+    if (!crownNotch) missingNotches.push('Crown apex notch (shoulder match)');
+    if (!frontNotch) missingNotches.push('Front scye single notch');
+    if (backDoubleNotch.length < 2) missingNotches.push('Back scye double notch');
+    if (elbowNotches.length < 2) missingNotches.push('Elbow level match notches');
+
+    if (missingNotches.length > 0) {
+      checks.push({
+        id: 'val-slv-notch-correspondence',
+        category: 'geometry',
+        name: 'Sleeve Construction Notch Correspondence',
+        status: 'fail',
+        message: `Sleeve piece missing critical construction notches: ${missingNotches.join(', ')}.`
+      });
+    } else {
+      checks.push({
+        id: 'val-slv-notch-correspondence',
+        category: 'geometry',
+        name: 'Sleeve Construction Notch Correspondence',
+        status: 'pass',
+        measuredValue: `${sleevePiece.notches.length} verified notches`,
+        message: 'All critical sleeve notches (crown apex, front scye single, back scye double, and elbow level) verified.'
+      });
     }
   }
 

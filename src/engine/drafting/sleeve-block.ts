@@ -52,6 +52,14 @@ export interface SleeveDiagnostics {
   bodiceArmholeLengthCm: number;
   frontArmholeLengthCm: number;
   backArmholeLengthCm: number;
+  targetCapEaseCm: number;
+  targetFrontEaseCm: number;
+  targetBackEaseCm: number;
+  frontCapEaseCm: number;
+  backCapEaseCm: number;
+  frontEaseResidualCm: number;
+  backEaseResidualCm: number;
+  totalEaseResidualCm: number;
   capEaseCm: number;
   capEasePercentage: number;
   frontInseamLengthCm: number;
@@ -522,6 +530,12 @@ export function draftSleeveBlock(
   ];
 
   // 16. Compile Diagnostics
+  const frontCapEase = Number((frontCapLength - ahFront).toFixed(2));
+  const backCapEase = Number((backCapLength - ahBack).toFixed(2));
+  const frontEaseResidual = Number((frontCapEase - easeFront).toFixed(2));
+  const backEaseResidual = Number((backCapEase - easeBack).toFixed(2));
+  const totalEaseResidual = Number((netCapEase - targetEase).toFixed(2));
+
   const diagnostics: SleeveDiagnostics = {
     strategy,
     capHeightCm: capHeight,
@@ -533,6 +547,14 @@ export function draftSleeveBlock(
     bodiceArmholeLengthCm: ahTotal,
     frontArmholeLengthCm: ahFront,
     backArmholeLengthCm: ahBack,
+    targetCapEaseCm: targetEase,
+    targetFrontEaseCm: Number(easeFront.toFixed(2)),
+    targetBackEaseCm: Number(easeBack.toFixed(2)),
+    frontCapEaseCm: frontCapEase,
+    backCapEaseCm: backCapEase,
+    frontEaseResidualCm: frontEaseResidual,
+    backEaseResidualCm: backEaseResidual,
+    totalEaseResidualCm: totalEaseResidual,
     capEaseCm: netCapEase,
     capEasePercentage,
     frontInseamLengthCm: frontInseamLength,
@@ -567,4 +589,84 @@ export function draftSleeveBlock(
   };
 
   return { piece, diagnostics };
+}
+
+export interface SleeveCapCompatibilityResult {
+  strategy: SleeveEaseStrategy;
+  frontArmholeLengthCm: number;
+  backArmholeLengthCm: number;
+  totalArmholeLengthCm: number;
+  frontCapLengthCm: number;
+  backCapLengthCm: number;
+  totalCapLengthCm: number;
+  targetFrontEaseCm: number;
+  targetBackEaseCm: number;
+  targetTotalEaseCm: number;
+  actualFrontEaseCm: number;
+  actualBackEaseCm: number;
+  actualTotalEaseCm: number;
+  frontResidualCm: number;
+  backResidualCm: number;
+  totalResidualCm: number;
+  isFrontCompliant: boolean;
+  isBackCompliant: boolean;
+  isTotalCompliant: boolean;
+}
+
+/**
+ * Mathematically evaluates sleeve-cap to bodice armhole compatibility.
+ * Checks front and back independently: Sleeve Cap Seam = Armhole Seam + Intended Ease.
+ * Computes exact numerical residuals.
+ */
+export function evaluateSleeveCapCompatibility(
+  sleevePiece: PatternPiece,
+  bodicePieces: PatternPiece[],
+  strategy: SleeveEaseStrategy = 'classic'
+): SleeveCapCompatibilityResult {
+  const armhole = extractArmholeContext(bodicePieces);
+  const frontCapSeam = sleevePiece.seams.find(
+    s => s.id === 'slv-front-cap-seam' || s.name.includes('Front Sleeve Cap')
+  );
+  const backCapSeam = sleevePiece.seams.find(
+    s => s.id === 'slv-back-cap-seam' || s.name.includes('Back Sleeve Cap')
+  );
+
+  if (!frontCapSeam || !backCapSeam) {
+    throw new Error('Sleeve piece is missing front or back sleeve cap seams.');
+  }
+
+  const baseEase = SLEEVE_EASE_TABLE[strategy];
+  const targetTotalEase = baseEase.recommendedCapEaseCm;
+  const targetFrontEase = Number((targetTotalEase * 0.45).toFixed(2));
+  const targetBackEase = Number((targetTotalEase * 0.55).toFixed(2));
+
+  const actualFrontEase = Number((frontCapSeam.lengthCm - armhole.frontArmholeLengthCm).toFixed(2));
+  const actualBackEase = Number((backCapSeam.lengthCm - armhole.backArmholeLengthCm).toFixed(2));
+  const actualTotalEase = Number((frontCapSeam.lengthCm + backCapSeam.lengthCm - armhole.totalArmholeLengthCm).toFixed(2));
+
+  const frontResidual = Number((actualFrontEase - targetFrontEase).toFixed(2));
+  const backResidual = Number((actualBackEase - targetBackEase).toFixed(2));
+  const totalResidual = Number((actualTotalEase - targetTotalEase).toFixed(2));
+
+  return {
+    strategy,
+    frontArmholeLengthCm: armhole.frontArmholeLengthCm,
+    backArmholeLengthCm: armhole.backArmholeLengthCm,
+    totalArmholeLengthCm: armhole.totalArmholeLengthCm,
+    frontCapLengthCm: frontCapSeam.lengthCm,
+    backCapLengthCm: backCapSeam.lengthCm,
+    totalCapLengthCm: Number((frontCapSeam.lengthCm + backCapSeam.lengthCm).toFixed(2)),
+    targetFrontEaseCm: targetFrontEase,
+    targetBackEaseCm: targetBackEase,
+    targetTotalEaseCm: targetTotalEase,
+    actualFrontEaseCm: actualFrontEase,
+    actualBackEaseCm: actualBackEase,
+    actualTotalEaseCm: actualTotalEase,
+    frontResidualCm: frontResidual,
+    backResidualCm: backResidual,
+    totalResidualCm: totalResidual,
+    isFrontCompliant: actualFrontEase >= 0,
+    isBackCompliant: actualBackEase >= 0,
+    isTotalCompliant: actualTotalEase >= 0 && actualTotalEase <= 5.0
+  };
 }
