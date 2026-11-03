@@ -13,9 +13,17 @@ import {
   validateSleeveMeasurements
 } from '../measurements/standards';
 import { draftBodiceBlock } from './bodice-block';
-import { draftSleeveBlock, extractArmholeContext, evaluateSleeveCapCompatibility } from './sleeve-block';
+import {
+  draftSleeveBlock,
+  extractArmholeContext,
+  evaluateSleeveCapCompatibility,
+  computeArcLengthFromStart,
+  getArcLengthProjectionDiagnostics,
+  findPointAtArcLength
+} from './sleeve-block';
 import { validatePatternDraft } from '../validation/seam-validator';
 import { distance } from '../geometry/math';
+import { CubicBezierCurve, LineSegment, GeometricContour } from '../geometry/primitives';
 
 describe('Milestone 04.2: Deterministic Sleeve Drafting Engine', () => {
   const bodiceConcept = INITIAL_CONCEPTS.find(c => c.garmentCategory === 'bodice') || {
@@ -838,4 +846,331 @@ describe('Milestone 04.2: Deterministic Sleeve Drafting Engine', () => {
       assert.deepStrictEqual(auditA, auditB);
     });
   });
+
+  // =========================================================================
+  // 15. MILESTONE 04.2.2.2: FOCUSED SLEEVE GEOMETRY, EASE & NOTCH VERIFICATION
+  // =========================================================================
+  describe('15. Milestone 04.2.2.2: Focused Sleeve Geometry, Ease & Notch Verification', () => {
+    const bodicePieces = draftBodiceBlock(validMeasurements, bodiceConcept);
+    const armholeCtx = extractArmholeContext(bodicePieces);
+
+    function createMockPiece(
+      frontCapLen: number,
+      backCapLen: number,
+      options?: {
+        stitchingContour?: any;
+        notches?: Notch[];
+      }
+    ): PatternPiece {
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+      const updatedSeams = piece.seams.map(s => {
+        if (s.id === 'slv-front-cap-seam') return { ...s, lengthCm: frontCapLen };
+        if (s.id === 'slv-back-cap-seam') return { ...s, lengthCm: backCapLen };
+        return s;
+      });
+
+      return {
+        ...piece,
+        seams: updatedSeams,
+        stitchingContour: options?.stitchingContour !== undefined ? options.stitchingContour : piece.stitchingContour,
+        notches: options?.notches !== undefined ? options.notches : piece.notches
+      };
+    }
+
+    // -----------------------------------------------------------------------
+    // Requirement 1 & 2: Decoupled Representation & Target vs Distribution
+    // -----------------------------------------------------------------------
+    it('rejects target compliance when front/back ease distribution is severely imbalanced, even if total ease is optimal', () => {
+      // Total ease = 2.0 cm (perfect for Classic strategy range [1.2, 2.5] cm).
+      // But severely imbalanced: front = 1.60 cm (80%), back = 0.40 cm (20%).
+      const imbalancedPiece = createMockPiece(
+        armholeCtx.frontArmholeLengthCm + 1.60,
+        armholeCtx.backArmholeLengthCm + 0.40
+      );
+
+      const audit = evaluateSleeveCapCompatibility(imbalancedPiece, bodicePieces, 'classic');
+
+      // 1. Assembly is valid (both positive, total 2.0 <= 5.0)
+      assert.strictEqual(audit.isAssemblyValid, true, 'Assembly must be valid for positive ease <= 5.0 cm');
+      assert.strictEqual(audit.isFrontEaseValid, true);
+      assert.strictEqual(audit.isBackEaseValid, true);
+
+      // 2. Total ease is inside strategy range
+      assert.strictEqual(audit.isTotalEaseTargetCompliant, true, 'Total ease 2.0 cm is inside [1.2, 2.5]');
+
+      // 3. Distribution is severely imbalanced
+      assert.strictEqual(audit.frontBackAllocationStatus, 'imbalanced');
+      assert.strictEqual(audit.isEaseDistributionCompliant, false, 'Front ratio 0.80 violates [0.35, 0.55]');
+      assert.strictEqual(audit.isFrontEaseCompliant, false, 'Front ease 1.60 exceeds max front allocation 1.25');
+      assert.strictEqual(audit.targetStatus, 'imbalanced-ease-invalid');
+
+      // 4. Synthesized target compliance MUST FAIL
+      assert.strictEqual(audit.isTargetCompliant, false, 'Total ease cannot conceal imbalanced front/back distribution');
+    });
+
+    it('rejects assembly validity and target compliance when front ease is negative, even if total ease is in range', () => {
+      // Total ease = 2.0 cm, but front ease is -0.40 cm and back ease is +2.40 cm.
+      const negativeFrontPiece = createMockPiece(
+        armholeCtx.frontArmholeLengthCm - 0.40,
+        armholeCtx.backArmholeLengthCm + 2.40
+      );
+
+      const audit = evaluateSleeveCapCompatibility(negativeFrontPiece, bodicePieces, 'classic');
+
+      assert.strictEqual(audit.isFrontEaseValid, false);
+      assert.strictEqual(audit.isBackEaseValid, true);
+      assert.strictEqual(audit.isAssemblyValid, false, 'Assembly must fail on negative front ease');
+      assert.strictEqual(audit.isTargetCompliant, false, 'Target compliance must fail on negative ease');
+      assert.strictEqual(audit.targetStatus, 'negative-ease-invalid');
+    });
+
+    it('independently reports geometric validity, assembly validity, and target compliance', () => {
+      // Case: standard draft has valid geometry and valid assembly, but total ease is elevated
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, {
+        strategy: 'flat',
+        bodicePieces
+      });
+      // Flat strategy target envelope is [0.0, 0.8] cm.
+      // A mock piece with 1.20 cm total ease has valid geometry & assembly, but fails flat target envelope.
+      const mockFlatElevated = createMockPiece(
+        armholeCtx.frontArmholeLengthCm + 0.55,
+        armholeCtx.backArmholeLengthCm + 0.65
+      );
+      const audit = evaluateSleeveCapCompatibility(mockFlatElevated, bodicePieces, 'flat');
+
+      assert.strictEqual(audit.isGeometricallyValid, true, 'Geometry must be valid');
+      assert.strictEqual(audit.isAssemblyValid, true, 'Assembly must be valid (1.20 cm <= 5.0 cm)');
+      assert.strictEqual(audit.isTotalEaseTargetCompliant, false, 'Total ease 1.20 cm exceeds flat max 0.8 cm');
+      assert.strictEqual(audit.isTargetCompliant, false, 'Target compliance must be false');
+      assert.strictEqual(audit.targetStatus, 'elevated-ease');
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 3: Exact Threshold Boundaries
+    // -----------------------------------------------------------------------
+    it('correctly handles boundary conditions: zero ease, 5.0 cm limit, and 5.01 cm overflow', () => {
+      // 1. Zero ease (0.0 cm total, 0.0 front, 0.0 back) on Flat strategy
+      const zeroEasePiece = createMockPiece(
+        armholeCtx.frontArmholeLengthCm + 0.0,
+        armholeCtx.backArmholeLengthCm + 0.0
+      );
+      const zeroAudit = evaluateSleeveCapCompatibility(zeroEasePiece, bodicePieces, 'flat');
+      assert.strictEqual(zeroAudit.isAssemblyValid, true);
+      assert.strictEqual(zeroAudit.isTotalEaseTargetCompliant, true);
+      assert.strictEqual(zeroAudit.isEaseDistributionCompliant, true);
+      assert.strictEqual(zeroAudit.isTargetCompliant, true);
+      assert.strictEqual(zeroAudit.targetStatus, 'target-compliant');
+
+      // 2. Exact upper assembly limit: 5.00 cm total ease (2.25 cm front, 2.75 cm back)
+      const maxAssemblyPiece = createMockPiece(
+        armholeCtx.frontArmholeLengthCm + 2.25,
+        armholeCtx.backArmholeLengthCm + 2.75
+      );
+      const maxAudit = evaluateSleeveCapCompatibility(maxAssemblyPiece, bodicePieces, 'classic');
+      assert.strictEqual(maxAudit.actualTotalEaseCm, 5.00);
+      assert.strictEqual(maxAudit.isAssemblyValid, true, '5.00 cm is exactly at assembly limit');
+
+      // 3. Exceeding upper assembly limit: 5.01 cm total ease (2.25 cm front, 2.76 cm back)
+      const overflowPiece = createMockPiece(
+        armholeCtx.frontArmholeLengthCm + 2.25,
+        armholeCtx.backArmholeLengthCm + 2.76
+      );
+      const overflowAudit = evaluateSleeveCapCompatibility(overflowPiece, bodicePieces, 'classic');
+      assert.strictEqual(overflowAudit.actualTotalEaseCm, 5.01);
+      assert.strictEqual(overflowAudit.isAssemblyValid, false, '5.01 cm exceeds 5.0 cm assembly limit');
+      assert.strictEqual(overflowAudit.targetStatus, 'excessive-ease-invalid');
+      assert.strictEqual(overflowAudit.isTargetCompliant, false);
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 4: Arc-Length Approximation Error Quantification
+    // -----------------------------------------------------------------------
+    it('quantifies arc-length projection error against known analytical curves and bounds error <= 0.005 cm', () => {
+      // 1. Test on analytical straight line segment represented as cubic Bezier
+      const p0 = { x: 0, y: 0 };
+      const cp1 = { x: 5, y: 0 };
+      const cp2 = { x: 15, y: 0 };
+      const p3 = { x: 20, y: 0 };
+      const straightBezier = new CubicBezierCurve('test-straight', p0, cp1, cp2, p3, 1.5, false);
+
+      // Query point at exact midpoint (10, 0)
+      const queryMidpoint = { x: 10, y: 0 };
+      const straightDiag = getArcLengthProjectionDiagnostics(straightBezier, queryMidpoint);
+
+      assert.ok(Math.abs(straightDiag.arcLengthCm - 10.00) <= 0.02, 'Analytical midpoint on 20cm line must be ~10.00 cm');
+      assert.strictEqual(straightDiag.parameterT, 0.50000, 'Parameter t must be exactly 0.5');
+      assert.strictEqual(straightDiag.projectionDistanceCm, 0.000, 'Projection distance to line must be 0.000');
+      assert.ok(straightDiag.estimatedErrorBoundCm <= 0.005, 'Error bound must be <= 0.005 cm');
+
+      // 2. Test on analytical quarter-circle arc (Radius R = 10 cm, centered at 0,0)
+      // Standard cubic Bezier circular arc constant k = 4*(sqrt(2)-1)/3 = 0.5522847498
+      const R = 10;
+      const k = (4 / 3) * (Math.SQRT2 - 1); // 0.55228475
+      const circP0 = { x: R, y: 0 };
+      const circCp1 = { x: R, y: R * k };
+      const circCp2 = { x: R * k, y: R };
+      const circP3 = { x: 0, y: R };
+      const quarterCircleBezier = new CubicBezierCurve('test-arc', circP0, circCp1, circCp2, circP3, 1.5, false);
+
+      // Midpoint on true circular arc: angle = 45 deg, coordinates = (R*cos(45), R*sin(45))
+      const circleMidpoint = { x: Number((R * Math.SQRT1_2).toFixed(4)), y: Number((R * Math.SQRT1_2).toFixed(4)) };
+      const circleDiag = getArcLengthProjectionDiagnostics(quarterCircleBezier, circleMidpoint);
+
+      // Analytical arc length = R * (pi / 4) = 10 * 0.785398 = 7.854 cm
+      assert.ok(Math.abs(circleDiag.arcLengthCm - 7.85) <= 0.02, `Arc length ${circleDiag.arcLengthCm} should match ~7.85 cm`);
+      assert.ok(Math.abs(circleDiag.parameterT - 0.5) <= 0.01, `Parameter t ${circleDiag.parameterT} should be ~0.5`);
+      assert.ok(circleDiag.projectionDistanceCm < 0.01, `Projection distance ${circleDiag.projectionDistanceCm} must be < 0.01 cm (0.1 mm)`);
+      assert.ok(
+        circleDiag.estimatedErrorBoundCm <= 0.005,
+        `Algorithm error bound (${circleDiag.estimatedErrorBoundCm} cm) is << manufacturing notch tolerance (0.30 cm)`
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 5: Notch Correspondence, Ordering, Orientation & Tolerance
+    // -----------------------------------------------------------------------
+    it('verifies notch correspondence, topological ordering, and outward normal orientation', () => {
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+
+      const crownNotch = piece.notches.find(n => n.id === 'notch-slv-crown');
+      const frontNotch = piece.notches.find(n => n.id === 'notch-slv-front-armhole');
+      const backNotch = piece.notches.find(n => n.id === 'notch-slv-back-armhole-1');
+
+      assert.ok(crownNotch, 'Crown notch must exist');
+      assert.ok(frontNotch, 'Front scye notch must exist');
+      assert.ok(backNotch, 'Back scye notch must exist');
+
+      // Crown notch: top apex, angle -90 degrees
+      assert.strictEqual(crownNotch.type, 'single');
+      assert.strictEqual(crownNotch.normalAngleDeg, -90, 'Crown notch must point upward normal (-90 deg)');
+
+      // Front scye notch: single notch, angle +45 degrees
+      assert.strictEqual(frontNotch.type, 'single');
+      assert.strictEqual(frontNotch.normalAngleDeg, 45, 'Front scye notch orientation must be 45 deg');
+
+      // Back scye notch: double notch, angle +135 degrees
+      assert.strictEqual(backNotch.type, 'double');
+      assert.strictEqual(backNotch.normalAngleDeg, 135, 'Back scye notch orientation must be 135 deg');
+
+      // Validate seam-validator notch correspondence
+      const validation = validatePatternDraft(
+        [...bodicePieces, piece],
+        validMeasurements,
+        bodiceConcept
+      );
+      const notchCheck = validation.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(notchCheck, 'val-slv-notch-correspondence check must be present');
+      assert.strictEqual(notchCheck.status, 'pass');
+      assert.ok(notchCheck.message.includes('0.30 cm manufacturing tolerance'));
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 6: Fabric Stretch and Custom Target Semantics (Interpretation 2)
+    // -----------------------------------------------------------------------
+    it('verifies customTargetEaseCm is not double-scaled when fabric stretch is specified (Interpretation 2)', () => {
+      const lowStretchFabric = {
+        id: 'low-stretch-knit',
+        name: 'Low Stretch Knit',
+        composition: '95% Cotton, 5% Elastane',
+        weight: 'medium' as const,
+        stretch: 'low-stretch' as const,
+        recommendedEaseCm: { waist: 2.0, hip: 3.0, bust: 3.5 },
+        drapeDescription: 'Comfort stretch.'
+      };
+
+      const highStretchFabric = {
+        id: 'high-stretch-jersey',
+        name: 'High Stretch Jersey',
+        composition: '90% Modal, 10% Spandex',
+        weight: 'light' as const,
+        stretch: 'high-stretch' as const,
+        recommendedEaseCm: { waist: 0.0, hip: 1.0, bust: 1.0 },
+        drapeDescription: 'Form-fitting stretch.'
+      };
+
+      const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+
+      // Designer specifies an explicit custom target of 1.50 cm
+      const auditCustomRigid = evaluateSleeveCapCompatibility(piece, bodicePieces, {
+        strategy: 'classic',
+        customTargetEaseCm: 1.50
+      });
+      const auditCustomLowStretch = evaluateSleeveCapCompatibility(piece, bodicePieces, {
+        strategy: 'classic',
+        fabric: lowStretchFabric,
+        customTargetEaseCm: 1.50
+      });
+      const auditCustomHighStretch = evaluateSleeveCapCompatibility(piece, bodicePieces, {
+        strategy: 'classic',
+        fabric: highStretchFabric,
+        customTargetEaseCm: 1.50
+      });
+
+      // Target total ease must remain exactly 1.50 cm in all cases (NO double scaling!)
+      assert.strictEqual(auditCustomRigid.targetTotalEaseCm, 1.50);
+      assert.strictEqual(auditCustomLowStretch.targetTotalEaseCm, 1.50, 'Custom target must NOT be scaled by 0.85');
+      assert.strictEqual(auditCustomHighStretch.targetTotalEaseCm, 1.50, 'Custom target must NOT be scaled by 0.50');
+
+      // However, the strategy recommended envelope DOES scale with fabric
+      assert.strictEqual(auditCustomLowStretch.fabricStretchFactor, 0.85);
+      assert.strictEqual(auditCustomHighStretch.fabricStretchFactor, 0.50);
+      assert.strictEqual(auditCustomLowStretch.recommendedEaseRangeCm.min, Number((1.2 * 0.85).toFixed(2))); // 1.02
+      assert.strictEqual(auditCustomHighStretch.recommendedEaseRangeCm.min, Number((1.2 * 0.50).toFixed(2))); // 0.60
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 7: Geometric Contour Integrity Integration
+    // -----------------------------------------------------------------------
+    it('flags geometric validity as false when sleeve stitching contour is open or self-intersecting', () => {
+      // Create broken contour: open contour where last segment ends far from start
+      const brokenContour = new GeometricContour('broken-contour', [
+        new LineSegment('seg-1', { x: 0, y: 0 }, { x: 20, y: 0 }, 1.5, false),
+        new LineSegment('seg-2', { x: 20, y: 0 }, { x: 20, y: 30 }, 1.5, false),
+        new LineSegment('seg-3', { x: 20, y: 30 }, { x: 5, y: 30 }, 1.5, false) // leaves 5cm gap to (0,0)
+      ], false);
+
+      const brokenPiece = createMockPiece(18.5, 18.5, {
+        stitchingContour: brokenContour
+      });
+
+      const audit = evaluateSleeveCapCompatibility(brokenPiece, bodicePieces, 'classic');
+
+      assert.strictEqual(audit.isGeometricallyValid, false, 'Open contour must be geometrically invalid');
+      assert.strictEqual(audit.overallSleeveGeometryValid, false);
+      assert.ok(audit.contourIntegrityDiagnostics);
+      assert.strictEqual(audit.contourIntegrityDiagnostics.isClosed, false);
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 8: All 4 Supported Sleeve Strategies
+    // -----------------------------------------------------------------------
+    it('evaluates all 4 supported sleeve strategies with strictly decoupled envelopes', () => {
+      const strategies: SleeveEaseStrategy[] = ['tailored', 'classic', 'fitted', 'flat'];
+      const expectedEnvelopes = {
+        tailored: { min: 2.0, max: 3.8, rec: 2.8 },
+        classic: { min: 1.2, max: 2.5, rec: 1.8 },
+        fitted: { min: 0.6, max: 1.6, rec: 1.0 },
+        flat: { min: 0.0, max: 0.8, rec: 0.4 }
+      };
+
+      strategies.forEach(st => {
+        const { piece } = draftSleeveBlock(validMeasurements, bodiceConcept, {
+          strategy: st,
+          bodicePieces
+        });
+
+        const audit = evaluateSleeveCapCompatibility(piece, bodicePieces, st);
+
+        assert.strictEqual(audit.strategy, st);
+        assert.strictEqual(audit.recommendedEaseRangeCm.min, expectedEnvelopes[st].min);
+        assert.strictEqual(audit.recommendedEaseRangeCm.max, expectedEnvelopes[st].max);
+        assert.strictEqual(audit.targetTotalEaseCm, expectedEnvelopes[st].rec);
+
+        // Geometrically valid contour
+        assert.strictEqual(audit.isGeometricallyValid, true);
+        assert.strictEqual(audit.isAssemblyValid, true);
+      });
+    });
+  });
 });
+
