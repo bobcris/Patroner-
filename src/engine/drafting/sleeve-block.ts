@@ -1020,9 +1020,9 @@ export function evaluateSleeveCapCompatibility(
 
   if (sleevePiece.stitchingContour) {
     const contourReport = validateContourIntegrity(sleevePiece.stitchingContour);
-    const hasSelfIntersection = contourReport.checks.some(c => c.errorCode === 'VAL-CONTOUR-SELF-INTERSECTION' && c.status === 'fail');
-    const isClosed = !contourReport.checks.some(c => (c.errorCode === 'VAL-CONTOUR-CLOSURE' || c.errorCode === 'VAL-CONTOUR-DISCONTINUITY') && c.status === 'fail');
-    const isFinite = !contourReport.checks.some(c => c.errorCode === 'VAL-CONTOUR-NON-FINITE' && c.status === 'fail');
+    const hasSelfIntersection = contourReport.checks.some(c => (c.errorCode === 'VAL-CONTOUR-SELF-INTERSECTION' || c.id.includes('self-intersect')) && c.status === 'fail');
+    const isClosed = !contourReport.checks.some(c => (c.errorCode === 'VAL-CONTOUR-OPEN' || c.id.includes('contour-closed') || c.errorCode === 'VAL-CLOSURE-GAP' || c.errorCode === 'VAL-CONTINUITY-GAP' || c.errorCode === 'VAL-CONTOUR-CLOSURE' || c.errorCode === 'VAL-CONTOUR-DISCONTINUITY') && c.status === 'fail');
+    const isFinite = !contourReport.checks.some(c => (c.errorCode === 'VAL-COORD-INVALID' || c.errorCode === 'VAL-CONTOUR-NON-FINITE') && c.status === 'fail');
 
     overallSleeveGeometryValid = contourReport.isValid;
     contourIntegrityDiagnostics = {
