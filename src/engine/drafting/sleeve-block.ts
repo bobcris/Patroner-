@@ -51,9 +51,16 @@ export interface ArmholeContext {
  * Detailed projection diagnostics for a reference point onto a CubicBezierCurve.
  */
 export interface ArcLengthProjectionDiagnostics {
-  arcLengthCm: number;
   parameterT: number;
+  projectedPoint: Point;
   projectionDistanceCm: number;
+  arcLengthCm: number;
+  arcLengthErrorBoundCm: number;
+  toleranceAchieved: boolean;
+  convergenceStatus: 'converged-global-minimum' | 'interior-converged' | 'boundary-pinned' | 'degenerate';
+  candidateMinimaCount: number;
+  projectionUncertaintyCm: number;
+  /** @deprecated backward-compatibility alias for arcLengthErrorBoundCm */
   estimatedErrorBoundCm: number;
 }
 
@@ -62,63 +69,141 @@ export interface ArcLengthProjectionDiagnostics {
  * to the closest point projected from a given reference point.
  *
  * Algorithm & Mathematical Error Guarantees:
- * 1. Global Coarse Grid Search: 100 uniformly spaced samples across t in [0, 1] to avoid local minima
- *    on curves with inflection. Step size delta_t = 0.01.
- * 2. Fine Local Refinement: 16 iterations of golden-section search over [bestT - 0.02, bestT + 0.02]
- *    achieving parameter precision delta_t < 2e-5 (< 0.004 mm for a 20 cm armhole curve).
- * 3. Quadrature Arc Length: Chordal polyline subdivision over 30 segments with error bound < 0.005 cm (< 0.05 mm),
- *    which is two orders of magnitude smaller than the manufacturing notch tolerance (0.3 cm).
+ * 1. Global Multi-Basin Coarse Grid: 100 uniformly spaced samples across t in [0, 1] evaluate all
+ *    candidate local minimum basins (including boundaries and inflections).
+ * 2. Multi-Basin Golden-Section Search: 18 iterations of golden-section search across every candidate basin,
+ *    avoiding false convergence on local minima for complex, inflected, or high-curvature curves.
+ * 3. Deterministic Adaptive Arc-Length: Uses recursive De Casteljau subdivision with mathematically proven
+ *    lower (chord) and upper (control polygon) bounds: L_chord <= ArcLength <= L_poly.
+ *    The returned error bound is calculated dynamically, never hard-coded.
  */
-export function getArcLengthProjectionDiagnostics(curve: CubicBezierCurve, pt: Point): ArcLengthProjectionDiagnostics {
-  let bestT = 0;
-  let bestDist = Infinity;
+export function getArcLengthProjectionDiagnostics(
+  curve: CubicBezierCurve,
+  pt: Point,
+  toleranceCm = 0.005
+): ArcLengthProjectionDiagnostics {
+  const curveLenResult = curve.adaptiveLength(toleranceCm);
+  if (curveLenResult.lengthCm < 1e-4) {
+    const d = distance(curve.p0, pt);
+    return {
+      parameterT: 0,
+      projectedPoint: curve.p0,
+      projectionDistanceCm: Number(d.toFixed(3)),
+      arcLengthCm: 0,
+      arcLengthErrorBoundCm: 0,
+      toleranceAchieved: true,
+      convergenceStatus: 'degenerate',
+      candidateMinimaCount: 1,
+      projectionUncertaintyCm: 0,
+      estimatedErrorBoundCm: 0
+    };
+  }
+
+  // 1. Coarse sampling across t in [0, 1] to identify all candidate local minimum basins
   const steps = 100;
+  const samples: { t: number; dist: number; pt: Point }[] = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const p = curve.pointAt(t);
-    const d = distance(p, pt);
-    if (d < bestDist) {
-      bestDist = d;
-      bestT = t;
-    }
+    samples.push({ t, dist: distance(p, pt), pt: p });
   }
 
-  // Phase 2: Golden-section refinement around bestT for sub-millimeter projection accuracy
-  let a = Math.max(0, bestT - 0.02);
-  let b = Math.min(1, bestT + 0.02);
+  // Identify all candidate local minimum intervals
+  const candidateIndices: number[] = [0];
+  for (let i = 1; i < steps; i++) {
+    if (samples[i].dist <= samples[i - 1].dist && samples[i].dist <= samples[i + 1].dist) {
+      candidateIndices.push(i);
+    }
+  }
+  candidateIndices.push(steps);
+
+  // 2. Golden-section refinement across every candidate basin
   const phi = (Math.sqrt(5) - 1) / 2; // ~0.6180339887
-  let c = b - phi * (b - a);
-  let d = a + phi * (b - a);
-  let distC = distance(curve.pointAt(c), pt);
-  let distD = distance(curve.pointAt(d), pt);
+  let bestT = 0;
+  let bestDist = Infinity;
+  let bestProjectedPt = curve.p0;
 
-  for (let iter = 0; iter < 16; iter++) {
-    if (distC < distD) {
-      b = d;
-      d = c;
-      distD = distC;
-      c = b - phi * (b - a);
-      distC = distance(curve.pointAt(c), pt);
-    } else {
-      a = c;
-      c = d;
-      distC = distD;
-      d = a + phi * (b - a);
-      distD = distance(curve.pointAt(d), pt);
+  for (const idx of candidateIndices) {
+    let a = Math.max(0, (idx - 1) / steps);
+    let b = Math.min(1, (idx + 1) / steps);
+
+    let c = b - phi * (b - a);
+    let d = a + phi * (b - a);
+    let ptC = curve.pointAt(c);
+    let ptD = curve.pointAt(d);
+    let distC = distance(ptC, pt);
+    let distD = distance(ptD, pt);
+
+    for (let iter = 0; iter < 18; iter++) {
+      if (distC < distD) {
+        b = d;
+        d = c;
+        distD = distC;
+        c = b - phi * (b - a);
+        ptC = curve.pointAt(c);
+        distC = distance(ptC, pt);
+      } else {
+        a = c;
+        c = d;
+        distC = distD;
+        d = a + phi * (b - a);
+        ptD = curve.pointAt(d);
+        distD = distance(ptD, pt);
+      }
+    }
+
+    const tCand = (a + b) / 2;
+    const ptCand = curve.pointAt(tCand);
+    const distCand = distance(ptCand, pt);
+
+    if (distCand < bestDist) {
+      bestDist = distCand;
+      bestT = tCand;
+      bestProjectedPt = ptCand;
     }
   }
 
-  const refinedT = (a + b) / 2;
-  const closestPoint = curve.pointAt(refinedT);
-  const projectionDistanceCm = Number(distance(closestPoint, pt).toFixed(3));
-  const arcLengthCm = Number(curve.subdivide(refinedT).left.lengthCm().toFixed(2));
-  const estimatedErrorBoundCm = 0.005;
+  // 3. Convergence status
+  let convergenceStatus: 'converged-global-minimum' | 'interior-converged' | 'boundary-pinned' | 'degenerate' = 'converged-global-minimum';
+  if (bestT < 1e-4 || bestT > 1 - 1e-4) {
+    convergenceStatus = 'boundary-pinned';
+  }
+
+  // 18 golden-section iterations reduce interval from 0.02 by (0.61803)^18 ~ 1.7e-4 * 0.02 ~ 3.5e-6
+  const projectionUncertaintyCm = Number((3.5e-6 * curveLenResult.lengthCm).toFixed(6));
+
+  // 4. Calculate arc length with independently calculated, proven error bounds
+  let arcLengthCm = 0;
+  let arcLengthErrorBoundCm = 0;
+  let toleranceAchieved = true;
+
+  if (bestT <= 1e-5) {
+    arcLengthCm = 0;
+    arcLengthErrorBoundCm = 0;
+    toleranceAchieved = true;
+  } else if (bestT >= 1 - 1e-5) {
+    arcLengthCm = curveLenResult.lengthCm;
+    arcLengthErrorBoundCm = curveLenResult.errorBoundCm;
+    toleranceAchieved = curveLenResult.toleranceAchieved;
+  } else {
+    const leftSegment = curve.subdivide(bestT).left;
+    const leftLenResult = leftSegment.adaptiveLength(toleranceCm);
+    arcLengthCm = leftLenResult.lengthCm;
+    arcLengthErrorBoundCm = leftLenResult.errorBoundCm;
+    toleranceAchieved = leftLenResult.toleranceAchieved;
+  }
 
   return {
-    arcLengthCm,
-    parameterT: Number(refinedT.toFixed(5)),
-    projectionDistanceCm,
-    estimatedErrorBoundCm
+    parameterT: Number(bestT.toFixed(5)),
+    projectedPoint: bestProjectedPt,
+    projectionDistanceCm: Number(bestDist.toFixed(3)),
+    arcLengthCm: Number(arcLengthCm.toFixed(3)),
+    arcLengthErrorBoundCm,
+    toleranceAchieved,
+    convergenceStatus,
+    candidateMinimaCount: candidateIndices.length,
+    projectionUncertaintyCm,
+    estimatedErrorBoundCm: arcLengthErrorBoundCm
   };
 }
 
@@ -773,12 +858,22 @@ export interface SleeveCapCompatibilityResult {
   recommendedEaseRangeCm: { min: number; max: number };
   /** @deprecated Retained alias for recommendedEaseRangeCm */
   targetToleranceRangeCm: { min: number; max: number };
+  /** Custom target envelope [max(0, target - 0.40), min(5.0, target + 0.40)] if specified */
+  customEnvelopeCm?: { min: number; max: number };
 
   /**
-   * Geometric validity: true if the drafted sleeve piece has valid coordinates,
-   * non-degenerate segments, and closed contour without self-intersections.
+   * Geometric validity: true strictly when the sleeve piece has a stitching contour that is
+   * closed, continuous, and free of self-intersections. False if absent or malformed.
    */
   isGeometricallyValid: boolean;
+
+  /**
+   * Explicit classification of geometric validation:
+   * - 'verified-valid': contour is present and passed validateContourIntegrity.
+   * - 'contour-invalid': contour is present but failed validation checks.
+   * - 'unassessed-missing-contour': contour is absent, so 2D planar integrity cannot be claimed.
+   */
+  geometricValidityStatus: 'verified-valid' | 'contour-invalid' | 'unassessed-missing-contour';
 
   /**
    * Assembly validity: true if the sleeve cap can be physically assembled into
@@ -912,17 +1007,29 @@ export function evaluateSleeveCapCompatibility(
     stretchFactor = 0.5;
   }
 
+  const isCustomTarget = options.customTargetEaseCm !== undefined;
+
+  // Custom target ease: treated as final designer target (no double-scaling)
+  const targetTotalEase = isCustomTarget
+    ? options.customTargetEaseCm!
+    : Number((baseEase.recommendedCapEaseCm * stretchFactor).toFixed(2));
+  const targetFrontEase = Number((targetTotalEase * 0.45).toFixed(2));
+  const targetBackEase = Number((targetTotalEase * 0.55).toFixed(2));
+
   const recommendedEaseRangeCm = {
     min: Number((baseEase.capEaseMinCm * stretchFactor).toFixed(2)),
     max: Number((baseEase.capEaseMaxCm * stretchFactor).toFixed(2))
   };
 
-  // Custom target ease: treated as final designer target (no double-scaling)
-  const targetTotalEase = options.customTargetEaseCm !== undefined
-    ? options.customTargetEaseCm
-    : Number((baseEase.recommendedCapEaseCm * stretchFactor).toFixed(2));
-  const targetFrontEase = Number((targetTotalEase * 0.45).toFixed(2));
-  const targetBackEase = Number((targetTotalEase * 0.55).toFixed(2));
+  // If custom target ease is specified, the custom target envelope is:
+  // [max(0, targetTotalEase - 0.40), min(5.0, targetTotalEase + 0.40)]
+  // This explicitly overrides the default strategy envelope for target compliance while enforcing mandatory assembly limits [0, 5.0].
+  const customEnvelopeCm = isCustomTarget
+    ? {
+        min: Math.max(0, Number((targetTotalEase - 0.40).toFixed(2))),
+        max: Math.min(5.0, Number((targetTotalEase + 0.40).toFixed(2)))
+      }
+    : undefined;
 
   const actualFrontEase = Number((frontCapSeam.lengthCm - armhole.frontArmholeLengthCm).toFixed(2));
   const actualBackEase = Number((backCapSeam.lengthCm - armhole.backArmholeLengthCm).toFixed(2));
@@ -963,7 +1070,7 @@ export function evaluateSleeveCapCompatibility(
   let backMin = Math.max(0, Number((0.50 * recommendedEaseRangeCm.min).toFixed(2)));
   let backMax = Number((0.60 * recommendedEaseRangeCm.max).toFixed(2));
 
-  if (options.customTargetEaseCm !== undefined) {
+  if (isCustomTarget) {
     frontMin = Math.max(0, Number((targetFrontEase - 0.25).toFixed(2)));
     frontMax = Number((targetFrontEase + 0.25).toFixed(2));
     backMin = Math.max(0, Number((targetBackEase - 0.25).toFixed(2)));
@@ -973,18 +1080,11 @@ export function evaluateSleeveCapCompatibility(
   const isFrontEaseCompliant = isAssemblyValid && actualFrontEase >= frontMin && actualFrontEase <= frontMax;
   const isBackEaseCompliant = isAssemblyValid && actualBackEase >= backMin && actualBackEase <= backMax;
 
-  // 3. Total ease target compliance
-  let isTotalEaseTargetCompliant = false;
-  if (options.customTargetEaseCm !== undefined) {
-    isTotalEaseTargetCompliant = isAssemblyValid &&
-      Math.abs(actualTotalEase - targetTotalEase) <= 0.40 &&
-      actualTotalEase >= recommendedEaseRangeCm.min &&
-      actualTotalEase <= recommendedEaseRangeCm.max;
-  } else {
-    isTotalEaseTargetCompliant = isAssemblyValid &&
-      actualTotalEase >= recommendedEaseRangeCm.min &&
-      actualTotalEase <= recommendedEaseRangeCm.max;
-  }
+  // 3. Total ease target compliance (custom envelope overrides default strategy envelope)
+  const activeEnvelope = customEnvelopeCm ?? recommendedEaseRangeCm;
+  const isTotalEaseTargetCompliant = isAssemblyValid &&
+    actualTotalEase >= activeEnvelope.min &&
+    actualTotalEase <= activeEnvelope.max;
 
   // 4. Granular boundary status classification
   let targetStatus: SleeveTargetStatus;
@@ -994,9 +1094,9 @@ export function evaluateSleeveCapCompatibility(
     targetStatus = 'excessive-ease-invalid';
   } else if (frontBackAllocationStatus === 'imbalanced') {
     targetStatus = 'imbalanced-ease-invalid';
-  } else if (actualTotalEase < recommendedEaseRangeCm.min) {
+  } else if (actualTotalEase < activeEnvelope.min) {
     targetStatus = 'insufficient-ease';
-  } else if (actualTotalEase <= recommendedEaseRangeCm.max) {
+  } else if (actualTotalEase <= activeEnvelope.max) {
     targetStatus = (isTotalEaseTargetCompliant && isFrontEaseCompliant && isBackEaseCompliant)
       ? 'target-compliant'
       : 'elevated-ease';
@@ -1015,8 +1115,9 @@ export function evaluateSleeveCapCompatibility(
     isEaseDistributionCompliant;
 
   // 6. Overall geometric contour validation (if contour is present on piece)
-  let overallSleeveGeometryValid: boolean | undefined = undefined;
+  let overallSleeveGeometryValid = false;
   let contourIntegrityDiagnostics: { isClosed: boolean; hasSelfIntersection: boolean; isFinite: boolean; details?: string } | undefined = undefined;
+  let geometricValidityStatus: 'verified-valid' | 'contour-invalid' | 'unassessed-missing-contour' = 'unassessed-missing-contour';
 
   if (sleevePiece.stitchingContour) {
     const contourReport = validateContourIntegrity(sleevePiece.stitchingContour);
@@ -1025,18 +1126,26 @@ export function evaluateSleeveCapCompatibility(
     const isFinite = !contourReport.checks.some(c => (c.errorCode === 'VAL-COORD-INVALID' || c.errorCode === 'VAL-CONTOUR-NON-FINITE') && c.status === 'fail');
 
     overallSleeveGeometryValid = contourReport.isValid;
+    geometricValidityStatus = contourReport.isValid ? 'verified-valid' : 'contour-invalid';
     contourIntegrityDiagnostics = {
       isClosed,
       hasSelfIntersection,
       isFinite,
       details: contourReport.errors.length > 0 ? contourReport.errors.join('; ') : 'Contour closed, valid segment continuity, no self-intersections'
     };
+  } else {
+    overallSleeveGeometryValid = false;
+    geometricValidityStatus = 'unassessed-missing-contour';
+    contourIntegrityDiagnostics = {
+      isClosed: false,
+      hasSelfIntersection: false,
+      isFinite: false,
+      details: 'Stitching contour is absent from pattern piece: 2D planar contour integrity unassessed'
+    };
   }
 
-  // Independent geometric validity
-  const isGeometricallyValid = overallSleeveGeometryValid !== undefined
-    ? overallSleeveGeometryValid
-    : (frontCapSeam.lengthCm > 0 && backCapSeam.lengthCm > 0 && Number.isFinite(frontCapSeam.lengthCm) && Number.isFinite(backCapSeam.lengthCm));
+  // Independent geometric validity: true strictly when contour is verified valid
+  const isGeometricallyValid = geometricValidityStatus === 'verified-valid';
 
   return {
     strategy,
@@ -1057,7 +1166,9 @@ export function evaluateSleeveCapCompatibility(
     totalResidualCm: totalResidual,
     recommendedEaseRangeCm,
     targetToleranceRangeCm: recommendedEaseRangeCm,
+    customEnvelopeCm,
     isGeometricallyValid,
+    geometricValidityStatus,
     isAssemblyValid,
     isTotalEaseTargetCompliant,
     isFrontEaseCompliant,

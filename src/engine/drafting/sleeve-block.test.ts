@@ -22,7 +22,7 @@ import {
   findPointAtArcLength
 } from './sleeve-block';
 import { validatePatternDraft } from '../validation/seam-validator';
-import { distance } from '../geometry/math';
+import { distance, computeAdaptiveBezierLength } from '../geometry/math';
 import { CubicBezierCurve, LineSegment, GeometricContour } from '../geometry/primitives';
 
 describe('Milestone 04.2: Deterministic Sleeve Drafting Engine', () => {
@@ -1168,5 +1168,399 @@ describe('Milestone 04.2: Deterministic Sleeve Drafting Engine', () => {
       });
     });
   });
+
+  // =========================================================================
+  // 16. MILESTONE 04.2.2.3: SLEEVE GEOMETRY AND NOTCH VALIDATION INTEGRITY
+  // =========================================================================
+  describe('16. Milestone 04.2.2.3: Sleeve Geometry and Notch Validation Integrity', () => {
+    const bodicePieces = draftBodiceBlock(validMeasurements, bodiceConcept);
+    const { piece: baseSleevePiece } = draftSleeveBlock(validMeasurements, bodiceConcept, { bodicePieces });
+
+    // -----------------------------------------------------------------------
+    // Failure Mode 1: Missing front sleeve cap curve fails val-slv-notch-correspondence
+    // -----------------------------------------------------------------------
+    it('fails val-slv-notch-correspondence when front sleeve cap curve is missing (no silent pass)', () => {
+      const segs = baseSleevePiece.stitchingContour!.segments.filter(s => s.id !== 'sleeve-front-cap');
+      const brokenPiece: PatternPiece = {
+        ...baseSleevePiece,
+        stitchingContour: new GeometricContour('slv-no-front-curve', segs, false)
+      };
+
+      const report = validatePatternDraft([...bodicePieces, brokenPiece]);
+      const check = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(check, 'val-slv-notch-correspondence check must exist');
+      assert.strictEqual(check.status, 'fail', 'Must fail when front sleeve cap curve is missing');
+      assert.ok(check.message.includes('missing or non-cubic'), 'Message must explain missing curve');
+    });
+
+    // -----------------------------------------------------------------------
+    // Failure Mode 2: Missing back sleeve cap curve fails val-slv-notch-correspondence
+    // -----------------------------------------------------------------------
+    it('fails val-slv-notch-correspondence when back sleeve cap curve is missing', () => {
+      const segs = baseSleevePiece.stitchingContour!.segments.filter(s => s.id !== 'sleeve-back-cap');
+      const brokenPiece: PatternPiece = {
+        ...baseSleevePiece,
+        stitchingContour: new GeometricContour('slv-no-back-curve', segs, false)
+      };
+
+      const report = validatePatternDraft([...bodicePieces, brokenPiece]);
+      const check = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(check);
+      assert.strictEqual(check.status, 'fail', 'Must fail when back sleeve cap curve is missing');
+      assert.ok(check.message.includes('missing or non-cubic'));
+    });
+
+    // -----------------------------------------------------------------------
+    // Failure Mode 3: Missing front bodice armhole curve fails val-slv-notch-correspondence
+    // -----------------------------------------------------------------------
+    it('fails val-slv-notch-correspondence when front bodice armhole curve is missing or non-cubic', () => {
+      const frontBodice = bodicePieces.find(p => p.id === 'piece-bodice-front')!;
+      const segs = frontBodice.stitchingContour!.segments.map(s => {
+        if (s.id === 'fb-armhole') {
+          return new LineSegment('fb-armhole', s.start, s.end, 1.0, false);
+        }
+        return s;
+      });
+      const brokenFrontBodice: PatternPiece = {
+        ...frontBodice,
+        stitchingContour: new GeometricContour('fb-non-cubic', segs, true)
+      };
+      const testPieces = [
+        brokenFrontBodice,
+        ...bodicePieces.filter(p => p.id !== 'piece-bodice-front'),
+        baseSleevePiece
+      ];
+
+      const report = validatePatternDraft(testPieces);
+      const check = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(check);
+      assert.strictEqual(check.status, 'fail', 'Must fail when front bodice armhole is not a cubic bezier curve');
+      assert.ok(check.message.includes('missing or non-cubic'));
+    });
+
+    // -----------------------------------------------------------------------
+    // Failure Mode 4: Missing back bodice armhole curve fails val-slv-notch-correspondence
+    // -----------------------------------------------------------------------
+    it('fails val-slv-notch-correspondence when back bodice armhole curve is missing or non-cubic', () => {
+      const backBodice = bodicePieces.find(p => p.id === 'piece-bodice-back')!;
+      const segs = backBodice.stitchingContour!.segments.map(s => {
+        if (s.id === 'bb-armhole') {
+          return new LineSegment('bb-armhole', s.start, s.end, 1.0, false);
+        }
+        return s;
+      });
+      const brokenBackBodice: PatternPiece = {
+        ...backBodice,
+        stitchingContour: new GeometricContour('bb-non-cubic', segs, true)
+      };
+      const testPieces = [
+        ...bodicePieces.filter(p => p.id !== 'piece-bodice-back'),
+        brokenBackBodice,
+        baseSleevePiece
+      ];
+
+      const report = validatePatternDraft(testPieces);
+      const check = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(check);
+      assert.strictEqual(check.status, 'fail', 'Must fail when back bodice armhole is not a cubic bezier curve');
+      assert.ok(check.message.includes('missing or non-cubic'));
+    });
+
+    // -----------------------------------------------------------------------
+    // Failure Mode 5: Notch displaced away from curve (> 0.30 cm) fails
+    // -----------------------------------------------------------------------
+    it('fails val-slv-notch-correspondence when front notch is displaced off the seam curve > 0.30 cm', () => {
+      const frontNotch = baseSleevePiece.notches.find(n => n.id === 'notch-slv-front-armhole')!;
+      const displacedFrontNotch: Notch = {
+        ...frontNotch,
+        position: { x: frontNotch.position.x + 0.50, y: frontNotch.position.y - 0.50 } // perpendicular offset > 0.30 cm
+      };
+      const modifiedSleeve: PatternPiece = {
+        ...baseSleevePiece,
+        notches: baseSleevePiece.notches.map(n => n.id === 'notch-slv-front-armhole' ? displacedFrontNotch : n)
+      };
+
+      const report = validatePatternDraft([...bodicePieces, modifiedSleeve]);
+      const check = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(check);
+      assert.strictEqual(check.status, 'fail', 'Must fail when front notch is displaced > 0.30 cm off curve');
+      assert.ok(check.message.includes('displaced by'));
+    });
+
+    // -----------------------------------------------------------------------
+    // Failure Mode 6: One displaced back notch fails even if pair midpoint is correct
+    // -----------------------------------------------------------------------
+    it('fails val-slv-notch-correspondence when one back notch is displaced even if midpoint is preserved', () => {
+      const slvBackCurve = baseSleevePiece.stitchingContour!.segments.find(s => s.id === 'sleeve-back-cap') as CubicBezierCurve;
+      const bNotch1 = baseSleevePiece.notches.find(n => n.id === 'notch-slv-back-armhole-1')!;
+      const bNotch2 = baseSleevePiece.notches.find(n => n.id === 'notch-slv-back-armhole-2')!;
+
+      const arc1 = computeArcLengthFromStart(slvBackCurve, bNotch1.position);
+      const arc2 = computeArcLengthFromStart(slvBackCurve, bNotch2.position);
+      const midArc = (arc1 + arc2) / 2;
+
+      // Expand pair symmetrically by 0.40 cm:
+      // Midpoint stays exactly midArc! But individual notches are displaced by 0.40 cm from their targets,
+      // and spacing becomes (arc2 - arc1) + 0.80 cm = 1.0 + 0.80 = 1.80 cm (> 1.50 cm).
+      const newPt1 = findPointAtArcLength(slvBackCurve, arc1 - 0.40).point;
+      const newPt2 = findPointAtArcLength(slvBackCurve, arc2 + 0.40).point;
+
+      const modifiedSleeve: PatternPiece = {
+        ...baseSleevePiece,
+        notches: baseSleevePiece.notches.map(n => {
+          if (n.id === 'notch-slv-back-armhole-1') return { ...n, position: newPt1 };
+          if (n.id === 'notch-slv-back-armhole-2') return { ...n, position: newPt2 };
+          return n;
+        })
+      };
+
+      const report = validatePatternDraft([...bodicePieces, modifiedSleeve]);
+      const check = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(check);
+      assert.strictEqual(check.status, 'fail', 'Must fail individual notch correspondence despite unchanged midpoint');
+    });
+
+    // -----------------------------------------------------------------------
+    // Failure Mode 7: Reversed back double notch ordering fails
+    // -----------------------------------------------------------------------
+    it('fails val-slv-notch-correspondence when back double notch positions are inverted/reversed', () => {
+      const bNotch1 = baseSleevePiece.notches.find(n => n.id === 'notch-slv-back-armhole-1')!;
+      const bNotch2 = baseSleevePiece.notches.find(n => n.id === 'notch-slv-back-armhole-2')!;
+
+      // Swap positions so notch-1 is further from underarm than notch-2
+      const modifiedSleeve: PatternPiece = {
+        ...baseSleevePiece,
+        notches: baseSleevePiece.notches.map(n => {
+          if (n.id === 'notch-slv-back-armhole-1') return { ...n, position: bNotch2.position };
+          if (n.id === 'notch-slv-back-armhole-2') return { ...n, position: bNotch1.position };
+          return n;
+        })
+      };
+
+      const report = validatePatternDraft([...bodicePieces, modifiedSleeve]);
+      const check = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(check);
+      assert.strictEqual(check.status, 'fail', 'Must fail when back double notch ordering is inverted');
+      assert.ok(check.message.includes('ordering inverted'));
+    });
+
+    // -----------------------------------------------------------------------
+    // Failure Mode 8: Incorrect double-notch spacing (< 0.9 cm or > 1.5 cm) fails
+    // -----------------------------------------------------------------------
+    it('fails val-slv-notch-correspondence when double notch spacing is outside 1.2 cm ± 0.3 cm [0.9 - 1.5 cm]', () => {
+      const slvBackCurve = baseSleevePiece.stitchingContour!.segments.find(s => s.id === 'sleeve-back-cap') as CubicBezierCurve;
+      const bNotch1 = baseSleevePiece.notches.find(n => n.id === 'notch-slv-back-armhole-1')!;
+      const arc1 = computeArcLengthFromStart(slvBackCurve, bNotch1.position);
+
+      // Place notch 2 only 0.50 cm away from notch 1 (spacing = 0.50 cm < 0.90 cm)
+      const compressedPt2 = findPointAtArcLength(slvBackCurve, arc1 + 0.50).point;
+
+      const modifiedSleeve: PatternPiece = {
+        ...baseSleevePiece,
+        notches: baseSleevePiece.notches.map(n => {
+          if (n.id === 'notch-slv-back-armhole-2') return { ...n, position: compressedPt2 };
+          return n;
+        })
+      };
+
+      const report = validatePatternDraft([...bodicePieces, modifiedSleeve]);
+      const check = report.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(check);
+      assert.strictEqual(check.status, 'fail', 'Must fail when double notch spacing is < 0.90 cm');
+      assert.ok(check.message.includes('spacing'));
+    });
+
+    // -----------------------------------------------------------------------
+    // Failure Modes 9 & 10: Boundary tolerance verification (0.30 cm vs 0.31 cm)
+    // -----------------------------------------------------------------------
+    it('passes notch correspondence at exact tolerance boundary (0.30 cm) and fails just outside (0.31 cm)', () => {
+      const slvFrontCurve = baseSleevePiece.stitchingContour!.segments.find(s => s.id === 'sleeve-front-cap') as CubicBezierCurve;
+      const fbArmholeCurve = bodicePieces.find(p => p.id === 'piece-bodice-front')!.stitchingContour!.segments.find(s => s.id === 'fb-armhole') as CubicBezierCurve;
+      const fbNotch = bodicePieces.find(p => p.id === 'piece-bodice-front')!.notches.find(n => n.id.includes('chest'))!;
+      const fbDiag = getArcLengthProjectionDiagnostics(fbArmholeCurve, fbNotch.position);
+      const bodiceFrontFromUnderarm = fbDiag.arcLengthCm;
+
+      // 1. Shift front notch along curve so deltaFront is exactly 0.30 cm (within tolerance)
+      const targetPass = slvFrontCurve.lengthCm() - (bodiceFrontFromUnderarm - 0.30);
+      const boundaryPt = findPointAtArcLength(slvFrontCurve, targetPass).point;
+      const boundarySleeve: PatternPiece = {
+        ...baseSleevePiece,
+        notches: baseSleevePiece.notches.map(n => n.id === 'notch-slv-front-armhole' ? { ...n, position: boundaryPt } : n)
+      };
+
+      const passReport = validatePatternDraft([...bodicePieces, boundarySleeve]);
+      const passCheck = passReport.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(passCheck);
+      assert.strictEqual(passCheck.status, 'pass', '0.30 cm delta must pass at tolerance boundary');
+
+      // 2. Shift front notch along curve so deltaFront is 0.31 cm (exceeds tolerance)
+      const targetFail = slvFrontCurve.lengthCm() - (bodiceFrontFromUnderarm - 0.31);
+      const exceedPt = findPointAtArcLength(slvFrontCurve, targetFail).point;
+      const exceedSleeve: PatternPiece = {
+        ...baseSleevePiece,
+        notches: baseSleevePiece.notches.map(n => n.id === 'notch-slv-front-armhole' ? { ...n, position: exceedPt } : n)
+      };
+
+      const failReport = validatePatternDraft([...bodicePieces, exceedSleeve]);
+      const failCheck = failReport.checks.find(c => c.id === 'val-slv-notch-correspondence');
+      assert.ok(failCheck);
+      assert.strictEqual(failCheck.status, 'fail', '0.31 cm delta must fail outside tolerance boundary');
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 11: Adaptive Bézier Arc-Length Mathematical Verification
+    // -----------------------------------------------------------------------
+    it('verifies adaptive Bezier arc-length with mathematically proven chord and polygon bounds', () => {
+      // 1. Straight line: (0,0) -> (15,0)
+      const straight = computeAdaptiveBezierLength({ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 }, { x: 15, y: 0 }, 0.002);
+      assert.strictEqual(straight.lengthCm, 15.00);
+      assert.strictEqual(straight.lowerBoundCm, 15.00);
+      assert.strictEqual(straight.upperBoundCm, 15.00);
+      assert.strictEqual(straight.errorBoundCm, 0);
+      assert.strictEqual(straight.toleranceAchieved, true);
+
+      // 2. High-curvature curve: U-bend
+      const uBend = computeAdaptiveBezierLength({ x: 0, y: 0 }, { x: 0, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 0 }, 0.005);
+      assert.ok(uBend.lowerBoundCm <= uBend.lengthCm && uBend.lengthCm <= uBend.upperBoundCm, 'Chord <= ArcLength <= Polygon bound');
+      assert.ok(uBend.errorBoundCm <= 0.005, 'Calculated error bound must satisfy tolerance');
+      assert.strictEqual(uBend.toleranceAchieved, true);
+      assert.ok(uBend.subdivisions > 0, 'Subdivision must be performed for high curvature');
+
+      // 3. Inflected S-curve
+      const sCurve = computeAdaptiveBezierLength({ x: 0, y: 0 }, { x: 5, y: 10 }, { x: 5, y: -10 }, { x: 10, y: 0 }, 0.005);
+      assert.ok(sCurve.lowerBoundCm <= sCurve.lengthCm && sCurve.lengthCm <= sCurve.upperBoundCm);
+      assert.ok(sCurve.errorBoundCm <= 0.005);
+      assert.strictEqual(sCurve.toleranceAchieved, true);
+
+      // 4. Degenerate point curve
+      const degen = computeAdaptiveBezierLength({ x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }, 0.005);
+      assert.strictEqual(degen.lengthCm, 0);
+      assert.strictEqual(degen.errorBoundCm, 0);
+      assert.strictEqual(degen.toleranceAchieved, true);
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 12: Multi-Basin Point Projection
+    // -----------------------------------------------------------------------
+    it('evaluates multiple candidate minima basins in point projection and avoids local trap', () => {
+      // Create a curve with two symmetric local minima basins for an external query point:
+      // A wide symmetric arc where query point is at center
+      const symmCurve = new CubicBezierCurve(
+        'symm-basin-test',
+        { x: -10, y: 10 },
+        { x: -5, y: -5 },
+        { x: 5, y: -5 },
+        { x: 10, y: 10 },
+        1.0,
+        false
+      );
+
+      const queryPt = { x: 0, y: 0 };
+      const diag = getArcLengthProjectionDiagnostics(symmCurve, queryPt, 0.005);
+
+      assert.ok(diag.candidateMinimaCount >= 1, 'Must record candidate minima evaluated');
+      assert.strictEqual(diag.convergenceStatus, 'converged-global-minimum');
+      assert.strictEqual(diag.toleranceAchieved, true);
+      assert.ok(diag.arcLengthErrorBoundCm <= 0.005, 'Adaptive arc length error bound must be <= 0.005 cm');
+      assert.ok(diag.projectionUncertaintyCm <= 0.001, 'Golden section uncertainty must be sub-millimeter');
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 13: Geometric Validity Semantics (verified-valid vs contour-invalid vs unassessed)
+    // -----------------------------------------------------------------------
+    it('strictly distinguishes verified-valid, contour-invalid, and unassessed-missing-contour', () => {
+      // 1. Missing contour: positive seams alone DO NOT establish geometric contour validity
+      const pieceWithoutContour: PatternPiece = {
+        ...baseSleevePiece,
+        stitchingContour: undefined
+      };
+      const unassessedAudit = evaluateSleeveCapCompatibility(pieceWithoutContour, bodicePieces, 'classic');
+      assert.strictEqual(unassessedAudit.geometricValidityStatus, 'unassessed-missing-contour');
+      assert.strictEqual(unassessedAudit.isGeometricallyValid, false, 'Unassessed contour cannot claim isGeometricallyValid = true');
+      assert.strictEqual(unassessedAudit.overallSleeveGeometryValid, false);
+
+      // 2. Open/invalid contour
+      const brokenContour = new GeometricContour('broken-open', [
+        new LineSegment('seg-1', { x: 0, y: 0 }, { x: 10, y: 0 }, 1.0, false),
+        new LineSegment('seg-2', { x: 10, y: 0 }, { x: 10, y: 10 }, 1.0, false)
+      ], true);
+      const pieceWithBrokenContour: PatternPiece = {
+        ...baseSleevePiece,
+        stitchingContour: brokenContour
+      };
+      const invalidAudit = evaluateSleeveCapCompatibility(pieceWithBrokenContour, bodicePieces, 'classic');
+      assert.strictEqual(invalidAudit.geometricValidityStatus, 'contour-invalid');
+      assert.strictEqual(invalidAudit.isGeometricallyValid, false);
+
+      // 3. Fully closed, valid contour
+      const validAudit = evaluateSleeveCapCompatibility(baseSleevePiece, bodicePieces, 'classic');
+      assert.strictEqual(validAudit.geometricValidityStatus, 'verified-valid');
+      assert.strictEqual(validAudit.isGeometricallyValid, true);
+    });
+
+    // -----------------------------------------------------------------------
+    // Requirement 14: Custom Target Semantics and Envelope Overrides
+    // -----------------------------------------------------------------------
+    it('correctly overrides strategy envelope with custom target envelope while strictly enforcing physical limits', () => {
+      // 1. Custom target of 3.20 cm on Classic strategy (where default max is 2.50 cm)
+      // Custom envelope should be [3.20 - 0.40, 3.20 + 0.40] = [2.80, 3.60] cm.
+      const armhole = extractArmholeContext(bodicePieces);
+      const customPiece: PatternPiece = {
+        ...baseSleevePiece,
+        seams: baseSleevePiece.seams.map(s => {
+          if (s.id === 'slv-front-cap-seam') return { ...s, lengthCm: armhole.frontArmholeLengthCm + 1.44 };
+          if (s.id === 'slv-back-cap-seam') return { ...s, lengthCm: armhole.backArmholeLengthCm + 1.76 };
+          return s;
+        })
+      };
+
+      const customAudit = evaluateSleeveCapCompatibility(customPiece, bodicePieces, {
+        strategy: 'classic',
+        customTargetEaseCm: 3.20
+      });
+
+      assert.strictEqual(customAudit.targetTotalEaseCm, 3.20);
+      assert.strictEqual(customAudit.customEnvelopeCm?.min, 2.80);
+      assert.strictEqual(customAudit.customEnvelopeCm?.max, 3.60);
+      assert.strictEqual(customAudit.actualTotalEaseCm, 3.20);
+      assert.strictEqual(customAudit.isTotalEaseTargetCompliant, true, '3.20 cm matches custom target envelope [2.80, 3.60]');
+      assert.strictEqual(customAudit.isAssemblyValid, true, '3.20 cm is physically assembleable (<= 5.0 cm)');
+
+      // 2. High-stretch fabric with custom target: stretch factor MUST NOT double-compensate custom target
+      const highStretchCustomAudit = evaluateSleeveCapCompatibility(customPiece, bodicePieces, {
+        strategy: 'classic',
+        customTargetEaseCm: 3.20,
+        fabric: {
+          id: 'rib-knit',
+          name: 'Rib Knit',
+          composition: '95% Cotton 5% Elastane',
+          weight: 'medium',
+          stretch: 'high-stretch',
+          recommendedEaseCm: { waist: 0, hip: 0, bust: 0 },
+          drapeDescription: 'High elastic recovery.'
+        }
+      });
+      assert.strictEqual(highStretchCustomAudit.targetTotalEaseCm, 3.20, 'Stretch factor must not scale customTargetEaseCm');
+
+      // 3. Mandatory physical assembly limit violation: custom target of 5.20 cm
+      const impossiblePiece: PatternPiece = {
+        ...baseSleevePiece,
+        seams: baseSleevePiece.seams.map(s => {
+          if (s.id === 'slv-front-cap-seam') return { ...s, lengthCm: armhole.frontArmholeLengthCm + 2.34 };
+          if (s.id === 'slv-back-cap-seam') return { ...s, lengthCm: armhole.backArmholeLengthCm + 2.86 };
+          return s;
+        })
+      };
+      const impossibleAudit = evaluateSleeveCapCompatibility(impossiblePiece, bodicePieces, {
+        strategy: 'classic',
+        customTargetEaseCm: 5.20
+      });
+      assert.strictEqual(impossibleAudit.actualTotalEaseCm, 5.20);
+      assert.strictEqual(impossibleAudit.isAssemblyValid, false, '5.20 cm strictly violates physical assembly limit <= 5.0 cm');
+      assert.strictEqual(impossibleAudit.isTotalEaseTargetCompliant, false, 'Assembly violation precludes target compliance');
+      assert.strictEqual(impossibleAudit.targetStatus, 'excessive-ease-invalid');
+    });
+  });
 });
+
 

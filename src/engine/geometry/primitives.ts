@@ -4,7 +4,16 @@
  */
 
 import { BoundingBox, Point } from '../../types';
-import { approximateBezierLength, cubicBezierPoint, cubicBezierTangent, distance, normalize, vector } from './math';
+import {
+  approximateBezierLength,
+  computeAdaptiveBezierLength,
+  AdaptiveBezierLengthResult,
+  cubicBezierPoint,
+  cubicBezierTangent,
+  distance,
+  normalize,
+  vector
+} from './math';
 
 export type SegmentType = 'line' | 'bezier';
 export type SegmentRole = 'stitching' | 'offset' | 'miter' | 'bevel' | 'fold-extension' | 'bridge';
@@ -104,8 +113,16 @@ export class CubicBezierCurve implements BaseSegment {
     return this.p3;
   }
 
+  /**
+   * Computes arc length adaptively using recursive De Casteljau subdivision.
+   * Returns mathematically proven lower and upper bounds and an independently verified error bound.
+   */
+  adaptiveLength(toleranceCm = 0.005, maxDepth = 14): AdaptiveBezierLengthResult {
+    return computeAdaptiveBezierLength(this.p0, this.cp1, this.cp2, this.p3, toleranceCm, maxDepth);
+  }
+
   lengthCm(): number {
-    return approximateBezierLength(this.p0, this.cp1, this.cp2, this.p3, 30);
+    return Number(this.adaptiveLength(0.002).lengthCm.toFixed(2));
   }
 
   pointAt(t: number): Point {

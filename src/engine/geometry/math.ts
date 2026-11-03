@@ -115,8 +115,96 @@ export function cubicBezierTangent(
   return normalize({ x: dx, y: dy });
 }
 
+export interface AdaptiveBezierLengthResult {
+  lengthCm: number;
+  lowerBoundCm: number;
+  upperBoundCm: number;
+  errorBoundCm: number;
+  toleranceAchieved: boolean;
+  subdivisions: number;
+  maxDepthReached: boolean;
+}
+
 /**
- * Calculates cubic Bezier curve length using Gaussian numerical integration or subdivision.
+ * Computes cubic Bézier curve arc length adaptively using recursive De Casteljau subdivision.
+ * Uses chord length as lower bound and control-polygon length as upper bound.
+ * Both bounds are mathematically proven: L_chord <= ArcLength <= L_poly.
+ * Returns the computed length and an independently calculated, proven error bound.
+ */
+export function computeAdaptiveBezierLength(
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  p3: Point,
+  toleranceCm = 0.005,
+  maxDepth = 14
+): AdaptiveBezierLengthResult {
+  let subdivisions = 0;
+  let maxDepthReached = false;
+
+  function subdivideAndMeasure(
+    q0: Point,
+    q1: Point,
+    q2: Point,
+    q3: Point,
+    depth: number,
+    localTol: number
+  ): { lower: number; upper: number; est: number } {
+    const chord = distance(q0, q3);
+    const poly = distance(q0, q1) + distance(q1, q2) + distance(q2, q3);
+    const diff = poly - chord;
+
+    if (diff <= localTol || depth >= maxDepth) {
+      if (depth >= maxDepth && diff > localTol) {
+        maxDepthReached = true;
+      }
+      return {
+        lower: chord,
+        upper: poly,
+        // Midpoint of bounds provides minimax error <= diff / 2
+        est: (chord + poly) / 2
+      };
+    }
+
+    subdivisions++;
+
+    // De Casteljau subdivision at t = 0.5
+    const q01 = { x: (q0.x + q1.x) / 2, y: (q0.y + q1.y) / 2 };
+    const q12 = { x: (q1.x + q2.x) / 2, y: (q1.y + q2.y) / 2 };
+    const q23 = { x: (q2.x + q3.x) / 2, y: (q2.y + q3.y) / 2 };
+
+    const q012 = { x: (q01.x + q12.x) / 2, y: (q01.y + q12.y) / 2 };
+    const q123 = { x: (q12.x + q23.x) / 2, y: (q12.y + q23.y) / 2 };
+
+    const mid = { x: (q012.x + q123.x) / 2, y: (q012.y + q123.y) / 2 };
+
+    const left = subdivideAndMeasure(q0, q01, q012, mid, depth + 1, localTol / 2);
+    const right = subdivideAndMeasure(mid, q123, q23, q3, depth + 1, localTol / 2);
+
+    return {
+      lower: left.lower + right.lower,
+      upper: left.upper + right.upper,
+      est: left.est + right.est
+    };
+  }
+
+  const res = subdivideAndMeasure(p0, p1, p2, p3, 0, toleranceCm);
+  const errorBoundCm = Number(((res.upper - res.lower) / 2).toFixed(5));
+  const toleranceAchieved = errorBoundCm <= toleranceCm;
+
+  return {
+    lengthCm: Number(res.est.toFixed(3)),
+    lowerBoundCm: Number(res.lower.toFixed(3)),
+    upperBoundCm: Number(res.upper.toFixed(3)),
+    errorBoundCm,
+    toleranceAchieved,
+    subdivisions,
+    maxDepthReached
+  };
+}
+
+/**
+ * Calculates cubic Bezier curve length using adaptive subdivision with guaranteed error bounds.
  */
 export function approximateBezierLength(
   p0: Point,
@@ -125,17 +213,7 @@ export function approximateBezierLength(
   p3: Point,
   steps = 30
 ): number {
-  let len = 0;
-  let prev = p0;
-
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    const curr = cubicBezierPoint(p0, p1, p2, p3, t);
-    len += distance(prev, curr);
-    prev = curr;
-  }
-
-  return Number(len.toFixed(2));
+  return Number(computeAdaptiveBezierLength(p0, p1, p2, p3, 0.002).lengthCm.toFixed(2));
 }
 
 /**
