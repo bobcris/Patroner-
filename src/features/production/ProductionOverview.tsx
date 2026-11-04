@@ -8,6 +8,7 @@ import { BodyMeasurements, DesignSpecification, PatternPiece } from '../../types
 import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
 import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
 import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
+import { assembleBodiceSleeve, BodiceSleeveAssemblyResult } from '../../engine/assembly';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
 import { calculateGarmentDimensions, calculateBodiceGarmentDimensions } from '../../engine/measurements/standards';
 import { Button } from '../../components/ui/Button';
@@ -53,6 +54,21 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   }
 
   const validation = validatePatternDraft(pieces);
+  let assemblyResult: BodiceSleeveAssemblyResult | undefined = undefined;
+  if (currentSpec.garmentCategory === 'bodice' && pieces.length >= 3) {
+    try {
+      assemblyResult = assembleBodiceSleeve({
+        bodicePieces: pieces.slice(0, 2),
+        sleevePiece: pieces[2],
+        designSpec: currentSpec,
+        measurements,
+        options: { strategy: currentSpec.sleeveEaseStrategy ?? 'classic' }
+      });
+    } catch {
+      // Fallback
+    }
+  }
+
   const dims = currentSpec.garmentCategory === 'bodice'
     ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric)
     : calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric);
@@ -358,6 +374,191 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Milestone 04.3: Integrated Bodice–Sleeve Seam Assembly Specification */}
+      {assemblyResult && (
+        <div className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-neutral-100 pb-4 gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] uppercase tracking-wider font-mono bg-blue-900 text-white px-2 py-0.5 rounded">
+                  MILESTONE 04.3
+                </span>
+                <span className="text-xs font-mono text-neutral-500">INTEGRATED BODICE–SLEEVE ASSEMBLY &amp; SEAM SPECIFICATION</span>
+              </div>
+              <h3 className="text-base font-semibold text-neutral-900">
+                Seam Arc-Length Reconciliation &amp; Ease Distribution Sheet
+              </h3>
+              <p className="text-xs text-neutral-600 mt-0.5">
+                Deterministic arc-length compatibility using adaptive Bézier subdivision with linear uncertainty propagation.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Badge
+                variant={assemblyResult.status === 'verified-valid' ? 'success' : (assemblyResult.status === 'invalid' ? 'danger' : 'warning')}
+                size="md"
+              >
+                STATUS: {assemblyResult.status.toUpperCase()}
+              </Badge>
+              <Badge variant="warning" size="md" className="border-amber-400 text-amber-800 bg-amber-50">
+                3D DRAPE UNASSESSED
+              </Badge>
+            </div>
+          </div>
+
+          {/* Measurements & Ease Reconciliation Table */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
+            {/* Front Armhole / Cap Match */}
+            <div className="p-3.5 bg-neutral-50 border border-neutral-200 rounded space-y-2">
+              <div className="flex justify-between items-center border-b border-neutral-200 pb-1.5 font-semibold text-neutral-800">
+                <span>FRONT SCYE PAIRING</span>
+                <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                  {(assemblyResult.ease.frontEaseRatio * 100).toFixed(1)}% EASE
+                </span>
+              </div>
+              <div className="flex justify-between text-neutral-600 text-[11px]">
+                <span>Front Bodice Scye (L_bf):</span>
+                <span className="font-bold text-neutral-900">
+                  {assemblyResult.ease.frontBodiceArmholeLengthCm.toFixed(2)} cm
+                  <span className="text-neutral-400 font-normal"> (±{assemblyResult.measurements.frontBodiceArmhole?.uncertaintyCm.toFixed(4)})</span>
+                </span>
+              </div>
+              <div className="flex justify-between text-neutral-600 text-[11px]">
+                <span>Front Sleeve Cap (L_sf):</span>
+                <span className="font-bold text-neutral-900">
+                  {assemblyResult.ease.frontSleeveCapLengthCm.toFixed(2)} cm
+                  <span className="text-neutral-400 font-normal"> (±{assemblyResult.measurements.frontSleeveCap?.uncertaintyCm.toFixed(4)})</span>
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-neutral-200 text-neutral-900 font-bold">
+                <span>Front Cap Ease (E_f):</span>
+                <span className={assemblyResult.ease.isFrontEasePermitted ? 'text-emerald-700' : 'text-red-700'}>
+                  +{assemblyResult.ease.frontEaseCm.toFixed(2)} cm (±{assemblyResult.ease.frontEaseUncertaintyCm.toFixed(4)})
+                </span>
+              </div>
+            </div>
+
+            {/* Back Armhole / Cap Match */}
+            <div className="p-3.5 bg-neutral-50 border border-neutral-200 rounded space-y-2">
+              <div className="flex justify-between items-center border-b border-neutral-200 pb-1.5 font-semibold text-neutral-800">
+                <span>BACK SCYE PAIRING</span>
+                <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                  {((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(1)}% EASE
+                </span>
+              </div>
+              <div className="flex justify-between text-neutral-600 text-[11px]">
+                <span>Back Bodice Scye (L_bb):</span>
+                <span className="font-bold text-neutral-900">
+                  {assemblyResult.ease.backBodiceArmholeLengthCm.toFixed(2)} cm
+                  <span className="text-neutral-400 font-normal"> (±{assemblyResult.measurements.backBodiceArmhole?.uncertaintyCm.toFixed(4)})</span>
+                </span>
+              </div>
+              <div className="flex justify-between text-neutral-600 text-[11px]">
+                <span>Back Sleeve Cap (L_sb):</span>
+                <span className="font-bold text-neutral-900">
+                  {assemblyResult.ease.backSleeveCapLengthCm.toFixed(2)} cm
+                  <span className="text-neutral-400 font-normal"> (±{assemblyResult.measurements.backSleeveCap?.uncertaintyCm.toFixed(4)})</span>
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-neutral-200 text-neutral-900 font-bold">
+                <span>Back Cap Ease (E_b):</span>
+                <span className={assemblyResult.ease.isBackEasePermitted ? 'text-emerald-700' : 'text-red-700'}>
+                  +{assemblyResult.ease.backEaseCm.toFixed(2)} cm (±{assemblyResult.ease.backEaseUncertaintyCm.toFixed(4)})
+                </span>
+              </div>
+            </div>
+
+            {/* Total Ease & Tolerance Status */}
+            <div className="p-3.5 bg-neutral-50 border border-neutral-200 rounded space-y-2">
+              <div className="flex justify-between items-center border-b border-neutral-200 pb-1.5 font-semibold text-neutral-800">
+                <span>TOTAL ASSEMBLY EASE</span>
+                <span className="text-[10px] text-neutral-500 uppercase">
+                  {assemblyResult.ease.targetStrategy}
+                </span>
+              </div>
+              <div className="flex justify-between text-neutral-600 text-[11px]">
+                <span>Total Bodice Scye:</span>
+                <span className="font-bold text-neutral-900">{assemblyResult.ease.totalBodiceArmholeLengthCm.toFixed(2)} cm</span>
+              </div>
+              <div className="flex justify-between text-neutral-600 text-[11px]">
+                <span>Total Sleeve Cap:</span>
+                <span className="font-bold text-neutral-900">{assemblyResult.ease.totalSleeveCapLengthCm.toFixed(2)} cm</span>
+              </div>
+              <div className="flex justify-between text-neutral-600 text-[11px]">
+                <span>Strategy Target Ease:</span>
+                <span className="font-bold text-neutral-700">+{assemblyResult.ease.targetTotalEaseCm.toFixed(2)} cm (Residual: {assemblyResult.ease.totalResidualCm.toFixed(2)} cm)</span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-neutral-200 text-neutral-900 font-bold">
+                <span>Total Ease (E_t):</span>
+                <span className={assemblyResult.ease.isTotalEasePermitted ? 'text-emerald-700' : 'text-red-700'}>
+                  +{assemblyResult.ease.totalEaseCm.toFixed(2)} cm (±{assemblyResult.ease.totalEaseUncertaintyCm.toFixed(4)})
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Topology, Parity & Notch Correspondence Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+            {/* Notch Correspondence Details */}
+            <div className="p-3 bg-neutral-50/70 border border-neutral-200 rounded space-y-1.5">
+              <span className="text-[10px] uppercase font-bold text-neutral-500 block">NOTCH PAIRING VERIFICATION</span>
+              <div className="flex justify-between text-[11px]">
+                <span>Front Scye Single Notch:</span>
+                <span className={assemblyResult.notches.frontNotch?.isWithinTolerance ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                  Delta: {assemblyResult.notches.frontNotch?.deltaCm.toFixed(2) ?? 'N/A'} cm (≤ 0.30 cm)
+                </span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span>Back Scye Double Notches:</span>
+                <span className={assemblyResult.notches.backNotches?.isSpacingValid ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                  Spacing: {assemblyResult.notches.backNotches?.sleeveSpacingCm.toFixed(2) ?? 'N/A'} cm (1.2 ± 0.3 cm)
+                </span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span>Crown Apex Notch (0,0):</span>
+                <span className={assemblyResult.notches.crownNotch?.isApexAligned ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                  Aligned at Apex (≤ 0.05 cm)
+                </span>
+              </div>
+            </div>
+
+            {/* Inseam Parity & Orientation */}
+            <div className="p-3 bg-neutral-50/70 border border-neutral-200 rounded space-y-1.5">
+              <span className="text-[10px] uppercase font-bold text-neutral-500 block">SEAM ORIENTATION &amp; INSEAM PARITY</span>
+              <div className="flex justify-between text-[11px]">
+                <span>Underarm Inseam Parity:</span>
+                <span className={assemblyResult.endpoints.underarmInseamMatch.hasParity ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                  Delta: {assemblyResult.endpoints.underarmInseamMatch.parityDeltaCm.toFixed(3)} cm (≤ 0.05 cm)
+                </span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span>Traversal Orientation:</span>
+                <span className={assemblyResult.endpoints.isEndpointTopologyValid ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                  All Curves Traversed Upward/Ascending
+                </span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span>Crown Continuity:</span>
+                <span className={assemblyResult.endpoints.crownShoulderMatch.isConnected ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                  Crown Apex Continuous C1
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Mandatory Industrial Non-Production-Ready Notice */}
+          <div className="p-3 bg-amber-50/80 border border-amber-200 rounded text-amber-900 text-[11px] leading-relaxed">
+            <div className="flex items-center gap-1.5 font-bold mb-0.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+              <span>Industrial Production Boundary Notice: isProductionReady = false</span>
+            </div>
+            This assembly is certified for 2D coordinate continuity, deterministic seam arc-lengths, and notch pairing. 
+            Physical cloth drape, fabric shear deformation during arm movement, and steam iron crimping behaviour are unassessed. 
+            Physical muslin prototype verification is required prior to industrial production cutting.
+          </div>
+        </div>
+      )}
 
       {/* Assembly Sequence Section */}
       <div className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-4">

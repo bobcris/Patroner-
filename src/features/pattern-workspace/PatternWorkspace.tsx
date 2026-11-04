@@ -8,6 +8,7 @@ import { BodiceDartStyle, BodyMeasurements, DesignSpecification, PatternDraft, P
 import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
 import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
 import { draftSleeveBlock, SleeveDiagnostics } from '../../engine/drafting/sleeve-block';
+import { assembleBodiceSleeve, BodiceSleeveAssemblyResult } from '../../engine/assembly';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
 import { calculateGarmentDimensions, calculateBodiceGarmentDimensions, SLEEVE_EASE_TABLE } from '../../engine/measurements/standards';
 import { Button } from '../../components/ui/Button';
@@ -62,6 +63,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   // Canvas zoom & pan state
   const [zoom, setZoom] = useState(1.4);
   const [pan, setPan] = useState({ x: 40, y: 30 });
+  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly'>('pieces');
   const [selectedPieceId, setSelectedPieceId] = useState<string>(
     currentSpec.garmentCategory === 'bodice' ? 'piece-bodice-front' : 'piece-skirt-front'
   );
@@ -85,6 +87,22 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     }
   } else {
     pieces = draftSkirtBlock(measurements, currentSpec);
+  }
+
+  // Milestone 04.3: Integrated Bodice-Sleeve Assembly computation
+  let assemblyResult: BodiceSleeveAssemblyResult | undefined = undefined;
+  if (currentSpec.garmentCategory === 'bodice' && pieces.length >= 3) {
+    try {
+      assemblyResult = assembleBodiceSleeve({
+        bodicePieces: pieces.slice(0, 2),
+        sleevePiece: pieces[2],
+        designSpec: currentSpec,
+        measurements,
+        options: { strategy: sleeveEaseStrategy }
+      });
+    } catch {
+      // Fallback
+    }
   }
 
   const validationReport = validatePatternDraft(pieces);
@@ -245,6 +263,100 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Interactive CAD Canvas */}
         <div className="lg:col-span-8 flex flex-col space-y-3">
+          {/* Milestone 04.3: CAD View Mode Selector */}
+          {currentSpec.garmentCategory === 'bodice' && assemblyResult && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-neutral-200 rounded-sm p-3 shadow-2xs gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-xs uppercase font-mono text-neutral-500 font-bold">VIEW MODE:</span>
+                <div className="inline-flex rounded-xs border border-neutral-300 p-0.5 bg-neutral-100">
+                  <button
+                    onClick={() => setCadViewMode('pieces')}
+                    className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer ${
+                      cadViewMode === 'pieces'
+                        ? 'bg-neutral-900 text-white shadow-2xs'
+                        : 'text-neutral-700 hover:text-neutral-900'
+                    }`}
+                  >
+                    Pattern Pieces ({pieces.length})
+                  </button>
+                  <button
+                    onClick={() => setCadViewMode('assembly')}
+                    className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      cadViewMode === 'assembly'
+                        ? 'bg-blue-900 text-white shadow-2xs'
+                        : 'text-neutral-700 hover:text-neutral-900'
+                    }`}
+                  >
+                    <span>Assembly Inspection (M 04.3)</span>
+                    <Badge
+                      variant={assemblyResult.status === 'verified-valid' ? 'success' : 'danger'}
+                      size="sm"
+                    >
+                      {assemblyResult.status === 'verified-valid' ? 'VERIFIED' : 'INVALID'}
+                    </Badge>
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-[11px] font-mono text-neutral-500">
+                {cadViewMode === 'assembly' ? (
+                  <span className="text-blue-900 font-bold">2D RIGID ALIGNMENT AT SCYE JUNCTIONS</span>
+                ) : (
+                  <span>FLAT CUTTING PATTERN VIEW</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Assembly Mode HUD Bar */}
+          {cadViewMode === 'assembly' && assemblyResult && (
+            <div className="bg-blue-50/90 border border-blue-200 rounded-sm p-3.5 space-y-2 text-xs font-mono">
+              <div className="flex items-center justify-between border-b border-blue-200/80 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-blue-950">BODICE–SLEEVE SEAM ASSEMBLY HUD</span>
+                  <Badge variant={assemblyResult.status === 'verified-valid' ? 'success' : 'danger'} size="sm">
+                    {assemblyResult.status.toUpperCase()}
+                  </Badge>
+                </div>
+                <span className="text-[11px] text-blue-800">
+                  PARITY DELTA: {assemblyResult.endpoints.underarmInseamMatch.parityDeltaCm.toFixed(3)} cm (≤ 0.05 cm)
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                <div className="bg-white/80 p-2 rounded border border-blue-100">
+                  <span className="text-neutral-500 block text-[10px]">TOTAL EASE (E_t)</span>
+                  <span className="font-bold text-neutral-900">
+                    +{assemblyResult.ease.totalEaseCm.toFixed(2)} cm
+                    <span className="text-neutral-400 font-normal"> (±{assemblyResult.ease.totalEaseUncertaintyCm.toFixed(4)})</span>
+                  </span>
+                </div>
+                <div className="bg-white/80 p-2 rounded border border-blue-100">
+                  <span className="text-neutral-500 block text-[10px]">FRONT EASE (E_f)</span>
+                  <span className="font-bold text-neutral-900">
+                    +{assemblyResult.ease.frontEaseCm.toFixed(2)} cm ({(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)
+                  </span>
+                </div>
+                <div className="bg-white/80 p-2 rounded border border-blue-100">
+                  <span className="text-neutral-500 block text-[10px]">BACK EASE (E_b)</span>
+                  <span className="font-bold text-neutral-900">
+                    +{assemblyResult.ease.backEaseCm.toFixed(2)} cm ({((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)
+                  </span>
+                </div>
+                <div className="bg-white/80 p-2 rounded border border-blue-100">
+                  <span className="text-neutral-500 block text-[10px]">TARGET STRATEGY</span>
+                  <span className="font-bold text-neutral-900 uppercase">
+                    {assemblyResult.ease.targetStrategy} (+{assemblyResult.ease.targetTotalEaseCm}cm)
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-blue-900/80 bg-blue-100/60 p-1.5 rounded flex items-center justify-between">
+                <span>{assemblyResult.inspectionLayout?.disclaimer}</span>
+                <span className="font-semibold uppercase text-amber-800">isProductionReady: false</span>
+              </div>
+            </div>
+          )}
           {/* Canvas Controls Toolbar */}
           <div className="bg-neutral-900 text-white px-4 py-2.5 rounded-t-sm flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
             {/* Viewport Zoom */}
@@ -340,6 +452,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
             </svg>
 
             {/* Pattern Pieces SVG Render */}
+            {/* SVG Render: Either Individual Pieces or Integrated Assembly */}
             <svg
               viewBox="-30 -30 650 500"
               className="w-full h-[520px] transition-transform duration-75"
@@ -348,207 +461,345 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 transformOrigin: 'center center'
               }}
             >
-              {/* Scale multiplier: 1cm = 4.5 SVG units */}
-              {pieces.map((piece, index) => {
-                // Offset each piece side by side for visual clarity
-                const xOffset = index === 0 ? 30 : 250;
-                const yOffset = 40;
-                const isSelected = selectedPiece.id === piece.id;
-                const isOffsetFailed = piece.offsetResult?.status === 'failure';
-                const pieceHasErrors = isOffsetFailed || validationReport.checks.some(
-                  c => c.status === 'fail' && (c.name.includes(piece.pieceCode) || c.id.includes(piece.id))
-                );
-
-                return (
-                  <g
-                    key={piece.id}
-                    transform={`translate(${xOffset}, ${yOffset}) scale(4.5)`}
-                    onClick={() => setSelectedPieceId(piece.id)}
-                    className="cursor-pointer transition-opacity"
-                    opacity={isSelected ? 1 : 0.85}
-                  >
-                    {/* Bounding box guide if active */}
-                    {showDimensions && isSelected && (
-                      <rect
-                        x={piece.boundingBox.minX - 2}
-                        y={piece.boundingBox.minY - 2}
-                        width={piece.boundingBox.widthCm + 4}
-                        height={piece.boundingBox.heightCm + 4}
-                        fill="none"
-                        stroke="#94a3b8"
-                        strokeWidth="0.3"
-                        strokeDasharray="1 1"
+              {cadViewMode === 'assembly' && assemblyResult?.inspectionLayout ? (
+                /* Milestone 04.3: Integrated Assembly 2D Inspection Layout */
+                <g transform="translate(40, 40) scale(4.2)">
+                  {/* Front Assembly (Bodice Front + Sleeve Cap at Underarm) */}
+                  <g>
+                    {/* Front Bodice Piece */}
+                    <path
+                      d={assemblyResult.inspectionLayout.frontAssembly.bodice.transformedCutSvgPath}
+                      fill="#FAF8F5"
+                      stroke="#09090b"
+                      strokeWidth="0.7"
+                    />
+                    <path
+                      d={assemblyResult.inspectionLayout.frontAssembly.bodice.transformedSewSvgPath}
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth="0.4"
+                      strokeDasharray="1.2 0.8"
+                    />
+                    {/* Front Bodice Notches */}
+                    {assemblyResult.inspectionLayout.frontAssembly.bodice.transformedNotches.map(n => (
+                      <line
+                        key={n.id}
+                        x1={n.position.x - 0.8}
+                        y1={n.position.y}
+                        x2={n.position.x + 0.8}
+                        y2={n.position.y}
+                        stroke="#16a34a"
+                        strokeWidth="0.6"
                       />
-                    )}
+                    ))}
 
-                    {/* Cut Path (Exterior Cutting Line including allowances) */}
-                    {showSeamAllowance && (
-                      <path
-                        d={piece.cutPathData}
-                        fill={isSelected ? (pieceHasErrors ? '#FEF2F2' : '#FAF8F5') : (pieceHasErrors ? '#FFF5F5' : '#FFFFFF')}
-                        stroke={pieceHasErrors ? '#ef4444' : (isSelected ? '#09090b' : '#52525b')}
-                        strokeWidth={pieceHasErrors ? '1.2' : '0.7'}
-                        strokeDasharray={pieceHasErrors ? '2.5 1' : undefined}
-                        strokeLinejoin="round"
-                        className="transition-colors"
+                    {/* Front Sleeve Piece (Aligned at underarm) */}
+                    <path
+                      d={assemblyResult.inspectionLayout.frontAssembly.sleeve.transformedCutSvgPath}
+                      fill="#EFF6FF"
+                      fillOpacity="0.4"
+                      stroke="#1d4ed8"
+                      strokeWidth="0.7"
+                    />
+                    <path
+                      d={assemblyResult.inspectionLayout.frontAssembly.sleeve.transformedSewSvgPath}
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth="0.4"
+                      strokeDasharray="1.2 0.8"
+                    />
+                    {/* Sleeve Notches */}
+                    {assemblyResult.inspectionLayout.frontAssembly.sleeve.transformedNotches.map(n => (
+                      <line
+                        key={n.id}
+                        x1={n.position.x - 0.8}
+                        y1={n.position.y}
+                        x2={n.position.x + 0.8}
+                        y2={n.position.y}
+                        stroke="#16a34a"
+                        strokeWidth="0.6"
                       />
-                    )}
+                    ))}
 
-                    {/* Invalid Geometry Warning Badge inside Canvas */}
-                    {pieceHasErrors && (
-                      <g>
+                    {/* Assembly Junction Annotation */}
+                    <circle cx="20" cy="22" r="1.5" fill="none" stroke="#2563eb" strokeWidth="0.5" />
+                    <text x="5" y="-5" fontSize="2.2" fontFamily="monospace" fontWeight="bold" fill="#1e3a8a">
+                      [FRONT ASSEMBLY: SCYE MATCH]
+                    </text>
+                    <text x="5" y="-2" fontSize="1.6" fontFamily="monospace" fill="#52525b">
+                      Ease: +{assemblyResult.ease.frontEaseCm.toFixed(2)} cm ({(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)
+                    </text>
+                  </g>
+
+                  {/* Back Assembly (Bodice Back + Sleeve Cap at Underarm) */}
+                  <g>
+                    {/* Back Bodice Piece */}
+                    <path
+                      d={assemblyResult.inspectionLayout.backAssembly.bodice.transformedCutSvgPath}
+                      fill="#FAF8F5"
+                      stroke="#09090b"
+                      strokeWidth="0.7"
+                    />
+                    <path
+                      d={assemblyResult.inspectionLayout.backAssembly.bodice.transformedSewSvgPath}
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth="0.4"
+                      strokeDasharray="1.2 0.8"
+                    />
+                    {/* Back Bodice Notches */}
+                    {assemblyResult.inspectionLayout.backAssembly.bodice.transformedNotches.map(n => (
+                      <line
+                        key={n.id}
+                        x1={n.position.x - 0.8}
+                        y1={n.position.y}
+                        x2={n.position.x + 0.8}
+                        y2={n.position.y}
+                        stroke="#16a34a"
+                        strokeWidth="0.6"
+                      />
+                    ))}
+
+                    {/* Back Sleeve Piece (Aligned at underarm) */}
+                    <path
+                      d={assemblyResult.inspectionLayout.backAssembly.sleeve.transformedCutSvgPath}
+                      fill="#EFF6FF"
+                      fillOpacity="0.4"
+                      stroke="#1d4ed8"
+                      strokeWidth="0.7"
+                    />
+                    <path
+                      d={assemblyResult.inspectionLayout.backAssembly.sleeve.transformedSewSvgPath}
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth="0.4"
+                      strokeDasharray="1.2 0.8"
+                    />
+                    {/* Sleeve Notches */}
+                    {assemblyResult.inspectionLayout.backAssembly.sleeve.transformedNotches.map(n => (
+                      <line
+                        key={n.id}
+                        x1={n.position.x - 0.8}
+                        y1={n.position.y}
+                        x2={n.position.x + 0.8}
+                        y2={n.position.y}
+                        stroke="#16a34a"
+                        strokeWidth="0.6"
+                      />
+                    ))}
+
+                    {/* Assembly Junction Annotation */}
+                    <text x="65" y="-5" fontSize="2.2" fontFamily="monospace" fontWeight="bold" fill="#1e3a8a">
+                      [BACK ASSEMBLY: SCYE MATCH]
+                    </text>
+                    <text x="65" y="-2" fontSize="1.6" fontFamily="monospace" fill="#52525b">
+                      Ease: +{assemblyResult.ease.backEaseCm.toFixed(2)} cm ({((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)
+                    </text>
+                  </g>
+                </g>
+              ) : (
+                /* Standard Flat Pattern Pieces Render */
+                pieces.map((piece, index) => {
+                  // Offset each piece side by side for visual clarity (Front Bodice, Back Bodice, Sleeve)
+                  const xOffset = index === 0 ? 30 : (index === 1 ? 230 : 430);
+                  const yOffset = 40;
+                  const isSelected = selectedPiece.id === piece.id;
+                  const isOffsetFailed = piece.offsetResult?.status === 'failure';
+                  const pieceHasErrors = isOffsetFailed || validationReport.checks.some(
+                    c => c.status === 'fail' && (c.name.includes(piece.pieceCode) || c.id.includes(piece.id))
+                  );
+
+                  return (
+                    <g
+                      key={piece.id}
+                      transform={`translate(${xOffset}, ${yOffset}) scale(4.5)`}
+                      onClick={() => setSelectedPieceId(piece.id)}
+                      className="cursor-pointer transition-opacity"
+                      opacity={isSelected ? 1 : 0.85}
+                    >
+                      {/* Bounding box guide if active */}
+                      {showDimensions && isSelected && (
                         <rect
-                          x={piece.boundingBox.widthCm * 0.2}
-                          y={piece.boundingBox.heightCm * 0.15}
-                          width={piece.boundingBox.widthCm * 0.6}
-                          height={5}
-                          fill="#ef4444"
-                          rx="0.5"
+                          x={piece.boundingBox.minX - 2}
+                          y={piece.boundingBox.minY - 2}
+                          width={piece.boundingBox.widthCm + 4}
+                          height={piece.boundingBox.heightCm + 4}
+                          fill="none"
+                          stroke="#94a3b8"
+                          strokeWidth="0.3"
+                          strokeDasharray="1 1"
                         />
-                        <text
-                          x={piece.boundingBox.widthCm * 0.5}
-                          y={piece.boundingBox.heightCm * 0.15 + 3.2}
-                          textAnchor="middle"
-                          fontSize="2"
-                          fontFamily="monospace"
-                          fontWeight="bold"
-                          fill="#ffffff"
-                        >
-                          INVALID GEOMETRY DETECTED
-                        </text>
-                      </g>
-                    )}
+                      )}
 
-                    {/* Sew Path (Interior Stitch Line) */}
-                    {showSewLines && (
-                      <path
-                        d={piece.sewPathData}
-                        fill="none"
-                        stroke={isSelected ? '#2563eb' : '#64748b'}
-                        strokeWidth="0.4"
-                        strokeDasharray="1.2 0.8"
-                      />
-                    )}
+                      {/* Cut Path (Exterior Cutting Line including allowances) */}
+                      {showSeamAllowance && (
+                        <path
+                          d={piece.cutPathData}
+                          fill={isSelected ? (pieceHasErrors ? '#FEF2F2' : '#FAF8F5') : (pieceHasErrors ? '#FFF5F5' : '#FFFFFF')}
+                          stroke={pieceHasErrors ? '#ef4444' : (isSelected ? '#09090b' : '#52525b')}
+                          strokeWidth={pieceHasErrors ? '1.2' : '0.7'}
+                          strokeDasharray={pieceHasErrors ? '2.5 1' : undefined}
+                          strokeLinejoin="round"
+                          className="transition-colors"
+                        />
+                      )}
 
-                    {/* Darts */}
-                    {showDarts &&
-                      piece.darts.map(dart => (
-                        <g key={dart.id}>
-                          <line
-                            x1={dart.legLeft.x}
-                            y1={dart.legLeft.y}
-                            x2={dart.apex.x}
-                            y2={dart.apex.y}
-                            stroke="#dc2626"
-                            strokeWidth="0.4"
+                      {/* Invalid Geometry Warning Badge inside Canvas */}
+                      {pieceHasErrors && (
+                        <g>
+                          <rect
+                            x={piece.boundingBox.widthCm * 0.2}
+                            y={piece.boundingBox.heightCm * 0.15}
+                            width={piece.boundingBox.widthCm * 0.6}
+                            height={5}
+                            fill="#ef4444"
+                            rx="0.5"
                           />
-                          <line
-                            x1={dart.legRight.x}
-                            y1={dart.legRight.y}
-                            x2={dart.apex.x}
-                            y2={dart.apex.y}
-                            stroke="#dc2626"
-                            strokeWidth="0.4"
-                          />
-                          {/* Drill hole dot at apex */}
-                          <circle
-                            cx={dart.apex.x}
-                            cy={dart.apex.y}
-                            r="0.5"
-                            fill="#dc2626"
-                          />
+                          <text
+                            x={piece.boundingBox.widthCm * 0.5}
+                            y={piece.boundingBox.heightCm * 0.15 + 3.2}
+                            textAnchor="middle"
+                            fontSize="2"
+                            fontFamily="monospace"
+                            fontWeight="bold"
+                            fill="#ffffff"
+                          >
+                            INVALID GEOMETRY DETECTED
+                          </text>
                         </g>
-                      ))}
+                      )}
 
-                    {/* Grainline */}
-                    {showGrainline && (
-                      <g>
-                        <line
-                          x1={piece.grainline.start.x}
-                          y1={piece.grainline.start.y}
-                          x2={piece.grainline.end.x}
-                          y2={piece.grainline.end.y}
-                          stroke="#18181b"
+                      {/* Sew Path (Interior Stitch Line) */}
+                      {showSewLines && (
+                        <path
+                          d={piece.sewPathData}
+                          fill="none"
+                          stroke={isSelected ? '#2563eb' : '#64748b'}
                           strokeWidth="0.4"
+                          strokeDasharray="1.2 0.8"
                         />
-                        {/* Top & Bottom Arrows */}
-                        <polygon
-                          points={`${piece.grainline.start.x},${piece.grainline.start.y - 1} ${piece.grainline.start.x - 0.7},${piece.grainline.start.y + 0.8} ${piece.grainline.start.x + 0.7},${piece.grainline.start.y + 0.8}`}
-                          fill="#18181b"
-                        />
-                        <polygon
-                          points={`${piece.grainline.end.x},${piece.grainline.end.y + 1} ${piece.grainline.end.x - 0.7},${piece.grainline.end.y - 0.8} ${piece.grainline.end.x + 0.7},${piece.grainline.end.y - 0.8}`}
-                          fill="#18181b"
-                        />
-                        <text
-                          x={piece.grainline.start.x + 1.2}
-                          y={(piece.grainline.start.y + piece.grainline.end.y) / 2}
-                          fontSize="2"
-                          fill="#52525b"
-                          fontFamily="monospace"
-                        >
-                          GRAIN
-                        </text>
-                      </g>
-                    )}
+                      )}
 
-                    {/* Notches */}
-                    {showNotches &&
-                      piece.notches.map(n => (
-                        <g key={n.id}>
+                      {/* Darts */}
+                      {showDarts &&
+                        piece.darts.map(dart => (
+                          <g key={dart.id}>
+                            <line
+                              x1={dart.legLeft.x}
+                              y1={dart.legLeft.y}
+                              x2={dart.apex.x}
+                              y2={dart.apex.y}
+                              stroke="#dc2626"
+                              strokeWidth="0.4"
+                            />
+                            <line
+                              x1={dart.legRight.x}
+                              y1={dart.legRight.y}
+                              x2={dart.apex.x}
+                              y2={dart.apex.y}
+                              stroke="#dc2626"
+                              strokeWidth="0.4"
+                            />
+                            {/* Drill hole dot at apex */}
+                            <circle
+                              cx={dart.apex.x}
+                              cy={dart.apex.y}
+                              r="0.5"
+                              fill="#dc2626"
+                            />
+                          </g>
+                        ))}
+
+                      {/* Grainline */}
+                      {showGrainline && (
+                        <g>
                           <line
-                            x1={n.position.x - 0.8}
-                            y1={n.position.y}
-                            x2={n.position.x + 0.8}
-                            y2={n.position.y}
-                            stroke="#16a34a"
-                            strokeWidth="0.6"
+                            x1={piece.grainline.start.x}
+                            y1={piece.grainline.start.y}
+                            x2={piece.grainline.end.x}
+                            y2={piece.grainline.end.y}
+                            stroke="#18181b"
+                            strokeWidth="0.4"
                           />
-                          {n.type === 'double' && (
+                          {/* Top & Bottom Arrows */}
+                          <polygon
+                            points={`${piece.grainline.start.x},${piece.grainline.start.y - 1} ${piece.grainline.start.x - 0.7},${piece.grainline.start.y + 0.8} ${piece.grainline.start.x + 0.7},${piece.grainline.start.y + 0.8}`}
+                            fill="#18181b"
+                          />
+                          <polygon
+                            points={`${piece.grainline.end.x},${piece.grainline.end.y + 1} ${piece.grainline.end.x - 0.7},${piece.grainline.end.y - 0.8} ${piece.grainline.end.x + 0.7},${piece.grainline.end.y - 0.8}`}
+                            fill="#18181b"
+                          />
+                          <text
+                            x={piece.grainline.start.x + 1.2}
+                            y={(piece.grainline.start.y + piece.grainline.end.y) / 2}
+                            fontSize="2"
+                            fill="#52525b"
+                            fontFamily="monospace"
+                          >
+                            GRAIN
+                          </text>
+                        </g>
+                      )}
+
+                      {/* Notches */}
+                      {showNotches &&
+                        piece.notches.map(n => (
+                          <g key={n.id}>
                             <line
                               x1={n.position.x - 0.8}
-                              y1={n.position.y + 0.8}
+                              y1={n.position.y}
                               x2={n.position.x + 0.8}
-                              y2={n.position.y + 0.8}
+                              y2={n.position.y}
                               stroke="#16a34a"
                               strokeWidth="0.6"
                             />
-                          )}
-                        </g>
-                      ))}
+                            {n.type === 'double' && (
+                              <line
+                                x1={n.position.x - 0.8}
+                                y1={n.position.y + 0.8}
+                                x2={n.position.x + 0.8}
+                                y2={n.position.y + 0.8}
+                                stroke="#16a34a"
+                                strokeWidth="0.6"
+                              />
+                            )}
+                          </g>
+                        ))}
 
-                    {/* Piece Label in Center */}
-                    <text
-                      x={piece.boundingBox.widthCm * 0.4}
-                      y={piece.boundingBox.heightCm * 0.3}
-                      fontSize="2.5"
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                      fill="#18181b"
-                    >
-                      [{piece.pieceCode}]
-                    </text>
-                    <text
-                      x={piece.boundingBox.widthCm * 0.4}
-                      y={piece.boundingBox.heightCm * 0.3 + 3.2}
-                      fontSize="1.8"
-                      fontFamily="monospace"
-                      fill="#52525b"
-                    >
-                      {piece.onFold ? 'CUT 1 ON FOLD' : `CUT ${piece.cutCount}`}
-                    </text>
-                    <text
-                      x={piece.boundingBox.widthCm * 0.4}
-                      y={piece.boundingBox.heightCm * 0.3 + 6}
-                      fontSize="1.6"
-                      fontFamily="monospace"
-                      fill="#71717a"
-                    >
-                      SIZE {activeSize}
-                    </text>
-                  </g>
-                );
-              })}
+                      {/* Piece Label in Center */}
+                      <text
+                        x={piece.boundingBox.widthCm * 0.4}
+                        y={piece.boundingBox.heightCm * 0.3}
+                        fontSize="2.5"
+                        fontFamily="monospace"
+                        fontWeight="bold"
+                        fill="#18181b"
+                      >
+                        [{piece.pieceCode}]
+                      </text>
+                      <text
+                        x={piece.boundingBox.widthCm * 0.4}
+                        y={piece.boundingBox.heightCm * 0.3 + 3.2}
+                        fontSize="1.8"
+                        fontFamily="monospace"
+                        fill="#52525b"
+                      >
+                        {piece.onFold ? 'CUT 1 ON FOLD' : `CUT ${piece.cutCount}`}
+                      </text>
+                      <text
+                        x={piece.boundingBox.widthCm * 0.4}
+                        y={piece.boundingBox.heightCm * 0.3 + 6}
+                        fontSize="1.6"
+                        fontFamily="monospace"
+                        fill="#71717a"
+                      >
+                        SIZE {activeSize}
+                      </text>
+                    </g>
+                  );
+                })
+              )}
             </svg>
 
             {/* Canvas Legend */}
