@@ -8,6 +8,7 @@ import {
   DesignSpecification,
   BodyMeasurements,
   FabricProperty,
+  GrainLine,
   Notch,
   PatternPiece,
   Point,
@@ -63,7 +64,9 @@ export interface EaseCompatibilityMetrics {
   frontEaseUncertaintyCm: number;
   backEaseUncertaintyCm: number;
   totalEaseUncertaintyCm: number;
-  frontEaseRatio: number; // Front ease as fraction of total ease [0.0 - 1.0]
+  frontEaseRatio: number | null; // Front ease as fraction of total ease [0.0 - 1.0], null if total ease < 0.20 cm or invalid
+  isRatioDefined: boolean; // True only when totalEaseCm >= 0.20 cm and frontEaseCm >= 0 and backEaseCm >= 0
+  frontEaseRatioUncertainty: number | null; // delta R_f = (|E_b| delta E_f + |E_f| delta E_b) / E_t^2
   targetStrategy: SleeveEaseStrategy;
   targetTotalEaseCm: number;
   targetFrontEaseCm: number;
@@ -75,8 +78,8 @@ export interface EaseCompatibilityMetrics {
   totalResidualCm: number;
   isFrontEasePermitted: boolean; // E_f >= 0
   isBackEasePermitted: boolean;  // E_b >= 0
-  isTotalEasePermitted: boolean;  // 0 <= E_t <= 5.0 cm
-  isDistributionBalanced: boolean; // 35% <= frontRatio <= 55%
+  isTotalEasePermitted: boolean;  // 0 <= E_t <= 5.0 cm (tailoring crimp capacity envelope)
+  isDistributionBalanced: boolean; // 35% <= frontRatio <= 55% (or |E_f - E_b| <= 0.20 cm when E_t < 0.20 cm)
   isTotalEaseTargetCompliant: boolean;
   isTargetCompliant: boolean;
 }
@@ -91,6 +94,9 @@ export interface SeamEndpointMatch {
   expectedDirection: string;
   actualDirection: string;
   isOrientationValid: boolean;
+  isPositionalCoincident?: boolean;
+  isTangentContinuous?: boolean;
+  tangentDepartureDeg?: number;
 }
 
 export interface SeamEndpointOrientationResult {
@@ -179,6 +185,11 @@ export interface AssemblyTransformedPiece {
   transformedNotches: Notch[];
   transformedSeams: SeamLine[];
   transformedBoundingBox: BoundingBox;
+  seamAllowanceWidthCm?: number;
+  transformedGrainline?: GrainLine;
+  material?: 'self' | 'lining' | 'interfacing';
+  onFold?: boolean;
+  cutCount?: number;
 }
 
 export interface AssemblyInspectionLayout {

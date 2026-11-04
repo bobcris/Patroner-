@@ -414,7 +414,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               <div className="flex justify-between items-center border-b border-neutral-200 pb-1.5 font-semibold text-neutral-800">
                 <span>FRONT SCYE PAIRING</span>
                 <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
-                  {(assemblyResult.ease.frontEaseRatio * 100).toFixed(1)}% EASE
+                  {assemblyResult.ease.frontEaseRatio !== null ? `${(assemblyResult.ease.frontEaseRatio * 100).toFixed(1)}% EASE` : 'N/A'}
                 </span>
               </div>
               <div className="flex justify-between text-neutral-600 text-[11px]">
@@ -444,7 +444,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               <div className="flex justify-between items-center border-b border-neutral-200 pb-1.5 font-semibold text-neutral-800">
                 <span>BACK SCYE PAIRING</span>
                 <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
-                  {((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(1)}% EASE
+                  {assemblyResult.ease.frontEaseRatio !== null ? `${((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(1)}% EASE` : 'N/A'}
                 </span>
               </div>
               <div className="flex justify-between text-neutral-600 text-[11px]">
@@ -540,8 +540,12 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               </div>
               <div className="flex justify-between text-[11px]">
                 <span>Crown Continuity:</span>
-                <span className={assemblyResult.endpoints.crownShoulderMatch.isConnected ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
-                  Crown Apex Continuous C1
+                <span className={assemblyResult.endpoints.crownShoulderMatch.isTangentContinuous ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                  {assemblyResult.endpoints.crownShoulderMatch.isTangentContinuous
+                    ? 'Crown Apex C0 Match & C1 Tangency (≤ 1.0°)'
+                    : (assemblyResult.endpoints.crownShoulderMatch.isConnected
+                        ? `C0 Matched, C1 Tangency Departure: ${assemblyResult.endpoints.crownShoulderMatch.tangentDepartureDeg?.toFixed(1) ?? 'N/A'}°`
+                        : 'Crown Disconnected')}
                 </span>
               </div>
             </div>

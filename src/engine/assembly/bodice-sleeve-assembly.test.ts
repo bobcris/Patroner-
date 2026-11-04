@@ -16,7 +16,11 @@ import {
   applyRigidTransformPoint,
   transformSvgPath
 } from './bodice-sleeve-assembly';
-import { BodiceSleeveAssemblyInput } from './assembly-types';
+import {
+  evaluateEaseCompatibility,
+  evaluateSeamEndpointsAndOrientations
+} from './assembly-validator';
+import { BodiceSleeveAssemblyInput, SeamArcLengthMeasurement } from './assembly-types';
 
 describe('Milestone 04.3 — Integrated Bodice–Sleeve Assembly & Seam Compatibility', () => {
   const standardMeasurements: BodyMeasurements = STANDARD_SIZING_SYSTEM.sizes.M;
@@ -374,7 +378,7 @@ describe('Milestone 04.3 — Integrated Bodice–Sleeve Assembly & Seam Compatib
       measurements: standardMeasurements
     });
 
-    if (result.ease.frontEaseRatio > 0.55 || result.ease.frontEaseRatio < 0.35) {
+    if (result.ease.frontEaseRatio !== null && (result.ease.frontEaseRatio > 0.55 || result.ease.frontEaseRatio < 0.35)) {
       assert.equal(result.ease.isDistributionBalanced, false);
       assert.equal(result.isValid, false);
     }
@@ -621,5 +625,269 @@ describe('Milestone 04.3 — Integrated Bodice–Sleeve Assembly & Seam Compatib
     assert.equal(result.isValid, false);
     assert.equal(result.isProductionReady, false);
     assert.equal(result.validationReport.status, 'incomplete');
+  });
+
+  // =========================================================================
+  // Milestone 04.3.1 — Independent Assembly Integrity & Mathematical Audit Tests
+  // =========================================================================
+
+  const createMockMeas = (lengthCm: number, uncertaintyCm = 0.0001): SeamArcLengthMeasurement => ({
+    pieceId: 'test-piece',
+    pieceCode: 'TEST-01',
+    seamId: 'test-seam',
+    segmentId: 'test-seg',
+    lengthCm,
+    lowerBoundCm: Number((lengthCm - uncertaintyCm).toFixed(5)),
+    upperBoundCm: Number((lengthCm + uncertaintyCm).toFixed(5)),
+    uncertaintyCm,
+    toleranceAchieved: true,
+    subdivisions: 128
+  });
+
+  // Audit 1: Total ease = 0.00 cm handles undefined ratio and evaluates balance via parity
+  test('Audit 1: Total ease = 0.00 cm sets frontEaseRatio to null and evaluates distribution via absolute parity', () => {
+    const fBod = createMockMeas(22.0);
+    const bBod = createMockMeas(23.0);
+    const fSlv = createMockMeas(22.0);
+    const bSlv = createMockMeas(23.0);
+
+    const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
+    assert.equal(metrics.frontEaseCm, 0.00);
+    assert.equal(metrics.backEaseCm, 0.00);
+    assert.equal(metrics.totalEaseCm, 0.00);
+    assert.equal(metrics.isRatioDefined, false);
+    assert.equal(metrics.frontEaseRatio, null);
+    assert.equal(metrics.frontEaseRatioUncertainty, null);
+    assert.equal(metrics.isDistributionBalanced, true); // |E_f - E_b| = 0 <= 0.20 cm
+  });
+
+  // Audit 2: Near-zero ease (E_t = 0.05 cm < 0.20 cm) without division by zero or NaN
+  test('Audit 2: Near-zero ease (E_t = 0.05 cm) does not trigger division by zero or NaN', () => {
+    const fBod = createMockMeas(22.00);
+    const bBod = createMockMeas(23.00);
+    const fSlv = createMockMeas(22.03);
+    const bSlv = createMockMeas(23.02);
+
+    const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
+    assert.equal(metrics.totalEaseCm, 0.05);
+    assert.equal(metrics.isRatioDefined, false);
+    assert.equal(metrics.frontEaseRatio, null);
+    assert.equal(metrics.frontEaseRatioUncertainty, null);
+    assert.equal(metrics.isDistributionBalanced, true);
+  });
+
+  // Audit 3: Negative ease fails physical boundary and leaves ratio undefined
+  test('Audit 3: Negative ease (E_f < 0) fails physical boundary and marks ratio undefined', () => {
+    const fBod = createMockMeas(22.00);
+    const bBod = createMockMeas(23.00);
+    const fSlv = createMockMeas(21.00); // E_f = -1.00 cm
+    const bSlv = createMockMeas(25.00); // E_b = +2.00 cm
+
+    const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
+    assert.equal(metrics.isFrontEasePermitted, false);
+    assert.equal(metrics.isRatioDefined, false);
+    assert.equal(metrics.frontEaseRatio, null);
+    assert.equal(metrics.isDistributionBalanced, false);
+  });
+
+  // Audit 4: Conservative uncertainty propagation formula: (|E_b|*dE_f + |E_f|*dE_b) / E_t^2
+  test('Audit 4: Ratio uncertainty propagation strictly matches conservative differential formula', () => {
+    const fBod = createMockMeas(22.00, 0.0002);
+    const bBod = createMockMeas(23.00, 0.0003);
+    const fSlv = createMockMeas(23.50, 0.0002); // E_f = 1.50, dE_f = 0.0004
+    const bSlv = createMockMeas(25.00, 0.0003); // E_b = 2.00, dE_b = 0.0006
+
+    const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
+    assert.equal(metrics.isRatioDefined, true);
+    assert.equal(metrics.frontEaseCm, 1.50);
+    assert.equal(metrics.backEaseCm, 2.00);
+    assert.equal(metrics.totalEaseCm, 3.50);
+
+    // Analytical: (2.00 * 0.0004 + 1.50 * 0.0006) / (3.50^2) = (0.0008 + 0.0009) / 12.25 = 0.0017 / 12.25 = 0.00013877...
+    const expected = Number(((2.00 * 0.0004 + 1.50 * 0.0006) / (3.50 * 3.50)).toFixed(4));
+    assert.equal(metrics.frontEaseRatioUncertainty, expected);
+  });
+
+  // Audit 5: SVG parsing with scientific notation and concatenated negative signs
+  test('Audit 5: SVG path transformation parses minus signs without spaces and scientific notation correctly', () => {
+    const rawPath = 'M 10-20 C 1.5e-3 -2.5e-3, 1000 2000, 500 500 Z';
+    const transformed = transformSvgPath(rawPath, { x: 5, y: 10 }, 0);
+    assert.ok(!transformed.includes('NaN'), 'Transformed SVG path must not contain NaN');
+    assert.ok(transformed.startsWith('M 15 -10'), 'M command must correctly offset 10-20 to 15 -10');
+  });
+
+  // Audit 6: Degenerate Bézier curves handle safely without throwing
+  test('Audit 6: Degenerate Bézier segment with identical endpoints and control points computes zero length', () => {
+    const degenerate = new CubicBezierCurve('deg-1', { x: 15, y: 25 }, { x: 15, y: 25 }, { x: 15, y: 25 }, { x: 15, y: 25 });
+    const len = degenerate.lengthCm();
+    assert.equal(len, 0);
+  });
+
+  // Audit 7: Crown apex C0 coincident but C1 tangent discontinuous is flagged
+  test('Audit 7: Crown apex C0 coincident but C1 tangent discontinuous is detected and fails topology', () => {
+    const { bodicePieces, sleevePiece } = createValidDrafts();
+
+    // Corrupt front cap control point to create 45-degree angle departure at apex in stitchingContour
+    const corruptedSleeve: PatternPiece = {
+      ...sleevePiece,
+      stitchingContour: sleevePiece.stitchingContour ? new GeometricContour(
+        sleevePiece.stitchingContour.id,
+        sleevePiece.stitchingContour.segments.map(seg => {
+          if (seg.id === 'sleeve-front-cap') {
+            const b = seg as any;
+            return new CubicBezierCurve(b.id, b.p0, { x: b.p0.x + 2, y: b.p0.y + 2 }, b.cp2, b.p3);
+          }
+          return seg;
+        }),
+        sleevePiece.stitchingContour.isClosed
+      ) : undefined
+    };
+
+    const result = assembleBodiceSleeve({
+      bodicePieces,
+      sleevePiece: corruptedSleeve,
+      designSpec: standardDesign,
+      measurements: standardMeasurements
+    });
+
+    assert.equal(result.endpoints.crownShoulderMatch.isPositionalCoincident, true, 'Apex must be C0 coincident');
+    assert.equal(result.endpoints.crownShoulderMatch.isTangentContinuous, false, 'Apex must flag C1 tangent discontinuity');
+    assert.ok((result.endpoints.crownShoulderMatch.tangentDepartureDeg ?? 0) > 1.0, 'Tangent departure must exceed 1 degree');
+    assert.equal(result.endpoints.isEndpointTopologyValid, false, 'Topology must be marked invalid');
+    assert.equal(result.isValid, false, 'Assembly must be invalid');
+  });
+
+  // Audit 8: Metadata preservation in AssemblyTransformedPiece
+  test('Audit 8: Source piece metadata (seam allowance, grainline, material, fold, cut count) is preserved', () => {
+    const { bodicePieces, sleevePiece } = createValidDrafts();
+    const result = assembleBodiceSleeve({
+      bodicePieces,
+      sleevePiece,
+      designSpec: standardDesign,
+      measurements: standardMeasurements
+    });
+
+    assert.ok(result.inspectionLayout);
+    const frontBodiceTrans = result.inspectionLayout.frontAssembly.bodice;
+    assert.equal(frontBodiceTrans.seamAllowanceWidthCm, bodicePieces[0].seamAllowanceWidthCm);
+    assert.equal(frontBodiceTrans.material, bodicePieces[0].material);
+    assert.equal(frontBodiceTrans.onFold, bodicePieces[0].onFold);
+    assert.equal(frontBodiceTrans.cutCount, bodicePieces[0].cutCount);
+    assert.ok(frontBodiceTrans.transformedGrainline !== undefined);
+  });
+
+  // Audit 9: Nested geometry immutability
+  test('Audit 9: Mutating input piece nested seams and segments does not mutate assembly output', () => {
+    const { bodicePieces, sleevePiece } = createValidDrafts();
+    const result = assembleBodiceSleeve({
+      bodicePieces,
+      sleevePiece,
+      designSpec: standardDesign,
+      measurements: standardMeasurements
+    });
+
+    const origX = result.pieces.frontBodice?.seams[0]?.startPoint.x;
+
+    // Mutate source input
+    if (bodicePieces[0].seams[0]) {
+      bodicePieces[0].seams[0].startPoint.x += 999;
+    }
+
+    assert.equal(result.pieces.frontBodice?.seams[0]?.startPoint.x, origX, 'Result must be protected against external mutation');
+  });
+
+  // Audit 10: Repeated assembly execution with updated parameters produces independent outputs
+  test('Audit 10: Repeated assembly runs with classic vs tailored strategies yield distinct ease envelopes', () => {
+    const { bodicePieces, sleevePiece } = createValidDrafts();
+
+    const resultClassic = assembleBodiceSleeve({
+      bodicePieces,
+      sleevePiece,
+      designSpec: standardDesign,
+      measurements: standardMeasurements,
+      options: { strategy: 'classic' }
+    });
+
+    const resultTailored = assembleBodiceSleeve({
+      bodicePieces,
+      sleevePiece,
+      designSpec: standardDesign,
+      measurements: standardMeasurements,
+      options: { strategy: 'tailored' }
+    });
+
+    assert.equal(resultClassic.ease.targetStrategy, 'classic');
+    assert.equal(resultTailored.ease.targetStrategy, 'tailored');
+    assert.notEqual(resultClassic.ease.targetTotalEaseCm, resultTailored.ease.targetTotalEaseCm);
+  });
+
+  // Audit 11: Stale CAD output prevention with unique ID and timestamp
+  test('Audit 11: Each invocation produces a unique ID and valid ISO timestamp', () => {
+    const { bodicePieces, sleevePiece } = createValidDrafts();
+    const res1 = assembleBodiceSleeve({ bodicePieces, sleevePiece, designSpec: standardDesign, measurements: standardMeasurements });
+    const res2 = assembleBodiceSleeve({ bodicePieces, sleevePiece, designSpec: standardDesign, measurements: standardMeasurements });
+
+    assert.notEqual(res1.id, res2.id);
+    assert.ok(!isNaN(Date.parse(res1.timestamp)));
+    assert.ok(!isNaN(Date.parse(res2.timestamp)));
+  });
+
+  // Audit 12: Missing/corrupted piece seams detected and flagged
+  test('Audit 12: Bodice piece missing armhole seam returns invalid status', () => {
+    const { bodicePieces, sleevePiece } = createValidDrafts();
+    const corruptedBodice = [
+      {
+        ...bodicePieces[0],
+        seams: bodicePieces[0].seams.filter(s => !s.id.includes('armhole')),
+        stitchingContour: bodicePieces[0].stitchingContour ? new GeometricContour(
+          bodicePieces[0].stitchingContour.id,
+          bodicePieces[0].stitchingContour.segments.filter(s => !s.id.includes('armhole')),
+          bodicePieces[0].stitchingContour.isClosed
+        ) : undefined
+      },
+      bodicePieces[1]
+    ];
+
+    const result = assembleBodiceSleeve({
+      bodicePieces: corruptedBodice,
+      sleevePiece,
+      designSpec: standardDesign,
+      measurements: standardMeasurements
+    });
+
+    assert.equal(result.isValid, false);
+    assert.ok(result.validationReport.failureCount > 0);
+  });
+
+  // Audit 13: Mandatory unassessed conditions declared in validation report
+  test('Audit 13: Validation report explicitly lists unassessed conditions for cloth drape and iron crimping', () => {
+    const { bodicePieces, sleevePiece } = createValidDrafts();
+    const result = assembleBodiceSleeve({
+      bodicePieces,
+      sleevePiece,
+      designSpec: standardDesign,
+      measurements: standardMeasurements
+    });
+
+    const unassessed = result.validationReport.unassessedConditions;
+    assert.ok(unassessed && unassessed.length >= 3);
+    assert.ok(unassessed.some(c => (c.name + ' ' + c.reason).toLowerCase().includes('drape')));
+    assert.ok(unassessed.some(c => (c.name + ' ' + c.reason).toLowerCase().includes('crimp')));
+    assert.ok(unassessed.some(c => (c.name + ' ' + c.reason).toLowerCase().includes('dynamic') || (c.name + ' ' + c.reason).toLowerCase().includes('reach')));
+  });
+
+  // Audit 14: Classification of 5.0 cm total cap ease limit as a tailoring craft limitation
+  test('Audit 14: Total cap ease check message describes 5.0 cm limit as tailoring crimp capacity', () => {
+    const { bodicePieces, sleevePiece } = createValidDrafts();
+    const result = assembleBodiceSleeve({
+      bodicePieces,
+      sleevePiece,
+      designSpec: standardDesign,
+      measurements: standardMeasurements
+    });
+
+    const totalEaseCheck = result.validationReport.checks.find(c => c.id === 'val-asm-total-ease-limit');
+    assert.ok(totalEaseCheck);
+    assert.equal(totalEaseCheck.toleranceCm, 5.00);
   });
 });

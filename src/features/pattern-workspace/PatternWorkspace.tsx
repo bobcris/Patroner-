@@ -334,13 +334,13 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 <div className="bg-white/80 p-2 rounded border border-blue-100">
                   <span className="text-neutral-500 block text-[10px]">FRONT EASE (E_f)</span>
                   <span className="font-bold text-neutral-900">
-                    +{assemblyResult.ease.frontEaseCm.toFixed(2)} cm ({(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)
+                    +{assemblyResult.ease.frontEaseCm.toFixed(2)} cm {assemblyResult.ease.frontEaseRatio !== null ? `(${(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)` : '(N/A)'}
                   </span>
                 </div>
                 <div className="bg-white/80 p-2 rounded border border-blue-100">
                   <span className="text-neutral-500 block text-[10px]">BACK EASE (E_b)</span>
                   <span className="font-bold text-neutral-900">
-                    +{assemblyResult.ease.backEaseCm.toFixed(2)} cm ({((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)
+                    +{assemblyResult.ease.backEaseCm.toFixed(2)} cm {assemblyResult.ease.frontEaseRatio !== null ? `(${((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)` : '(N/A)'}
                   </span>
                 </div>
                 <div className="bg-white/80 p-2 rounded border border-blue-100">
@@ -527,7 +527,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                       [FRONT ASSEMBLY: SCYE MATCH]
                     </text>
                     <text x="5" y="-2" fontSize="1.6" fontFamily="monospace" fill="#52525b">
-                      Ease: +{assemblyResult.ease.frontEaseCm.toFixed(2)} cm ({(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)
+                      Ease: +{assemblyResult.ease.frontEaseCm.toFixed(2)} cm {assemblyResult.ease.frontEaseRatio !== null ? `(${(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)` : ''}
                     </text>
                   </g>
 
@@ -593,7 +593,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                       [BACK ASSEMBLY: SCYE MATCH]
                     </text>
                     <text x="65" y="-2" fontSize="1.6" fontFamily="monospace" fill="#52525b">
-                      Ease: +{assemblyResult.ease.backEaseCm.toFixed(2)} cm ({((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)
+                      Ease: +{assemblyResult.ease.backEaseCm.toFixed(2)} cm {assemblyResult.ease.frontEaseRatio !== null ? `(${((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)` : ''}
                     </text>
                   </g>
                 </g>

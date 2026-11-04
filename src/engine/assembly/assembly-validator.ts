@@ -237,9 +237,19 @@ export function evaluateEaseCompatibility(
   const totalEaseUncertaintyCm = Number((frontEaseUncertaintyCm + backEaseUncertaintyCm).toFixed(5));
 
   // Front ease ratio: E_f / E_t
-  const frontEaseRatio = totalEaseCm > 0.001
+  // Valid mathematical domain: E_t >= 0.20 cm, E_f >= 0, E_b >= 0
+  // When E_t < 0.20 cm or ease is negative, ratio is mathematically unstable / undefined (null)
+  const MIN_RATIO_DENOMINATOR_CM = 0.20;
+  const isRatioDefined = totalEaseCm >= MIN_RATIO_DENOMINATOR_CM && frontEaseCm >= -0.05 && backEaseCm >= -0.05;
+  const frontEaseRatio = isRatioDefined
     ? Number((frontEaseCm / totalEaseCm).toFixed(3))
-    : 0.5;
+    : null;
+
+  // Propagated uncertainty for ratio:
+  // delta R_f = (|E_b| * delta E_f + |E_f| * delta E_b) / E_t^2
+  const frontEaseRatioUncertainty = isRatioDefined && totalEaseCm > 0
+    ? Number((((Math.abs(backEaseCm) * frontEaseUncertaintyCm) + (Math.abs(frontEaseCm) * backEaseUncertaintyCm)) / (totalEaseCm * totalEaseCm)).toFixed(4))
+    : null;
 
   const recommendedEnvelopeCm = {
     min: tableValues.capEaseMinCm,
@@ -250,15 +260,23 @@ export function evaluateEaseCompatibility(
   const backResidualCm = Number(Math.abs(backEaseCm - targetBackEaseCm).toFixed(2));
   const totalResidualCm = Number(Math.abs(totalEaseCm - targetTotalEaseCm).toFixed(2));
 
-  // Physical assembly boundaries:
-  // 1. E_f >= 0 (no negative ease on front armhole)
-  // 2. E_b >= 0 (no negative ease on back armhole)
-  // 3. 0 <= E_t <= 5.0 cm (maximum crimp threshold for tailored set-in sleeves)
-  // 4. Front ease ratio between 35% and 55%
+  // Physical & Tailoring assembly boundaries:
+  // 1. E_f >= 0 (geometric requirement: no negative ease on front scye for set-in sleeve)
+  // 2. E_b >= 0 (geometric requirement: no negative ease on back scye for set-in sleeve)
+  // 3. 0 <= E_t <= 5.0 cm (fabric tailoring craft limitation: wool steam crimp capacity)
+  // 4. Front ease ratio between 35% and 55% when defined, or absolute parity |E_f - E_b| <= 0.20 cm when E_t < 0.20 cm
   const isFrontEasePermitted = frontEaseCm >= -0.05;
   const isBackEasePermitted = backEaseCm >= -0.05;
   const isTotalEasePermitted = totalEaseCm >= -0.05 && totalEaseCm <= 5.05;
-  const isDistributionBalanced = totalEaseCm <= 0.05 || (frontEaseRatio >= 0.35 && frontEaseRatio <= 0.55);
+
+  let isDistributionBalanced = false;
+  if (isRatioDefined && frontEaseRatio !== null) {
+    isDistributionBalanced = frontEaseRatio >= 0.35 && frontEaseRatio <= 0.55;
+  } else if (frontEaseCm >= -0.05 && backEaseCm >= -0.05 && totalEaseCm <= MIN_RATIO_DENOMINATOR_CM) {
+    isDistributionBalanced = Math.abs(frontEaseCm - backEaseCm) <= 0.20;
+  } else {
+    isDistributionBalanced = false;
+  }
 
   const isTotalEaseTargetCompliant =
     totalEaseCm >= recommendedEnvelopeCm.min - 0.20 &&
@@ -281,6 +299,8 @@ export function evaluateEaseCompatibility(
     backEaseUncertaintyCm,
     totalEaseUncertaintyCm,
     frontEaseRatio,
+    isRatioDefined,
+    frontEaseRatioUncertainty,
     targetStrategy: strategy,
     targetTotalEaseCm,
     targetFrontEaseCm,
@@ -338,6 +358,26 @@ export function evaluateSeamEndpointsAndOrientations(
   const isCrownContinuous = crownDistance <= 0.05;
   if (!isCrownContinuous) {
     reasons.push(`Sleeve front cap start (${slvCrownFront.x}, ${slvCrownFront.y}) and back cap end (${slvCrownBack.x}, ${slvCrownBack.y}) do not meet at crown apex (delta: ${crownDistance.toFixed(2)} cm > 0.05 cm).`);
+  }
+
+  // C1 tangent continuity check at apex:
+  // Front cap starts at apex slvCrownFront (p0), control point cp1
+  // Back cap ends at apex slvCrownBack (p3), control point cp2
+  const cp1F = (sleeveFrontCap as any).cp1 ?? (sleeveFrontCap as any).p1;
+  const cp2B = (sleeveBackCap as any).cp2 ?? (sleeveBackCap as any).p2;
+  let isTangentContinuous = false;
+  let tangentDepartureDeg = 0;
+  if (cp1F && cp2B) {
+    const thetaBackDeg = Math.atan2(slvCrownBack.y - cp2B.y, slvCrownBack.x - cp2B.x) * (180 / Math.PI);
+    const thetaFrontDeg = Math.atan2(cp1F.y - slvCrownFront.y, cp1F.x - slvCrownFront.x) * (180 / Math.PI);
+    tangentDepartureDeg = Number(Math.abs(thetaFrontDeg - thetaBackDeg).toFixed(2));
+    isTangentContinuous = isCrownContinuous && tangentDepartureDeg <= 1.0;
+  } else {
+    isTangentContinuous = isCrownContinuous;
+  }
+
+  if (isCrownContinuous && !isTangentContinuous) {
+    reasons.push(`Sleeve crown apex exhibits C1 tangent discontinuity (departure: ${tangentDepartureDeg}° > 1.00°).`);
   }
 
   // 2. Traversal direction checks:
@@ -400,9 +440,14 @@ export function evaluateSeamEndpointsAndOrientations(
     sleevePoint: slvCrownFront,
     distanceCm: 0,
     isConnected: isCrownContinuous,
-    expectedDirection: 'sleeve crown apex (0,0) aligns with bodice shoulder seam junction',
-    actualDirection: isCrownContinuous ? 'aligned at crown apex' : 'disconnected crown',
-    isOrientationValid: isCrownContinuous
+    expectedDirection: 'sleeve crown apex (0,0) aligns with bodice shoulder seam junction with smooth C1 horizontal tangency',
+    actualDirection: isCrownContinuous
+      ? (isTangentContinuous ? 'aligned at crown apex with C1 tangency' : `aligned at crown apex with C1 departure of ${tangentDepartureDeg}°`)
+      : 'disconnected crown',
+    isOrientationValid: isCrownContinuous && isTangentContinuous,
+    isPositionalCoincident: isCrownContinuous,
+    isTangentContinuous,
+    tangentDepartureDeg
   };
 
   // 4. Inseam Parity Requirement: Front underarm inseam length === Back underarm inseam length within 0.05 cm
@@ -780,32 +825,88 @@ export function buildAssemblyValidationReport(
       name: 'Total Sleeve Cap Ease Boundary',
       status: 'pass',
       measuredValue: `+${ease.totalEaseCm.toFixed(2)} cm (±${ease.totalEaseUncertaintyCm.toFixed(4)} cm)`,
+      expectedValue: '0.00 cm <= Total Ease <= 5.00 cm',
+      toleranceCm: 5.00,
       message: `Total sleeve cap ease verified within permissible assembly range [0.00, 5.00 cm]. Target: ${ease.targetTotalEaseCm} cm.`
     });
   }
 
-  // 6. Ease Distribution Balance Check (35% - 55% front ratio)
-  if (!ease.isDistributionBalanced) {
-    checks.push({
-      id: 'val-asm-ease-distribution',
-      category: 'seam-match',
-      name: 'Front/Back Ease Partition Balance',
-      status: 'fail',
-      measuredValue: `Front: ${(ease.frontEaseRatio * 100).toFixed(1)}%, Back: ${((1 - ease.frontEaseRatio) * 100).toFixed(1)}%`,
-      expectedValue: '35.0% <= Front Ratio <= 55.0%',
-      deviationCm: ease.frontEaseRatio < 0.35 ? Number((0.35 - ease.frontEaseRatio).toFixed(3)) : Number((ease.frontEaseRatio - 0.55).toFixed(3)),
-      toleranceCm: 0.10,
-      message: `Front/Back ease distribution is unbalanced (front ratio: ${(ease.frontEaseRatio * 100).toFixed(1)}%). Standard tailoring requires 35% to 55% front ease.`
-    });
+  // 6. Ease Distribution Balance Check (35% - 55% front ratio, or parity for minimal ease)
+  if (!ease.isRatioDefined || ease.frontEaseRatio === null) {
+    if (ease.isDistributionBalanced) {
+      checks.push({
+        id: 'val-asm-ease-distribution',
+        category: 'seam-match',
+        name: 'Front/Back Ease Partition Balance',
+        status: 'pass',
+        measuredValue: `Delta: ${Math.abs(ease.frontEaseCm - ease.backEaseCm).toFixed(2)} cm <= 0.20 cm (Total Ease: ${ease.totalEaseCm.toFixed(2)} cm < 0.20 cm)`,
+        message: 'Minimal sleeve cap ease (< 0.20 cm). Ratio undefined; distribution balanced via absolute parity (|E_f - E_b| <= 0.20 cm).'
+      });
+    } else {
+      checks.push({
+        id: 'val-asm-ease-distribution',
+        category: 'seam-match',
+        name: 'Front/Back Ease Partition Balance',
+        status: 'fail',
+        measuredValue: `E_f: ${ease.frontEaseCm.toFixed(2)} cm, E_b: ${ease.backEaseCm.toFixed(2)} cm, E_t: ${ease.totalEaseCm.toFixed(2)} cm`,
+        expectedValue: 'Undefined ratio (E_t < 0.20 cm) or negative ease requiring balance |E_f - E_b| <= 0.20 cm',
+        deviationCm: Math.abs(ease.frontEaseCm - ease.backEaseCm),
+        toleranceCm: 0.20,
+        message: ease.frontEaseCm < 0 || ease.backEaseCm < 0
+          ? `Negative ease component (E_f: ${ease.frontEaseCm.toFixed(2)} cm, E_b: ${ease.backEaseCm.toFixed(2)} cm). Ratio undefined and assembly physically invalid.`
+          : `Minimal ease distribution unbalanced: delta ${Math.abs(ease.frontEaseCm - ease.backEaseCm).toFixed(2)} cm exceeds 0.20 cm tolerance.`
+      });
+    }
   } else {
-    checks.push({
-      id: 'val-asm-ease-distribution',
-      category: 'seam-match',
-      name: 'Front/Back Ease Partition Balance',
-      status: 'pass',
-      measuredValue: `Front: ${(ease.frontEaseRatio * 100).toFixed(1)}%, Back: ${((1 - ease.frontEaseRatio) * 100).toFixed(1)}%`,
-      message: `Ease partition conforms to anatomical shoulder balance (${(ease.frontEaseRatio * 100).toFixed(1)}% front / ${((1 - ease.frontEaseRatio) * 100).toFixed(1)}% back).`
-    });
+    if (!ease.isDistributionBalanced) {
+      checks.push({
+        id: 'val-asm-ease-distribution',
+        category: 'seam-match',
+        name: 'Front/Back Ease Partition Balance',
+        status: 'fail',
+        measuredValue: `Front: ${(ease.frontEaseRatio * 100).toFixed(1)}% (±${((ease.frontEaseRatioUncertainty ?? 0) * 100).toFixed(2)}%), Back: ${((1 - ease.frontEaseRatio) * 100).toFixed(1)}%`,
+        expectedValue: '35.0% <= Front Ratio <= 55.0%',
+        deviationCm: ease.frontEaseRatio < 0.35 ? Number((0.35 - ease.frontEaseRatio).toFixed(3)) : Number((ease.frontEaseRatio - 0.55).toFixed(3)),
+        toleranceCm: 0.10,
+        message: `Front/Back ease distribution is unbalanced (front ratio: ${(ease.frontEaseRatio * 100).toFixed(1)}%). Standard tailoring requires 35% to 55% front ease.`
+      });
+    } else {
+      checks.push({
+        id: 'val-asm-ease-distribution',
+        category: 'seam-match',
+        name: 'Front/Back Ease Partition Balance',
+        status: 'pass',
+        measuredValue: `Front: ${(ease.frontEaseRatio * 100).toFixed(1)}% (±${((ease.frontEaseRatioUncertainty ?? 0) * 100).toFixed(2)}%), Back: ${((1 - ease.frontEaseRatio) * 100).toFixed(1)}%`,
+        message: `Ease partition conforms to anatomical shoulder balance (${(ease.frontEaseRatio * 100).toFixed(1)}% front / ${((1 - ease.frontEaseRatio) * 100).toFixed(1)}% back).`
+      });
+    }
+  }
+
+  // 6b. Crown Apex C1 Tangent Continuity Check
+  const crownMatch = endpoints.crownShoulderMatch;
+  if (crownMatch.isTangentContinuous !== undefined) {
+    if (!crownMatch.isTangentContinuous) {
+      checks.push({
+        id: 'val-asm-crown-c1-tangency',
+        category: 'geometry',
+        name: 'Crown Apex C1 Tangent Continuity',
+        status: 'fail',
+        measuredValue: `${crownMatch.tangentDepartureDeg?.toFixed(2) ?? 'N/A'}°`,
+        expectedValue: 'Departure <= 1.00°',
+        deviationCm: crownMatch.tangentDepartureDeg ?? 0,
+        toleranceCm: 1.00,
+        message: `Crown apex satisfies C0 position match but departs from smooth C1 horizontal tangency by ${crownMatch.tangentDepartureDeg}° (tolerance: 1.00°).`
+      });
+    } else {
+      checks.push({
+        id: 'val-asm-crown-c1-tangency',
+        category: 'geometry',
+        name: 'Crown Apex C1 Tangent Continuity',
+        status: 'pass',
+        measuredValue: `${crownMatch.tangentDepartureDeg?.toFixed(2) ?? '0.00'}° <= 1.00°`,
+        message: 'Crown apex exhibits smooth C1 horizontal tangent continuity across front and back cap curves.'
+      });
+    }
   }
 
   // 7. Endpoint Topology & Orientation

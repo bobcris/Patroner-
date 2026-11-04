@@ -6,6 +6,7 @@
 import {
   BoundingBox,
   DesignSpecification,
+  GrainLine,
   Notch,
   PatternPiece,
   Point,
@@ -80,10 +81,8 @@ export function transformSvgPath(
       continue;
     }
 
-    const nums = coordsStr
-      .split(/[\s,]+/)
-      .filter(s => s.length > 0)
-      .map(s => Number(s));
+    const matches = coordsStr.match(/-?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?/g);
+    const nums = matches ? matches.map(Number) : [];
 
     if (cmd === 'M' || cmd === 'L') {
       const transformedCoords: string[] = [];
@@ -150,6 +149,12 @@ export function createTransformedPiece(
   ];
   const transformedBoundingBox = computeBoundingBox(corners);
 
+  const transformedGrainline: GrainLine | undefined = piece.grainline ? {
+    ...piece.grainline,
+    start: applyRigidTransformPoint(piece.grainline.start, translation, rotationDeg),
+    end: applyRigidTransformPoint(piece.grainline.end, translation, rotationDeg)
+  } : undefined;
+
   return {
     sourcePieceId: piece.id,
     pieceCode: piece.pieceCode,
@@ -162,7 +167,12 @@ export function createTransformedPiece(
     transformedSewSvgPath,
     transformedNotches,
     transformedSeams,
-    transformedBoundingBox
+    transformedBoundingBox,
+    seamAllowanceWidthCm: piece.seamAllowanceWidthCm,
+    transformedGrainline,
+    material: piece.material,
+    onFold: piece.onFold,
+    cutCount: piece.cutCount
   };
 }
 
@@ -325,7 +335,9 @@ export function assembleBodiceSleeve(
       frontEaseUncertaintyCm: 0,
       backEaseUncertaintyCm: 0,
       totalEaseUncertaintyCm: 0,
-      frontEaseRatio: 0.5,
+      frontEaseRatio: null,
+      isRatioDefined: false,
+      frontEaseRatioUncertainty: null,
       targetStrategy: input.options?.strategy ?? 'classic',
       targetTotalEaseCm: 0,
       targetFrontEaseCm: 0,
@@ -342,6 +354,11 @@ export function assembleBodiceSleeve(
       isTargetCompliant: false
     };
 
+    const totalMissingIssues = [
+      ...missingPieces.map(p => `Missing required pattern piece: ${p}`),
+      ...errors
+    ];
+
     const emptyValidation: ValidationReport = {
       status: 'incomplete',
       isValid: false,
@@ -350,16 +367,16 @@ export function assembleBodiceSleeve(
       timestamp,
       passedCount: 0,
       warningCount: 0,
-      failureCount: missingPieces.length,
-      checks: missingPieces.map((p, idx) => ({
+      failureCount: totalMissingIssues.length > 0 ? totalMissingIssues.length : 1,
+      checks: totalMissingIssues.map((msg, idx) => ({
         id: `val-missing-${idx}`,
         category: 'geometry',
-        name: `Required Assembly Piece: ${p}`,
+        name: `Required Assembly Component: ${idx + 1}`,
         status: 'fail',
-        message: `Assembly input missing required pattern piece: ${p}`
+        message: msg
       })),
       unassessedConditions: UNASSESSED_ASSEMBLY_CONDITIONS,
-      declaration: 'Assembly validation could not be completed due to missing pattern pieces.'
+      declaration: 'Assembly validation could not be completed due to missing pattern pieces or required seam curves.'
     };
 
     return {
