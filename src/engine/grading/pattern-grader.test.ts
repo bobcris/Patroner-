@@ -837,5 +837,52 @@ describe('Milestone 04.4: Integrated Pattern Grading & Cross-Size Assembly Valid
         }
       }
     });
+
+    it('audit-12. prevents negative delta values from being presented or accepted as actual body circumferences', () => {
+      const table = buildStandardMeasurementGradeTable();
+      const baseMeasurements = STANDARD_SIZING_SYSTEM.sizes.M;
+
+      // 1. Verify standard waist base and deltas
+      assert.equal(table.rules.waist.baseSizeValue, 72.0);
+      assert.deepEqual(table.rules.waist.incrementsFromBase, {
+        XS: -10,
+        S: -6,
+        M: 0,
+        L: 8,
+        XL: 16,
+        XXL: 26
+      });
+
+      // 2. Verify all resolved target waist measurements are strictly positive actual circumferences
+      const expectedWaistCircumferences: Record<string, number> = {
+        XS: 62.0,
+        S: 66.0,
+        M: 72.0,
+        L: 80.0,
+        XL: 88.0,
+        XXL: 98.0
+      };
+
+      for (const sz of DEFAULT_SIZE_RANGE) {
+        const resolved = resolveTargetMeasurements(baseMeasurements, sz, table);
+        const actualWaist = resolved.waist;
+        assert.ok(actualWaist !== undefined && actualWaist > 0, `Waist for ${sz} must be strictly positive`);
+        assert.equal(actualWaist, expectedWaistCircumferences[sz]);
+        // Confirm actual circumference is never negative
+        assert.ok(actualWaist >= 60.0, `Waist for ${sz} (${actualWaist} cm) must be a realistic adult circumference`);
+      }
+
+      // 3. Regression check: Attempting to use raw delta values as actual circumferences must be rejected
+      const invalidRecordWithRawDeltas: any = {
+        ...baseMeasurements,
+        waist: -10 // Raw delta mistakenly used as actual circumference
+      };
+      const validation = validateMeasurementRecord(invalidRecordWithRawDeltas, 'Size XS-RawDeltaError');
+      assert.equal(validation.isValid, false);
+      assert.ok(
+        validation.errors.some(e => e.includes('waist') && e.includes('strictly positive')),
+        'Validator must reject negative waist values'
+      );
+    });
   });
 });

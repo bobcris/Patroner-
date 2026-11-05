@@ -37,10 +37,17 @@ export interface MeasurementGradeRule {
   measurementId: keyof Omit<BodyMeasurements, 'unit'>;
   label: string;
   unit: 'cm';
+  /**
+   * Reference baseline body measurement value for base size M in centimetres (strictly positive).
+   */
   baseSizeValue: number;
   /**
-   * Per-size target values or increments relative to base size M.
-   * Keyed by size identifier (e.g. 'XS', 'S', 'M', 'L', 'XL', 'XXL', or custom).
+   * Differential increments (deltas) in centimetres relative to base size M (baseSizeValue).
+   * Keyed by size identifier (e.g. 'XS', 'S', 'M', 'L', 'XL', 'XXL').
+   * - Negative values (e.g. XS: -10, S: -6) indicate reductions below base size M.
+   * - Positive values (e.g. L: +8, XL: +16, XXL: +26) indicate expansions above base size M.
+   * - Actual size circumference = baseSizeValue + incrementsFromBase[sizeId].
+   * - CRITICAL: These values are strictly delta offsets (Δ), NEVER raw anatomical circumferences.
    */
   incrementsFromBase: Record<string, number>;
   distribution: GradeIncrementDistribution;

@@ -52,13 +52,13 @@ export function buildStandardMeasurementGradeTable(): MeasurementGradeTable {
       'bust',
       'Bust Circumference',
       'circumference-symmetric',
-      'Standard 4.0-6.0-10.0cm European interval: S=-6, XS=-10, L=+8, XL=+16, XXL=+26 relative to M=90'
+      'Bust circumference delta increments (Δ) relative to base size M (90.0 cm): XS=-10cm (actual: 80cm), S=-6cm (actual: 84cm), M=0cm (actual: 90cm), L=+8cm (actual: 98cm), XL=+16cm (actual: 106cm), XXL=+26cm (actual: 116cm)'
     ),
     waist: createRule(
       'waist',
       'Waist Circumference',
       'circumference-symmetric',
-      'Standard waist suppression grade rule: S=-6, XS=-10, L=+8, XL=+16, XXL=+26 relative to M=72'
+      'Waist circumference delta increments (Δ) relative to base size M (72.0 cm): XS=-10cm (actual: 62cm), S=-6cm (actual: 66cm), M=0cm (actual: 72cm), L=+8cm (actual: 80cm), XL=+16cm (actual: 88cm), XXL=+26cm (actual: 98cm)'
     ),
     lowHip: createRule(
       'lowHip',
