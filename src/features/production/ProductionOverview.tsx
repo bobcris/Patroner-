@@ -9,6 +9,7 @@ import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
 import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
 import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
 import { assembleBodiceSleeve, BodiceSleeveAssemblyResult } from '../../engine/assembly';
+import { gradePattern, DEFAULT_SIZE_RANGE, GradedPatternSet } from '../../engine/grading';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
 import { calculateGarmentDimensions, calculateBodiceGarmentDimensions } from '../../engine/measurements/standards';
 import { Button } from '../../components/ui/Button';
@@ -72,6 +73,9 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   const dims = currentSpec.garmentCategory === 'bodice'
     ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric)
     : calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric);
+
+  // Milestone 04.4: Graded Pattern Set Generation
+  const gradedPatternSet = React.useMemo(() => gradePattern(currentSpec), [currentSpec]);
 
   // Approximate fabric yield calculation for a standard 140cm bolt width
   const fabricYieldMeters = Number(((currentSpec.lengthCm + 15) / 100 * 1.15).toFixed(2));
@@ -588,6 +592,151 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               </p>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Milestone 04.4: Graded Pattern Specifications & Cross-Size Grade Rule Table */}
+      <div className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-neutral-100 pb-4 gap-2">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] uppercase font-mono tracking-wider bg-purple-950 text-purple-200 px-2 py-0.5 rounded font-bold">
+                MILESTONE 04.4
+              </span>
+              <span className="text-xs font-mono text-neutral-500">
+                ANTHROPOMETRIC &amp; PATTERN GRADING SPECIFICATION
+              </span>
+            </div>
+            <h3 className="text-base font-semibold text-neutral-900 font-mono">
+              Cross-Size Graded Garment Matrix (XS–XXL)
+            </h3>
+            <p className="text-xs text-neutral-600 mt-0.5">
+              Derived directly from deterministic target measurement regeneration. Zero global coordinate scaling.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 font-mono text-xs">
+            <span className="text-neutral-500">Grading System:</span>
+            <span className="font-bold text-neutral-900 bg-neutral-100 px-2.5 py-1 rounded border border-neutral-200">
+              {gradedPatternSet.gradeTable.name} (Base: {gradedPatternSet.baseSize})
+            </span>
+          </div>
+        </div>
+
+        {/* Specifications Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left font-mono text-xs border border-neutral-200">
+            <thead className="bg-neutral-900 text-white uppercase text-[10px] tracking-wider">
+              <tr>
+                <th className="py-2.5 px-3">Size</th>
+                <th className="py-2.5 px-3">Bust (cm)</th>
+                <th className="py-2.5 px-3">Waist (cm)</th>
+                <th className="py-2.5 px-3">Low Hip (cm)</th>
+                <th className="py-2.5 px-3">Front Bodice (W)</th>
+                <th className="py-2.5 px-3">Back Bodice (W)</th>
+                <th className="py-2.5 px-3">Sleeve Biceps (W)</th>
+                <th className="py-2.5 px-3">Total Scye Arc</th>
+                <th className="py-2.5 px-3">Cap Ease (E_t)</th>
+                <th className="py-2.5 px-3">Assembly Status</th>
+                <th className="py-2.5 px-3 text-right">Production Ready</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-200 text-neutral-800">
+              {DEFAULT_SIZE_RANGE.map(sz => {
+                const res = gradedPatternSet.sizeResults[sz];
+                if (!res) return null;
+                const isBase = sz === gradedPatternSet.baseSize;
+                const fPiece = res.bodicePieces.find(p => p.pieceCode.includes('BOD-F'));
+                const bPiece = res.bodicePieces.find(p => p.pieceCode.includes('BOD-B'));
+                const sPiece = res.sleevePiece;
+                const totalEase = res.assemblyResult?.ease.totalEaseCm;
+                const totalScye = res.assemblyResult?.ease.totalBodiceArmholeLengthCm;
+
+                return (
+                  <tr
+                    key={sz}
+                    className={`hover:bg-neutral-50 transition-colors ${
+                      isBase ? 'bg-purple-50/40 font-semibold' : ''
+                    }`}
+                  >
+                    <td className="py-2.5 px-3 font-bold text-neutral-900 flex items-center gap-1.5">
+                      <span>{sz}</span>
+                      {isBase && (
+                        <span className="text-[9px] bg-neutral-900 text-white px-1.5 py-0.2 rounded font-mono font-normal">
+                          BASE
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3">{res.measurements.bust ?? '-'}</td>
+                    <td className="py-2.5 px-3">{res.measurements.waist ?? '-'}</td>
+                    <td className="py-2.5 px-3">{res.measurements.lowHip ?? '-'}</td>
+                    <td className="py-2.5 px-3">{fPiece?.boundingBox.widthCm ?? '-'} cm</td>
+                    <td className="py-2.5 px-3">{bPiece?.boundingBox.widthCm ?? '-'} cm</td>
+                    <td className="py-2.5 px-3">{sPiece?.boundingBox.widthCm ?? '-'} cm</td>
+                    <td className="py-2.5 px-3">{totalScye ? `${totalScye.toFixed(2)} cm` : '-'}</td>
+                    <td className="py-2.5 px-3 text-emerald-700 font-bold">
+                      {totalEase !== undefined ? `+${totalEase.toFixed(2)} cm` : '-'}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <Badge
+                        variant={res.isValid ? 'success' : 'danger'}
+                        size="sm"
+                      >
+                        {res.isValid ? 'VERIFIED' : 'INVALID'}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <span className="text-[10px] text-amber-800 font-bold bg-amber-100 px-1.5 py-0.5 rounded">
+                        FALSE
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Monotonicity and Integrity Matrix */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs font-mono">
+          <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+              CROSS-SIZE MONOTONIC CONTINUITY REPORT
+            </span>
+            <div className="space-y-1 text-[11px]">
+              {gradedPatternSet.integrityReport.comparisonTable.slice(0, 6).map(row => (
+                <div key={row.metricId} className="flex justify-between items-center py-0.5 border-b border-neutral-200/60">
+                  <span className="text-neutral-600">{row.label}:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-neutral-900 font-semibold">
+                      {row.valuesPerSize.XS} → {row.valuesPerSize.XXL} {row.unit}
+                    </span>
+                    <span className={`text-[9px] px-1 rounded font-bold ${row.isMonotonic ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                      {row.isMonotonic ? 'MONOTONIC PASS' : 'FAIL'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+              CROSS-SIZE UNASSESSED INDUSTRIAL CONSTRAINTS
+            </span>
+            <p className="text-[11px] text-neutral-600 leading-relaxed">
+              Full garment production cutting across sizes requires physical drape verification. The following items remain strictly unassessed:
+            </p>
+            <ul className="space-y-1 text-[10px] text-neutral-600 list-disc list-inside">
+              {gradedPatternSet.integrityReport.unassessedConditions.map((cond, i) => (
+                <li key={i}>{cond}</li>
+              ))}
+            </ul>
+            <div className="pt-2 border-t border-neutral-200 flex items-center justify-between text-amber-900 text-[10px] font-bold uppercase">
+              <span>Prototype Stage CAD</span>
+              <span>isProductionReady: false</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

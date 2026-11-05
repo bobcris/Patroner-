@@ -9,6 +9,7 @@ import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
 import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
 import { draftSleeveBlock, SleeveDiagnostics } from '../../engine/drafting/sleeve-block';
 import { assembleBodiceSleeve, BodiceSleeveAssemblyResult } from '../../engine/assembly';
+import { gradePattern, GradedPatternSet, DEFAULT_SIZE_RANGE } from '../../engine/grading';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
 import { calculateGarmentDimensions, calculateBodiceGarmentDimensions, SLEEVE_EASE_TABLE } from '../../engine/measurements/standards';
 import { Button } from '../../components/ui/Button';
@@ -26,6 +27,15 @@ import {
   Ruler,
   Compass
 } from 'lucide-react';
+
+const SIZE_PALETTE: Record<string, { stroke: string; bg: string; text: string; label: string }> = {
+  XS: { stroke: '#9333ea', bg: '#f3e8ff', text: '#6b21a8', label: 'XS (EU 34)' },
+  S:  { stroke: '#2563eb', bg: '#dbeafe', text: '#1e40af', label: 'S (EU 36)' },
+  M:  { stroke: '#16a34a', bg: '#dcfce7', text: '#15803d', label: 'M (EU 38 - Base)' },
+  L:  { stroke: '#d97706', bg: '#fef3c7', text: '#b45309', label: 'L (EU 40)' },
+  XL: { stroke: '#dc2626', bg: '#fee2e2', text: '#b91c1c', label: 'XL (EU 42)' },
+  XXL:{ stroke: '#7c3aed', bg: '#ede9fe', text: '#5b21b6', label: 'XXL (EU 44)' }
+};
 
 interface PatternWorkspaceProps {
   currentSpec: DesignSpecification;
@@ -63,10 +73,26 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   // Canvas zoom & pan state
   const [zoom, setZoom] = useState(1.4);
   const [pan, setPan] = useState({ x: 40, y: 30 });
-  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly'>('pieces');
+  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading'>('pieces');
+  const [enabledGradingSizes, setEnabledGradingSizes] = useState<Record<string, boolean>>({
+    XS: true,
+    S: true,
+    M: true,
+    L: true,
+    XL: true,
+    XXL: true
+  });
   const [selectedPieceId, setSelectedPieceId] = useState<string>(
     currentSpec.garmentCategory === 'bodice' ? 'piece-bodice-front' : 'piece-skirt-front'
   );
+
+  // Milestone 04.4: Graded Pattern Set generation
+  const gradedPatternSet: GradedPatternSet = React.useMemo(() => {
+    return gradePattern(currentSpec, {
+      bodiceDartStyle,
+      sleeveEaseStrategy
+    });
+  }, [currentSpec, bodiceDartStyle, sleeveEaseStrategy]);
 
   // Deterministic draft generation (Bodice includes front, back, and set-in sleeve)
   let pieces: PatternPiece[] = [];
@@ -289,10 +315,26 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   >
                     <span>Assembly Inspection (M 04.3)</span>
                     <Badge
-                      variant={assemblyResult.status === 'verified-valid' ? 'success' : 'danger'}
+                      variant={assemblyResult?.status === 'verified-valid' ? 'success' : 'danger'}
                       size="sm"
                     >
-                      {assemblyResult.status === 'verified-valid' ? 'VERIFIED' : 'INVALID'}
+                      {assemblyResult?.status === 'verified-valid' ? 'VERIFIED' : 'INVALID'}
+                    </Badge>
+                  </button>
+                  <button
+                    onClick={() => setCadViewMode('grading')}
+                    className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      cadViewMode === 'grading'
+                        ? 'bg-purple-900 text-white shadow-2xs'
+                        : 'text-neutral-700 hover:text-neutral-900'
+                    }`}
+                  >
+                    <span>Grading Nest Overlay (M 04.4)</span>
+                    <Badge
+                      variant={gradedPatternSet.isAllValid ? 'success' : 'danger'}
+                      size="sm"
+                    >
+                      {gradedPatternSet.isAllValid ? 'ALL VALID (6/6)' : 'FLAGGED'}
                     </Badge>
                   </button>
                 </div>
@@ -301,9 +343,70 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               <div className="text-[11px] font-mono text-neutral-500">
                 {cadViewMode === 'assembly' ? (
                   <span className="text-blue-900 font-bold">2D RIGID ALIGNMENT AT SCYE JUNCTIONS</span>
+                ) : cadViewMode === 'grading' ? (
+                  <span className="text-purple-900 font-bold">MULTI-SIZE NESTED OVERLAY (XS–XXL)</span>
                 ) : (
                   <span>FLAT CUTTING PATTERN VIEW</span>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Milestone 04.4: Grading Mode HUD Bar */}
+          {cadViewMode === 'grading' && (
+            <div className="bg-purple-50/90 border border-purple-200 rounded-sm p-3.5 space-y-3 text-xs font-mono">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-purple-200/80 pb-2 gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-purple-950">CROSS-SIZE PATTERN GRADING HUD</span>
+                  <Badge variant={gradedPatternSet.isAllValid ? 'success' : 'danger'} size="sm">
+                    {gradedPatternSet.isAllValid ? 'VERIFIED MONOTONIC' : 'VERIFICATION FAILED'}
+                  </Badge>
+                  <span className="text-[11px] text-purple-800 bg-purple-100 px-2 py-0.5 rounded">
+                    BASE SIZE: {gradedPatternSet.baseSize}
+                  </span>
+                </div>
+                <span className="text-[11px] text-purple-900">
+                  {gradedPatternSet.integrityReport.summaryMessage}
+                </span>
+              </div>
+
+              {/* Per-size selection and status badges */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] text-neutral-500 uppercase font-bold mr-1">SIZES IN NEST:</span>
+                {DEFAULT_SIZE_RANGE.map(sz => {
+                  const szRes = gradedPatternSet.sizeResults[sz];
+                  const isEnabled = enabledGradingSizes[sz];
+                  const pal = SIZE_PALETTE[sz];
+                  return (
+                    <button
+                      key={sz}
+                      onClick={() => setEnabledGradingSizes(prev => ({ ...prev, [sz]: !prev[sz] }))}
+                      className={`px-2.5 py-1 text-xs rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isEnabled
+                          ? 'border-neutral-400 bg-white shadow-2xs'
+                          : 'border-neutral-200 bg-neutral-100 opacity-50'
+                      }`}
+                      style={{ borderLeftColor: pal.stroke, borderLeftWidth: '4px' }}
+                    >
+                      <span className="font-bold text-neutral-900">{sz}</span>
+                      <span className="text-[10px] text-neutral-500 font-normal">
+                        ({szRes?.measurements.bust}cm)
+                      </span>
+                      <span
+                        className={`text-[9px] px-1 py-0.2 rounded font-bold uppercase ${
+                          szRes?.isValid ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                        }`}
+                      >
+                        {szRes?.isValid ? 'VALID' : 'INVALID'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="text-[10px] text-purple-900/80 bg-purple-100/60 p-1.5 rounded flex items-center justify-between">
+                <span>Deterministic measurement regeneration — zero global affine coordinate scaling.</span>
+                <span className="font-semibold uppercase text-amber-800">isProductionReady: false</span>
               </div>
             </div>
           )}
@@ -597,6 +700,158 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     </text>
                   </g>
                 </g>
+              ) : cadViewMode === 'grading' ? (
+                /* Milestone 04.4: Multi-Size Nested Grading Overlay */
+                <g>
+                  {/* Legend / Title Header in Canvas */}
+                  <text x="30" y="10" fontSize="11" fontFamily="monospace" fontWeight="bold" fill="#581c87">
+                    NESTED PATTERN GRADING OVERLAY — 6 CONCURRENT SIZES (XS–XXL)
+                  </text>
+                  <text x="30" y="24" fontSize="8" fontFamily="monospace" fill="#71717a">
+                    FRONT BODICE (X: 30) | BACK BODICE (X: 230) | SLEEVE BLOCK (X: 430) | BASE SIZE: {gradedPatternSet.baseSize}
+                  </text>
+
+                  {/* Render nested layers for each enabled size in order */}
+                  {DEFAULT_SIZE_RANGE.filter(sz => enabledGradingSizes[sz]).map(sz => {
+                    const szRes = gradedPatternSet.sizeResults[sz];
+                    if (!szRes) return null;
+                    const pal = SIZE_PALETTE[sz] ?? { stroke: '#09090b', bg: '#f4f4f5', text: '#09090b', label: sz };
+                    const isBase = sz === gradedPatternSet.baseSize;
+
+                    const fPiece = szRes.bodicePieces.find(p => p.pieceCode.includes('BOD-F') || p.id.includes('front'));
+                    const bPiece = szRes.bodicePieces.find(p => p.pieceCode.includes('BOD-B') || p.id.includes('back'));
+                    const sPiece = szRes.sleevePiece;
+
+                    return (
+                      <g key={sz} id={`nest-layer-${sz}`}>
+                        {/* Front Bodice Nested Layer */}
+                        {fPiece && (
+                          <g transform="translate(30, 40) scale(4.5)">
+                            <path
+                              d={fPiece.cutPathData}
+                              fill={isBase ? '#FAF8F5' : 'none'}
+                              fillOpacity={isBase ? 0.35 : 0}
+                              stroke={pal.stroke}
+                              strokeWidth={isBase ? '1.0' : '0.6'}
+                              strokeDasharray={isBase ? undefined : '2.5 1'}
+                            />
+                            {showSewLines && fPiece.sewPathData && (
+                              <path
+                                d={fPiece.sewPathData}
+                                fill="none"
+                                stroke={pal.stroke}
+                                strokeWidth="0.35"
+                                strokeDasharray="1 0.8"
+                                opacity="0.6"
+                              />
+                            )}
+                            {/* Darts */}
+                            {fPiece.darts.map(d => (
+                              <g key={d.id}>
+                                <line
+                                  x1={d.apex.x}
+                                  y1={d.apex.y}
+                                  x2={d.legLeft.x}
+                                  y2={d.legLeft.y}
+                                  stroke={pal.stroke}
+                                  strokeWidth="0.35"
+                                />
+                                <line
+                                  x1={d.apex.x}
+                                  y1={d.apex.y}
+                                  x2={d.legRight.x}
+                                  y2={d.legRight.y}
+                                  stroke={pal.stroke}
+                                  strokeWidth="0.35"
+                                />
+                                <circle cx={d.apex.x} cy={d.apex.y} r="0.5" fill={pal.stroke} />
+                              </g>
+                            ))}
+                            {/* Size Label */}
+                            <text
+                              x={fPiece.boundingBox.widthCm + 0.4}
+                              y={fPiece.boundingBox.heightCm * 0.5}
+                              fontSize="1.6"
+                              fontFamily="monospace"
+                              fill={pal.stroke}
+                              fontWeight="bold"
+                            >
+                              {sz}
+                            </text>
+                          </g>
+                        )}
+
+                        {/* Back Bodice Nested Layer */}
+                        {bPiece && (
+                          <g transform="translate(230, 40) scale(4.5)">
+                            <path
+                              d={bPiece.cutPathData}
+                              fill={isBase ? '#FAF8F5' : 'none'}
+                              fillOpacity={isBase ? 0.35 : 0}
+                              stroke={pal.stroke}
+                              strokeWidth={isBase ? '1.0' : '0.6'}
+                              strokeDasharray={isBase ? undefined : '2.5 1'}
+                            />
+                            {showSewLines && bPiece.sewPathData && (
+                              <path
+                                d={bPiece.sewPathData}
+                                fill="none"
+                                stroke={pal.stroke}
+                                strokeWidth="0.35"
+                                strokeDasharray="1 0.8"
+                                opacity="0.6"
+                              />
+                            )}
+                            <text
+                              x={bPiece.boundingBox.widthCm + 0.4}
+                              y={bPiece.boundingBox.heightCm * 0.5}
+                              fontSize="1.6"
+                              fontFamily="monospace"
+                              fill={pal.stroke}
+                              fontWeight="bold"
+                            >
+                              {sz}
+                            </text>
+                          </g>
+                        )}
+
+                        {/* Sleeve Block Nested Layer */}
+                        {sPiece && (
+                          <g transform="translate(430, 40) scale(4.5)">
+                            <path
+                              d={sPiece.cutPathData}
+                              fill={isBase ? '#FAF8F5' : 'none'}
+                              fillOpacity={isBase ? 0.35 : 0}
+                              stroke={pal.stroke}
+                              strokeWidth={isBase ? '1.0' : '0.6'}
+                              strokeDasharray={isBase ? undefined : '2.5 1'}
+                            />
+                            {showSewLines && sPiece.sewPathData && (
+                              <path
+                                d={sPiece.sewPathData}
+                                fill="none"
+                                stroke={pal.stroke}
+                                strokeWidth="0.35"
+                                strokeDasharray="1 0.8"
+                                opacity="0.6"
+                              />
+                            )}
+                            <text
+                              x={sPiece.boundingBox.widthCm * 0.5 + 2}
+                              y={sPiece.boundingBox.heightCm - 1}
+                              fontSize="1.6"
+                              fontFamily="monospace"
+                              fill={pal.stroke}
+                              fontWeight="bold"
+                            >
+                              {sz}
+                            </text>
+                          </g>
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
               ) : (
                 /* Standard Flat Pattern Pieces Render */
                 pieces.map((piece, index) => {
@@ -848,252 +1103,403 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
         {/* Right Column: Piece Geometry Inspector & Deterministic Validation HUD */}
         <div className="lg:col-span-4 space-y-6">
-          {/* Selected Piece Geometric Inspector */}
-          <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <div>
-                <span className="text-[10px] font-mono uppercase text-neutral-400 block">PIECE INSPECTOR</span>
-                <h3 className="text-sm font-semibold uppercase tracking-wider font-mono text-neutral-900">
-                  [{selectedPiece.pieceCode}] {selectedPiece.name}
-                </h3>
-              </div>
-              <Badge variant="dark" size="sm">
-                {selectedPiece.onFold ? 'ON FOLD' : `CUT ${selectedPiece.cutCount}`}
-              </Badge>
-            </div>
-
-            <p className="text-xs text-neutral-600 italic">
-              {selectedPiece.description}
-            </p>
-
-            {/* Bounding & Seam Dimensions */}
-            <div className="space-y-2 text-xs font-mono bg-neutral-50 p-3 rounded border border-neutral-200">
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Bounding Width:</span>
-                <span className="font-semibold text-neutral-900">{selectedPiece.boundingBox.widthCm} cm</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Bounding Height:</span>
-                <span className="font-semibold text-neutral-900">{selectedPiece.boundingBox.heightCm} cm</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Seam Allowance:</span>
-                <span className="font-semibold text-neutral-900">{selectedPiece.seamAllowanceWidthCm} cm</span>
-              </div>
-              {selectedPiece.offsetResult && (
-                <div className="flex justify-between items-center pt-1 border-t border-neutral-200">
-                  <span className="text-neutral-500">Offset Engine:</span>
-                  <span className={`font-semibold text-[11px] ${
-                    selectedPiece.offsetResult.status === 'success'
-                      ? 'text-emerald-700'
-                      : selectedPiece.offsetResult.status === 'warning'
-                      ? 'text-amber-700'
-                      : 'text-rose-700'
-                  }`}>
-                    {selectedPiece.offsetResult.status.toUpperCase()} ({selectedPiece.offsetResult.maxDeviationCm} cm)
-                  </span>
+          {cadViewMode === 'grading' ? (
+            /* Milestone 04.4: Cross-Size Grading Inspector & Integrity Card */
+            <div className="space-y-6">
+              {/* Grading Suite Summary Card */}
+              <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono uppercase text-purple-700 font-bold block">
+                      MODULE 04.4 INSPECTOR
+                    </span>
+                    <h3 className="text-sm font-semibold uppercase tracking-wider font-mono text-neutral-900">
+                      Cross-Size Grading Suite
+                    </h3>
+                  </div>
+                  <Badge variant={gradedPatternSet.isAllValid ? 'success' : 'danger'} size="sm">
+                    {gradedPatternSet.isAllValid ? '6/6 VALID' : 'ISSUES'}
+                  </Badge>
                 </div>
-              )}
-            </div>
 
-            {/* Seams Table */}
-            <div>
-              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block mb-1.5">
-                Calculated Seamlines
-              </span>
-              <div className="space-y-1.5 font-mono text-xs">
-                {selectedPiece.seams.map(seam => (
-                  <div
-                    key={seam.id}
-                    className="p-2 border border-neutral-200 rounded-xs bg-white flex items-center justify-between"
-                  >
-                    <div>
-                      <span className="font-medium text-neutral-900 block">{seam.name}</span>
-                      {seam.pairedSeamName && (
-                        <span className="text-[10px] text-neutral-500 block">
-                          Pairs with: {seam.pairedSeamName}
+                <div className="space-y-2 text-xs font-mono bg-purple-50/60 p-3 rounded border border-purple-200">
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Base Size:</span>
+                    <span className="font-bold text-neutral-900">{gradedPatternSet.baseSize} (EU 38)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Sizing Standard:</span>
+                    <span className="font-semibold text-neutral-900">EN 13402 / Aldrich</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Grading Method:</span>
+                    <span className="font-semibold text-neutral-900">Direct Target Regeneration</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Affine Scaling:</span>
+                    <span className="font-bold text-emerald-700">NONE (0% Distortion)</span>
+                  </div>
+                </div>
+
+                {/* Per-size Matrix */}
+                <div className="space-y-1.5 font-mono text-xs">
+                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 block font-bold">
+                    Per-Size Verification Status
+                  </span>
+                  {DEFAULT_SIZE_RANGE.map(sz => {
+                    const szRes = gradedPatternSet.sizeResults[sz];
+                    const pal = SIZE_PALETTE[sz];
+                    const isBase = sz === gradedPatternSet.baseSize;
+                    const totalEase = szRes?.assemblyResult?.ease.totalEaseCm;
+
+                    return (
+                      <div
+                        key={sz}
+                        className="p-2 border border-neutral-200 rounded-xs bg-white flex items-center justify-between"
+                        style={{ borderLeftColor: pal.stroke, borderLeftWidth: '3px' }}
+                      >
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-neutral-900">{sz}</span>
+                            {isBase && (
+                              <span className="text-[9px] bg-neutral-900 text-white px-1 py-0.2 rounded font-mono">
+                                BASE
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-neutral-500 block">
+                            Bust: {szRes?.measurements.bust}cm | Ease: +{totalEase ? totalEase.toFixed(2) : '0.00'}cm
+                          </span>
+                        </div>
+                        <Badge
+                          variant={szRes?.isValid ? 'success' : 'danger'}
+                          size="sm"
+                        >
+                          {szRes?.isValid ? 'VERIFIED' : 'INVALID'}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Cross-Size Monotonicity & Integrity Checks */}
+              <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono uppercase text-neutral-400 block">CROSS-SIZE INTEGRITY</span>
+                    <h3 className="text-sm font-semibold uppercase tracking-wider font-mono text-neutral-900">
+                      Continuity Checks
+                    </h3>
+                  </div>
+                  <Badge variant={gradedPatternSet.integrityReport.isOverallGradingValid ? 'success' : 'danger'} size="sm">
+                    {gradedPatternSet.integrityReport.isOverallGradingValid ? 'ALL PASSED' : 'CHECK FAILED'}
+                  </Badge>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  {gradedPatternSet.integrityReport.checks.slice(0, 6).map(chk => (
+                    <div
+                      key={chk.id}
+                      className={`p-2.5 rounded border ${
+                        chk.status === 'pass'
+                          ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
+                          : 'bg-rose-50/60 border-rose-200 text-rose-950'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-semibold">
+                        <span className="flex items-center gap-1.5">
+                          {chk.status === 'pass' ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          )}
+                          {chk.name}
                         </span>
-                      )}
+                        <span className="font-mono text-[10px] uppercase font-bold">
+                          {chk.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-600 mt-0.5">
+                        {chk.message}
+                      </p>
                     </div>
-                    <span className="font-bold text-neutral-900">{seam.lengthCm} cm</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Sleeve Engineering Diagnostics Card (Milestone 04.2) */}
-            {selectedPiece.id === 'piece-sleeve' && sleeveDiag && (
-              <div className="border border-blue-200 bg-blue-50/50 rounded p-3 space-y-2 text-xs font-mono">
-                <div className="flex items-center justify-between border-b border-blue-200 pb-1.5">
-                  <span className="font-bold text-blue-950 uppercase text-[10px] tracking-wider">
-                    SLEEVE FIT DIAGNOSTICS
-                  </span>
-                  <span className="text-[10px] bg-blue-900 text-white px-1.5 py-0.5 rounded uppercase">
-                    {sleeveDiag.strategy}
-                  </span>
+                  ))}
+                  {gradedPatternSet.integrityReport.checks.length === 0 && (
+                    <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded text-emerald-900 text-xs">
+                      All cross-size monotonicity checks passed without warnings or anomalies.
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-1 text-neutral-800">
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">Cap Height (Hcap):</span>
-                    <span className="font-semibold">{sleeveDiag.capHeightCm} cm</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">Bodice Scye (AH):</span>
-                    <span className="font-semibold">
-                      {sleeveDiag.bodiceArmholeLengthCm} cm
-                      <span className="text-[10px] text-neutral-500 ml-1">
-                        (F: {sleeveDiag.frontArmholeLengthCm} / B: {sleeveDiag.backArmholeLengthCm})
-                      </span>
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">Sleeve Cap Perimeter:</span>
-                    <span className="font-semibold">
-                      {sleeveDiag.totalCapLengthCm} cm
-                      <span className="text-[10px] text-neutral-500 ml-1">
-                        (F: {sleeveDiag.frontCapLengthCm} / B: {sleeveDiag.backCapLengthCm})
-                      </span>
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-blue-900 bg-blue-100/70 px-1.5 py-0.5 rounded">
-                    <span className="font-medium">Net Cap Ease:</span>
-                    <span className="font-bold">
-                      +{sleeveDiag.capEaseCm} cm ({sleeveDiag.capEasePercentage}% of scye)
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">Biceps Girth (with ease):</span>
-                    <span className="font-semibold">
-                      {sleeveDiag.bicepsWidthCm} cm (+{sleeveDiag.bicepsEaseCm} cm)
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">Wrist Width (with ease):</span>
-                    <span className="font-semibold">
-                      {sleeveDiag.wristWidthCm} cm (+{sleeveDiag.wristEaseCm} cm)
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">
-                    <span>Inseam Parity Delta:</span>
-                    <span className="font-bold">
-                      {sleeveDiag.inseamParityDeltaCm} cm (&lt; 0.05 cm)
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">
-                    <span>Crown Tangency:</span>
-                    <span className="font-bold">0.00° (Horizontal C1)</span>
+                {/* Unassessed Conditions Disclosure */}
+                <div className="p-3 bg-stone-50 rounded border border-stone-200 text-[11px] space-y-2">
+                  <span className="font-mono font-semibold text-neutral-800 uppercase block text-[10px]">
+                    Unassessed Grading Conditions ({gradedPatternSet.integrityReport.unassessedConditions.length})
+                  </span>
+                  <ul className="space-y-1.5 text-neutral-600 text-[10px]">
+                    {gradedPatternSet.integrityReport.unassessedConditions.map((cond, i) => (
+                      <li key={i} className="border-l-2 border-stone-300 pl-2">
+                        {cond}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="pt-2 border-t border-stone-200 text-amber-800 font-mono font-bold text-[10px] uppercase">
+                    Safety Invariant: isProductionReady = false
                   </div>
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* Deterministic Validation HUD */}
-          <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <div>
-                <span className="text-[10px] font-mono uppercase text-neutral-400 block">ENGINE STATUS</span>
-                <h3 className="text-sm font-semibold uppercase tracking-wider font-mono text-neutral-900">
-                  Validation Engine
-                </h3>
-              </div>
-              {validationReport.status === 'validated' ? (
-                <Badge variant="success" size="md">PROTOTYPE VALIDATED</Badge>
-              ) : validationReport.status === 'incomplete' ? (
-                <Badge variant="warning" size="md">DRAFT INCOMPLETE</Badge>
-              ) : (
-                <Badge variant="danger" size="md">GEOMETRY INVALID</Badge>
-              )}
             </div>
-
-            {/* Score / Implemented Checks Summary */}
-            <div className="flex items-baseline justify-between font-mono bg-neutral-900 text-white p-3 rounded">
-              <span className="text-xs uppercase text-neutral-400">IMPLEMENTED CHECKS:</span>
-              <span className="text-base font-bold text-emerald-400">
-                {validationReport.passedCount} / {validationReport.checks.length} PASSED
-              </span>
-            </div>
-
-            {/* Declaration Note */}
-            <div className="p-2.5 bg-neutral-100 rounded text-[11px] font-mono text-neutral-800 border border-neutral-200">
-              <span className="font-semibold block text-neutral-900 text-[10px] uppercase">STATUS DECLARATION:</span>
-              <p className="mt-0.5">{validationReport.declaration}</p>
-            </div>
-
-            {/* Validation Checklist */}
-            <div className="space-y-2 text-xs">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block">
-                Evaluated Geometric Constraints
-              </span>
-              {validationReport.checks.map(chk => (
-                <div
-                  key={chk.id}
-                  className={`p-2.5 rounded border ${
-                    chk.status === 'pass'
-                      ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
-                      : chk.status === 'warning'
-                      ? 'bg-amber-50/60 border-amber-200 text-amber-950'
-                      : 'bg-rose-50/60 border-rose-200 text-rose-950'
-                  }`}
-                >
-                  <div className="flex items-center justify-between font-semibold">
-                    <span className="flex items-center gap-1.5">
-                      {chk.status === 'pass' ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      ) : (
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      )}
-                      {chk.name}
-                    </span>
-                    <span className="font-mono text-[10px] uppercase font-bold">
-                      {chk.status}
-                    </span>
+          ) : (
+            /* Selected Piece Geometric Inspector (Normal Mode) */
+            <>
+              <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono uppercase text-neutral-400 block">PIECE INSPECTOR</span>
+                    <h3 className="text-sm font-semibold uppercase tracking-wider font-mono text-neutral-900">
+                      [{selectedPiece.pieceCode}] {selectedPiece.name}
+                    </h3>
                   </div>
+                  <Badge variant="dark" size="sm">
+                    {selectedPiece.onFold ? 'ON FOLD' : `CUT ${selectedPiece.cutCount}`}
+                  </Badge>
+                </div>
 
-                  {chk.measuredValue && (
-                    <div className="font-mono text-[10px] text-neutral-700 mt-1">
-                      {chk.measuredValue}
+                <p className="text-xs text-neutral-600 italic">
+                  {selectedPiece.description}
+                </p>
+
+                {/* Bounding & Seam Dimensions */}
+                <div className="space-y-2 text-xs font-mono bg-neutral-50 p-3 rounded border border-neutral-200">
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Bounding Width:</span>
+                    <span className="font-semibold text-neutral-900">{selectedPiece.boundingBox.widthCm} cm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Bounding Height:</span>
+                    <span className="font-semibold text-neutral-900">{selectedPiece.boundingBox.heightCm} cm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Seam Allowance:</span>
+                    <span className="font-semibold text-neutral-900">{selectedPiece.seamAllowanceWidthCm} cm</span>
+                  </div>
+                  {selectedPiece.offsetResult && (
+                    <div className="flex justify-between items-center pt-1 border-t border-neutral-200">
+                      <span className="text-neutral-500">Offset Engine:</span>
+                      <span className={`font-semibold text-[11px] ${
+                        selectedPiece.offsetResult.status === 'success'
+                          ? 'text-emerald-700'
+                          : selectedPiece.offsetResult.status === 'warning'
+                          ? 'text-amber-700'
+                          : 'text-rose-700'
+                      }`}>
+                        {selectedPiece.offsetResult.status.toUpperCase()} ({selectedPiece.offsetResult.maxDeviationCm} cm)
+                      </span>
                     </div>
                   )}
+                </div>
 
-                  {chk.errorCode && (
-                    <div className="font-mono text-[9px] text-rose-700 font-bold mt-0.5">
-                      CODE: {chk.errorCode}
+                {/* Seams Table */}
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block mb-1.5">
+                    Calculated Seamlines
+                  </span>
+                  <div className="space-y-1.5 font-mono text-xs">
+                    {selectedPiece.seams.map(seam => (
+                      <div
+                        key={seam.id}
+                        className="p-2 border border-neutral-200 rounded-xs bg-white flex items-center justify-between"
+                      >
+                        <div>
+                          <span className="font-medium text-neutral-900 block">{seam.name}</span>
+                          {seam.pairedSeamName && (
+                            <span className="text-[10px] text-neutral-500 block">
+                              Pairs with: {seam.pairedSeamName}
+                            </span>
+                          )}
+                        </div>
+                        <span className="font-bold text-neutral-900">{seam.lengthCm} cm</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sleeve Engineering Diagnostics Card (Milestone 04.2) */}
+                {selectedPiece.id === 'piece-sleeve' && sleeveDiag && (
+                  <div className="border border-blue-200 bg-blue-50/50 rounded p-3 space-y-2 text-xs font-mono">
+                    <div className="flex items-center justify-between border-b border-blue-200 pb-1.5">
+                      <span className="font-bold text-blue-950 uppercase text-[10px] tracking-wider">
+                        SLEEVE FIT DIAGNOSTICS
+                      </span>
+                      <span className="text-[10px] bg-blue-900 text-white px-1.5 py-0.5 rounded uppercase">
+                        {sleeveDiag.strategy}
+                      </span>
                     </div>
-                  )}
 
-                  <p className="text-[11px] text-neutral-600 mt-0.5">
-                    {chk.message}
+                    <div className="space-y-1 text-neutral-800">
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Cap Height (Hcap):</span>
+                        <span className="font-semibold">{sleeveDiag.capHeightCm} cm</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Bodice Scye (AH):</span>
+                        <span className="font-semibold">
+                          {sleeveDiag.bodiceArmholeLengthCm} cm
+                          <span className="text-[10px] text-neutral-500 ml-1">
+                            (F: {sleeveDiag.frontArmholeLengthCm} / B: {sleeveDiag.backArmholeLengthCm})
+                          </span>
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Sleeve Cap Perimeter:</span>
+                        <span className="font-semibold">
+                          {sleeveDiag.totalCapLengthCm} cm
+                          <span className="text-[10px] text-neutral-500 ml-1">
+                            (F: {sleeveDiag.frontCapLengthCm} / B: {sleeveDiag.backCapLengthCm})
+                          </span>
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-blue-900 bg-blue-100/70 px-1.5 py-0.5 rounded">
+                        <span className="font-medium">Net Cap Ease:</span>
+                        <span className="font-bold">
+                          +{sleeveDiag.capEaseCm} cm ({sleeveDiag.capEasePercentage}% of scye)
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Biceps Girth (with ease):</span>
+                        <span className="font-semibold">
+                          {sleeveDiag.bicepsWidthCm} cm (+{sleeveDiag.bicepsEaseCm} cm)
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Wrist Width (with ease):</span>
+                        <span className="font-semibold">
+                          {sleeveDiag.wristWidthCm} cm (+{sleeveDiag.wristEaseCm} cm)
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">
+                        <span>Inseam Parity Delta:</span>
+                        <span className="font-bold">
+                          {sleeveDiag.inseamParityDeltaCm} cm (&lt; 0.05 cm)
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">
+                        <span>Crown Tangency:</span>
+                        <span className="font-bold">0.00° (Horizontal C1)</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Deterministic Validation HUD */}
+              <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono uppercase text-neutral-400 block">ENGINE STATUS</span>
+                    <h3 className="text-sm font-semibold uppercase tracking-wider font-mono text-neutral-900">
+                      Validation Engine
+                    </h3>
+                  </div>
+                  {validationReport.status === 'validated' ? (
+                    <Badge variant="success" size="md">PROTOTYPE VALIDATED</Badge>
+                  ) : validationReport.status === 'incomplete' ? (
+                    <Badge variant="warning" size="md">DRAFT INCOMPLETE</Badge>
+                  ) : (
+                    <Badge variant="danger" size="md">GEOMETRY INVALID</Badge>
+                  )}
+                </div>
+
+                {/* Score / Implemented Checks Summary */}
+                <div className="flex items-baseline justify-between font-mono bg-neutral-900 text-white p-3 rounded">
+                  <span className="text-xs uppercase text-neutral-400">IMPLEMENTED CHECKS:</span>
+                  <span className="text-base font-bold text-emerald-400">
+                    {validationReport.passedCount} / {validationReport.checks.length} PASSED
+                  </span>
+                </div>
+
+                {/* Declaration Note */}
+                <div className="p-2.5 bg-neutral-100 rounded text-[11px] font-mono text-neutral-800 border border-neutral-200">
+                  <span className="font-semibold block text-neutral-900 text-[10px] uppercase">STATUS DECLARATION:</span>
+                  <p className="mt-0.5">{validationReport.declaration}</p>
+                </div>
+
+                {/* Validation Checklist */}
+                <div className="space-y-2 text-xs">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block">
+                    Evaluated Geometric Constraints
+                  </span>
+                  {validationReport.checks.map(chk => (
+                    <div
+                      key={chk.id}
+                      className={`p-2.5 rounded border ${
+                        chk.status === 'pass'
+                          ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
+                          : chk.status === 'warning'
+                          ? 'bg-amber-50/60 border-amber-200 text-amber-950'
+                          : 'bg-rose-50/60 border-rose-200 text-rose-950'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-semibold">
+                        <span className="flex items-center gap-1.5">
+                          {chk.status === 'pass' ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          )}
+                          {chk.name}
+                        </span>
+                        <span className="font-mono text-[10px] uppercase font-bold">
+                          {chk.status}
+                        </span>
+                      </div>
+
+                      {chk.measuredValue && (
+                        <div className="font-mono text-[10px] text-neutral-700 mt-1">
+                          {chk.measuredValue}
+                        </div>
+                      )}
+
+                      {chk.errorCode && (
+                        <div className="font-mono text-[9px] text-rose-700 font-bold mt-0.5">
+                          CODE: {chk.errorCode}
+                        </div>
+                      )}
+
+                      <p className="text-[11px] text-neutral-600 mt-0.5">
+                        {chk.message}
+                      </p>
+
+                      {chk.suggestedAction && chk.status === 'fail' && (
+                        <div className="mt-1.5 p-1.5 bg-rose-100/70 rounded text-[10px] font-mono text-rose-900 border border-rose-200">
+                          <strong>ACTION:</strong> {chk.suggestedAction}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Unassessed Industrial Constraints (Honesty Disclosure) */}
+                <div className="p-3 bg-stone-50 rounded border border-stone-200 text-[11px] space-y-2">
+                  <span className="font-mono font-semibold text-neutral-800 uppercase block text-[10px]">
+                    Unassessed Industrial Conditions ({validationReport.unassessedConditions.length})
+                  </span>
+                  <p className="text-neutral-500 text-[10px]">
+                    The following criteria are required for full industrial production certification and are scheduled for subsequent engineering milestones:
                   </p>
-
-                  {chk.suggestedAction && chk.status === 'fail' && (
-                    <div className="mt-1.5 p-1.5 bg-rose-100/70 rounded text-[10px] font-mono text-rose-900 border border-rose-200">
-                      <strong>ACTION:</strong> {chk.suggestedAction}
-                    </div>
-                  )}
+                  <ul className="space-y-1.5 text-neutral-600 text-[10px]">
+                    {validationReport.unassessedConditions.map(u => (
+                      <li key={u.id} className="border-l-2 border-stone-300 pl-2">
+                        <strong className="text-neutral-800">{u.name}:</strong> {u.reason}
+                        <span className="block text-neutral-400 font-mono text-[9px]">Target: {u.milestonePrerequisite}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              ))}
-            </div>
-
-            {/* Unassessed Industrial Constraints (Honesty Disclosure) */}
-            <div className="p-3 bg-stone-50 rounded border border-stone-200 text-[11px] space-y-2">
-              <span className="font-mono font-semibold text-neutral-800 uppercase block text-[10px]">
-                Unassessed Industrial Conditions ({validationReport.unassessedConditions.length})
-              </span>
-              <p className="text-neutral-500 text-[10px]">
-                The following criteria are required for full industrial production certification and are scheduled for subsequent engineering milestones:
-              </p>
-              <ul className="space-y-1.5 text-neutral-600 text-[10px]">
-                {validationReport.unassessedConditions.map(u => (
-                  <li key={u.id} className="border-l-2 border-stone-300 pl-2">
-                    <strong className="text-neutral-800">{u.name}:</strong> {u.reason}
-                    <span className="block text-neutral-400 font-mono text-[9px]">Target: {u.milestonePrerequisite}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
