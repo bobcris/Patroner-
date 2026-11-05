@@ -123,6 +123,7 @@ export interface FrontNotchPairing {
   deltaCm: number;
   isWithinTolerance: boolean;
   sleeveDisplacementCm: number;
+  bodiceDisplacementCm: number;
   isAttachedToContour: boolean;
   orientationAngleDeg: number;
   isOrientationValid: boolean;
@@ -147,6 +148,8 @@ export interface BackNotchPairing {
   isOrderingValid: boolean; // Notch 1 closer to underarm than notch 2
   sleeveDisplacement1Cm: number;
   sleeveDisplacement2Cm: number;
+  bodiceDisplacement1Cm: number;
+  bodiceDisplacement2Cm: number;
   areAttachedToContour: boolean;
   orientationAngle1Deg: number;
   orientationAngle2Deg: number;

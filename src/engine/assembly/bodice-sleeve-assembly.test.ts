@@ -9,7 +9,7 @@ import { BodyMeasurements, DesignSpecification, PatternPiece } from '../../types
 import { STANDARD_SIZING_SYSTEM } from '../measurements/standards';
 import { draftBodiceBlock } from '../drafting/bodice-block';
 import { draftSleeveBlock } from '../drafting/sleeve-block';
-import { distance } from '../geometry/math';
+import { distance, smallestAngularDifferenceDeg } from '../geometry/math';
 import { LineSegment, CubicBezierCurve, GeometricContour } from '../geometry/primitives';
 import {
   assembleBodiceSleeve,
@@ -18,7 +18,8 @@ import {
 } from './bodice-sleeve-assembly';
 import {
   evaluateEaseCompatibility,
-  evaluateSeamEndpointsAndOrientations
+  evaluateSeamEndpointsAndOrientations,
+  evaluateAssemblyNotches
 } from './assembly-validator';
 import { BodiceSleeveAssemblyInput, SeamArcLengthMeasurement } from './assembly-types';
 
@@ -669,7 +670,7 @@ describe('Milestone 04.3 — Integrated Bodice–Sleeve Assembly & Seam Compatib
     const bSlv = createMockMeas(23.02);
 
     const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
-    assert.equal(metrics.totalEaseCm, 0.05);
+    assert.ok(Math.abs(metrics.totalEaseCm - 0.05) < 1e-12);
     assert.equal(metrics.isRatioDefined, false);
     assert.equal(metrics.frontEaseRatio, null);
     assert.equal(metrics.frontEaseRatioUncertainty, null);
@@ -704,8 +705,8 @@ describe('Milestone 04.3 — Integrated Bodice–Sleeve Assembly & Seam Compatib
     assert.equal(metrics.totalEaseCm, 3.50);
 
     // Analytical: (2.00 * 0.0004 + 1.50 * 0.0006) / (3.50^2) = (0.0008 + 0.0009) / 12.25 = 0.0017 / 12.25 = 0.00013877...
-    const expected = Number(((2.00 * 0.0004 + 1.50 * 0.0006) / (3.50 * 3.50)).toFixed(4));
-    assert.equal(metrics.frontEaseRatioUncertainty, expected);
+    const expected = (2.00 * 0.0004 + 1.50 * 0.0006) / (3.50 * 3.50);
+    assert.ok(Math.abs(metrics.frontEaseRatioUncertainty! - expected) < 1e-12);
   });
 
   // Audit 5: SVG parsing with scientific notation and concatenated negative signs
@@ -889,5 +890,332 @@ describe('Milestone 04.3 — Integrated Bodice–Sleeve Assembly & Seam Compatib
     const totalEaseCheck = result.validationReport.checks.find(c => c.id === 'val-asm-total-ease-limit');
     assert.ok(totalEaseCheck);
     assert.equal(totalEaseCheck.toleranceCm, 5.00);
+  });
+
+  // =========================================================================
+  // MILESTONE 04.3.2: FINAL MATHEMATICAL & GEOMETRIC INTEGRITY VERIFICATIONS
+  // =========================================================================
+  describe('Milestone 04.3.2: Final Mathematical and Geometric Integrity Corrections', () => {
+    // -----------------------------------------------------------------------
+    // Test Group 1: Ease Ratio Mathematical Domain vs Physical Assembly Tolerance
+    // -----------------------------------------------------------------------
+    test('M04.3.2 - 1.1: Ease ratio is strictly undefined when Ef in [-0.05, 0) even if Et >= 0.20 cm', () => {
+      // Ef = -0.02 cm (permitted by physical tolerance -0.05), Eb = 0.30 cm -> Et = 0.28 cm >= 0.20 cm
+      const fBod = createMockMeas(22.00);
+      const bBod = createMockMeas(23.00);
+      const fSlv = createMockMeas(21.98); // Ef = -0.02
+      const bSlv = createMockMeas(23.30); // Eb = +0.30
+
+      const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
+      assert.equal(metrics.isFrontEasePermitted, true, 'Ef = -0.02 cm satisfies physical assembly tolerance [-0.05]');
+      assert.equal(metrics.isBackEasePermitted, true);
+      assert.equal(metrics.isTotalEasePermitted, true);
+      assert.ok(Math.abs(metrics.totalEaseCm - 0.28) < 1e-12);
+
+      // Mathematical domain requires Ef >= 0, so ratio MUST be undefined
+      assert.equal(metrics.isRatioDefined, false, 'Ratio must be undefined when Ef < 0');
+      assert.equal(metrics.frontEaseRatio, null);
+      assert.equal(metrics.frontEaseRatioUncertainty, null);
+      assert.equal(metrics.isDistributionBalanced, false, 'Negative ease component cannot yield balanced distribution');
+    });
+
+    test('M04.3.2 - 1.2: Ease ratio is strictly undefined when Eb in [-0.05, 0) even if Et >= 0.20 cm', () => {
+      // Eb = -0.01 cm, Ef = 0.25 cm -> Et = 0.24 cm >= 0.20 cm
+      const fBod = createMockMeas(22.00);
+      const bBod = createMockMeas(23.00);
+      const fSlv = createMockMeas(22.25); // Ef = +0.25
+      const bSlv = createMockMeas(22.99); // Eb = -0.01
+
+      const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
+      assert.equal(metrics.isFrontEasePermitted, true);
+      assert.equal(metrics.isBackEasePermitted, true, 'Eb = -0.01 cm satisfies physical tolerance');
+      assert.equal(metrics.isTotalEasePermitted, true);
+      assert.ok(Math.abs(metrics.totalEaseCm - 0.24) < 1e-12);
+
+      assert.equal(metrics.isRatioDefined, false, 'Ratio must be undefined when Eb < 0');
+      assert.equal(metrics.frontEaseRatio, null);
+      assert.equal(metrics.frontEaseRatioUncertainty, null);
+      assert.equal(metrics.isDistributionBalanced, false);
+    });
+
+    test('M04.3.2 - 1.3: Ease exceeding physical negative tolerance (Ef < -0.05) fails both tolerance and ratio', () => {
+      const fBod = createMockMeas(22.00);
+      const bBod = createMockMeas(23.00);
+      const fSlv = createMockMeas(21.94); // Ef = -0.06 cm
+      const bSlv = createMockMeas(23.30); // Eb = +0.30 cm
+
+      const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
+      assert.equal(metrics.isFrontEasePermitted, false, 'Ef = -0.06 cm violates -0.05 cm physical tolerance');
+      assert.equal(metrics.isRatioDefined, false);
+      assert.equal(metrics.frontEaseRatio, null);
+    });
+
+    test('M04.3.2 - 1.4: Ratio stability boundary at exactly 0.20 cm total ease', () => {
+      const fBod = createMockMeas(22.00);
+      const bBod = createMockMeas(23.00);
+
+      // Just below 0.20 cm: Et = 0.1999 cm
+      const fSlvBelow = createMockMeas(22.0999);
+      const bSlvBelow = createMockMeas(23.1000);
+      const metricsBelow = evaluateEaseCompatibility(fBod, bBod, fSlvBelow, bSlvBelow);
+      assert.equal(metricsBelow.isRatioDefined, false, 'Et = 0.1999 cm < 0.20 cm must leave ratio undefined');
+      assert.equal(metricsBelow.frontEaseRatio, null);
+
+      // At or above 0.20 cm: Et = 0.2000 cm with Ef >= 0, Eb >= 0
+      const fSlvAt = createMockMeas(22.1000);
+      const bSlvAt = createMockMeas(23.1000);
+      const metricsAt = evaluateEaseCompatibility(fBod, bBod, fSlvAt, bSlvAt);
+      assert.equal(metricsAt.isRatioDefined, true, 'Et = 0.2000 cm with non-negative ease defines ratio');
+      assert.ok(metricsAt.frontEaseRatio !== null);
+      assert.ok(Math.abs(metricsAt.frontEaseRatio! - 0.5) < 1e-12);
+    });
+
+    test('M04.3.2 - 1.5: Zero ease boundary Ef = 0, Eb = 0 leaves ratio undefined but parity balanced', () => {
+      const fBod = createMockMeas(22.00);
+      const bBod = createMockMeas(23.00);
+      const fSlv = createMockMeas(22.00);
+      const bSlv = createMockMeas(23.00);
+
+      const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
+      assert.equal(metrics.isFrontEasePermitted, true);
+      assert.equal(metrics.isBackEasePermitted, true);
+      assert.equal(metrics.isTotalEasePermitted, true);
+      assert.equal(metrics.isRatioDefined, false);
+      assert.equal(metrics.frontEaseRatio, null);
+      assert.equal(metrics.frontEaseRatioUncertainty, null);
+      assert.equal(metrics.isDistributionBalanced, true, 'Zero ease satisfies |Ef - Eb| = 0 <= 0.20 cm parity');
+    });
+
+    // -----------------------------------------------------------------------
+    // Test Group 2: Symmetric Bodice and Sleeve Notch Contour Attachment
+    // -----------------------------------------------------------------------
+    test('M04.3.2 - 2.1: Valid assembly exposes bodice notch displacements within 0.30 cm tolerance', () => {
+      const { bodicePieces, sleevePiece } = createValidDrafts();
+      const result = assembleBodiceSleeve({
+        bodicePieces,
+        sleevePiece,
+        designSpec: standardDesign,
+        measurements: standardMeasurements
+      });
+
+      const notchReport = result.notches;
+      assert.ok(notchReport);
+      assert.equal(notchReport.isValid, true);
+
+      // Check front pairing
+      const fp = notchReport.frontNotch;
+      assert.ok(fp);
+      assert.equal(typeof fp.bodiceDisplacementCm, 'number');
+      assert.ok(fp.bodiceDisplacementCm <= 0.30, `Bodice displacement ${fp.bodiceDisplacementCm} must be <= 0.30 cm`);
+      assert.ok(fp.sleeveDisplacementCm <= 0.30);
+      assert.equal(fp.isAttachedToContour, true);
+
+      // Check back pairing
+      const bp = notchReport.backNotches;
+      assert.ok(bp);
+      assert.equal(typeof bp.bodiceDisplacement1Cm, 'number');
+      assert.equal(typeof bp.bodiceDisplacement2Cm, 'number');
+      assert.ok(bp.bodiceDisplacement1Cm <= 0.30, `Bodice notch 1 displacement ${bp.bodiceDisplacement1Cm} must be <= 0.30 cm`);
+      assert.ok(bp.bodiceDisplacement2Cm <= 0.30, `Bodice notch 2 displacement ${bp.bodiceDisplacement2Cm} must be <= 0.30 cm`);
+      assert.ok(bp.sleeveDisplacement1Cm <= 0.30);
+      assert.ok(bp.sleeveDisplacement2Cm <= 0.30);
+      assert.equal(bp.areAttachedToContour, true);
+    });
+
+    test('M04.3.2 - 2.2: Front bodice notch displaced > 0.30 cm fails validation even if arc length matches', () => {
+      const { bodicePieces, sleevePiece } = createValidDrafts();
+      const front = bodicePieces[0];
+      const validChestNotch = front.notches.find(n => n.id.includes('chest'))!;
+
+      // Displace chest notch 1.5 cm perpendicular into the bodice interior
+      const corruptedNotches = front.notches.map(n => {
+        if (n.id === validChestNotch.id) {
+          return {
+            ...n,
+            position: { x: n.position.x - 1.5, y: n.position.y }
+          };
+        }
+        return n;
+      });
+
+      const corruptedFront: PatternPiece = { ...front, notches: corruptedNotches };
+      const result = assembleBodiceSleeve({
+        bodicePieces: [corruptedFront, bodicePieces[1]],
+        sleevePiece,
+        designSpec: standardDesign,
+        measurements: standardMeasurements
+      });
+
+      assert.equal(result.isValid, false, 'Displaced bodice notch must fail assembly validation');
+      const notchReport = result.notches;
+      assert.ok(notchReport);
+      assert.equal(notchReport.isValid, false);
+      assert.equal(notchReport.frontNotch?.isAttachedToContour, false);
+      assert.ok(notchReport.frontNotch!.bodiceDisplacementCm > 0.30);
+      assert.ok(result.validationReport.checks.some(c => c.id === 'val-asm-notch-correspondence' && c.status === 'fail'));
+    });
+
+    test('M04.3.2 - 2.3: Back bodice notch displaced > 0.30 cm fails validation', () => {
+      const { bodicePieces, sleevePiece } = createValidDrafts();
+      const back = bodicePieces[1];
+      const backNotch1 = back.notches.find(n => n.id.includes('across-back-1'))!;
+
+      const corruptedNotches = back.notches.map(n => {
+        if (n.id === backNotch1.id) {
+          return {
+            ...n,
+            position: { x: n.position.x + 2.0, y: n.position.y } // Displace 2 cm away
+          };
+        }
+        return n;
+      });
+
+      const corruptedBack: PatternPiece = { ...back, notches: corruptedNotches };
+      const result = assembleBodiceSleeve({
+        bodicePieces: [bodicePieces[0], corruptedBack],
+        sleevePiece,
+        designSpec: standardDesign,
+        measurements: standardMeasurements
+      });
+
+      assert.equal(result.isValid, false);
+      const notchReport = result.notches;
+      assert.ok(notchReport);
+      assert.equal(notchReport.isValid, false);
+      assert.equal(notchReport.backNotches?.areAttachedToContour, false);
+      assert.ok(notchReport.backNotches!.bodiceDisplacement1Cm > 0.30);
+    });
+
+    test('M04.3.2 - 2.4: Bodice notch at exact 0.20 cm tolerance passes; at 0.40 cm fails', () => {
+      const { bodicePieces, sleevePiece } = createValidDrafts();
+      const front = bodicePieces[0];
+      const validChestNotch = front.notches.find(n => n.id.includes('chest'))!;
+
+      // 0.20 cm displacement
+      const passNotches = front.notches.map(n => {
+        if (n.id === validChestNotch.id) {
+          return { ...n, position: { x: n.position.x - 0.20, y: n.position.y } };
+        }
+        return n;
+      });
+      const resPass = assembleBodiceSleeve({
+        bodicePieces: [{ ...front, notches: passNotches }, bodicePieces[1]],
+        sleevePiece,
+        designSpec: standardDesign,
+        measurements: standardMeasurements
+      });
+      assert.ok(resPass.notches?.frontNotch?.isAttachedToContour === true);
+
+      // 0.40 cm displacement
+      const failNotches = front.notches.map(n => {
+        if (n.id === validChestNotch.id) {
+          return { ...n, position: { x: n.position.x - 0.40, y: n.position.y } };
+        }
+        return n;
+      });
+      const resFail = assembleBodiceSleeve({
+        bodicePieces: [{ ...front, notches: failNotches }, bodicePieces[1]],
+        sleevePiece,
+        designSpec: standardDesign,
+        measurements: standardMeasurements
+      });
+      assert.equal(resFail.notches?.frontNotch?.isAttachedToContour, false);
+    });
+
+    // -----------------------------------------------------------------------
+    // Test Group 3: Smallest Angular Difference & Crown Tangent Normalization
+    // -----------------------------------------------------------------------
+    test('M04.3.2 - 3.1: smallestAngularDifferenceDeg unit mathematical properties', () => {
+      // Coincident angles
+      assert.equal(smallestAngularDifferenceDeg(0, 0), 0);
+      assert.equal(smallestAngularDifferenceDeg(45, 45), 0);
+      assert.equal(smallestAngularDifferenceDeg(-90, -90), 0);
+
+      // Collinear opposite
+      assert.equal(smallestAngularDifferenceDeg(0, 180), 180);
+      assert.equal(smallestAngularDifferenceDeg(-180, 0), 180);
+      assert.equal(smallestAngularDifferenceDeg(90, -90), 180);
+
+      // Wrapping across +/- 180 boundary
+      assert.equal(smallestAngularDifferenceDeg(179, -179), 2);
+      assert.equal(smallestAngularDifferenceDeg(-179, 179), 2);
+      assert.ok(Math.abs(smallestAngularDifferenceDeg(179.5, -179.8) - 0.7) < 1e-12);
+      assert.equal(smallestAngularDifferenceDeg(180, -180), 0);
+
+      // Modulo 360 wrap
+      assert.equal(smallestAngularDifferenceDeg(370, 20), 10);
+      assert.equal(smallestAngularDifferenceDeg(720, 0), 0);
+      assert.equal(smallestAngularDifferenceDeg(-350, 10), 0);
+
+      // Always in [0, 180]
+      for (let a = -540; a <= 540; a += 45) {
+        for (let b = -540; b <= 540; b += 45) {
+          const diff = smallestAngularDifferenceDeg(a, b);
+          assert.ok(diff >= 0, `diff ${diff} must be >= 0`);
+          assert.ok(diff <= 180, `diff ${diff} must be <= 180`);
+        }
+      }
+    });
+
+    test('M04.3.2 - 3.2: Crown apex C1 continuity across +/- 180 boundary is correctly identified', () => {
+      const fCapSmooth = new CubicBezierCurve('s-f', { x: 0, y: 0 }, { x: 5, y: 0.05 }, { x: 10, y: 5 }, { x: 15, y: 15 });
+      const bCapSmooth = new CubicBezierCurve('s-b', { x: -15, y: 15 }, { x: -10, y: 5 }, { x: -5, y: -0.05 }, { x: 0, y: 0 });
+
+      const extracted: any = {
+        frontBodicePiece: { id: 'fb', stitchingContour: { segments: [] } },
+        backBodicePiece: { id: 'bb', stitchingContour: { segments: [] } },
+        sleevePiece: { id: 'slv', stitchingContour: { segments: [] } },
+        frontBodiceArmhole: new CubicBezierCurve('fba', { x: 0, y: 20 }, { x: 5, y: 15 }, { x: 8, y: 8 }, { x: 10, y: 0 }),
+        backBodiceArmhole: new CubicBezierCurve('bba', { x: 0, y: 20 }, { x: 5, y: 15 }, { x: 8, y: 8 }, { x: 10, y: 0 }),
+        sleeveFrontCap: fCapSmooth,
+        sleeveBackCap: bCapSmooth
+      };
+
+      const endpointRes = evaluateSeamEndpointsAndOrientations(extracted);
+      assert.equal(endpointRes.crownShoulderMatch.isPositionalCoincident, true);
+      assert.equal(endpointRes.crownShoulderMatch.isTangentContinuous, true);
+      assert.ok(endpointRes.crownShoulderMatch.tangentDepartureDeg! <= 1.0);
+    });
+
+    test('M04.3.2 - 3.3: Missing or degenerate tangent control vector is not classified as continuous', () => {
+      // Degenerate: cp1F is coincident with p0 (length = 0)
+      const fCapDegen = new CubicBezierCurve('s-f', { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 10, y: 5 }, { x: 15, y: 15 });
+      const bCapSmooth = new CubicBezierCurve('s-b', { x: -15, y: 15 }, { x: -10, y: 5 }, { x: -5, y: 0 }, { x: 0, y: 0 });
+
+      const extracted: any = {
+        frontBodicePiece: { id: 'fb', stitchingContour: { segments: [] } },
+        backBodicePiece: { id: 'bb', stitchingContour: { segments: [] } },
+        sleevePiece: { id: 'slv', stitchingContour: { segments: [] } },
+        frontBodiceArmhole: new CubicBezierCurve('fba', { x: 0, y: 20 }, { x: 5, y: 15 }, { x: 8, y: 8 }, { x: 10, y: 0 }),
+        backBodiceArmhole: new CubicBezierCurve('bba', { x: 0, y: 20 }, { x: 5, y: 15 }, { x: 8, y: 8 }, { x: 10, y: 0 }),
+        sleeveFrontCap: fCapDegen,
+        sleeveBackCap: bCapSmooth
+      };
+
+      const endpointRes = evaluateSeamEndpointsAndOrientations(extracted);
+      assert.equal(endpointRes.crownShoulderMatch.isTangentContinuous, false, 'Degenerate control vector must not be classified continuous');
+      assert.ok(endpointRes.reasons.some(r => r.toLowerCase().includes('degenerate') || r.toLowerCase().includes('discontinuity')));
+    });
+
+    // -----------------------------------------------------------------------
+    // Test Group 4: Full Floating-Point Precision Preserved Without Intermediate Rounding
+    // -----------------------------------------------------------------------
+    test('M04.3.2 - 4.1: Mathematical metrics preserve full floating point precision', () => {
+      const fBod = createMockMeas(22.123456789, 0.000123456);
+      const bBod = createMockMeas(23.987654321, 0.000234567);
+      const fSlv = createMockMeas(23.234567890, 0.000345678);
+      const bSlv = createMockMeas(25.123456789, 0.000456789);
+
+      const metrics = evaluateEaseCompatibility(fBod, bBod, fSlv, bSlv);
+      assert.equal(metrics.frontEaseCm, 23.234567890 - 22.123456789);
+      assert.equal(metrics.backEaseCm, 25.123456789 - 23.987654321);
+      assert.equal(metrics.totalEaseCm, (23.234567890 - 22.123456789) + (25.123456789 - 23.987654321));
+      assert.equal(metrics.frontEaseUncertaintyCm, 0.000123456 + 0.000345678);
+      assert.equal(metrics.backEaseUncertaintyCm, 0.000234567 + 0.000456789);
+
+      // Unrounded frontEaseRatio
+      const expectedRatio = metrics.frontEaseCm / metrics.totalEaseCm;
+      assert.equal(metrics.frontEaseRatio, expectedRatio);
+    });
   });
 });

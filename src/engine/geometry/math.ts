@@ -48,6 +48,16 @@ export function angleBetweenVectors(v1: Point, v2: Point): number {
 }
 
 /**
+ * Calculates the smallest unsigned angular difference between two angles in degrees,
+ * strictly in the range [0, 180]. Correctly handles wrapping across the ±180° boundary
+ * without intermediate precision truncation.
+ */
+export function smallestAngularDifferenceDeg(angle1Deg: number, angle2Deg: number): number {
+  const diff = Math.abs(angle1Deg - angle2Deg) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+/**
  * Validates whether two vectors are perpendicular (90 degrees).
  * Returns exact angle and absolute deviation in degrees.
  */

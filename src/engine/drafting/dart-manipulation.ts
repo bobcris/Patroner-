@@ -12,6 +12,7 @@ import {
 } from '../../types';
 import { distance, vector } from '../geometry/math';
 import { CubicBezierCurve, GeometricContour, LineSegment } from '../geometry/primitives';
+import { getArcLengthProjectionDiagnostics } from '../geometry/curve-projection';
 
 export interface FrontBodiceGeometryParams {
   cfNeck: Point;
@@ -131,6 +132,7 @@ export function constructFrontBodiceWithDart(
   const fbNeckCurve = new CubicBezierCurve('fb-neck-curve', fNeckShoulder, fNeckCp1, fNeckCp2, cfNeck, neckAllowance, false, 'fb-neck');
 
   // Common notches
+  const fbChestDiag = getArcLengthProjectionDiagnostics(fbArmhole, { x: chestHalfWidth, y: chestY });
   const baseNotches: Notch[] = [
     {
       id: 'notch-fb-cf-fold',
@@ -141,7 +143,7 @@ export function constructFrontBodiceWithDart(
     },
     {
       id: 'notch-fb-chest',
-      position: { x: chestHalfWidth, y: chestY },
+      position: fbChestDiag.projectedPoint,
       normalAngleDeg: 0,
       type: 'single',
       label: 'CHEST / ARMHOLE'

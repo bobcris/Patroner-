@@ -18,6 +18,7 @@ import { approximateBezierLength, computeBoundingBox, distance } from '../geomet
 import { generateCuttingContour } from '../geometry/offset';
 import { CubicBezierCurve, GeometricContour, LineSegment } from '../geometry/primitives';
 import { calculateBodiceGarmentDimensions, validateBodiceMeasurements } from '../measurements/standards';
+import { findPointAtArcLength, getArcLengthProjectionDiagnostics } from '../geometry/curve-projection';
 import { constructFrontBodiceWithDart } from './dart-manipulation';
 
 export interface BodiceDraftOptions {
@@ -346,17 +347,22 @@ export function draftBodiceBlock(
     lengthCm: Number(distance(bDartApex, bDartLeft).toFixed(2))
   };
 
+  const bbCenterDiag = getArcLengthProjectionDiagnostics(bbArmhole, { x: acrossBackHalf, y: backScyeLevelY });
+  const bbCenterArc = bbCenterDiag.arcLengthCm;
+  const bNotch1Pt = findPointAtArcLength(bbArmhole, Math.max(0.5, bbCenterArc - 0.5)).point;
+  const bNotch2Pt = findPointAtArcLength(bbArmhole, Math.min(bbArmhole.lengthCm() - 0.5, bbCenterArc + 0.5)).point;
+
   const backNotches: Notch[] = [
     {
       id: 'notch-bb-across-back-1',
-      position: { x: acrossBackHalf, y: backScyeLevelY - 0.7 },
+      position: bNotch1Pt,
       normalAngleDeg: 0,
       type: 'single',
       label: 'BACK SCYE DOUBLE NOTCH 1'
     },
     {
       id: 'notch-bb-across-back-2',
-      position: { x: acrossBackHalf, y: backScyeLevelY + 0.7 },
+      position: bNotch2Pt,
       normalAngleDeg: 0,
       type: 'double',
       label: 'BACK SCYE DOUBLE NOTCH 2'

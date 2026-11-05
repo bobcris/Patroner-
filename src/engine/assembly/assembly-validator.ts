@@ -16,6 +16,7 @@ import {
 import {
   computeAdaptiveBezierLength,
   distance,
+  smallestAngularDifferenceDeg,
   vector
 } from '../geometry/math';
 import { CubicBezierCurve, GeometricContour, LineSegment } from '../geometry/primitives';
@@ -178,7 +179,7 @@ export function measureCurveSeam(
   toleranceCm = 0.005
 ): SeamArcLengthMeasurement {
   const result = curve.adaptiveLength(toleranceCm);
-  const uncertainty = Number(((result.upperBoundCm - result.lowerBoundCm) / 2).toFixed(5));
+  const uncertainty = (result.upperBoundCm - result.lowerBoundCm) / 2;
 
   return {
     pieceId,
@@ -209,46 +210,45 @@ export function evaluateEaseCompatibility(
 
   const targetTotalEaseCm = options?.customTargetEaseCm ?? tableValues.recommendedCapEaseCm;
   // Standard anthropometric tailoring distribution: 44% front, 56% back
-  const targetFrontEaseCm = Number((targetTotalEaseCm * 0.44).toFixed(2));
-  const targetBackEaseCm = Number((targetTotalEaseCm * 0.56).toFixed(2));
+  const targetFrontEaseCm = targetTotalEaseCm * 0.44;
+  const targetBackEaseCm = targetTotalEaseCm * 0.56;
 
   const frontBodiceArmholeLengthCm = fBodiceMeas.lengthCm;
   const backBodiceArmholeLengthCm = bBodiceMeas.lengthCm;
-  const totalBodiceArmholeLengthCm = Number((frontBodiceArmholeLengthCm + backBodiceArmholeLengthCm).toFixed(2));
+  const totalBodiceArmholeLengthCm = frontBodiceArmholeLengthCm + backBodiceArmholeLengthCm;
 
   const frontSleeveCapLengthCm = fSleeveMeas.lengthCm;
   const backSleeveCapLengthCm = bSleeveMeas.lengthCm;
-  const totalSleeveCapLengthCm = Number((frontSleeveCapLengthCm + backSleeveCapLengthCm).toFixed(2));
+  const totalSleeveCapLengthCm = frontSleeveCapLengthCm + backSleeveCapLengthCm;
 
   // Core ease equations:
   // E_f = L_sf - L_bf
   // E_b = L_sb - L_bb
   // E_t = E_f + E_b = (L_sf + L_sb) - (L_bf + L_bb)
-  const frontEaseCm = Number((frontSleeveCapLengthCm - frontBodiceArmholeLengthCm).toFixed(2));
-  const backEaseCm = Number((backSleeveCapLengthCm - backBodiceArmholeLengthCm).toFixed(2));
-  const totalEaseCm = Number((frontEaseCm + backEaseCm).toFixed(2));
+  const frontEaseCm = frontSleeveCapLengthCm - frontBodiceArmholeLengthCm;
+  const backEaseCm = backSleeveCapLengthCm - backBodiceArmholeLengthCm;
+  const totalEaseCm = frontEaseCm + backEaseCm;
 
   // Propagated uncertainties:
   // delta E_f = delta L_sf + delta L_bf
   // delta E_b = delta L_sb + delta L_bb
   // delta E_t = delta E_f + delta E_b
-  const frontEaseUncertaintyCm = Number((fSleeveMeas.uncertaintyCm + fBodiceMeas.uncertaintyCm).toFixed(5));
-  const backEaseUncertaintyCm = Number((bSleeveMeas.uncertaintyCm + bBodiceMeas.uncertaintyCm).toFixed(5));
-  const totalEaseUncertaintyCm = Number((frontEaseUncertaintyCm + backEaseUncertaintyCm).toFixed(5));
+  const frontEaseUncertaintyCm = fSleeveMeas.uncertaintyCm + fBodiceMeas.uncertaintyCm;
+  const backEaseUncertaintyCm = bSleeveMeas.uncertaintyCm + bBodiceMeas.uncertaintyCm;
+  const totalEaseUncertaintyCm = frontEaseUncertaintyCm + backEaseUncertaintyCm;
 
   // Front ease ratio: E_f / E_t
-  // Valid mathematical domain: E_t >= 0.20 cm, E_f >= 0, E_b >= 0
-  // When E_t < 0.20 cm or ease is negative, ratio is mathematically unstable / undefined (null)
+  // Strictly defined mathematical domain:
+  // E_t >= 0.20 cm, E_f >= 0, E_b >= 0
+  // When E_t < 0.20 cm or either component is negative, ratio is mathematically undefined (null)
   const MIN_RATIO_DENOMINATOR_CM = 0.20;
-  const isRatioDefined = totalEaseCm >= MIN_RATIO_DENOMINATOR_CM && frontEaseCm >= -0.05 && backEaseCm >= -0.05;
-  const frontEaseRatio = isRatioDefined
-    ? Number((frontEaseCm / totalEaseCm).toFixed(3))
-    : null;
+  const isRatioDefined = totalEaseCm >= MIN_RATIO_DENOMINATOR_CM && frontEaseCm >= 0 && backEaseCm >= 0;
+  const frontEaseRatio = isRatioDefined ? frontEaseCm / totalEaseCm : null;
 
-  // Propagated uncertainty for ratio:
+  // Propagated uncertainty for ratio (first-order conservative differential formula):
   // delta R_f = (|E_b| * delta E_f + |E_f| * delta E_b) / E_t^2
   const frontEaseRatioUncertainty = isRatioDefined && totalEaseCm > 0
-    ? Number((((Math.abs(backEaseCm) * frontEaseUncertaintyCm) + (Math.abs(frontEaseCm) * backEaseUncertaintyCm)) / (totalEaseCm * totalEaseCm)).toFixed(4))
+    ? ((Math.abs(backEaseCm) * frontEaseUncertaintyCm) + (Math.abs(frontEaseCm) * backEaseUncertaintyCm)) / (totalEaseCm * totalEaseCm)
     : null;
 
   const recommendedEnvelopeCm = {
@@ -256,13 +256,13 @@ export function evaluateEaseCompatibility(
     max: tableValues.capEaseMaxCm
   };
 
-  const frontResidualCm = Number(Math.abs(frontEaseCm - targetFrontEaseCm).toFixed(2));
-  const backResidualCm = Number(Math.abs(backEaseCm - targetBackEaseCm).toFixed(2));
-  const totalResidualCm = Number(Math.abs(totalEaseCm - targetTotalEaseCm).toFixed(2));
+  const frontResidualCm = Math.abs(frontEaseCm - targetFrontEaseCm);
+  const backResidualCm = Math.abs(backEaseCm - targetBackEaseCm);
+  const totalResidualCm = Math.abs(totalEaseCm - targetTotalEaseCm);
 
-  // Physical & Tailoring assembly boundaries:
-  // 1. E_f >= 0 (geometric requirement: no negative ease on front scye for set-in sleeve)
-  // 2. E_b >= 0 (geometric requirement: no negative ease on back scye for set-in sleeve)
+  // Physical & Tailoring assembly boundaries (evaluated with separate physical tolerance):
+  // 1. E_f >= -0.05 (geometric requirement: no negative ease beyond manufacturing tolerance)
+  // 2. E_b >= -0.05 (geometric requirement: no negative ease beyond manufacturing tolerance)
   // 3. 0 <= E_t <= 5.0 cm (fabric tailoring craft limitation: wool steam crimp capacity)
   // 4. Front ease ratio between 35% and 55% when defined, or absolute parity |E_f - E_b| <= 0.20 cm when E_t < 0.20 cm
   const isFrontEasePermitted = frontEaseCm >= -0.05;
@@ -366,18 +366,27 @@ export function evaluateSeamEndpointsAndOrientations(
   const cp1F = (sleeveFrontCap as any).cp1 ?? (sleeveFrontCap as any).p1;
   const cp2B = (sleeveBackCap as any).cp2 ?? (sleeveBackCap as any).p2;
   let isTangentContinuous = false;
-  let tangentDepartureDeg = 0;
-  if (cp1F && cp2B) {
-    const thetaBackDeg = Math.atan2(slvCrownBack.y - cp2B.y, slvCrownBack.x - cp2B.x) * (180 / Math.PI);
-    const thetaFrontDeg = Math.atan2(cp1F.y - slvCrownFront.y, cp1F.x - slvCrownFront.x) * (180 / Math.PI);
-    tangentDepartureDeg = Number(Math.abs(thetaFrontDeg - thetaBackDeg).toFixed(2));
-    isTangentContinuous = isCrownContinuous && tangentDepartureDeg <= 1.0;
-  } else {
-    isTangentContinuous = isCrownContinuous;
-  }
+  let tangentDepartureDeg: number | undefined = undefined;
 
-  if (isCrownContinuous && !isTangentContinuous) {
-    reasons.push(`Sleeve crown apex exhibits C1 tangent discontinuity (departure: ${tangentDepartureDeg}° > 1.00°).`);
+  if (!cp1F || !cp2B) {
+    reasons.push('Missing tangent control points on sleeve cap at crown apex (C1 continuity cannot be verified).');
+  } else {
+    const vBack = { x: slvCrownBack.x - cp2B.x, y: slvCrownBack.y - cp2B.y };
+    const vFront = { x: cp1F.x - slvCrownFront.x, y: cp1F.y - slvCrownFront.y };
+    const lenBack = Math.hypot(vBack.x, vBack.y);
+    const lenFront = Math.hypot(vFront.x, vFront.y);
+
+    if (lenBack < 1e-6 || lenFront < 1e-6) {
+      reasons.push('Degenerate tangent vector on sleeve cap at crown apex (zero-length control vector).');
+    } else {
+      const thetaBackDeg = Math.atan2(vBack.y, vBack.x) * (180 / Math.PI);
+      const thetaFrontDeg = Math.atan2(vFront.y, vFront.x) * (180 / Math.PI);
+      tangentDepartureDeg = smallestAngularDifferenceDeg(thetaFrontDeg, thetaBackDeg);
+      isTangentContinuous = isCrownContinuous && tangentDepartureDeg <= 1.0;
+      if (isCrownContinuous && !isTangentContinuous) {
+        reasons.push(`Sleeve crown apex exhibits C1 tangent discontinuity (departure: ${tangentDepartureDeg.toFixed(2)}° > 1.00°).`);
+      }
+    }
   }
 
   // 2. Traversal direction checks:
@@ -442,7 +451,7 @@ export function evaluateSeamEndpointsAndOrientations(
     isConnected: isCrownContinuous,
     expectedDirection: 'sleeve crown apex (0,0) aligns with bodice shoulder seam junction with smooth C1 horizontal tangency',
     actualDirection: isCrownContinuous
-      ? (isTangentContinuous ? 'aligned at crown apex with C1 tangency' : `aligned at crown apex with C1 departure of ${tangentDepartureDeg}°`)
+      ? (isTangentContinuous ? 'aligned at crown apex with C1 tangency' : `aligned at crown apex with C1 departure of ${tangentDepartureDeg !== undefined ? tangentDepartureDeg.toFixed(2) : 'N/A'}°`)
       : 'disconnected crown',
     isOrientationValid: isCrownContinuous && isTangentContinuous,
     isPositionalCoincident: isCrownContinuous,
@@ -466,7 +475,7 @@ export function evaluateSeamEndpointsAndOrientations(
     }
   }
 
-  const parityDeltaCm = Number(Math.abs(frontInseamLengthCm - backInseamLengthCm).toFixed(3));
+  const parityDeltaCm = Math.abs(frontInseamLengthCm - backInseamLengthCm);
   const hasParity = parityDeltaCm <= 0.05;
   if (!hasParity && frontInseamLengthCm > 0) {
     reasons.push(`Sleeve underarm inseam parity mismatch: front inseam (${frontInseamLengthCm.toFixed(2)} cm) differs from back inseam (${backInseamLengthCm.toFixed(2)} cm) by ${parityDeltaCm.toFixed(3)} cm (> 0.05 cm).`);
@@ -474,6 +483,7 @@ export function evaluateSeamEndpointsAndOrientations(
 
   const isEndpointTopologyValid =
     isCrownContinuous &&
+    isTangentContinuous &&
     frontUnderarmMatch.isOrientationValid &&
     backUnderarmMatch.isOrientationValid &&
     hasParity &&
@@ -532,15 +542,15 @@ export function evaluateAssemblyNotches(
     if (!isApexAligned) {
       errors.push(`Sleeve crown notch is displaced by ${apexDist.toFixed(2)} cm from apex (0,0). Must be within 0.05 cm.`);
     }
-    const angleDiff = Math.abs(slvCrownNotch.normalAngleDeg - (-90));
-    const isAngleValid = angleDiff <= 15 || angleDiff >= 345;
+    const angleDiff = smallestAngularDifferenceDeg(slvCrownNotch.normalAngleDeg, -90);
+    const isAngleValid = angleDiff <= 15;
     if (!isAngleValid) {
       warnings.push(`Sleeve crown notch angle (${slvCrownNotch.normalAngleDeg}°) departs from vertical -90° by ${angleDiff.toFixed(1)}°.`);
     }
     crownCheck = {
       notchId: slvCrownNotch.id,
       position: slvCrownNotch.position,
-      apexDistanceCm: Number(apexDist.toFixed(3)),
+      apexDistanceCm: apexDist,
       isApexAligned,
       orientationAngleDeg: slvCrownNotch.normalAngleDeg,
       isOrientationValid: isAngleValid
@@ -561,18 +571,25 @@ export function evaluateAssemblyNotches(
     // Arc distance from underarm uFront = totalCurveLength - arcFromCrown
     const slvDiag = getArcLengthProjectionDiagnostics(sleeveFrontCap, slvFrontNotch.position, 0.005);
     const slvCurveLen = sleeveFrontCap.lengthCm();
-    const slvArcFromUnderarmCm = Number(Math.max(0, slvCurveLen - slvDiag.arcLengthCm).toFixed(2));
+    const slvArcFromUnderarmCm = Math.max(0, slvCurveLen - slvDiag.arcLengthCm);
 
-    const deltaCm = Number(Math.abs(bodiceArcFromUnderarmCm - slvArcFromUnderarmCm).toFixed(2));
+    const deltaCm = Math.abs(bodiceArcFromUnderarmCm - slvArcFromUnderarmCm);
     const isWithinTolerance = deltaCm <= 0.30;
     if (!isWithinTolerance) {
       errors.push(`Front scye notch arc distance mismatch: bodice is ${bodiceArcFromUnderarmCm.toFixed(2)} cm from underarm, sleeve is ${slvArcFromUnderarmCm.toFixed(2)} cm (delta: ${deltaCm.toFixed(2)} cm > 0.30 cm tolerance).`);
     }
 
     const slvDisplacement = slvDiag.projectionDistanceCm;
-    const isAttached = slvDisplacement <= 0.30;
-    if (!isAttached) {
+    const fbDisplacement = fbDiag.projectionDistanceCm;
+    const isSlvAttached = slvDisplacement <= 0.30;
+    const isFbAttached = fbDisplacement <= 0.30;
+    const isAttached = isSlvAttached && isFbAttached;
+
+    if (!isSlvAttached) {
       errors.push(`Sleeve front notch is displaced by ${slvDisplacement.toFixed(2)} cm from sleeve cap contour (> 0.30 cm).`);
+    }
+    if (!isFbAttached) {
+      errors.push(`Bodice chest/armhole notch is displaced by ${fbDisplacement.toFixed(2)} cm from front armhole contour (> 0.30 cm).`);
     }
 
     frontPairing = {
@@ -581,10 +598,11 @@ export function evaluateAssemblyNotches(
       sleeveNotchPosition: slvFrontNotch.position,
       bodiceNotchPosition: fbChestNotch.position,
       sleeveArcFromUnderarmCm: slvArcFromUnderarmCm,
-      bodiceArcFromUnderarmCm: Number(bodiceArcFromUnderarmCm.toFixed(2)),
+      bodiceArcFromUnderarmCm,
       deltaCm,
       isWithinTolerance,
       sleeveDisplacementCm: slvDisplacement,
+      bodiceDisplacementCm: fbDisplacement,
       isAttachedToContour: isAttached,
       orientationAngleDeg: slvFrontNotch.normalAngleDeg,
       isOrientationValid: true
@@ -622,8 +640,8 @@ export function evaluateAssemblyNotches(
     const sArc1 = slvDiag1.arcLengthCm;
     const sArc2 = slvDiag2.arcLengthCm;
 
-    const delta1 = Number(Math.abs(bArc1 - sArc1).toFixed(2));
-    const delta2 = Number(Math.abs(bArc2 - sArc2).toFixed(2));
+    const delta1 = Math.abs(bArc1 - sArc1);
+    const delta2 = Math.abs(bArc2 - sArc2);
 
     const isPair1Within = delta1 <= 0.30;
     const isPair2Within = delta2 <= 0.30;
@@ -635,8 +653,8 @@ export function evaluateAssemblyNotches(
       errors.push(`Back scye notch 2 arc distance mismatch: bodice ${bArc2.toFixed(2)} cm vs sleeve ${sArc2.toFixed(2)} cm (delta: ${delta2.toFixed(2)} cm > 0.30 cm).`);
     }
 
-    const slvSpacing = Number(Math.abs(sArc2 - sArc1).toFixed(2));
-    const bodiceSpacing = Number(Math.abs(bArc2 - bArc1).toFixed(2));
+    const slvSpacing = Math.abs(sArc2 - sArc1);
+    const bodiceSpacing = Math.abs(bArc2 - bArc1);
     // Required spacing: 1.2 cm +/- 0.30 cm [0.90 cm - 1.50 cm]
     const isSlvSpacingValid = slvSpacing >= 0.90 && slvSpacing <= 1.50;
     const isBodiceSpacingValid = bodiceSpacing >= 0.90 && bodiceSpacing <= 1.50;
@@ -655,11 +673,20 @@ export function evaluateAssemblyNotches(
       errors.push('Back scye double notches reversed in ordering: notch 1 must be closer to underarm than notch 2.');
     }
 
-    const disp1 = slvDiag1.projectionDistanceCm;
-    const disp2 = slvDiag2.projectionDistanceCm;
-    const areAttached = disp1 <= 0.30 && disp2 <= 0.30;
-    if (!areAttached) {
-      errors.push(`Sleeve back notch contour displacement exceeds 0.30 cm (disp1: ${disp1.toFixed(2)} cm, disp2: ${disp2.toFixed(2)} cm).`);
+    const slvDisp1 = slvDiag1.projectionDistanceCm;
+    const slvDisp2 = slvDiag2.projectionDistanceCm;
+    const bbDisp1 = bbDiag1.projectionDistanceCm;
+    const bbDisp2 = bbDiag2.projectionDistanceCm;
+
+    const areSlvAttached = slvDisp1 <= 0.30 && slvDisp2 <= 0.30;
+    const areBbAttached = bbDisp1 <= 0.30 && bbDisp2 <= 0.30;
+    const areAttached = areSlvAttached && areBbAttached;
+
+    if (!areSlvAttached) {
+      errors.push(`Sleeve back notch contour displacement exceeds 0.30 cm (disp1: ${slvDisp1.toFixed(2)} cm, disp2: ${slvDisp2.toFixed(2)} cm).`);
+    }
+    if (!areBbAttached) {
+      errors.push(`Bodice back scye notch contour displacement exceeds 0.30 cm (disp1: ${bbDisp1.toFixed(2)} cm, disp2: ${bbDisp2.toFixed(2)} cm).`);
     }
 
     backPairing = {
@@ -667,10 +694,10 @@ export function evaluateAssemblyNotches(
       sleeveNotch2Id: sortedSlv[1].id,
       bodiceNotch1Id: sortedBb[0].id,
       bodiceNotch2Id: sortedBb[1].id,
-      sleeveNotch1ArcCm: Number(sArc1.toFixed(2)),
-      sleeveNotch2ArcCm: Number(sArc2.toFixed(2)),
-      bodiceNotch1ArcCm: Number(bArc1.toFixed(2)),
-      bodiceNotch2ArcCm: Number(bArc2.toFixed(2)),
+      sleeveNotch1ArcCm: sArc1,
+      sleeveNotch2ArcCm: sArc2,
+      bodiceNotch1ArcCm: bArc1,
+      bodiceNotch2ArcCm: bArc2,
       deltaNotch1Cm: delta1,
       deltaNotch2Cm: delta2,
       isPair1WithinTolerance: isPair1Within,
@@ -679,8 +706,10 @@ export function evaluateAssemblyNotches(
       bodiceSpacingCm: bodiceSpacing,
       isSpacingValid,
       isOrderingValid,
-      sleeveDisplacement1Cm: disp1,
-      sleeveDisplacement2Cm: disp2,
+      sleeveDisplacement1Cm: slvDisp1,
+      sleeveDisplacement2Cm: slvDisp2,
+      bodiceDisplacement1Cm: bbDisp1,
+      bodiceDisplacement2Cm: bbDisp2,
       areAttachedToContour: areAttached,
       orientationAngle1Deg: sortedSlv[0].normalAngleDeg,
       orientationAngle2Deg: sortedSlv[1].normalAngleDeg,
