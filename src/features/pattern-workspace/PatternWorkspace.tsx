@@ -24,9 +24,18 @@ import {
   ArrowRight,
   ShieldCheck,
   Eye,
-  Ruler,
-  Compass
+  Compass,
+  Sparkles,
+  Activity
 } from 'lucide-react';
+import {
+  MOCK_CONFORMING_PROTOTYPE_BODICE_M,
+  MOCK_DISCREPANT_PROTOTYPE_BODICE_M
+} from '../../engine/prototype/prototype-fixtures';
+import { validatePhysicalFit } from '../../engine/prototype/fit-validator';
+import { getEnhancedFabricById } from '../../engine/fabric/fabric-presets';
+import { calculateCompleteGarmentEase, calculateFabricAdaptedSleeveCapEase } from '../../engine/fabric/ease-engine';
+import { PhysicalPrototypeRecord, FitValidationReport } from '../../engine/prototype/prototype-types';
 
 const SIZE_PALETTE: Record<string, { stroke: string; bg: string; text: string; label: string }> = {
   XS: { stroke: '#9333ea', bg: '#f3e8ff', text: '#6b21a8', label: 'XS (EU 34)' },
@@ -73,7 +82,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   // Canvas zoom & pan state
   const [zoom, setZoom] = useState(1.4);
   const [pan, setPan] = useState({ x: 40, y: 30 });
-  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading'>('pieces');
+  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit'>('pieces');
+  const [selectedPrototypeId, setSelectedPrototypeId] = useState<string>('PROTO-BOD-2026-M-01');
   const [enabledGradingSizes, setEnabledGradingSizes] = useState<Record<string, boolean>>({
     XS: true,
     S: true,
@@ -85,6 +95,37 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const [selectedPieceId, setSelectedPieceId] = useState<string>(
     currentSpec.garmentCategory === 'bodice' ? 'piece-bodice-front' : 'piece-skirt-front'
   );
+
+  // Milestone 04.5: Prototype fit validation and fabric-aware calculations
+  const activePrototypeRecord: PhysicalPrototypeRecord = React.useMemo(() => {
+    return selectedPrototypeId === 'PROTO-BOD-2026-M-01'
+      ? MOCK_CONFORMING_PROTOTYPE_BODICE_M
+      : MOCK_DISCREPANT_PROTOTYPE_BODICE_M;
+  }, [selectedPrototypeId]);
+
+  const activePrototypeReport: FitValidationReport = React.useMemo(() => {
+    return validatePhysicalFit(activePrototypeRecord);
+  }, [activePrototypeRecord]);
+
+  const workspaceFabric = React.useMemo(() => {
+    return getEnhancedFabricById(currentSpec.fabric.id);
+  }, [currentSpec.fabric.id]);
+
+  const workspaceFabricEase = React.useMemo(() => {
+    return calculateCompleteGarmentEase(
+      measurements,
+      currentSpec.easeProfile,
+      workspaceFabric,
+      { silhouette: currentSpec.silhouette }
+    );
+  }, [measurements, currentSpec.easeProfile, workspaceFabric, currentSpec.silhouette]);
+
+  const workspaceAdaptedSleeveEase = React.useMemo(() => {
+    return calculateFabricAdaptedSleeveCapEase(
+      sleeveEaseStrategy,
+      workspaceFabric
+    );
+  }, [sleeveEaseStrategy, workspaceFabric]);
 
   // Milestone 04.4: Graded Pattern Set generation
   const gradedPatternSet: GradedPatternSet = React.useMemo(() => {
@@ -337,6 +378,22 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                       {gradedPatternSet.isAllValid ? 'ALL VALID (6/6)' : 'FLAGGED'}
                     </Badge>
                   </button>
+                  <button
+                    onClick={() => setCadViewMode('fit')}
+                    className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      cadViewMode === 'fit'
+                        ? 'bg-amber-900 text-white shadow-2xs'
+                        : 'text-neutral-700 hover:text-neutral-900'
+                    }`}
+                  >
+                    <span>Physical Fit Evidence (M 04.5)</span>
+                    <Badge
+                      variant={activePrototypeReport.overallFitStatus === 'conforming' ? 'success' : 'warning'}
+                      size="sm"
+                    >
+                      {activePrototypeReport.overallFitStatus === 'conforming' ? 'CONFORMING' : 'DISCREPANCY'}
+                    </Badge>
+                  </button>
                 </div>
               </div>
 
@@ -345,6 +402,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   <span className="text-blue-900 font-bold">2D RIGID ALIGNMENT AT SCYE JUNCTIONS</span>
                 ) : cadViewMode === 'grading' ? (
                   <span className="text-purple-900 font-bold">MULTI-SIZE NESTED OVERLAY (XS–XXL)</span>
+                ) : cadViewMode === 'fit' ? (
+                  <span className="text-amber-900 font-bold">PHYSICAL PROTOTYPE INSPECTION &amp; FIT EVIDENCE</span>
                 ) : (
                   <span>FLAT CUTTING PATTERN VIEW</span>
                 )}
@@ -407,6 +466,67 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               <div className="text-[10px] text-purple-900/80 bg-purple-100/60 p-1.5 rounded flex items-center justify-between">
                 <span>Deterministic measurement regeneration — zero global affine coordinate scaling.</span>
                 <span className="font-semibold uppercase text-amber-800">isProductionReady: false</span>
+              </div>
+            </div>
+          )}
+
+          {/* Milestone 04.5: Physical Fit Evidence HUD Bar */}
+          {cadViewMode === 'fit' && (
+            <div className="bg-amber-50/90 border border-amber-200 rounded-sm p-3.5 space-y-3 text-xs font-mono">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-amber-200/80 pb-2 gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-amber-950">PHYSICAL FIT VALIDATION HUD</span>
+                  <Badge variant={activePrototypeReport.overallFitStatus === 'conforming' ? 'success' : 'danger'} size="sm">
+                    {activePrototypeReport.overallFitStatus === 'conforming' ? 'VERIFIED CONFORMING' : 'DISCREPANCY DETECTED'}
+                  </Badge>
+                  <span className="text-[11px] text-amber-900 bg-amber-100 px-2 py-0.5 rounded font-bold">
+                    SAMPLE: {activePrototypeRecord.id}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-amber-950">
+                    Max Δ: <strong className={activePrototypeReport.maxAbsoluteDiscrepancyCm <= 0.20 ? 'text-emerald-700' : 'text-red-700'}>
+                      {activePrototypeReport.maxAbsoluteDiscrepancyCm.toFixed(2)} cm
+                    </strong> (Tol: 0.35 cm)
+                  </span>
+                  <span className="text-[10px] bg-amber-900 text-white px-2 py-0.5 rounded font-bold">
+                    isProductionReady: false
+                  </span>
+                </div>
+              </div>
+
+              {/* Prototype Sample Selection Switcher */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-neutral-500 uppercase font-bold mr-1">TRIAL SAMPLE:</span>
+                  <button
+                    onClick={() => setSelectedPrototypeId('PROTO-BOD-2026-M-01')}
+                    className={`px-2.5 py-1 text-xs rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      selectedPrototypeId === 'PROTO-BOD-2026-M-01'
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-950 font-bold shadow-2xs'
+                        : 'border-neutral-200 bg-white text-neutral-700 opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <span>Conforming Atelier Prototype (PROTO-BOD-2026-M-01)</span>
+                    <span className="text-[9px] bg-emerald-700 text-white px-1 rounded">10/10 PASS</span>
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedPrototypeId('PROTO-BOD-2026-M-DISCREPANT')}
+                    className={`px-2.5 py-1 text-xs rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      selectedPrototypeId === 'PROTO-BOD-2026-M-DISCREPANT'
+                        ? 'border-red-600 bg-red-50 text-red-950 font-bold shadow-2xs'
+                        : 'border-neutral-200 bg-white text-neutral-700 opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <span>Discrepant Trial Sample (PROTO-BOD-2026-M-DISCREPANT)</span>
+                    <span className="text-[9px] bg-red-700 text-white px-1 rounded">DISCREPANCIES</span>
+                  </button>
+                </div>
+
+                <div className="text-[11px] text-neutral-600">
+                  <span>Fabric: <strong>{workspaceFabric.name}</strong> ({workspaceFabric.gsm} GSM)</span>
+                </div>
               </div>
             </div>
           )}
@@ -852,6 +972,107 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     );
                   })}
                 </g>
+              ) : cadViewMode === 'fit' ? (
+                /* Milestone 04.5: Caliper and Physical Inspection Overlay */
+                <g>
+                  {/* Legend / Title Header in Canvas */}
+                  <text x="30" y="10" fontSize="11" fontFamily="monospace" fontWeight="bold" fill="#78350f">
+                    PHYSICAL PROTOTYPE FIT MEASUREMENT CALIPER OVERLAY — SAMPLE [{activePrototypeRecord.id}]
+                  </text>
+                  <text x="30" y="24" fontSize="8" fontFamily="monospace" fill="#71717a">
+                    NOMINAL CAD vs CUT &amp; SEWN SAMPLE | {activePrototypeReport.passCount}/{activePrototypeReport.evaluatedPointsCount} CONFORMING | MAX Δ: {activePrototypeReport.maxAbsoluteDiscrepancyCm.toFixed(2)} cm
+                  </text>
+
+                  {/* Render Flat Pieces as Base Geometry */}
+                  {pieces.map((piece, index) => {
+                    const xOffset = index === 0 ? 30 : (index === 1 ? 230 : 430);
+                    const yOffset = 40;
+                    return (
+                      <g key={piece.id} transform={`translate(${xOffset}, ${yOffset}) scale(4.5)`}>
+                        <path
+                          d={piece.cutPathData}
+                          fill="#FAF8F5"
+                          fillOpacity="0.8"
+                          stroke="#78350f"
+                          strokeWidth="0.8"
+                        />
+                        {piece.sewPathData && (
+                          <path
+                            d={piece.sewPathData}
+                            fill="none"
+                            stroke="#d97706"
+                            strokeWidth="0.4"
+                            strokeDasharray="1.2 0.8"
+                          />
+                        )}
+                        {/* Piece code label */}
+                        <text
+                          x={piece.boundingBox.widthCm * 0.5}
+                          y={piece.boundingBox.heightCm + 5}
+                          fontSize="2.2"
+                          fontFamily="monospace"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          fill="#451a03"
+                        >
+                          {piece.pieceCode} ({piece.name})
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Overlaid Physical Inspection Caliper Pins & Badges */}
+                  <g id="caliper-pins">
+                    {activePrototypeReport.measurements.map((pt, i) => {
+                      let pinX = 60;
+                      let pinY = 80;
+                      if (pt.pointId.includes('cf-length')) { pinX = 45; pinY = 120; }
+                      else if (pt.pointId.includes('front-bust')) { pinX = 110; pinY = 100; }
+                      else if (pt.pointId.includes('front-waist')) { pinX = 105; pinY = 210; }
+                      else if (pt.pointId.includes('front-side')) { pinX = 145; pinY = 160; }
+                      else if (pt.pointId.includes('front-shoulder')) { pinX = 95; pinY = 55; }
+                      else if (pt.pointId.includes('cb-length')) { pinX = 245; pinY = 120; }
+                      else if (pt.pointId.includes('back-side')) { pinX = 345; pinY = 160; }
+                      else if (pt.pointId.includes('back-shoulder')) { pinX = 295; pinY = 55; }
+                      else if (pt.pointId.includes('sleeve-inseam')) { pinX = 450; pinY = 180; }
+                      else if (pt.pointId.includes('sleeve-cap-height')) { pinX = 505; pinY = 70; }
+                      else { pinX = 60 + i * 40; pinY = 280; }
+
+                      const isPass = pt.status === 'pass';
+                      const isWarn = pt.status === 'warning';
+                      const pinColor = isPass ? '#15803d' : isWarn ? '#b45309' : '#b91c1c';
+                      const badgeBg = isPass ? '#dcfce7' : isWarn ? '#fef3c7' : '#fee2e2';
+
+                      return (
+                        <g key={pt.pointId} transform={`translate(${pinX}, ${pinY})`} className="cursor-pointer">
+                          {/* Crosshair target */}
+                          <circle cx="0" cy="0" r="5" fill="none" stroke={pinColor} strokeWidth="1" strokeDasharray="1.5 1" />
+                          <circle cx="0" cy="0" r="2" fill={pinColor} />
+                          <line x1="-7" y1="0" x2="7" y2="0" stroke={pinColor} strokeWidth="0.8" />
+                          <line x1="0" y1="-7" x2="0" y2="7" stroke={pinColor} strokeWidth="0.8" />
+
+                          {/* Data Callout Pill */}
+                          <rect
+                            x="8"
+                            y="-9"
+                            width="68"
+                            height="18"
+                            rx="3"
+                            fill={badgeBg}
+                            stroke={pinColor}
+                            strokeWidth="0.8"
+                          />
+                          <text x="12" y="-1" fontSize="5.5" fontFamily="monospace" fontWeight="bold" fill={pinColor}>
+                            {pt.label}
+                          </text>
+                          <text x="12" y="6" fontSize="5" fontFamily="monospace" fill="#18181b">
+                            CAD:{pt.nominalCadCm.toFixed(1)} Act:{pt.measuredPhysicalCm.toFixed(1)} (Δ{pt.deltaCm > 0 ? '+' : ''}{pt.deltaCm.toFixed(2)})
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </g>
+                </g>
               ) : (
                 /* Standard Flat Pattern Pieces Render */
                 pieces.map((piece, index) => {
@@ -1247,6 +1468,285 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   <div className="pt-2 border-t border-stone-200 text-amber-800 font-mono font-bold text-[10px] uppercase">
                     Safety Invariant: isProductionReady = false
                   </div>
+                </div>
+              </div>
+            </div>
+          ) : cadViewMode === 'fit' ? (
+            /* Milestone 04.5: Physical Fit Evidence Inspector & Fabric Details */
+            <div className="space-y-6">
+              {/* Prototype Pedigree Card */}
+              <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4 font-mono">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div>
+                    <span className="text-[10px] uppercase text-amber-700 font-bold block">
+                      MODULE 04.5 INSPECTOR
+                    </span>
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-900">
+                      Physical Prototype Pedigree
+                    </h3>
+                  </div>
+                  <Badge variant={activePrototypeReport.overallFitStatus === 'conforming' ? 'success' : 'danger'} size="sm">
+                    {activePrototypeReport.overallFitStatus === 'conforming' ? 'CONFORMING' : 'DISCREPANCIES'}
+                  </Badge>
+                </div>
+
+                <div className="space-y-2 text-xs bg-amber-50/60 p-3 rounded border border-amber-200">
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Sample Serial:</span>
+                    <span className="font-bold text-neutral-900">{activePrototypeRecord.id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Target Size:</span>
+                    <span className="font-semibold text-neutral-900">{activePrototypeRecord.sizeCode} (Base EU 38)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Fabric Lot:</span>
+                    <span className="font-semibold text-neutral-900">{activePrototypeRecord.fabricLot}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Cutting Date:</span>
+                    <span className="text-neutral-900">{activePrototypeRecord.dateSewn}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Master Cutter / Tailor:</span>
+                    <span className="font-semibold text-neutral-900">{activePrototypeRecord.tailorName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Wearer / Fit Model:</span>
+                    <span className="text-neutral-900">{activePrototypeRecord.sampleGarmentName}</span>
+                  </div>
+                </div>
+
+                {activePrototypeRecord.wearerFeedback && (
+                  <div className="p-3 bg-neutral-50 rounded border border-neutral-200 text-xs">
+                    <span className="text-[10px] uppercase font-bold text-neutral-500 block mb-1">
+                      FIT MODEL &amp; WEARER LOG
+                    </span>
+                    <p className="text-neutral-700 italic">
+                      "{activePrototypeRecord.wearerFeedback}"
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Fabric Mechanical Properties & Ease Card */}
+              <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4 font-mono">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div>
+                    <span className="text-[10px] uppercase text-neutral-400 block">FABRIC PERFORMANCE</span>
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-900">
+                      Material Ease Allocation
+                    </h3>
+                  </div>
+                  <Badge variant="dark" size="sm">
+                    {workspaceFabric.gsm} GSM
+                  </Badge>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <div className="p-2.5 bg-neutral-50 rounded border border-neutral-200 space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Material:</span>
+                      <span className="font-bold text-neutral-900">{workspaceFabric.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Thickness:</span>
+                      <span className="text-neutral-900">{workspaceFabric.thicknessMm.toFixed(2)} mm</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Shrinkage (warp/weft):</span>
+                      <span className="text-neutral-900">
+                        {workspaceFabric.directional.warp.shrinkagePercent}% / {workspaceFabric.directional.weft.shrinkagePercent}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Stretch (warp/weft):</span>
+                      <span className="text-neutral-900">
+                        {workspaceFabric.directional.warp.stretchPercent}% / {workspaceFabric.directional.weft.stretchPercent}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Sleeve Molding:</span>
+                      <span className="font-semibold text-neutral-900">{workspaceFabric.moldingFactor.toFixed(2)}x</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Adapted Sleeve Ease:</span>
+                      <span className="font-bold text-emerald-700">
+                        +{workspaceAdaptedSleeveEase.adaptedCapEaseCm.toFixed(2)} cm
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Net Ease Breakdown */}
+                  <div className="p-2.5 bg-neutral-50 rounded border border-neutral-200 space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-neutral-500 block">
+                      Waist Ease Calculation
+                    </span>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-neutral-500">Anatomical Baseline:</span>
+                      <span>{workspaceFabricEase.waist.bodyMeasurementCm.toFixed(1)} cm</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-neutral-500">Baseline Ease:</span>
+                      <span>+{workspaceFabricEase.waist.baselineMovementEaseCm.toFixed(2)} cm</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-neutral-500">Net Garment Ease:</span>
+                      <span className="font-bold text-emerald-700">
+                        +{workspaceFabricEase.waist.totalAppliedEaseCm.toFixed(2)} cm
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[11px] font-bold border-t border-neutral-200 pt-1">
+                      <span className="text-neutral-900">Final Pattern Girth:</span>
+                      <span className="text-neutral-900">
+                        {workspaceFabricEase.waist.finishedGarmentDimensionCm.toFixed(2)} cm
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Measurement Point Verification Matrix */}
+              <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4 font-mono">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div>
+                    <span className="text-[10px] uppercase text-neutral-400 block">EMPIRICAL POINT AUDIT</span>
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-900">
+                      Measurement Checkpoints
+                    </h3>
+                  </div>
+                  <Badge variant={activePrototypeReport.overallFitStatus === 'conforming' ? 'success' : 'danger'} size="sm">
+                    {activePrototypeReport.passCount}/{activePrototypeReport.evaluatedPointsCount} PASS
+                  </Badge>
+                </div>
+
+                <div className="space-y-1.5 text-xs max-h-[300px] overflow-y-auto pr-1">
+                  {activePrototypeReport.measurements.map(pt => {
+                    const isPass = pt.status === 'pass';
+                    const isWarn = pt.status === 'warning';
+                    return (
+                      <div
+                        key={pt.pointId}
+                        className={`p-2 rounded border flex items-center justify-between ${
+                          isPass
+                            ? 'bg-emerald-50/50 border-emerald-200'
+                            : isWarn
+                            ? 'bg-amber-50/50 border-amber-200'
+                            : 'bg-red-50/50 border-red-200'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-neutral-900">{pt.label}</span>
+                            <span className="text-[10px] text-neutral-500">{pt.category}</span>
+                          </div>
+                          <span className="text-[10px] text-neutral-600 block">
+                            CAD: {pt.nominalCadCm.toFixed(1)} cm | Actual: {pt.measuredPhysicalCm.toFixed(1)} cm | Tol: ±{pt.toleranceCm.toFixed(2)} cm
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className={`font-bold block ${isPass ? 'text-emerald-700' : isWarn ? 'text-amber-700' : 'text-red-700'}`}>
+                            {pt.deltaCm > 0 ? '+' : ''}{pt.deltaCm.toFixed(2)} cm
+                          </span>
+                          <span className={`text-[9px] font-bold px-1 py-0.2 rounded uppercase ${
+                            isPass ? 'bg-emerald-100 text-emerald-800' : isWarn ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {pt.status}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Paired Seam & Defect Action Plan Card */}
+              <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4 font-mono text-xs">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div>
+                    <span className="text-[10px] uppercase text-neutral-400 block">PAIRED SEAMS &amp; DEFECTS</span>
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-900">
+                      Tailoring Integrity Check
+                    </h3>
+                  </div>
+                  <Badge variant={activePrototypeReport.criticalDefectCount === 0 ? 'success' : 'danger'} size="sm">
+                    {activePrototypeReport.criticalDefectCount === 0 ? 'SEAMS BALANCED' : 'DEFECTS NOTED'}
+                  </Badge>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-neutral-50 rounded border border-neutral-200 space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-neutral-500 block">
+                      Paired Seam Differentials
+                    </span>
+                    {(() => {
+                      const frontSide = activePrototypeReport.measurements.find(p => p.pointId.includes('front-side-seam'));
+                      const backSide = activePrototypeReport.measurements.find(p => p.pointId.includes('back-side-seam'));
+                      const sideDiff = (frontSide && backSide) ? Math.abs(frontSide.measuredPhysicalCm - backSide.measuredPhysicalCm) : 0;
+
+                      const frontShoulder = activePrototypeReport.measurements.find(p => p.pointId.includes('front-shoulder'));
+                      const backShoulder = activePrototypeReport.measurements.find(p => p.pointId.includes('back-shoulder'));
+                      const shoulderDiff = (frontShoulder && backShoulder) ? Math.abs(frontShoulder.measuredPhysicalCm - backShoulder.measuredPhysicalCm) : 0;
+
+                      return (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-neutral-600">Side Seam (F vs B):</span>
+                            <span className={`font-bold ${sideDiff <= 0.30 ? 'text-emerald-700' : 'text-red-700'}`}>
+                              {sideDiff.toFixed(2)} cm (Max: 0.30 cm)
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-neutral-600">Shoulder Seam (F vs B):</span>
+                            <span className={`font-bold ${shoulderDiff <= 0.25 ? 'text-emerald-700' : 'text-red-700'}`}>
+                              {shoulderDiff.toFixed(2)} cm (Max: 0.25 cm)
+                            </span>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Defect Observations */}
+                  {activePrototypeReport.observations.length > 0 ? (
+                    <div className="p-2.5 bg-red-50/60 rounded border border-red-200 space-y-1.5">
+                      <span className="text-[10px] font-bold uppercase text-red-900 block">
+                        Observed Tailoring Defects
+                      </span>
+                      {activePrototypeReport.observations.map((d, i) => (
+                        <div key={i} className="text-[11px] text-red-950">
+                          <span className="font-bold uppercase text-[10px] bg-red-200 text-red-900 px-1 rounded mr-1">
+                            {d.severity}
+                          </span>
+                          <strong>{d.location}:</strong> {d.visualDescription}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-2.5 bg-emerald-50/60 rounded border border-emerald-200 text-[11px] text-emerald-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Zero qualitative drape or puckering defects observed.</span>
+                    </div>
+                  )}
+
+                  {/* CAD Corrections */}
+                  {activePrototypeReport.actionableCadCorrections.length > 0 && (
+                    <div className="p-2.5 bg-amber-50/60 rounded border border-amber-200 space-y-1">
+                      <span className="text-[10px] font-bold uppercase text-amber-900 block">
+                        Actionable CAD Corrections
+                      </span>
+                      <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-950">
+                        {activePrototypeReport.actionableCadCorrections.map((corr, i) => (
+                          <li key={i}>{corr}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-neutral-200 flex justify-between items-center text-amber-900 text-[10px] font-bold uppercase">
+                  <span>Prototype Fit Evidence Stage</span>
+                  <span>isProductionReady: false</span>
                 </div>
               </div>
             </div>

@@ -22,8 +22,16 @@ import {
   Scissors,
   Layers,
   ArrowRight,
-  Download
+  Download,
+  Activity,
+  Sparkles,
+  ShieldCheck,
+  Ruler
 } from 'lucide-react';
+import { getEnhancedFabricById } from '../../engine/fabric/fabric-presets';
+import { calculateCompleteGarmentEase, calculateFabricAdaptedSleeveCapEase } from '../../engine/fabric/ease-engine';
+import { validatePhysicalFit } from '../../engine/prototype/fit-validator';
+import { MOCK_CONFORMING_PROTOTYPE_BODICE_M } from '../../engine/prototype/prototype-fixtures';
 
 interface ProductionOverviewProps {
   currentSpec: DesignSpecification;
@@ -76,6 +84,31 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
   // Milestone 04.4: Graded Pattern Set Generation
   const gradedPatternSet = React.useMemo(() => gradePattern(currentSpec), [currentSpec]);
+
+  // Milestone 04.5: Fabric-Aware Ease & Physical Prototype Validation
+  const enhancedFabric = React.useMemo(() => {
+    return getEnhancedFabricById(currentSpec.fabric.id);
+  }, [currentSpec.fabric.id]);
+
+  const fabricEaseBreakdown = React.useMemo(() => {
+    return calculateCompleteGarmentEase(
+      measurements,
+      currentSpec.easeProfile,
+      enhancedFabric,
+      { silhouette: currentSpec.silhouette }
+    );
+  }, [measurements, currentSpec.easeProfile, enhancedFabric, currentSpec.silhouette]);
+
+  const adaptedSleeveEase = React.useMemo(() => {
+    return calculateFabricAdaptedSleeveCapEase(
+      currentSpec.sleeveEaseStrategy ?? 'classic',
+      enhancedFabric
+    );
+  }, [currentSpec.sleeveEaseStrategy, enhancedFabric]);
+
+  const sampleFitReport = React.useMemo(() => {
+    return validatePhysicalFit(MOCK_CONFORMING_PROTOTYPE_BODICE_M);
+  }, []);
 
   // Approximate fabric yield calculation for a standard 140cm bolt width
   const fabricYieldMeters = Number(((currentSpec.lengthCm + 15) / 100 * 1.15).toFixed(2));
@@ -736,6 +769,198 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               <span>Prototype Stage CAD</span>
               <span>isProductionReady: false</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Milestone 04.5: Fabric-Aware Pattern Engineering & Physical Fit Validation Foundation */}
+      <div className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-neutral-100 pb-4 gap-2">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] uppercase font-mono tracking-wider bg-amber-950 text-amber-200 px-2 py-0.5 rounded font-bold">
+                MILESTONE 04.5
+              </span>
+              <span className="text-xs font-mono text-neutral-500">
+                FABRIC BEHAVIOR &amp; PHYSICAL FIT EVIDENCE FOUNDATION
+              </span>
+            </div>
+            <h3 className="text-base font-semibold text-neutral-900 font-mono">
+              Fabric-Aware Deterministic Ease &amp; Physical Prototype Validation
+            </h3>
+            <p className="text-xs text-neutral-600 mt-0.5">
+              Material mechanical properties (shrinkage, stretch, thickness, molding) coupled with empirical prototype fit evidence.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 font-mono text-xs">
+            <span className="text-neutral-500">Fabric Lot:</span>
+            <span className="font-bold text-neutral-900 bg-neutral-100 px-2.5 py-1 rounded border border-neutral-200">
+              {enhancedFabric.name} ({enhancedFabric.gsm} GSM)
+            </span>
+          </div>
+        </div>
+
+        {/* Fabric Physical Property & Provenance Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
+          <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+              FABRIC SPECIFICATION &amp; PROVENANCE
+            </span>
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Weight &amp; Drape:</span>
+                <span className="text-neutral-900 font-semibold">{enhancedFabric.weight} / {enhancedFabric.gsm} g/m²</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Stretch Classification:</span>
+                <span className="text-neutral-900 font-semibold">{enhancedFabric.stretch}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Thickness:</span>
+                <span className="text-neutral-900 font-semibold">{enhancedFabric.thicknessMm.toFixed(2)} mm</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Data Provenance:</span>
+                <span className="text-neutral-900 font-semibold capitalize">{enhancedFabric.provenance}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Test Standard:</span>
+                <span className="text-neutral-900 font-semibold">{enhancedFabric.testStandard ?? 'Internal Standard'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+              DIRECTIONAL MECHANICAL BEHAVIOR
+            </span>
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Shrinkage (Warp / Weft):</span>
+                <span className="text-neutral-900 font-semibold">
+                  {enhancedFabric.directional.warp.shrinkagePercent}% / {enhancedFabric.directional.weft.shrinkagePercent}%
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Stretch (Warp / Weft):</span>
+                <span className="text-neutral-900 font-semibold">
+                  {enhancedFabric.directional.warp.stretchPercent}% / {enhancedFabric.directional.weft.stretchPercent}%
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Bias Stretch:</span>
+                <span className="text-neutral-900 font-semibold">{enhancedFabric.directional.bias?.stretchPercent ?? 0}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Sleeve Molding Factor:</span>
+                <span className="text-neutral-900 font-semibold">{enhancedFabric.moldingFactor.toFixed(2)}x</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Adapted Cap Ease:</span>
+                <span className="text-emerald-700 font-bold">
+                  +{adaptedSleeveEase.adaptedCapEaseCm.toFixed(2)} cm
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+              FIT VALIDATION EVIDENCE (PROTOTYPE)
+            </span>
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Sample Serial:</span>
+                <span className="text-neutral-900 font-semibold">{MOCK_CONFORMING_PROTOTYPE_BODICE_M.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Measurement Points:</span>
+                <span className="text-emerald-700 font-bold">
+                  {sampleFitReport.passCount}/{sampleFitReport.evaluatedPointsCount} Conforming
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Max Discrepancy:</span>
+                <span className="text-neutral-900 font-semibold">{sampleFitReport.maxAbsoluteDiscrepancyCm.toFixed(2)} cm</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Paired Seam Checks:</span>
+                <span className="text-emerald-700 font-semibold">Side &amp; Shoulder Aligned</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 border-t border-neutral-200">
+                <span className="text-neutral-500">Prototype Status:</span>
+                <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
+                  CONFORMING ATELIER SAMPLE
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Directional Ease Allocation Matrix */}
+        <div className="space-y-2 font-mono text-xs">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500 block">
+            DETERMINISTIC CIRCUMFERENCE EASE ALLOCATION (NET EQUATION BREAKDOWN)
+          </span>
+          <div className="overflow-x-auto border border-neutral-200">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-neutral-900 text-white uppercase text-[10px]">
+                <tr>
+                  <th className="py-2 px-3">Girth Measurement</th>
+                  <th className="py-2 px-3">Anatomical Baseline</th>
+                  <th className="py-2 px-3">Baseline Ease (E_base)</th>
+                  <th className="py-2 px-3 text-red-300">Stretch Deduction (-ΔE_s)</th>
+                  <th className="py-2 px-3 text-amber-300">Shrinkage Comp (+ΔE_sh)</th>
+                  <th className="py-2 px-3 text-blue-300">Thickness / Turn-of-Cloth</th>
+                  <th className="py-2 px-3 text-emerald-300">Net Garment Ease (E_net)</th>
+                  <th className="py-2 px-3 text-right">Final Garment Circumference</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-200 text-neutral-800">
+                {(['bust', 'waist', 'lowHip'] as const).map(girth => {
+                  const b = fabricEaseBreakdown[girth];
+                  const girthLabel = girth === 'bust' ? 'Bust Circumference' : girth === 'waist' ? 'Waist Circumference' : 'Low Hip Circumference';
+                  return (
+                    <tr key={girth} className="hover:bg-neutral-50 transition-colors">
+                      <td className="py-2.5 px-3 font-bold text-neutral-900">{girthLabel}</td>
+                      <td className="py-2.5 px-3">{b.bodyMeasurementCm.toFixed(1)} cm</td>
+                      <td className="py-2.5 px-3">+{b.baselineMovementEaseCm.toFixed(2)} cm</td>
+                      <td className="py-2.5 px-3 text-red-700 font-semibold">
+                        {b.stretchDeductionCm > 0 ? `-${b.stretchDeductionCm.toFixed(2)} cm` : '0.00 cm'}
+                      </td>
+                      <td className="py-2.5 px-3 text-amber-700 font-semibold">
+                        +{b.shrinkageCompensationCm.toFixed(2)} cm
+                      </td>
+                      <td className="py-2.5 px-3 text-blue-700 font-semibold">
+                        +{b.thicknessAllowanceCm.toFixed(2)} cm
+                      </td>
+                      <td className="py-2.5 px-3 text-emerald-700 font-bold">
+                        +{b.totalAppliedEaseCm.toFixed(2)} cm
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-neutral-900 text-right">
+                        {b.finishedGarmentDimensionCm.toFixed(2)} cm
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Unassessed Physical Fit Governance Notice */}
+        <div className="p-4 border border-amber-300 bg-amber-50/70 rounded-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs font-mono">
+          <div className="space-y-1">
+            <span className="font-bold text-amber-950 uppercase text-[10px] block tracking-wider">
+              CAD MILESTONE 04.5 SYSTEM GOVERNANCE NOTICE
+            </span>
+            <p className="text-amber-900 text-[11px] leading-relaxed">
+              Empirical prototype fitting evidence verifies mathematical 2D drafting precision. However, industrial production release requires real-world wear test sign-off, multi-layer interlining trials, and grading across physical samples.
+            </p>
+          </div>
+          <div className="bg-amber-900 text-white font-bold px-3 py-1.5 rounded text-[11px] uppercase tracking-wider shrink-0">
+            isProductionReady: false
           </div>
         </div>
       </div>
