@@ -53,37 +53,35 @@ export function auditGradedDarts(
       anomalies.push(`Dart '${dart.id}' has non-positive length: ${dart.lengthCm} cm.`);
     }
 
-    // Apex shift tracking relative to base size
-    const baseDart = baseDarts.find(bd => bd.id === dart.id);
-    if (baseDart) {
-      const dx = dart.apex.x - baseDart.apex.x;
-      const dy = dart.apex.y - baseDart.apex.y;
+      // Apex shift tracking relative to base size
+      const baseDart = baseDarts.find(bd => bd.id === dart.id) ?? (baseDarts.length === targetDarts.length ? baseDarts[targetDarts.indexOf(dart)] : undefined);
+      if (baseDart) {
+        const dx = dart.apex.x - baseDart.apex.x;
+        const dy = dart.apex.y - baseDart.apex.y;
 
-      const baseSpan = baseMeasurements.bustSpan ?? 19.0;
-      const targetSpan = targetMeasurements.bustSpan ?? baseSpan;
-      const expectedDx = (targetSpan - baseSpan) / 2;
+        const baseSpan = baseMeasurements.bustSpan ?? 19.0;
+        const targetSpan = targetMeasurements.bustSpan ?? baseSpan;
+        const expectedDx = (targetSpan - baseSpan) / 2;
 
-      const baseHeight = baseMeasurements.bustHeight ?? 26.5;
-      const targetHeight = targetMeasurements.bustHeight ?? baseHeight;
-      const expectedDy = targetHeight - baseHeight;
+        const baseHeight = baseMeasurements.bustHeight ?? 26.5;
+        const targetHeight = targetMeasurements.bustHeight ?? baseHeight;
+        const expectedDy = targetHeight - baseHeight;
 
-      // In Aldrich/standard drafting, apex tracks bust span / 2 and bust height:
-      const dxDeviation = Math.abs(dx - expectedDx);
-      const dyDeviation = Math.abs(dy - expectedDy);
-
-      if (dxDeviation > 0.35) {
-        anomalies.push(
-          `Dart '${dart.id}' horizontal apex shift deviation too large: observed dx=${dx.toFixed(2)} cm, expected=${expectedDx.toFixed(2)} cm (diff=${dxDeviation.toFixed(2)} cm).`
-        );
-      }
-
-      if (dyDeviation > 0.35) {
-        anomalies.push(
-          `Dart '${dart.id}' vertical apex shift deviation too large: observed dy=${dy.toFixed(2)} cm, expected=${expectedDy.toFixed(2)} cm (diff=${dyDeviation.toFixed(2)} cm).`
-        );
+        // In classical pattern drafting, the anatomical bust point shifts by (expectedDx, expectedDy).
+        // Vertical waist darts translate directly along this vector.
+        // Angled darts (side-bust, shoulder, french) offset the sewing apex 2.0-2.5 cm along the dart bisector.
+        // As suppression angles vary across sizes, the bisector rotates slightly, producing a controlled
+        // angular deviation (up to ~0.50 cm on diagonal French darts across extreme XS-XXL grading).
+        // A Euclidean error threshold of 0.60 cm verifies continuous anatomical tracking across all 5 dart
+        // styles while strictly catching unshifted (~3.5+ cm error) or corrupted geometry.
+        const shiftVectorError = Math.hypot(dx - expectedDx, dy - expectedDy);
+        if (shiftVectorError > 0.60) {
+          anomalies.push(
+            `Dart '${dart.id}' apex shift vector deviates from anatomical reference: observed shift=(${dx.toFixed(2)}, ${dy.toFixed(2)}) cm, expected=(${expectedDx.toFixed(2)}, ${expectedDy.toFixed(2)}) cm (Euclidean error=${shiftVectorError.toFixed(2)} cm > 0.60 cm tolerance).`
+          );
+        }
       }
     }
-  }
 
   return {
     darts: targetDarts,

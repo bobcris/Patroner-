@@ -6,14 +6,17 @@
 import { BodyMeasurements, EaseProfile, FabricProperty, SizingStandard, SleeveEaseStrategy, StandardSize } from '../../types';
 
 /**
- * Standard sizing table based on European ISO/EN 13402 anthropometric conventions.
+ * Default sizing table established for Patroner based on European ISO/EN 13402
+ * interval conventions with Aldrich proportional secondary dimensions.
  * All values are strict anatomical body measurements in centimetres (cm).
+ * Note on Provenance: This is a Patroner project-defined default baseline,
+ * configurable to support external national and international standards.
  * Ease is not embedded in these body measurements; ease is calculated dynamically.
  */
 export const STANDARD_SIZING_SYSTEM: SizingStandard = {
-  standardName: 'Patroner European Anthropometric Sizing Reference v1.0',
-  system: 'European Anthropometric Reference Table (aligned with EN 13402 base intervals & Aldrich proportions)',
-  description: 'Documented European anthropometric reference table based on EN 13402 base circumferences (bust/waist/hip) with Aldrich/Hohenstein secondary anatomical proportions in cm. All values represent body dimensions before ease.',
+  standardName: 'Patroner Project-Defined Sizing Reference v1.0',
+  system: 'Patroner Default Baseline (Proportional European conventions derived from Aldrich/ISO intervals)',
+  description: 'Project-defined anthropometric default sizing table based on European interval conventions with Aldrich secondary proportional ratios. Configurable baseline for pattern grading engine. All values represent body dimensions before ease.',
   sizes: {
     XS: {
       unit: 'cm',

@@ -39,8 +39,9 @@ export function buildStandardMeasurementGradeTable(): MeasurementGradeTable {
       baseSizeValue: baseVal,
       incrementsFromBase: increments,
       distribution,
-      source: 'EN 13402 / Aldrich Proportions',
-      isStandard: true,
+      source: 'Patroner Project-Defined Default',
+      isStandard: false,
+      isAuthoritative: false,
       applicableCategory: 'all',
       description
     };
@@ -164,12 +165,13 @@ export function buildStandardMeasurementGradeTable(): MeasurementGradeTable {
   };
 
   return {
-    id: 'table-en13402-standard',
-    name: 'EN 13402 / Aldrich Standard Anthropometric Grade Table',
+    id: 'table-patroner-default',
+    name: 'Patroner Default Anthropometric Grade Table (Aldrich/ISO Intervals)',
     baseSize: DEFAULT_BASE_SIZE,
     supportedSizes: sizes,
     rules,
-    description: 'Proportional measurement increments derived from documented European sizing tables.'
+    description: 'Project-defined anthropometric baseline based on European sizing conventions with Aldrich proportional ratios. Configurable baseline for pattern grading engine.',
+    isAuthoritative: false
   };
 }
 

@@ -44,8 +44,9 @@ export interface MeasurementGradeRule {
    */
   incrementsFromBase: Record<string, number>;
   distribution: GradeIncrementDistribution;
-  source: 'EN 13402 / Aldrich Proportions' | 'User-Defined' | 'Provisional';
+  source: 'Patroner Project-Defined Default' | 'User-Defined' | 'Provisional' | 'EN 13402 Reference Interval';
   isStandard: boolean;
+  isAuthoritative: boolean; // True only if directly transcribed from a codified national/international standard
   applicableCategory: GarmentCategory | 'all';
   description: string;
 }
@@ -60,6 +61,7 @@ export interface MeasurementGradeTable {
   supportedSizes: string[];
   rules: Record<string, MeasurementGradeRule>;
   description: string;
+  isAuthoritative?: boolean;
 }
 
 /**
@@ -73,6 +75,8 @@ export interface GradingOptions {
   sleeveEaseStrategy?: SleeveEaseStrategy;
   bodiceDartStyle?: BodiceDartStyle;
   bezierToleranceCm?: number;
+  isCustomDataset?: boolean;
+  gradingContext?: 'standard-chart' | 'custom-table' | 'individual-custom';
 }
 
 /**
@@ -155,6 +159,8 @@ export interface CrossSizeIntegrityReport {
   comparisonTable: CrossSizeComparisonRow[];
   summaryMessage: string;
   unassessedConditions: string[];
+  gradingContext?: 'standard-chart' | 'custom-table' | 'individual-custom';
+  isCustomDataset?: boolean;
 }
 
 /**

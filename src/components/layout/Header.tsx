@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
             ENGINE: ACTIVE (CENTIMETRIC)
           </span>
           <span className="text-neutral-500">|</span>
-          <span className="text-neutral-300">ISO/EN 13402 BASE</span>
+          <span className="text-neutral-300">ISO/ALDRICH BASELINE</span>
         </div>
       </div>
 

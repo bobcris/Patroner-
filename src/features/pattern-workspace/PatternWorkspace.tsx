@@ -1128,8 +1128,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     <span className="font-bold text-neutral-900">{gradedPatternSet.baseSize} (EU 38)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Sizing Standard:</span>
-                    <span className="font-semibold text-neutral-900">EN 13402 / Aldrich</span>
+                    <span className="text-neutral-500">Sizing Reference:</span>
+                    <span className="font-semibold text-neutral-900">Patroner Baseline (Aldrich/ISO)</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Grading Method:</span>

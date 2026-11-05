@@ -183,7 +183,17 @@ export function gradePattern(
   }
 
   // 4. Cross-size integrity report
-  const integrityReport = validateCrossSizeIntegrity(sizeResults, supportedSizes, baseSize);
+  const isCustomDataset = Boolean(
+    options.isCustomDataset ??
+    (options.gradingContext === 'custom-table' || options.gradingContext === 'individual-custom' || Boolean(options.customMeasurements) || Boolean(options.customGradeTable))
+  );
+  const gradingContext = options.gradingContext ?? (isCustomDataset ? 'custom-table' : 'standard-chart');
+
+  const integrityReport = validateCrossSizeIntegrity(sizeResults, supportedSizes, baseSize, {
+    ...options,
+    isCustomDataset,
+    gradingContext
+  });
 
   // 5. Overall validity
   const isAllValid =

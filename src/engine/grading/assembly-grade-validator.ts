@@ -14,7 +14,8 @@ import {
   CrossSizeComparisonRow,
   CrossSizeIntegrityReport,
   GradedPieceMetrics,
-  GradedSizeResult
+  GradedSizeResult,
+  GradingOptions
 } from './grading-types';
 
 /**
@@ -49,10 +50,16 @@ function isMonotonicallyIncreasing(values: (number | null)[]): boolean {
 export function validateCrossSizeIntegrity(
   sizeResults: Record<string, GradedSizeResult>,
   orderedSizes: string[],
-  baseSize: string
+  baseSize: string,
+  options?: GradingOptions
 ): CrossSizeIntegrityReport {
   const checks: CrossSizeCheck[] = [];
   const comparisonTable: CrossSizeComparisonRow[] = [];
+
+  const isCustom = Boolean(
+    options?.isCustomDataset ??
+    (options?.gradingContext === 'custom-table' || options?.gradingContext === 'individual-custom' || Boolean(options?.customMeasurements))
+  );
 
   let validCount = 0;
   let failedCount = 0;
@@ -95,15 +102,21 @@ export function validateCrossSizeIntegrity(
     let varianceNote: string | undefined;
 
     if (!isMono) {
-      varianceNote = 'Non-monotonic progression detected across size progression.';
+      varianceNote = isCustom
+        ? 'Non-monotonic progression detected in custom dataset (advisory warning).'
+        : 'Non-monotonic progression detected across standard size progression.';
       checks.push({
         id: `check-mono-${metricId}`,
         name: `Monotonicity: ${label}`,
         category: category === 'measurement' ? 'measurement' : 'geometry',
-        status: 'fail',
+        status: isCustom ? 'warning' : 'fail',
         affectedSizes: orderedSizes,
-        message: `${label} does not increase monotonically across size range [${orderedSizes.join(' -> ')}].`,
-        expectedBehavior: 'Each progressive size must have greater or equal dimension.',
+        message: isCustom
+          ? `Custom dataset has non-monotonic progression for ${label} across [${orderedSizes.join(' -> ')}]. Handled as advisory warning without failing geometric validity.`
+          : `${label} does not increase monotonically across size range [${orderedSizes.join(' -> ')}].`,
+        expectedBehavior: isCustom
+          ? 'Custom datasets should provide advisory feedback when body dimensions decrease between sequential size codes.'
+          : 'Each progressive size must have greater or equal dimension.',
         observedValues: valuesPerSize as Record<string, number>
       });
     }
@@ -280,6 +293,8 @@ export function validateCrossSizeIntegrity(
     checks,
     comparisonTable,
     summaryMessage,
-    unassessedConditions: UNASSESSED_GRADING_CONDITIONS
+    unassessedConditions: UNASSESSED_GRADING_CONDITIONS,
+    gradingContext: options?.gradingContext ?? (isCustom ? 'custom-table' : 'standard-chart'),
+    isCustomDataset: isCustom
   };
 }

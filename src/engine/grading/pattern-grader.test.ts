@@ -6,8 +6,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DesignSpecification, FabricProperty } from '../../types';
+import { BodiceDartStyle, BodyMeasurements, DesignSpecification, FabricProperty } from '../../types';
 import { STANDARD_SIZING_SYSTEM } from '../measurements/standards';
+import { draftBodiceBlock } from '../drafting/bodice-block';
+import { draftSleeveBlock } from '../drafting/sleeve-block';
 import {
   buildStandardMeasurementGradeTable,
   computeMeasurementDeltas,
@@ -590,6 +592,250 @@ describe('Milestone 04.4: Integrated Pattern Grading & Cross-Size Assembly Valid
       const graded = gradePattern(mockDesignSpec);
       assert.ok(graded.integrityReport.unassessedConditions.length >= 3);
       assert.ok(graded.integrityReport.unassessedConditions.some(c => c.includes('drape')));
+    });
+  });
+
+  // ==========================================
+  // Milestone 04.4.1: Audit Verification Suite
+  // ==========================================
+  describe('Milestone 04.4.1: Independent Grading Integrity, Anthropometric Provenance & Verification Audit', () => {
+    it('audit-1. verifies anthropometric grade-table metadata explicitly identifies Patroner Project-Defined Default baseline', () => {
+      const table = buildStandardMeasurementGradeTable();
+      assert.equal(table.id, 'table-patroner-default');
+      assert.equal(table.isAuthoritative, false);
+      assert.ok(table.name.includes('Patroner Default'));
+      assert.ok(table.description.includes('Project-defined anthropometric baseline'));
+      assert.equal(table.rules.bust.source, 'Patroner Project-Defined Default');
+      assert.equal(table.rules.bust.isAuthoritative, false);
+      assert.equal(table.rules.bust.isStandard, false);
+      assert.equal(table.rules.waist.source, 'Patroner Project-Defined Default');
+      assert.equal(table.rules.lowHip.source, 'Patroner Project-Defined Default');
+    });
+
+    it('audit-2. verifies circumference increments are distributed as Delta C / 4 across quarter panels', () => {
+      const table = buildStandardMeasurementGradeTable();
+      const base = STANDARD_SIZING_SYSTEM.sizes.M;
+      const targetL = resolveTargetMeasurements(base, 'L', table);
+      const deltaBust = (targetL.bust ?? 98) - (base.bust ?? 90);
+      assert.equal(deltaBust, 8.0);
+
+      // Quarter panel allocation must equal deltaBust / 4 = 2.0 cm per quadrant
+      const quarterDelta = deltaBust / 4;
+      assert.equal(quarterDelta, 2.0);
+
+      const graded = gradePattern(mockDesignSpec);
+      const pieceMFront = graded.sizeResults.M.bodicePieces.find(p => p.pieceCode.includes('BOD-F'));
+      const pieceLFront = graded.sizeResults.L.bodicePieces.find(p => p.pieceCode.includes('BOD-F'));
+      assert.ok(pieceMFront && pieceLFront);
+
+      // Front bounding width increases proportionally with quarter bust + quarter ease
+      const frontWidthDelta = pieceLFront.boundingBox.widthCm - pieceMFront.boundingBox.widthCm;
+      assert.ok(Math.abs(frontWidthDelta - quarterDelta) < 0.25, `Front width change (${frontWidthDelta}) must approximate quarter delta (${quarterDelta})`);
+    });
+
+    it('audit-3. handles custom non-monotonic measurement datasets with advisory warnings without failing validity', () => {
+      const base = { ...STANDARD_SIZING_SYSTEM.sizes.M };
+      // Provide custom measurements where Size L has an atypical smaller bust but valid geometry
+      const customMeasurements: Record<string, BodyMeasurements> = {
+        M: { ...base },
+        L: {
+          ...base,
+          bust: 86.0, // smaller bust than M (90.0)
+          waist: 70.0,
+          lowHip: 96.0
+        }
+      };
+
+      const graded = gradePattern(mockDesignSpec, {
+        baseSize: 'M',
+        targetSizes: ['M', 'L'],
+        customMeasurements,
+        isCustomDataset: true,
+        gradingContext: 'custom-table'
+      });
+
+      assert.equal(graded.integrityReport.isCustomDataset, true);
+      assert.equal(graded.integrityReport.gradingContext, 'custom-table');
+
+      // Monotonicity check for bust must be recorded as 'warning', not 'fail'
+      const bustCheck = graded.integrityReport.checks.find(c => c.id === 'check-mono-bust');
+      assert.ok(bustCheck, 'Monotonicity check must be present');
+      assert.equal(bustCheck.status, 'warning');
+
+      // Overall set remains valid because warning does not fail overall grading validity
+      assert.equal(graded.sizeResults.M.isValid, true);
+      assert.equal(graded.sizeResults.L.isValid, true);
+      assert.equal(graded.integrityReport.isOverallGradingValid, true);
+      assert.equal(graded.isAllValid, true);
+    });
+
+    it('audit-4. rejects missing required measurements with explicit diagnostics', () => {
+      const incompleteMeas: any = {
+        unit: 'cm',
+        bust: 90,
+        waist: 72
+        // missing all other mandatory fields
+      };
+      const validation = validateMeasurementRecord(incompleteMeas, 'Size Incomplete');
+      assert.equal(validation.isValid, false);
+      assert.ok(validation.errors.length > 5);
+      assert.ok(validation.errors.some(e => e.includes('lowHip')));
+      assert.ok(validation.errors.some(e => e.includes('armholeDepth')));
+    });
+
+    it('audit-5. rejects negative or NaN measurements across all required dimensions', () => {
+      const corruptMeas: any = {
+        ...STANDARD_SIZING_SYSTEM.sizes.M,
+        armholeDepth: -5,
+        bicepsCircumference: NaN
+      };
+      const validation = validateMeasurementRecord(corruptMeas, 'Size Corrupted');
+      assert.equal(validation.isValid, false);
+      assert.ok(validation.errors.some(e => e.includes('armholeDepth') && e.includes('strictly positive')));
+      assert.ok(validation.errors.some(e => e.includes('bicepsCircumference') && e.includes('NaN')));
+    });
+
+    it('audit-6. reproduces direct base size M drafting identically within floating-point precision', () => {
+      const baseMeasurements = STANDARD_SIZING_SYSTEM.sizes.M;
+      const directBodicePieces = draftBodiceBlock(baseMeasurements, mockDesignSpec, { dartStyle: 'waist' });
+      const directSleeve = draftSleeveBlock(baseMeasurements, mockDesignSpec, { bodicePieces: directBodicePieces, strategy: 'classic' });
+
+      const graded = gradePattern(mockDesignSpec, { baseSize: 'M', targetSizes: ['M'] });
+      const gradedM = graded.sizeResults.M;
+
+      assert.ok(gradedM.sleevePiece);
+      assert.equal(gradedM.bodicePieces.length, directBodicePieces.length);
+      assert.equal(gradedM.sleevePiece.seams.length, directSleeve.piece.seams.length);
+
+      // Compare front armhole seam length
+      const fPiece = directBodicePieces.find(p => p.pieceCode.includes('BOD-F'));
+      const directFrontSeam = fPiece?.seams.find(s => s.id.includes('armhole'));
+      const gradedFrontSeam = gradedM.assemblyResult?.ease.frontBodiceArmholeLengthCm;
+      assert.ok(directFrontSeam && gradedFrontSeam);
+      assert.ok(Math.abs(directFrontSeam.lengthCm - gradedFrontSeam) < 1e-4);
+    });
+
+    it('audit-7. verifies construction invariants across all generated sizes (CF perpendicularity, seam matches)', () => {
+      const graded = gradePattern(mockDesignSpec);
+      for (const sz of DEFAULT_SIZE_RANGE) {
+        const res = graded.sizeResults[sz];
+        assert.ok(res.isValid, `Size ${sz} must be valid`);
+
+        // Check front/back side seam length difference <= 0.20 cm
+        const frontPiece = res.bodicePieces.find(p => p.pieceCode.includes('BOD-F'));
+        const backPiece = res.bodicePieces.find(p => p.pieceCode.includes('BOD-B'));
+        assert.ok(frontPiece && backPiece);
+
+        const fSide = frontPiece.seams.find(s => s.id.includes('side'));
+        const bSide = backPiece.seams.find(s => s.id.includes('side'));
+        assert.ok(fSide && bSide);
+        const sideDiff = Math.abs(fSide.lengthCm - bSide.lengthCm);
+        assert.ok(sideDiff <= 0.20, `Size ${sz} side seam difference (${sideDiff}) must be <= 0.20 cm`);
+
+        // Check front/back shoulder seam difference <= 0.20 cm
+        const fShoulder = frontPiece.seams.find(s => s.id.includes('shoulder'));
+        const bShoulder = backPiece.seams.find(s => s.id.includes('shoulder'));
+        assert.ok(fShoulder && bShoulder);
+        const shoulderDiff = Math.abs(fShoulder.lengthCm - bShoulder.lengthCm);
+        assert.ok(shoulderDiff <= 0.20, `Size ${sz} shoulder seam difference (${shoulderDiff}) must be <= 0.20 cm`);
+      }
+    });
+
+    it('audit-8. validates all 5 bodice dart styles across all sizes XS–XXL', () => {
+      const styles: BodiceDartStyle[] = ['waist', 'side-bust', 'shoulder', 'french', 'waist-and-side'];
+
+      for (const style of styles) {
+        const spec: DesignSpecification = {
+          ...mockDesignSpec,
+          id: `spec-dart-${style}`,
+          dartStyle: style
+        };
+
+        const graded = gradePattern(spec, {
+          bodiceDartStyle: style,
+          targetSizes: DEFAULT_SIZE_RANGE
+        });
+
+        assert.equal(graded.isAllValid, true, `Style '${style}' must produce 6/6 valid sizes`);
+
+        for (const sz of DEFAULT_SIZE_RANGE) {
+          const res = graded.sizeResults[sz];
+          assert.ok(res.isValid, `Size ${sz} with style '${style}' must be valid`);
+          assert.ok(res.darts.length > 0, `Size ${sz} with style '${style}' must have darts`);
+
+          for (const d of res.darts) {
+            assert.ok(d.widthCm > 0, `Dart ${d.id} must have positive width`);
+            assert.ok(d.lengthCm > 0, `Dart ${d.id} must have positive length`);
+
+            // Dart leg parity
+            const leftLen = Math.hypot(d.apex.x - d.legLeft.x, d.apex.y - d.legLeft.y);
+            const rightLen = Math.hypot(d.apex.x - d.legRight.x, d.apex.y - d.legRight.y);
+            const parityDiff = Math.abs(leftLen - rightLen);
+            assert.ok(parityDiff <= 0.05, `Dart ${d.id} in size ${sz} leg parity diff (${parityDiff}) must be <= 0.05 cm`);
+          }
+        }
+      }
+    });
+
+    it('audit-9. verifies sleeve cap adapts deterministically to custom armhole dimensions', () => {
+      const base = { ...STANDARD_SIZING_SYSTEM.sizes.M };
+      const customMeasurements: Record<string, BodyMeasurements> = {
+        M: { ...base },
+        L: {
+          ...base,
+          armholeDepth: 23.5, // deeper scye
+          bicepsCircumference: 32.0,
+          bust: 98.0
+        }
+      };
+
+      const graded = gradePattern(mockDesignSpec, {
+        baseSize: 'M',
+        targetSizes: ['M', 'L'],
+        customMeasurements
+      });
+
+      const resM = graded.sizeResults.M;
+      const resL = graded.sizeResults.L;
+
+      assert.ok(resM.sleevePiece && resL.sleevePiece);
+      // Sleeve cap height should be greater in L due to deeper armhole depth
+      const capM = resM.assemblyResult?.ease.totalSleeveCapLengthCm ?? 0;
+      const capL = resL.assemblyResult?.ease.totalSleeveCapLengthCm ?? 0;
+      assert.ok(capL > capM, `Size L sleeve cap length (${capL}) must exceed Size M (${capM})`);
+      assert.equal(resL.isValid, true);
+    });
+
+    it('audit-10. verifies cross-size validation isolation when one size fails', () => {
+      const graded = gradePattern(mockDesignSpec);
+      // Artificial failure injected into Size XL only
+      const corruptedResults = JSON.parse(JSON.stringify(graded.sizeResults));
+      corruptedResults.XL.isValid = false;
+      corruptedResults.XL.status = 'invalid';
+      corruptedResults.XL.errors.push('Simulated isolated defect in Size XL');
+
+      const report = validateCrossSizeIntegrity(corruptedResults, DEFAULT_SIZE_RANGE, 'M');
+      assert.equal(report.isOverallGradingValid, false);
+      assert.equal(report.validSizeCount, 5);
+      assert.equal(report.failedSizeCount, 1);
+
+      // Remaining sizes (XS, S, M, L, XXL) maintain independent valid status
+      assert.equal(corruptedResults.XS.isValid, true);
+      assert.equal(corruptedResults.S.isValid, true);
+      assert.equal(corruptedResults.M.isValid, true);
+      assert.equal(corruptedResults.L.isValid, true);
+      assert.equal(corruptedResults.XXL.isValid, true);
+    });
+
+    it('audit-11. enforces strict isProductionReady = false constraint across all outputs', () => {
+      const graded = gradePattern(mockDesignSpec);
+      assert.equal(graded.isProductionReady, false);
+      for (const sz of DEFAULT_SIZE_RANGE) {
+        assert.equal(graded.sizeResults[sz].isProductionReady, false);
+        if (graded.sizeResults[sz].assemblyResult) {
+          assert.equal(graded.sizeResults[sz].assemblyResult!.isProductionReady, false);
+        }
+      }
     });
   });
 });
