@@ -146,7 +146,8 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
       const waistBody = 72.0;
 
       const result = calculateFabricAwareCircumferenceEase('waist', waistBody, 'classic', linen, {
-        allowanceForShrinkage: true
+        allowanceForShrinkage: true,
+        measurementDirection: 'circumference-crossgrain'
       });
 
       // Finished garment dimension MUST EQUAL Body + Net Ease (excluding shrinkage)
@@ -169,7 +170,8 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
       const bodyBust = 90.0;
 
       const result = calculateFabricAwareCircumferenceEase('bust', bodyBust, 'classic', denim, {
-        allowanceForShrinkage: true
+        allowanceForShrinkage: true,
+        measurementDirection: 'circumference-crossgrain'
       });
 
       const r = 2.5 / 100;
@@ -201,6 +203,7 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
 
     it('audit-E4: does NOT silently fallback to wool crepe when material is missing without explicit consent', () => {
       const calcWithoutConsent = calculateFabricAwareCircumferenceEase('bust', 90.0, 'classic', undefined, {
+        measurementDirection: 'circumference-crossgrain',
         userExplicitConsentToDefaultFabric: false
       });
       assert.equal(calcWithoutConsent.isCalculationAvailable, false);
@@ -216,12 +219,14 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
 
       // When negative ease is disallowed
       const disallowNeg = calculateFabricAwareCircumferenceEase('bust', 90.0, 'classic', ponte, {
+        measurementDirection: 'circumference-crossgrain',
         negativeEasePolicyAllowed: false
       });
       assert.equal(disallowNeg.stretchDeductionCm, 0.0);
 
       // When negative ease is allowed
       const allowNeg = calculateFabricAwareCircumferenceEase('bust', 90.0, 'classic', ponte, {
+        measurementDirection: 'circumference-crossgrain',
         negativeEasePolicyAllowed: true
       });
       assert.ok(allowNeg.stretchDeductionCm > 0.5);
@@ -232,7 +237,9 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
       assert.equal(woolLookup.status, 'found');
       if (woolLookup.status !== 'found') return;
 
-      const result = calculateFabricAwareCircumferenceEase('bust', 90.0, 'classic', woolLookup.fabric);
+      const result = calculateFabricAwareCircumferenceEase('bust', 90.0, 'classic', woolLookup.fabric, {
+        measurementDirection: 'circumference-crossgrain'
+      });
       assert.ok(result.provenanceNotes.length > 0);
       assert.ok(result.limitations.length > 0);
       assert.ok(result.limitations.some(l => l.includes('provisional project model')));
@@ -330,6 +337,303 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
 
       const report = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_CONFORMING);
       assert.equal(report.isProductionReady, false);
+    });
+  });
+
+  describe('D. Milestone 04.5.2: Assumption Control, Negative Ease Opt-In & Physical Completeness', () => {
+    const ponteLookup = getEnhancedFabricById('ponte-roma');
+    const ponte = ponteLookup.status === 'found' ? ponteLookup.fabric : undefined;
+
+    it('audit-M452-1: missing elastic recovery data cannot silently generate a stretch deduction (no 80% default)', () => {
+      assert.ok(ponte);
+      // Construct a stretch fabric with missing recovery
+      const fabricNoRecovery = {
+        ...ponte,
+        directional: {
+          ...ponte.directional,
+          weft: {
+            shrinkagePercent: 2.0,
+            stretchPercent: 20.0,
+            elasticRecoveryPercent: undefined // Explicitly missing
+          }
+        }
+      };
+
+      const result = calculateFabricAwareCircumferenceEase('waist', 72.0, 'fitted', fabricNoRecovery, {
+        measurementDirection: 'circumference-crossgrain',
+        negativeEasePolicyAllowed: true
+      });
+
+      // No silent 80% recovery default: stretch deduction must be 0!
+      assert.equal(result.stretchDeductionCm, 0.0);
+      assert.ok(
+        result.provenanceNotes.some(n => n.includes('recovery data missing') || n.includes('cannot be measured without recovery'))
+      );
+    });
+
+    it('audit-M452-2: explicit user-approved provisional recovery policy generates provisional calculation state', () => {
+      assert.ok(ponte);
+      const fabricNoRecovery = {
+        ...ponte,
+        directional: {
+          ...ponte.directional,
+          weft: {
+            shrinkagePercent: 2.0,
+            stretchPercent: 20.0,
+            elasticRecoveryPercent: undefined
+          }
+        }
+      };
+
+      const result = calculateFabricAwareCircumferenceEase('waist', 72.0, 'fitted', fabricNoRecovery, {
+        measurementDirection: 'circumference-crossgrain',
+        negativeEasePolicyAllowed: true,
+        provisionalRecoveryPolicy: {
+          allowProvisionalRecovery: true,
+          provisionalRecoveryPercent: 75,
+          userApproved: true,
+          reason: 'Bench trial elongation estimate',
+          approvedBy: 'Pattern Lead'
+        }
+      });
+
+      assert.ok(result.stretchDeductionCm > 0);
+      assert.equal(result.isProvisionalCalculation, true);
+      assert.ok(result.provisionalReason?.includes('Bench trial elongation estimate'));
+      assert.ok(result.inputProvenanceSummary?.explicitUserAssumptions.some(a => a.includes('Provisional recovery')));
+    });
+
+    it('audit-M452-3: negative ease is disabled by default even for high-stretch fabrics and fitted profile', () => {
+      assert.ok(ponte);
+      // High stretch fabric, fitted profile, but NO explicit negative ease policy provided
+      const result = calculateFabricAwareCircumferenceEase('waist', 72.0, 'fitted', ponte, {
+        measurementDirection: 'circumference-crossgrain'
+      });
+
+      // Stretch deduction cannot reduce totalAppliedEaseCm below 0 when negative ease is disabled
+      assert.ok(result.totalAppliedEaseCm >= 0);
+      assert.equal(result.stretchDeductionCm, 0.0);
+      assert.equal(result.negativeEasePolicyApplied, undefined);
+    });
+
+    it('audit-M452-4: explicitly authorized negative ease policy permits reduction with full provenance tracking', () => {
+      assert.ok(ponte);
+      const authorizedPolicy = {
+        isAuthorized: true,
+        garmentCategory: 'bodice',
+        fitIntent: 'performance-contoured',
+        maxPermittedNegativeEasePercent: 8.0,
+        maxPermittedNegativeEaseCm: 4.0,
+        minimumRequiredStretchPercent: 15.0,
+        minimumRequiredRecoveryPercent: 80.0,
+        authorizedBy: 'Lead Patternmaker J. Doe',
+        sourceAndProvenance: 'Spec Approval CAD-102',
+        authorizationDate: '2026-11-06T00:00:00Z'
+      };
+
+      const result = calculateFabricAwareCircumferenceEase('waist', 72.0, 'fitted', ponte, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice',
+        negativeEasePolicy: authorizedPolicy
+      });
+
+      assert.ok(result.stretchDeductionCm > 0.5);
+      assert.equal(result.negativeEasePolicyApplied?.authorizedBy, 'Lead Patternmaker J. Doe');
+      assert.ok(
+        result.inputProvenanceSummary?.explicitUserAssumptions.some(a => a.includes('Negative ease authorized'))
+      );
+    });
+
+    it('audit-M452-5: rejects negative-ease calculations that exceed maximum declared policy limit', () => {
+      assert.ok(ponte);
+      // Policy strictly limits negative ease to max -0.5 cm
+      const restrictivePolicy = {
+        isAuthorized: true,
+        garmentCategory: 'bodice',
+        fitIntent: 'light-contour',
+        maxPermittedNegativeEasePercent: 1.0,
+        maxPermittedNegativeEaseCm: 0.10, // Very tight limit (0.10 cm)
+        minimumRequiredStretchPercent: 10.0,
+        minimumRequiredRecoveryPercent: 70.0,
+        authorizedBy: 'Lead Patternmaker J. Doe',
+        sourceAndProvenance: 'Restricted Ease Policy'
+      };
+
+      // Set base movement ease to 0.5 cm so stretch deduction drives net ease to ~ -1.5 cm
+      const baseFabricWithHighStretch = {
+        ...ponte,
+        directional: {
+          ...ponte.directional,
+          weft: { shrinkagePercent: 2.0, stretchPercent: 35.0, elasticRecoveryPercent: 95 }
+        }
+      };
+
+      const result = calculateFabricAwareCircumferenceEase('waist', 72.0, 'fitted', baseFabricWithHighStretch, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice',
+        negativeEasePolicy: restrictivePolicy
+      });
+
+      // If negative ease exceeded limit, calculation must be rejected (isCalculationAvailable: false)
+      if (result.totalAppliedEaseCm < 0) {
+        assert.equal(result.isCalculationAvailable, false);
+        assert.ok(result.unavailableReason?.includes('exceeds maximum authorized policy limit'));
+      }
+    });
+
+    it('audit-M452-6: rejects calculation with unavailable state when measurement direction is missing', () => {
+      assert.ok(ponte);
+      const result = calculateFabricAwareCircumferenceEase('waist', 72.0, 'classic', ponte, {
+        measurementDirection: undefined // Missing direction
+      });
+
+      assert.equal(result.isCalculationAvailable, false);
+      assert.ok(result.unavailableReason?.includes('missing or ambiguous'));
+      assert.ok(result.provenanceNotes.some(n => n.includes('Unconditional circumference-crossgrain fallback removed')));
+    });
+
+    it('audit-M452-7: rejects calculation with unavailable state when measurement direction is invalid', () => {
+      assert.ok(ponte);
+      const result = calculateFabricAwareCircumferenceEase('waist', 72.0, 'classic', ponte, {
+        measurementDirection: 'diagonal-unsupported' as any
+      });
+
+      assert.equal(result.isCalculationAvailable, false);
+      assert.ok(result.unavailableReason?.includes('missing or ambiguous'));
+    });
+
+    it('audit-M452-8: selects correct directional shrinkage for crossgrain, grainline, and bias', () => {
+      const denimLookup = getEnhancedFabricById('selvedge-denim');
+      assert.equal(denimLookup.status, 'found');
+      if (denimLookup.status !== 'found') return;
+      const denim = denimLookup.fabric; // warp = 5.0%, weft = 2.5%
+
+      const weft = calculateFabricAwareCircumferenceEase('waist', 70.0, 'classic', denim, {
+        allowanceForShrinkage: true,
+        measurementDirection: 'circumference-crossgrain'
+      });
+      const warp = calculateFabricAwareCircumferenceEase('waist', 70.0, 'classic', denim, {
+        allowanceForShrinkage: true,
+        measurementDirection: 'length-grainline'
+      });
+      const bias = calculateFabricAwareCircumferenceEase('waist', 70.0, 'classic', denim, {
+        allowanceForShrinkage: true,
+        measurementDirection: 'bias'
+      });
+
+      assert.equal(weft.shrinkageRatio, 0.025);
+      assert.equal(warp.shrinkageRatio, 0.05);
+      assert.equal(bias.shrinkageRatio, 0.0375); // (0.05 + 0.025) / 2
+      assert.ok(warp.shrinkageCompensationCm > bias.shrinkageCompensationCm);
+      assert.ok(bias.shrinkageCompensationCm > weft.shrinkageCompensationCm);
+    });
+
+    it('audit-M452-9: derives measurement direction from patternPieceOrientation', () => {
+      assert.ok(ponte);
+      const derivedCross = calculateFabricAwareCircumferenceEase('waist', 70.0, 'classic', ponte, {
+        patternPieceOrientation: 'crossgrain'
+      });
+      assert.equal(derivedCross.isCalculationAvailable, true);
+      assert.equal(derivedCross.measurementDirection, 'circumference-crossgrain');
+
+      const derivedGrain = calculateFabricAwareCircumferenceEase('waist', 70.0, 'classic', ponte, {
+        patternPieceOrientation: 'grainline'
+      });
+      assert.equal(derivedGrain.isCalculationAvailable, true);
+      assert.equal(derivedGrain.measurementDirection, 'length-grainline');
+    });
+
+    it('audit-M452-10: returns unsupported-validation-scope for garment categories not in required registry', () => {
+      const unsupportedProto: PhysicalPrototypeRecord = {
+        ...SYNTHETIC_TEST_PROTOTYPE_CONFORMING,
+        id: 'SYNTH-UNSUPPORTED-CAT',
+        garmentCategory: 'trouser' as any
+      };
+
+      const report = validatePhysicalFit(unsupportedProto);
+      assert.equal(report.overallFitStatus, 'unsupported-validation-scope');
+      assert.ok(report.actionableCadCorrections.some(c => c.includes('Validation scope unsupported')));
+    });
+
+    it('audit-M452-11: detects and rejects duplicate measurement checkpoint IDs', () => {
+      const duplicateProto: PhysicalPrototypeRecord = {
+        ...SYNTHETIC_TEST_PROTOTYPE_CONFORMING,
+        id: 'SYNTH-DUPLICATE-PTS',
+        measurements: [
+          ...SYNTHETIC_TEST_PROTOTYPE_CONFORMING.measurements,
+          // Duplicate entry for bust-circumference
+          {
+            pointId: 'bust-circumference',
+            label: 'Duplicate Bust Circumference',
+            category: 'circumference',
+            nominalCadCm: 95.5,
+            measuredPhysicalCm: 95.4,
+            toleranceCm: 0.40,
+            deltaCm: -0.10,
+            status: 'pass',
+            sourceType: 'physically-measured'
+          }
+        ]
+      };
+
+      const report = validatePhysicalFit(duplicateProto);
+      assert.equal(report.overallFitStatus, 'incomplete');
+      assert.ok(report.invalidCount >= 1);
+      assert.ok(report.actionableCadCorrections.some(c => c.includes('Duplicate measurement point ID detected')));
+    });
+
+    it('audit-M452-12: returns incomplete when pattern draft revision or fabric revision is missing', () => {
+      const missingDraftRev: PhysicalPrototypeRecord = {
+        ...SYNTHETIC_TEST_PROTOTYPE_CONFORMING,
+        id: 'SYNTH-MISSING-REV',
+        patternDraftRevision: '' // Missing revision link
+      };
+
+      const reportDraft = validatePhysicalFit(missingDraftRev);
+      assert.equal(reportDraft.overallFitStatus, 'incomplete');
+      assert.ok(reportDraft.actionableCadCorrections.some(c => c.includes('Missing pattern draft revision reference')));
+
+      const missingFabricRev: PhysicalPrototypeRecord = {
+        ...SYNTHETIC_TEST_PROTOTYPE_CONFORMING,
+        id: 'SYNTH-MISSING-FAB-REV',
+        fabricRevision: '' // Missing fabric revision link
+      };
+
+      const reportFabric = validatePhysicalFit(missingFabricRev);
+      assert.equal(reportFabric.overallFitStatus, 'incomplete');
+      assert.ok(reportFabric.actionableCadCorrections.some(c => c.includes('Missing fabric revision reference')));
+    });
+
+    it('audit-M452-13: incomplete physical evidence cannot be declared conforming (e.g. estimated points for required checkpoints)', () => {
+      const estimatedProto: PhysicalPrototypeRecord = {
+        ...SYNTHETIC_TEST_PROTOTYPE_CONFORMING,
+        id: 'SYNTH-ESTIMATED-CHECKPOINT',
+        measurements: SYNTHETIC_TEST_PROTOTYPE_CONFORMING.measurements.map(pt => {
+          if (pt.pointId === 'waist-circumference') {
+            return {
+              ...pt,
+              sourceType: 'estimated' // NOT physically-measured
+            };
+          }
+          return pt;
+        })
+      };
+
+      const report = validatePhysicalFit(estimatedProto);
+      assert.equal(report.overallFitStatus, 'incomplete');
+      assert.ok(report.missingRequiredPoints.includes('waist-circumference'));
+    });
+
+    it('audit-M452-14: distinguishes measured, supplier-declared, project-default, and estimated inputs in provenance summary', () => {
+      assert.ok(ponte);
+      const result = calculateFabricAwareCircumferenceEase('waist', 72.0, 'classic', ponte, {
+        measurementDirection: 'circumference-crossgrain'
+      });
+
+      assert.ok(result.inputProvenanceSummary);
+      assert.ok(result.inputProvenanceSummary.projectDefaultInputs.length > 0);
+      assert.ok(result.inputProvenanceSummary.calculatedOutputs.length > 0);
+      assert.ok(result.inputProvenanceSummary.measuredInputs.some(i => i.includes('bodyMeasurementCm')));
     });
   });
 });

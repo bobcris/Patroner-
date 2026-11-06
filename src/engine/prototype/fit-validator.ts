@@ -1,20 +1,13 @@
 import {
   DEFAULT_PAIRED_SEAM_TOLERANCE_POLICY,
   FitValidationReport,
+  GARMENT_REQUIRED_POINTS_REGISTRY,
   MeasurementPointRecord,
+  MeasurementPointSourceType,
   OverallFitStatus,
   PairedSeamTolerancePolicy,
   PhysicalPrototypeRecord
 } from './prototype-types';
-
-const REQUIRED_BODICE_POINTS = [
-  'bust-circumference',
-  'waist-circumference',
-  'front-side-seam',
-  'back-side-seam',
-  'front-shoulder',
-  'back-shoulder'
-];
 
 /**
  * Validates physical prototype empirical evidence against CAD requirements.
@@ -22,11 +15,15 @@ const REQUIRED_BODICE_POINTS = [
  * identifies seam parity discrepancies, categorizes visual fit defects,
  * and formulates actionable parametric pattern corrections.
  *
- * CRITICAL AUDIT PRINCIPLES (Milestone 04.5.1):
- * - An empty measurement array must NEVER return 'conforming' -> returns 'incomplete'.
- * - Missing required measurements or non-finite/negative dimensions return 'incomplete'.
- * - Paired seam checks use configurable tolerance policies rather than hardcoded magic numbers.
- * - Enforces isProductionReady = false invariant strictly.
+ * CRITICAL AUDIT PRINCIPLES (Milestone 04.5.2):
+ * - Garment-specific required-measurement registry: non-bodice categories cannot conform without schema.
+ * - Missing or unsupported garment category returns 'incomplete' or 'unsupported-validation-scope'.
+ * - Checks for duplicate point IDs, missing required points, invalid sources, invalid methods,
+ *   missing draft revision, missing fabric revision, and invalid tolerance policies.
+ * - Duplicate measurements are rejected and cannot satisfy multiple checkpoints.
+ * - Only 'physically-measured' sources satisfy physical validation checkpoints.
+ * - An empty measurement array strictly returns 'incomplete'.
+ * - Strictly enforces isProductionReady = false invariant.
  */
 export function validatePhysicalFit(
   prototype: PhysicalPrototypeRecord,
@@ -42,8 +39,52 @@ export function validatePhysicalFit(
   let sumAbsDiscrepancy = 0;
   let maxAbsDiscrepancy = 0;
 
-  // 1. Guard against empty measurement records
+  // 1. Garment-specific required-measurement registry check
+  const requiredPointsSchema = GARMENT_REQUIRED_POINTS_REGISTRY[prototype.garmentCategory];
+  const isUnsupportedScope = !requiredPointsSchema;
+  if (isUnsupportedScope) {
+    actionableCadCorrections.push(
+      `Garment category '${prototype.garmentCategory}' has no defined required physical validation schema. Validation scope unsupported.`
+    );
+  }
+
+  // 2. Prototype header & metadata validation
+  const hasDraftRevision = Boolean(prototype.patternDraftRevision && prototype.patternDraftRevision.trim() !== '');
+  if (!hasDraftRevision) {
+    actionableCadCorrections.push(
+      'Missing pattern draft revision reference. Physical prototype must link to specific CAD revision.'
+    );
+  }
+
+  const hasFabricRevision = Boolean(prototype.fabricRevision && prototype.fabricRevision.trim() !== '');
+  if (!hasFabricRevision) {
+    actionableCadCorrections.push(
+      'Missing fabric revision reference. Physical prototype must link to specific fabric lot/revision.'
+    );
+  }
+
+  const VALID_METHODS = ['caliper', 'measuring-tape', '3d-scan', 'optical-camera'];
+  const hasValidMethod = Boolean(prototype.measurementMethod && VALID_METHODS.includes(prototype.measurementMethod));
+  if (!hasValidMethod) {
+    actionableCadCorrections.push(
+      `Invalid or unspecified measurement method '${prototype.measurementMethod}'. Valid methods: caliper, measuring-tape, 3d-scan, optical-camera.`
+    );
+  }
+
+  const hasValidPolicy = Boolean(
+    policy &&
+    Number.isFinite(policy.sideSeamToleranceCm) && policy.sideSeamToleranceCm > 0 &&
+    Number.isFinite(policy.shoulderSeamToleranceCm) && policy.shoulderSeamToleranceCm > 0
+  );
+  if (!hasValidPolicy) {
+    actionableCadCorrections.push(
+      'Invalid paired seam tolerance policy: tolerances must be finite positive numbers.'
+    );
+  }
+
+  // 3. Guard against empty measurement records
   if (!prototype.measurements || prototype.measurements.length === 0) {
+    const requiredPoints = requiredPointsSchema ?? [];
     return {
       prototypeId: prototype.id,
       timestamp,
@@ -54,32 +95,58 @@ export function validatePhysicalFit(
       warningCount: 0,
       failCount: 0,
       invalidCount: 0,
-      missingRequiredPoints: prototype.garmentCategory === 'bodice' ? [...REQUIRED_BODICE_POINTS] : [],
+      missingRequiredPoints: [...requiredPoints],
       maxAbsoluteDiscrepancyCm: 0,
       meanAbsoluteDiscrepancyCm: 0,
       criticalDefectCount: 0,
-      overallFitStatus: 'incomplete',
+      overallFitStatus: isUnsupportedScope ? 'unsupported-validation-scope' : 'incomplete',
       measurements: [],
       observations: prototype.observations ?? [],
-      actionableCadCorrections: ['Physical prototype contains 0 measurements. Record required caliper measurements.'],
+      actionableCadCorrections: [
+        'Physical prototype contains 0 measurements. Record required caliper measurements.',
+        ...actionableCadCorrections
+      ],
       summaryMessage: `Physical prototype ${prototype.id} has no recorded physical measurements. Evidence is incomplete.`,
       isSyntheticEvidence: Boolean(prototype.isSyntheticTestFixture),
       isProductionReady: false
     };
   }
 
-  // 2. Evaluate individual measurement points and validate finite positive numbers
+  // 4. Evaluate individual measurement points, duplicate detection, and source verification
+  const seenPointIds = new Set<string>();
+  const VALID_SOURCES: MeasurementPointSourceType[] = ['physically-measured', 'calculated', 'estimated'];
+
   const evaluatedPoints: MeasurementPointRecord[] = prototype.measurements.map(pt => {
+    // Check duplicate point IDs
+    const isDuplicate = seenPointIds.has(pt.pointId);
+    if (isDuplicate) {
+      actionableCadCorrections.push(
+        `Duplicate measurement point ID detected: '${pt.pointId}'. Checkpoint IDs must be unique.`
+      );
+    } else {
+      seenPointIds.add(pt.pointId);
+    }
+
     // Validation of numerical sanity
     const isNominalValid = Number.isFinite(pt.nominalCadCm) && pt.nominalCadCm > 0;
     const isMeasuredValid = Number.isFinite(pt.measuredPhysicalCm) && pt.measuredPhysicalCm > 0;
     const isTolValid = Number.isFinite(pt.toleranceCm) && pt.toleranceCm >= 0;
 
-    if (!isNominalValid || !isMeasuredValid || !isTolValid) {
-      invalidCount++;
+    // Validation of measurement source
+    const isSourceValid = Boolean(pt.sourceType && VALID_SOURCES.includes(pt.sourceType));
+    if (!isSourceValid) {
       actionableCadCorrections.push(
-        `Point '${pt.label}' (${pt.pointId}) has invalid non-finite, negative, or zero measurement data.`
+        `Point '${pt.label}' (${pt.pointId}) has invalid or missing source type '${pt.sourceType}'.`
       );
+    }
+
+    if (!isNominalValid || !isMeasuredValid || !isTolValid || !isSourceValid || isDuplicate) {
+      invalidCount++;
+      if (!isNominalValid || !isMeasuredValid || !isTolValid) {
+        actionableCadCorrections.push(
+          `Point '${pt.label}' (${pt.pointId}) has invalid non-finite, negative, or zero measurement data.`
+        );
+      }
       return {
         ...pt,
         deltaCm: 0,
@@ -127,18 +194,19 @@ export function validatePhysicalFit(
     ? Number((sumAbsDiscrepancy / validEvaluatedCount).toFixed(3))
     : 0;
 
-  // 3. Check for missing required measurements (for bodice)
+  // 5. Check for missing required checkpoints according to garment schema
   const missingRequiredPoints: string[] = [];
-  if (prototype.garmentCategory === 'bodice') {
-    for (const reqPt of REQUIRED_BODICE_POINTS) {
-      const exists = evaluatedPoints.some(p => p.pointId === reqPt && p.status !== 'invalid');
-      if (!exists) {
-        missingRequiredPoints.push(reqPt);
-      }
+  const requiredPoints = requiredPointsSchema ?? [];
+
+  for (const reqPt of requiredPoints) {
+    // Only physically-measured valid points satisfy physical validation checkpoints
+    const matchingPoint = evaluatedPoints.find(p => p.pointId === reqPt);
+    if (!matchingPoint || matchingPoint.status === 'invalid' || matchingPoint.sourceType !== 'physically-measured') {
+      missingRequiredPoints.push(reqPt);
     }
   }
 
-  // 4. Check physical paired seams using explicit configurable tolerance policy
+  // 6. Check physical paired seams using explicit configurable tolerance policy
   let pairedSeamFailCount = 0;
   let pairedSeamWarningCount = 0;
 
@@ -146,7 +214,7 @@ export function validatePhysicalFit(
   const backSide = evaluatedPoints.find(p => p.pointId.includes('back-side-seam'));
   if (frontSide && backSide && frontSide.status !== 'invalid' && backSide.status !== 'invalid') {
     const seamDiff = Math.abs(frontSide.measuredPhysicalCm - backSide.measuredPhysicalCm);
-    if (seamDiff > policy.sideSeamToleranceCm) {
+    if (policy && seamDiff > policy.sideSeamToleranceCm) {
       pairedSeamFailCount++;
       actionableCadCorrections.push(
         `Physical side seam mismatch: Front side seam (${frontSide.measuredPhysicalCm.toFixed(2)} cm) and Back side seam (${backSide.measuredPhysicalCm.toFixed(2)} cm) differ by ${seamDiff.toFixed(2)} cm on sewn sample (policy limit: ${policy.sideSeamToleranceCm.toFixed(2)} cm).`
@@ -158,12 +226,12 @@ export function validatePhysicalFit(
   const backShoulder = evaluatedPoints.find(p => p.pointId.includes('back-shoulder'));
   if (frontShoulder && backShoulder && frontShoulder.status !== 'invalid' && backShoulder.status !== 'invalid') {
     const shoulderDiff = Math.abs(frontShoulder.measuredPhysicalCm - backShoulder.measuredPhysicalCm);
-    if (shoulderDiff > policy.shoulderSeamToleranceCm * 1.5) {
+    if (policy && shoulderDiff > policy.shoulderSeamToleranceCm * 1.5) {
       pairedSeamFailCount++;
       actionableCadCorrections.push(
         `Physical shoulder seam discrepancy exceeds limit: Front shoulder (${frontShoulder.measuredPhysicalCm.toFixed(2)} cm) and Back shoulder (${backShoulder.measuredPhysicalCm.toFixed(2)} cm) differ by ${shoulderDiff.toFixed(2)} cm.`
       );
-    } else if (shoulderDiff > policy.shoulderSeamToleranceCm) {
+    } else if (policy && shoulderDiff > policy.shoulderSeamToleranceCm) {
       pairedSeamWarningCount++;
       actionableCadCorrections.push(
         `Physical shoulder seam advisory variance: Front shoulder (${frontShoulder.measuredPhysicalCm.toFixed(2)} cm) and Back shoulder (${backShoulder.measuredPhysicalCm.toFixed(2)} cm) differ by ${shoulderDiff.toFixed(2)} cm (policy limit: ${policy.shoulderSeamToleranceCm.toFixed(2)} cm).`
@@ -171,7 +239,7 @@ export function validatePhysicalFit(
     }
   }
 
-  // 5. Process Qualitative Fit Observations
+  // 7. Process Qualitative Fit Observations
   let criticalDefectCount = 0;
   for (const obs of prototype.observations) {
     if (obs.severity === 'critical') {
@@ -183,24 +251,37 @@ export function validatePhysicalFit(
     }
   }
 
-  // 6. Strict Status Determination
+  // 8. Strict Status Determination
   let overallFitStatus: OverallFitStatus = 'conforming';
 
-  if (invalidCount > 0 || missingRequiredPoints.length > 0) {
+  if (isUnsupportedScope) {
+    overallFitStatus = 'unsupported-validation-scope';
+  } else if (
+    invalidCount > 0 ||
+    missingRequiredPoints.length > 0 ||
+    !hasDraftRevision ||
+    !hasFabricRevision ||
+    !hasValidMethod ||
+    !hasValidPolicy
+  ) {
     overallFitStatus = 'incomplete';
-    actionableCadCorrections.push(
-      `Evidence incomplete: ${missingRequiredPoints.length} required measurement point(s) missing or invalid.`
-    );
+    if (missingRequiredPoints.length > 0) {
+      actionableCadCorrections.push(
+        `Evidence incomplete: ${missingRequiredPoints.length} required measurement point(s) missing, invalid, or unmeasured physically.`
+      );
+    }
   } else if (failCount > 0 || criticalDefectCount > 0 || pairedSeamFailCount > 0) {
     overallFitStatus = 'non-conforming';
   } else if (warningCount > 0 || prototype.observations.some(o => o.severity === 'moderate') || pairedSeamWarningCount > 0) {
     overallFitStatus = 'acceptable-with-adjustments';
   }
 
-  const summaryMessage = overallFitStatus === 'incomplete'
+  const summaryMessage = overallFitStatus === 'unsupported-validation-scope'
+    ? `Physical prototype ${prototype.id} has category '${prototype.garmentCategory}' with no required point schema in registry. Validation scope unsupported.`
+    : overallFitStatus === 'incomplete'
     ? `Physical prototype ${prototype.id} has incomplete physical evidence (${missingRequiredPoints.length} missing required points, ${invalidCount} invalid values). Cannot certify fit.`
     : overallFitStatus === 'conforming'
-    ? `Physical prototype ${prototype.id} conforms to CAD dimensions within ±${(maxAbsDiscrepancy).toFixed(2)} cm tolerance. No critical fit anomalies observed.`
+    ? `Physical prototype ${prototype.id} conforms to CAD dimensions within ±${maxAbsDiscrepancy.toFixed(2)} cm tolerance. All required checkpoints verified physically.`
     : overallFitStatus === 'acceptable-with-adjustments'
     ? `Physical prototype ${prototype.id} has ${warningCount + pairedSeamWarningCount} advisory dimensional variance(s). Recommend applying minor CAD corrections before grading scale-up.`
     : `Physical prototype ${prototype.id} failed physical fit criteria (${failCount + pairedSeamFailCount} out-of-tolerance issues, ${criticalDefectCount} critical defects). CAD pattern adjustment required.`;
@@ -228,4 +309,3 @@ export function validatePhysicalFit(
     isProductionReady: false // Strict safety constraint
   };
 }
-

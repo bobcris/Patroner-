@@ -157,6 +157,94 @@ export interface FabricValidationResult {
 export type MeasurementDirection = 'circumference-crossgrain' | 'length-grainline' | 'bias';
 
 /**
+ * Explicit authorization policy for negative ease calculations.
+ * Negative ease reduces finished garment dimensions below anatomical body measurements.
+ * It must never be applied implicitly from fabric stretch or fitted profiles alone.
+ */
+export interface NegativeEaseAuthorizationPolicy {
+  /**
+   * Explicit authorization flag. Default is false.
+   */
+  isAuthorized: boolean;
+  /**
+   * Target garment category (e.g. 'bodice', 'activewear', 'swimwear', 'all').
+   */
+  garmentCategory: string;
+  /**
+   * Construction or fit intent (e.g. 'compression-fit', 'corsetry', 'performance-knit').
+   */
+  fitIntent: string;
+  /**
+   * Maximum permitted negative ease percentage (e.g. 5.0 for -5% body circumference).
+   */
+  maxPermittedNegativeEasePercent: number;
+  /**
+   * Optional maximum negative ease in absolute cm (e.g. 3.0 cm).
+   */
+  maxPermittedNegativeEaseCm?: number;
+  /**
+   * Minimum directional stretch percentage required by policy to activate negative ease.
+   */
+  minimumRequiredStretchPercent: number;
+  /**
+   * Minimum elastic recovery percentage required by policy to activate negative ease.
+   */
+  minimumRequiredRecoveryPercent: number;
+  /**
+   * Name or role of the user or authority approving negative ease.
+   */
+  authorizedBy: string;
+  /**
+   * Source and provenance documentation authorizing negative ease (e.g. ticket ID, spec standard).
+   */
+  sourceAndProvenance: string;
+  /**
+   * Date authorization was granted (ISO format).
+   */
+  authorizationDate?: string;
+}
+
+/**
+ * Explicit provisional elastic recovery policy.
+ * When laboratory recovery data is missing, recovery-based stretch deductions cannot occur
+ * unless an authorized provisional policy is explicitly selected.
+ */
+export interface ProvisionalRecoveryPolicy {
+  /**
+   * Whether provisional recovery estimation is permitted.
+   */
+  allowProvisionalRecovery: boolean;
+  /**
+   * Provisional recovery percentage to apply (0-100%).
+   */
+  provisionalRecoveryPercent: number;
+  /**
+   * Explicit confirmation that the user approved this assumption.
+   */
+  userApproved: boolean;
+  /**
+   * Rationale for applying provisional estimation.
+   */
+  reason: string;
+  /**
+   * Name of user approving the provisional policy.
+   */
+  approvedBy?: string;
+}
+
+/**
+ * Breakdown of input data sources for complete calculation auditability.
+ */
+export interface InputProvenanceSummary {
+  measuredInputs: string[];
+  supplierDeclaredInputs: string[];
+  projectDefaultInputs: string[];
+  estimatedInputs: string[];
+  explicitUserAssumptions: string[];
+  calculatedOutputs: string[];
+}
+
+/**
  * Breakdown of deterministic ease components calculated for a pattern piece or circumference.
  * Distinguishes Finished Garment Dimension from Pre-Shrink Cutting Dimension.
  */
@@ -176,6 +264,11 @@ export interface FabricEaseBreakdown {
   preShrinkCuttingDimensionCm: number; // Dimension to cut on flat pattern before wash/press: Finished / (1 - shrinkage)
   cuttingAllowanceFactor: number; // Scale multiplier applied to pattern cutting line for shrinkage (1 / (1 - r))
   isCalculationAvailable: boolean;
+  unavailableReason?: string;
+  isProvisionalCalculation?: boolean;
+  provisionalReason?: string;
+  negativeEasePolicyApplied?: NegativeEaseAuthorizationPolicy;
+  inputProvenanceSummary?: InputProvenanceSummary;
   provenanceNotes: string[];
   limitations: string[];
 }

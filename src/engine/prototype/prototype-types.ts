@@ -57,7 +57,29 @@ export type OverallFitStatus =
   | 'incomplete'
   | 'conforming'
   | 'acceptable-with-adjustments'
-  | 'non-conforming';
+  | 'non-conforming'
+  | 'unsupported-validation-scope';
+
+export interface GarmentRequiredMeasurementSchema {
+  garmentCategory: GarmentCategory | string;
+  requiredPointIds: string[];
+  description: string;
+}
+
+/**
+ * Registry of required measurement checkpoints by garment category.
+ * Non-bodice categories must not conform without an explicitly defined required-point schema.
+ */
+export const GARMENT_REQUIRED_POINTS_REGISTRY: Record<string, string[]> = {
+  bodice: [
+    'bust-circumference',
+    'waist-circumference',
+    'front-side-seam',
+    'back-side-seam',
+    'front-shoulder',
+    'back-shoulder'
+  ]
+};
 
 export interface PairedSeamTolerancePolicy {
   sideSeamToleranceCm: number;     // Standard policy: 0.30 cm

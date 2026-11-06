@@ -134,7 +134,8 @@ describe('Milestone 04.5.1: Fabric Physics, Provenance & Ease Integrity Audit', 
       const waistBody = 72.0;
 
       const waistEase = calculateFabricAwareCircumferenceEase('waist', waistBody, 'classic', linen, {
-        allowanceForShrinkage: true
+        allowanceForShrinkage: true,
+        measurementDirection: 'circumference-crossgrain'
       });
 
       // Baseline classic waist ease = 4.0 cm (from EASE_TABLE.classic.waist)
@@ -188,12 +189,14 @@ describe('Milestone 04.5.1: Fabric Physics, Provenance & Ease Integrity Audit', 
 
       // With negative ease allowed
       const withNegative = calculateFabricAwareCircumferenceEase('waist', waistBody, 'fitted', ponte, {
+        measurementDirection: 'circumference-crossgrain',
         negativeEasePolicyAllowed: true
       });
       assert.ok(withNegative.stretchDeductionCm > 0.5);
 
       // With negative ease explicitly disallowed
       const withoutNegative = calculateFabricAwareCircumferenceEase('waist', waistBody, 'classic', ponte, {
+        measurementDirection: 'circumference-crossgrain',
         negativeEasePolicyAllowed: false
       });
       assert.equal(withoutNegative.stretchDeductionCm, 0.0);
@@ -201,6 +204,7 @@ describe('Milestone 04.5.1: Fabric Physics, Provenance & Ease Integrity Audit', 
 
     it('9. does not silently fabricate material defaults when fabric is missing without explicit consent', () => {
       const noConsent = calculateFabricAwareCircumferenceEase('bust', 90.0, 'classic', undefined, {
+        measurementDirection: 'circumference-crossgrain',
         userExplicitConsentToDefaultFabric: false
       });
       assert.equal(noConsent.isCalculationAvailable, false);
@@ -208,6 +212,7 @@ describe('Milestone 04.5.1: Fabric Physics, Provenance & Ease Integrity Audit', 
 
       // With explicit consent, calculation is available with clear warning
       const withConsent = calculateFabricAwareCircumferenceEase('bust', 90.0, 'classic', undefined, {
+        measurementDirection: 'circumference-crossgrain',
         userExplicitConsentToDefaultFabric: true
       });
       assert.equal(withConsent.isCalculationAvailable, true);
