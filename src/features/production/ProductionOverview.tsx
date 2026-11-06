@@ -954,24 +954,32 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                       <td className="py-2.5 px-3 font-bold text-neutral-900">{girthLabel}</td>
                       <td className="py-2.5 px-3">{b.bodyMeasurementCm.toFixed(1)} cm</td>
                       <td className="py-2.5 px-3">+{b.baselineMovementEaseCm.toFixed(2)} cm</td>
-                      <td className="py-2.5 px-3 text-red-700 font-semibold">
-                        {b.stretchDeductionCm > 0 ? `-${b.stretchDeductionCm.toFixed(2)} cm` : '0.00 cm'}
-                      </td>
-                      <td className="py-2.5 px-3 text-blue-700 font-semibold">
-                        +{b.thicknessAllowanceCm.toFixed(2)} cm
-                      </td>
-                      <td className="py-2.5 px-3 text-emerald-700 font-bold">
-                        +{b.totalAppliedEaseCm.toFixed(2)} cm
-                      </td>
-                      <td className="py-2.5 px-3 font-bold text-neutral-900 bg-neutral-50">
-                        {b.finishedGarmentDimensionCm.toFixed(2)} cm
-                      </td>
-                      <td className="py-2.5 px-3 text-amber-700 font-semibold">
-                        +{b.shrinkageCompensationCm.toFixed(2)} cm
-                      </td>
-                      <td className="py-2.5 px-3 font-bold text-amber-950 text-right bg-amber-50/40">
-                        {b.preShrinkCuttingDimensionCm.toFixed(2)} cm
-                      </td>
+                      {b.isCalculationAvailable ? (
+                        <>
+                          <td className="py-2.5 px-3 text-red-700 font-semibold">
+                            {b.stretchDeductionCm > 0 ? `-${b.stretchDeductionCm.toFixed(2)} cm` : '0.00 cm'}
+                          </td>
+                          <td className="py-2.5 px-3 text-blue-700 font-semibold">
+                            +{b.thicknessAllowanceCm.toFixed(2)} cm
+                          </td>
+                          <td className="py-2.5 px-3 text-emerald-700 font-bold">
+                            +{b.totalAppliedEaseCm.toFixed(2)} cm
+                          </td>
+                          <td className="py-2.5 px-3 font-bold text-neutral-900 bg-neutral-50">
+                            {b.finishedGarmentDimensionCm.toFixed(2)} cm
+                          </td>
+                          <td className="py-2.5 px-3 text-amber-700 font-semibold">
+                            +{b.shrinkageCompensationCm.toFixed(2)} cm
+                          </td>
+                          <td className="py-2.5 px-3 font-bold text-amber-950 text-right bg-amber-50/40">
+                            {b.preShrinkCuttingDimensionCm.toFixed(2)} cm
+                          </td>
+                        </>
+                      ) : (
+                        <td colSpan={6} className="py-2.5 px-3 text-amber-800 italic font-mono text-xs bg-amber-50/50">
+                          Unavailable: {b.unavailableReason}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

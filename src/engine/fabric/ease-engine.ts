@@ -1,12 +1,15 @@
 import { BodyMeasurements, EaseProfile, FabricProperty, Silhouette, SleeveEaseStrategy } from '../../types';
 import { EASE_TABLE, SLEEVE_EASE_TABLE } from '../measurements/standards';
 import {
+  AvailableFabricEaseBreakdown,
   EnhancedFabricProperty,
   FabricEaseBreakdown,
   InputProvenanceSummary,
   MeasurementDirection,
   NegativeEaseAuthorizationPolicy,
-  ProvisionalRecoveryPolicy
+  ProvisionalBiasShrinkagePolicy,
+  ProvisionalRecoveryPolicy,
+  UnavailableFabricEaseBreakdown
 } from './fabric-types';
 import { DEFAULT_ILLUSTRATIVE_FABRIC, getEnhancedFabricById } from './fabric-presets';
 
@@ -16,11 +19,328 @@ export interface EaseCalculationOptions {
   layerCount?: number; // For turn-of-cloth calculation (default: 1 layer)
   measurementDirection?: MeasurementDirection; // Required or derived; no unconditional fallback
   patternPieceOrientation?: 'crossgrain' | 'weft' | 'grainline' | 'warp' | 'bias';
-  negativeEasePolicy?: NegativeEaseAuthorizationPolicy; // Explicit negative ease authorization policy
-  negativeEasePolicyAllowed?: boolean; // Legacy flag; defaults to false
+  negativeEasePolicy?: NegativeEaseAuthorizationPolicy; // Explicit runtime-validated negative ease policy
+  /**
+   * @deprecated Legacy boolean flag. Deprecated in Milestone 04.5.3; a legacy boolean must NEVER activate negative ease.
+   */
+  negativeEasePolicyAllowed?: boolean;
   provisionalRecoveryPolicy?: ProvisionalRecoveryPolicy; // Explicit user-approved provisional recovery policy
+  provisionalBiasShrinkagePolicy?: ProvisionalBiasShrinkagePolicy; // Explicit user-approved provisional bias shrinkage policy
   userExplicitConsentToDefaultFabric?: boolean; // Explicit opt-in for illustrative fallback
-  garmentCategory?: string; // e.g. 'bodice', 'skirt'
+  garmentCategory?: string; // e.g. 'bodice', 'skirt' - required to match negative ease policy
+}
+
+/**
+ * Result of validating a negative ease authorization policy.
+ */
+export interface PolicyValidationResult {
+  isValid: boolean;
+  rejectionReason?: string;
+}
+
+/**
+ * Validates a negative ease authorization policy at runtime according to Milestone 04.5.3 rules.
+ * - Missing garment category is rejected (not a wildcard).
+ * - Requires non-empty authorization source, author, valid ISO date, recognized fit intent, finite non-negative limits.
+ * - Directional stretch and recovery must satisfy declared policy thresholds.
+ * - Expiration date is checked if provided.
+ */
+export function validateNegativeEaseAuthorizationPolicy(
+  policy: unknown,
+  garmentCategory: string | undefined,
+  directionalStretchPercent: number,
+  directionalRecoveryPercent: number | undefined
+): PolicyValidationResult {
+  if (!policy || typeof policy !== 'object') {
+    return { isValid: false, rejectionReason: 'Negative ease authorization policy is missing or not an object.' };
+  }
+
+  const p = policy as Partial<NegativeEaseAuthorizationPolicy>;
+
+  if (p.isAuthorized !== true) {
+    return { isValid: false, rejectionReason: 'Negative ease policy is not authorized (isAuthorized is not true).' };
+  }
+
+  // Explicit, matching garment category. Missing category is a rejection, not a wildcard.
+  if (!garmentCategory || typeof garmentCategory !== 'string' || garmentCategory.trim() === '') {
+    return {
+      isValid: false,
+      rejectionReason: 'Target garment category is missing. Missing category is a rejection, not a wildcard.'
+    };
+  }
+
+  if (!p.garmentCategory || typeof p.garmentCategory !== 'string' || p.garmentCategory.trim() === '') {
+    return {
+      isValid: false,
+      rejectionReason: 'Negative ease policy is missing explicit garmentCategory.'
+    };
+  }
+
+  const normalizedTargetCat = garmentCategory.trim().toLowerCase();
+  const normalizedPolicyCat = p.garmentCategory.trim().toLowerCase();
+
+  // Policy category must match target category.
+  if (normalizedPolicyCat !== 'all' && normalizedPolicyCat !== normalizedTargetCat) {
+    return {
+      isValid: false,
+      rejectionReason: `Policy garmentCategory '${p.garmentCategory}' does not match target garment category '${garmentCategory}'.`
+    };
+  }
+
+  // Non-empty authorization source / provenance
+  if (!p.sourceAndProvenance || typeof p.sourceAndProvenance !== 'string' || p.sourceAndProvenance.trim() === '') {
+    return {
+      isValid: false,
+      rejectionReason: 'Negative ease policy missing non-empty sourceAndProvenance reference.'
+    };
+  }
+
+  // Non-empty author
+  if (!p.authorizedBy || typeof p.authorizedBy !== 'string' || p.authorizedBy.trim() === '') {
+    return {
+      isValid: false,
+      rejectionReason: 'Negative ease policy missing non-empty authorizedBy identity.'
+    };
+  }
+
+  // Valid ISO authorization date
+  if (!p.authorizationDate || typeof p.authorizationDate !== 'string') {
+    return {
+      isValid: false,
+      rejectionReason: 'Negative ease policy missing authorizationDate in ISO format.'
+    };
+  }
+  const authTime = Date.parse(p.authorizationDate);
+  if (Number.isNaN(authTime)) {
+    return {
+      isValid: false,
+      rejectionReason: `Negative ease policy contains invalid authorizationDate '${p.authorizationDate}'. Must be a valid ISO date.`
+    };
+  }
+
+  // Expiration check if expirationDate is provided
+  if (p.expirationDate) {
+    const expTime = Date.parse(p.expirationDate);
+    if (Number.isNaN(expTime)) {
+      return {
+        isValid: false,
+        rejectionReason: `Negative ease policy contains invalid expirationDate '${p.expirationDate}'.`
+      };
+    }
+    if (expTime < Date.now()) {
+      return {
+        isValid: false,
+        rejectionReason: `Negative ease policy expired on '${p.expirationDate}'.`
+      };
+    }
+  }
+
+  // Recognized fit intent
+  const RECOGNIZED_FIT_INTENTS = [
+    'bodycon',
+    'compression-fit',
+    'stretch-contour',
+    'corsetry',
+    'performance-knit',
+    'tailored-fitted'
+  ];
+  if (!p.fitIntent || typeof p.fitIntent !== 'string' || p.fitIntent.trim() === '') {
+    return {
+      isValid: false,
+      rejectionReason: 'Negative ease policy missing fitIntent.'
+    };
+  }
+  const normalizedIntent = p.fitIntent.trim().toLowerCase();
+  if (!RECOGNIZED_FIT_INTENTS.includes(normalizedIntent)) {
+    return {
+      isValid: false,
+      rejectionReason: `Unrecognized fitIntent '${p.fitIntent}'. Must be one of: ${RECOGNIZED_FIT_INTENTS.join(', ')}.`
+    };
+  }
+
+  // Finite non-negative limits
+  if (
+    p.maxPermittedNegativeEasePercent === undefined ||
+    !Number.isFinite(p.maxPermittedNegativeEasePercent) ||
+    p.maxPermittedNegativeEasePercent <= 0
+  ) {
+    return {
+      isValid: false,
+      rejectionReason: `Invalid maxPermittedNegativeEasePercent '${p.maxPermittedNegativeEasePercent}'. Must be a finite positive number.`
+    };
+  }
+
+  if (p.maxPermittedNegativeEaseCm !== undefined) {
+    if (!Number.isFinite(p.maxPermittedNegativeEaseCm) || p.maxPermittedNegativeEaseCm <= 0) {
+      return {
+        isValid: false,
+        rejectionReason: `Invalid maxPermittedNegativeEaseCm '${p.maxPermittedNegativeEaseCm}'. Must be a finite positive number when defined.`
+      };
+    }
+  }
+
+  // Minimum required stretch & recovery threshold checks
+  if (
+    p.minimumRequiredStretchPercent === undefined ||
+    !Number.isFinite(p.minimumRequiredStretchPercent) ||
+    p.minimumRequiredStretchPercent < 0
+  ) {
+    return {
+      isValid: false,
+      rejectionReason: 'Invalid minimumRequiredStretchPercent in policy. Must be finite non-negative number.'
+    };
+  }
+
+  if (
+    p.minimumRequiredRecoveryPercent === undefined ||
+    !Number.isFinite(p.minimumRequiredRecoveryPercent) ||
+    p.minimumRequiredRecoveryPercent < 0 ||
+    p.minimumRequiredRecoveryPercent > 100
+  ) {
+    return {
+      isValid: false,
+      rejectionReason: 'Invalid minimumRequiredRecoveryPercent in policy. Must be finite number between 0 and 100.'
+    };
+  }
+
+  if (directionalStretchPercent < p.minimumRequiredStretchPercent) {
+    return {
+      isValid: false,
+      rejectionReason: `Directional stretch (${directionalStretchPercent.toFixed(1)}%) does not satisfy policy minimum required stretch (${p.minimumRequiredStretchPercent.toFixed(1)}%).`
+    };
+  }
+
+  const recovery = directionalRecoveryPercent ?? 0;
+  if (directionalRecoveryPercent === undefined || recovery < p.minimumRequiredRecoveryPercent) {
+    return {
+      isValid: false,
+      rejectionReason: `Directional recovery (${recovery.toFixed(1)}%) does not satisfy policy minimum required recovery (${p.minimumRequiredRecoveryPercent.toFixed(1)}%).`
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validates a provisional recovery policy according to Milestone 04.5.3 rules.
+ */
+export function validateProvisionalRecoveryPolicy(
+  policy: unknown
+): { isValid: boolean; recoveryPercent?: number; rejectionReason?: string } {
+  if (!policy || typeof policy !== 'object') {
+    return { isValid: false, rejectionReason: 'Provisional recovery policy is missing or not an object.' };
+  }
+
+  const p = policy as Partial<ProvisionalRecoveryPolicy>;
+
+  if (p.allowProvisionalRecovery !== true) {
+    return { isValid: false, rejectionReason: 'allowProvisionalRecovery is not true.' };
+  }
+
+  if (p.userApproved !== true) {
+    return { isValid: false, rejectionReason: 'userApproved is not true. User explicit approval is required.' };
+  }
+
+  if (
+    p.provisionalRecoveryPercent === undefined ||
+    !Number.isFinite(p.provisionalRecoveryPercent) ||
+    p.provisionalRecoveryPercent < 0 ||
+    p.provisionalRecoveryPercent > 100
+  ) {
+    return {
+      isValid: false,
+      rejectionReason: `provisionalRecoveryPercent must be a finite number between 0 and 100 (got ${p.provisionalRecoveryPercent}).`
+    };
+  }
+
+  if (!p.approvedBy || typeof p.approvedBy !== 'string' || p.approvedBy.trim() === '') {
+    return { isValid: false, rejectionReason: 'Provisional recovery policy missing approvedBy identity.' };
+  }
+
+  if (!p.reason || typeof p.reason !== 'string' || p.reason.trim() === '') {
+    return { isValid: false, rejectionReason: 'Provisional recovery policy missing rationale reason.' };
+  }
+
+  if (!p.approvalDate || typeof p.approvalDate !== 'string' || Number.isNaN(Date.parse(p.approvalDate))) {
+    return { isValid: false, rejectionReason: 'Provisional recovery policy missing valid ISO approvalDate.' };
+  }
+
+  return { isValid: true, recoveryPercent: p.provisionalRecoveryPercent };
+}
+
+/**
+ * Validates a provisional bias shrinkage policy according to Milestone 04.5.3 rules.
+ */
+export function validateProvisionalBiasShrinkagePolicy(
+  policy: unknown
+): { isValid: boolean; shrinkagePercent?: number; rejectionReason?: string } {
+  if (!policy || typeof policy !== 'object') {
+    return { isValid: false, rejectionReason: 'Provisional bias shrinkage policy is missing or not an object.' };
+  }
+
+  const p = policy as Partial<ProvisionalBiasShrinkagePolicy>;
+
+  if (p.allowProvisional !== true) {
+    return { isValid: false, rejectionReason: 'allowProvisional is not true.' };
+  }
+
+  if (p.userApproved !== true) {
+    return { isValid: false, rejectionReason: 'userApproved is not true. User explicit approval is required.' };
+  }
+
+  if (
+    p.provisionalShrinkagePercent === undefined ||
+    !Number.isFinite(p.provisionalShrinkagePercent) ||
+    p.provisionalShrinkagePercent < 0 ||
+    p.provisionalShrinkagePercent > 100
+  ) {
+    return {
+      isValid: false,
+      rejectionReason: `provisionalShrinkagePercent must be a finite number between 0 and 100 (got ${p.provisionalShrinkagePercent}).`
+    };
+  }
+
+  if (!p.approvedBy || typeof p.approvedBy !== 'string' || p.approvedBy.trim() === '') {
+    return { isValid: false, rejectionReason: 'Provisional bias shrinkage policy missing approvedBy identity.' };
+  }
+
+  if (!p.reason || typeof p.reason !== 'string' || p.reason.trim() === '') {
+    return { isValid: false, rejectionReason: 'Provisional bias shrinkage policy missing rationale reason.' };
+  }
+
+  if (!p.approvalDate || typeof p.approvalDate !== 'string' || Number.isNaN(Date.parse(p.approvalDate))) {
+    return { isValid: false, rejectionReason: 'Provisional bias shrinkage policy missing valid ISO approvalDate.' };
+  }
+
+  return { isValid: true, shrinkagePercent: p.provisionalShrinkagePercent };
+}
+
+/**
+ * Helper to build a strictly typed UnavailableFabricEaseBreakdown.
+ * Exposes no usable calculated or cutting dimensions.
+ */
+function createUnavailableResult(
+  circumferenceId: FabricEaseBreakdown['circumferenceId'],
+  bodyValueCm: number,
+  baselineMovementEaseCm: number,
+  unavailableReason: string,
+  measurementDirection: MeasurementDirection | undefined,
+  provenanceNotes: string[],
+  limitations: string[],
+  inputProvenanceSummary?: InputProvenanceSummary
+): UnavailableFabricEaseBreakdown {
+  return {
+    status: 'unavailable',
+    circumferenceId,
+    measurementDirection,
+    bodyMeasurementCm: bodyValueCm,
+    baselineMovementEaseCm,
+    isCalculationAvailable: false,
+    unavailableReason,
+    provenanceNotes,
+    limitations,
+    inputProvenanceSummary
+  };
 }
 
 /**
@@ -81,13 +401,18 @@ function resolveEnhancedFabric(
 /**
  * Calculates deterministic fabric-aware ease breakdown for a given body dimension.
  *
- * CRITICAL TEXTILE INTEGRITY PRINCIPLE (Milestone 04.5.1 Audit):
+ * CRITICAL TEXTILE INTEGRITY PRINCIPLES (Milestone 04.5.3 Audit):
  * 1. Finished Garment Dimension = Body Measurement + Baseline Wearing Ease + Design Ease
  *                               + Thickness Allowance (Turn of Cloth) - Stretch Deduction.
  *    (Finished garment dimension is the dimension of the sewn, pressed garment when worn).
  * 2. Pre-Shrink Cutting Dimension = Finished Garment Dimension / (1 - Shrinkage Ratio).
  *    (Cutting dimension is the flat pattern dimension cut on fabric to allow for shrinkage).
  *    Shrinkage compensation is NEVER added to finished garment ease!
+ * 3. Unavailable results expose NO usable finished garment or cutting dimensions.
+ * 4. Missing or conflicting measurement direction is never substituted with crossgrain.
+ * 5. Negative ease requires a complete, validated NegativeEaseAuthorizationPolicy matching category.
+ * 6. Missing recovery cannot produce a measured calculation; requires complete provisional policy.
+ * 7. Bias shrinkage cannot be fabricated by averaging warp and weft.
  */
 export function calculateFabricAwareCircumferenceEase(
   circumferenceId: FabricEaseBreakdown['circumferenceId'],
@@ -106,7 +431,7 @@ export function calculateFabricAwareCircumferenceEase(
   const baseEaseVal = (baseEaseProfile as any)[circumferenceId] ?? (circumferenceId === 'bust' ? 5.5 : 3.0);
   const baselineMovementEaseCm = Number(baseEaseVal.toFixed(2));
 
-  // 1. Resolve measurement direction (Section 4: Remove unconditional circumference-crossgrain fallback)
+  // 1. Resolve measurement direction and check for conflicting inputs
   let measurementDirection: MeasurementDirection | undefined = options.measurementDirection;
 
   if (!measurementDirection && options.patternPieceOrientation) {
@@ -119,6 +444,30 @@ export function calculateFabricAwareCircumferenceEase(
     }
   }
 
+  // Check conflicting inputs between explicit measurementDirection and patternPieceOrientation
+  if (options.measurementDirection && options.patternPieceOrientation) {
+    const dir = options.measurementDirection;
+    const ori = options.patternPieceOrientation;
+    const isConflict =
+      (dir === 'circumference-crossgrain' && ori !== 'crossgrain' && ori !== 'weft') ||
+      (dir === 'length-grainline' && ori !== 'grainline' && ori !== 'warp') ||
+      (dir === 'bias' && ori !== 'bias');
+
+    if (isConflict) {
+      const conflictMsg = `Conflicting directional inputs: measurementDirection '${dir}' conflicts with patternPieceOrientation '${ori}'.`;
+      provenanceNotes.push(conflictMsg);
+      return createUnavailableResult(
+        circumferenceId,
+        bodyValueCm,
+        baselineMovementEaseCm,
+        conflictMsg,
+        undefined, // Never substitute crossgrain on conflict!
+        provenanceNotes,
+        limitations
+      );
+    }
+  }
+
   const VALID_DIRECTIONS: MeasurementDirection[] = [
     'circumference-crossgrain',
     'length-grainline',
@@ -127,8 +476,16 @@ export function calculateFabricAwareCircumferenceEase(
 
   const isOrientationValid = Boolean(measurementDirection && VALID_DIRECTIONS.includes(measurementDirection));
   if (!isOrientationValid) {
-    provenanceNotes.push(
-      `Measurement direction '${measurementDirection ?? 'undefined'}' is missing or ambiguous. Explicit direction ('circumference-crossgrain', 'length-grainline', or 'bias') or patternPieceOrientation is required. Unconditional circumference-crossgrain fallback removed.`
+    const missingDirMsg = `Measurement direction '${measurementDirection ?? 'undefined'}' is missing or ambiguous. Explicit direction ('circumference-crossgrain', 'length-grainline', or 'bias') or patternPieceOrientation is required. Unconditional circumference-crossgrain fallback removed.`;
+    provenanceNotes.push(missingDirMsg);
+    return createUnavailableResult(
+      circumferenceId,
+      bodyValueCm,
+      baselineMovementEaseCm,
+      missingDirMsg,
+      undefined, // Never substitute crossgrain when missing/ambiguous!
+      provenanceNotes,
+      limitations
     );
   }
 
@@ -139,30 +496,17 @@ export function calculateFabricAwareCircumferenceEase(
   }
 
   const fabric = resolution.fabric;
-
-  if (!isOrientationValid || !fabric) {
-    return {
+  if (!fabric) {
+    const unverifiedFabricMsg = resolution.warning ?? 'Fabric specification is missing or unverified.';
+    return createUnavailableResult(
       circumferenceId,
-      measurementDirection: (measurementDirection as any) ?? 'circumference-crossgrain',
-      bodyMeasurementCm: bodyValueCm,
+      bodyValueCm,
       baselineMovementEaseCm,
-      designEaseCm: 0,
-      stretchDeductionCm: 0,
-      thicknessAllowanceCm: 0,
-      silhouetteAdjustmentCm: 0,
-      totalAppliedEaseCm: baselineMovementEaseCm,
-      finishedGarmentDimensionCm: Number((bodyValueCm + baselineMovementEaseCm).toFixed(2)),
-      shrinkageRatio: 0,
-      shrinkageCompensationCm: 0,
-      preShrinkCuttingDimensionCm: Number((bodyValueCm + baselineMovementEaseCm).toFixed(2)),
-      cuttingAllowanceFactor: 1.0,
-      isCalculationAvailable: false,
-      unavailableReason: !isOrientationValid
-        ? `Measurement direction '${measurementDirection ?? 'undefined'}' is missing or ambiguous.`
-        : (resolution.warning ?? 'Fabric specification is missing or unverified.'),
+      unverifiedFabricMsg,
+      measurementDirection,
       provenanceNotes,
       limitations
-    };
+    );
   }
 
   if (fabric.auditWarnings && fabric.auditWarnings.length > 0) {
@@ -171,79 +515,157 @@ export function calculateFabricAwareCircumferenceEase(
 
   const validatedDirection = measurementDirection as MeasurementDirection;
 
-  // 3. Directional Stretch & Elastic Recovery Resolution (Section 2: No silent 80% recovery default)
+  // 3. Directional Stretch & Elastic Recovery Resolution (Section 3: Missing recovery must not produce measured calc)
   let directionalStretchPercent = 0;
   let directionalRecoveryPercent: number | undefined = undefined;
   let isProvisionalRecovery = false;
   let provisionalRecoveryReason = '';
 
-  if (measurementDirection === 'circumference-crossgrain') {
+  if (validatedDirection === 'circumference-crossgrain') {
     directionalStretchPercent = fabric.directional?.weft?.stretchPercent ?? 0;
     directionalRecoveryPercent = fabric.directional?.weft?.elasticRecoveryPercent;
-  } else if (measurementDirection === 'length-grainline') {
+  } else if (validatedDirection === 'length-grainline') {
     directionalStretchPercent = fabric.directional?.warp?.stretchPercent ?? 0;
     directionalRecoveryPercent = fabric.directional?.warp?.elasticRecoveryPercent;
   } else {
     directionalStretchPercent = fabric.directional?.bias?.stretchPercent ?? 0;
+    directionalRecoveryPercent = fabric.directional?.bias?.elasticRecoveryPercent;
   }
 
   if (directionalRecoveryPercent === undefined || !Number.isFinite(directionalRecoveryPercent)) {
-    if (options.provisionalRecoveryPolicy?.allowProvisionalRecovery && options.provisionalRecoveryPolicy?.userApproved) {
-      directionalRecoveryPercent = options.provisionalRecoveryPolicy.provisionalRecoveryPercent;
-      isProvisionalRecovery = true;
-      provisionalRecoveryReason = options.provisionalRecoveryPolicy.reason || 'Provisional recovery policy approved by user';
-      provenanceNotes.push(
-        `Elastic recovery missing from fabric data; applied user-approved provisional recovery of ${directionalRecoveryPercent}% (${provisionalRecoveryReason}).`
-      );
-    } else {
-      if (directionalStretchPercent > 3.0) {
+    if (options.provisionalRecoveryPolicy) {
+      const provRecValidation = validateProvisionalRecoveryPolicy(options.provisionalRecoveryPolicy);
+      if (provRecValidation.isValid && provRecValidation.recoveryPercent !== undefined) {
+        directionalRecoveryPercent = provRecValidation.recoveryPercent;
+        isProvisionalRecovery = true;
+        provisionalRecoveryReason = options.provisionalRecoveryPolicy.reason;
         provenanceNotes.push(
-          `Directional elastic recovery data missing for ${measurementDirection}. Stretch deduction cannot be measured without recovery evidence or an explicit user-approved provisional policy.`
+          `Elastic recovery missing from fabric data; applied user-approved provisional recovery of ${directionalRecoveryPercent}% by ${options.provisionalRecoveryPolicy.approvedBy} (${provisionalRecoveryReason}).`
+        );
+      } else {
+        const provErrorMsg = `Provisional recovery policy rejected: ${provRecValidation.rejectionReason ?? 'Invalid policy'}.`;
+        provenanceNotes.push(provErrorMsg);
+        return createUnavailableResult(
+          circumferenceId,
+          bodyValueCm,
+          baselineMovementEaseCm,
+          provErrorMsg,
+          validatedDirection,
+          provenanceNotes,
+          limitations
         );
       }
-      directionalRecoveryPercent = undefined;
+    } else {
+      const missingRecoveryMsg = `Directional elastic recovery data missing for ${validatedDirection}. Measured recovery or complete user-approved provisional policy required.`;
+      provenanceNotes.push(missingRecoveryMsg);
+      return createUnavailableResult(
+        circumferenceId,
+        bodyValueCm,
+        baselineMovementEaseCm,
+        missingRecoveryMsg,
+        validatedDirection,
+        provenanceNotes,
+        limitations
+      );
     }
   }
 
-  // 4. Negative Ease Policy Authorization (Section 3: Defaults to disabled; strict opt-in)
+  // 4. Directional Shrinkage Resolution (Section 5: Do not average warp and weft to fabricate bias shrinkage)
+  let directionalShrinkagePercent = 0;
+  let isProvisionalBiasShrinkage = false;
+  let provisionalBiasShrinkageReason = '';
+
+  if (validatedDirection === 'circumference-crossgrain') {
+    directionalShrinkagePercent = fabric.directional?.weft?.shrinkagePercent ?? 0;
+  } else if (validatedDirection === 'length-grainline') {
+    directionalShrinkagePercent = fabric.directional?.warp?.shrinkagePercent ?? 0;
+  } else {
+    // Bias direction: NO averaging of warp and weft!
+    if (fabric.directional?.bias?.shrinkagePercent !== undefined && Number.isFinite(fabric.directional.bias.shrinkagePercent)) {
+      directionalShrinkagePercent = fabric.directional.bias.shrinkagePercent;
+    } else if (options.allowanceForShrinkage) {
+      if (options.provisionalBiasShrinkagePolicy) {
+        const provBiasValidation = validateProvisionalBiasShrinkagePolicy(options.provisionalBiasShrinkagePolicy);
+        if (provBiasValidation.isValid && provBiasValidation.shrinkagePercent !== undefined) {
+          directionalShrinkagePercent = provBiasValidation.shrinkagePercent;
+          isProvisionalBiasShrinkage = true;
+          provisionalBiasShrinkageReason = options.provisionalBiasShrinkagePolicy.reason;
+          provenanceNotes.push(
+            `Bias shrinkage missing from fabric data; applied user-approved provisional bias shrinkage of ${directionalShrinkagePercent}% by ${options.provisionalBiasShrinkagePolicy.approvedBy} (${provisionalBiasShrinkageReason}).`
+          );
+        } else {
+          const provBiasError = `Provisional bias shrinkage policy rejected: ${provBiasValidation.rejectionReason ?? 'Invalid policy'}.`;
+          provenanceNotes.push(provBiasError);
+          return createUnavailableResult(
+            circumferenceId,
+            bodyValueCm,
+            baselineMovementEaseCm,
+            provBiasError,
+            validatedDirection,
+            provenanceNotes,
+            limitations
+          );
+        }
+      } else {
+        const noBiasShrinkageMsg =
+          'Bias shrinkage data is missing for bias calculation. Measured bias shrinkage evidence or an explicitly approved provisional bias shrinkage policy is required. Warp and weft shrinkage averaging is prohibited.';
+        provenanceNotes.push(noBiasShrinkageMsg);
+        return createUnavailableResult(
+          circumferenceId,
+          bodyValueCm,
+          baselineMovementEaseCm,
+          noBiasShrinkageMsg,
+          validatedDirection,
+          provenanceNotes,
+          limitations
+        );
+      }
+    } else {
+      directionalShrinkagePercent = 0;
+    }
+  }
+
+  // 5. Negative Ease Policy Authorization (Section 2: Legacy boolean deprecated & rejected; strict runtime policy validation)
   let allowNegativeEase = false;
   let negativeEasePolicyApplied: NegativeEaseAuthorizationPolicy | undefined = undefined;
 
-  const policy = options.negativeEasePolicy;
-  if (policy && policy.isAuthorized) {
-    const isCategoryMatch = policy.garmentCategory === 'all' || !options.garmentCategory || policy.garmentCategory === options.garmentCategory;
-    const isAuthorValid = Boolean(policy.authorizedBy && policy.authorizedBy.trim() !== '');
-    const isStretchSufficient = directionalStretchPercent >= policy.minimumRequiredStretchPercent;
-    const currentRecovery = directionalRecoveryPercent ?? 0;
-    const isRecoverySufficient = currentRecovery >= policy.minimumRequiredRecoveryPercent;
+  if (options.negativeEasePolicyAllowed === true) {
+    provenanceNotes.push(
+      "Legacy 'negativeEasePolicyAllowed' boolean is deprecated and rejected as an authorization mechanism. A complete, runtime-validated NegativeEaseAuthorizationPolicy is strictly required."
+    );
+  }
 
-    if (isCategoryMatch && isAuthorValid && isStretchSufficient && isRecoverySufficient) {
+  if (options.negativeEasePolicy) {
+    const policyValidation = validateNegativeEaseAuthorizationPolicy(
+      options.negativeEasePolicy,
+      options.garmentCategory,
+      directionalStretchPercent,
+      directionalRecoveryPercent
+    );
+
+    if (policyValidation.isValid) {
       allowNegativeEase = true;
-      negativeEasePolicyApplied = policy;
+      negativeEasePolicyApplied = options.negativeEasePolicy;
       provenanceNotes.push(
-        `Negative ease explicitly authorized for category '${policy.garmentCategory}' by ${policy.authorizedBy} (Intent: ${policy.fitIntent}).`
+        `Negative ease explicitly authorized for category '${options.negativeEasePolicy.garmentCategory}' by ${options.negativeEasePolicy.authorizedBy} (Intent: ${options.negativeEasePolicy.fitIntent}, Auth Date: ${options.negativeEasePolicy.authorizationDate}).`
       );
     } else {
       provenanceNotes.push(
-        `Negative ease policy rejected: categoryMatch=${isCategoryMatch}, authorValid=${isAuthorValid}, stretchSufficient=${isStretchSufficient} (${directionalStretchPercent}% vs min ${policy.minimumRequiredStretchPercent}%), recoverySufficient=${isRecoverySufficient} (${currentRecovery}% vs min ${policy.minimumRequiredRecoveryPercent}%).`
+        `Negative ease policy rejected: ${policyValidation.rejectionReason}`
       );
     }
-  } else if (options.negativeEasePolicyAllowed === true) {
-    // Explicit legacy boolean opt-in
-    allowNegativeEase = true;
-    provenanceNotes.push('Negative ease permitted via explicit negativeEasePolicyAllowed flag.');
   }
 
-  // 5. Calculate Stretch Deduction (Only when authorized by negative ease policy)
+  // 6. Calculate Stretch Deduction (Only when authorized by a validated negative ease policy)
   let stretchDeductionCm = 0;
   if (allowNegativeEase && directionalStretchPercent > 3.0 && directionalRecoveryPercent !== undefined) {
-    // Proportional stretch deduction: accounts for recovery factor and maximum 60% wearing ease absorption
     const recoveryRatio = directionalRecoveryPercent / 100;
-    const stretchRatio = Math.min(0.60, (directionalStretchPercent - 3.0) * 0.025 * recoveryRatio);
+    const maxRatio = allowNegativeEase ? 1.5 : 0.60;
+    const stretchRatio = Math.min(maxRatio, (directionalStretchPercent - 3.0) * 0.05 * recoveryRatio);
     stretchDeductionCm = Number((baselineMovementEaseCm * stretchRatio).toFixed(2));
   }
 
-  // 6. Turn-of-Cloth Thickness Allowance
+  // 7. Turn-of-Cloth Thickness Allowance
   const thicknessCm = (fabric.thicknessMm ?? 0.6) / 10;
   const layers = options.layerCount ?? 1;
   let thicknessAllowanceCm = 0;
@@ -251,7 +673,7 @@ export function calculateFabricAwareCircumferenceEase(
     thicknessAllowanceCm = Number((2 * Math.PI * thicknessCm * 0.5 * layers).toFixed(2));
   }
 
-  // 7. Design Ease (Silhouette Adjustment)
+  // 8. Design Ease (Silhouette Adjustment)
   let designEaseCm = 0;
   if (options.silhouette === 'tailored') {
     designEaseCm = 0.5;
@@ -263,85 +685,61 @@ export function calculateFabricAwareCircumferenceEase(
     designEaseCm = circumferenceId === 'lowHip' ? 4.0 : 0.0;
   }
 
-  // 8. Net Finished Garment Ease & Negative Ease Boundary Checking
+  // 9. Net Finished Garment Ease & Negative Ease Boundary Checking
   let totalAppliedEaseCm = Number(
     (baselineMovementEaseCm + designEaseCm + thicknessAllowanceCm - stretchDeductionCm).toFixed(2)
   );
 
-  // If total applied ease would be negative without authorization:
   if (totalAppliedEaseCm < 0 && !allowNegativeEase) {
     stretchDeductionCm = Number((baselineMovementEaseCm + designEaseCm + thicknessAllowanceCm).toFixed(2));
     totalAppliedEaseCm = 0;
     provenanceNotes.push('Negative ease is disabled by default; stretch deduction was clamped to preserve zero non-negative ease.');
   }
 
-  // If negative ease is authorized, verify it does not exceed policy limits
-  if (totalAppliedEaseCm < 0 && allowNegativeEase && policy) {
+  // Check policy limits if total applied ease is negative
+  if (totalAppliedEaseCm < 0 && allowNegativeEase && negativeEasePolicyApplied) {
     const negativeEaseCm = Math.abs(totalAppliedEaseCm);
     const negativeEasePercent = Number(((negativeEaseCm / bodyValueCm) * 100).toFixed(2));
 
-    if (policy.maxPermittedNegativeEaseCm !== undefined && negativeEaseCm > policy.maxPermittedNegativeEaseCm) {
-      return {
+    if (
+      negativeEasePolicyApplied.maxPermittedNegativeEaseCm !== undefined &&
+      negativeEaseCm > negativeEasePolicyApplied.maxPermittedNegativeEaseCm
+    ) {
+      const overageCmMsg = `Calculated negative ease (-${negativeEaseCm.toFixed(2)} cm) exceeds maximum authorized policy limit (-${negativeEasePolicyApplied.maxPermittedNegativeEaseCm.toFixed(2)} cm).`;
+      provenanceNotes.push(overageCmMsg);
+      return createUnavailableResult(
         circumferenceId,
-        measurementDirection: validatedDirection,
-        bodyMeasurementCm: bodyValueCm,
+        bodyValueCm,
         baselineMovementEaseCm,
-        designEaseCm,
-        stretchDeductionCm,
-        thicknessAllowanceCm,
-        silhouetteAdjustmentCm: designEaseCm,
-        totalAppliedEaseCm,
-        finishedGarmentDimensionCm: Number((bodyValueCm + totalAppliedEaseCm).toFixed(2)),
-        shrinkageRatio: 0,
-        shrinkageCompensationCm: 0,
-        preShrinkCuttingDimensionCm: Number((bodyValueCm + totalAppliedEaseCm).toFixed(2)),
-        cuttingAllowanceFactor: 1.0,
-        isCalculationAvailable: false,
-        unavailableReason: `Calculated negative ease (-${negativeEaseCm.toFixed(2)} cm) exceeds maximum authorized policy limit (-${policy.maxPermittedNegativeEaseCm.toFixed(2)} cm).`,
+        overageCmMsg,
+        validatedDirection,
         provenanceNotes,
         limitations
-      };
+      );
     }
 
-    if (policy.maxPermittedNegativeEasePercent !== undefined && negativeEasePercent > policy.maxPermittedNegativeEasePercent) {
-      return {
+    if (
+      negativeEasePolicyApplied.maxPermittedNegativeEasePercent !== undefined &&
+      negativeEasePercent > negativeEasePolicyApplied.maxPermittedNegativeEasePercent
+    ) {
+      const overagePctMsg = `Calculated negative ease (-${negativeEasePercent.toFixed(1)}%) exceeds maximum authorized policy limit (-${negativeEasePolicyApplied.maxPermittedNegativeEasePercent.toFixed(1)}%).`;
+      provenanceNotes.push(overagePctMsg);
+      return createUnavailableResult(
         circumferenceId,
-        measurementDirection: validatedDirection,
-        bodyMeasurementCm: bodyValueCm,
+        bodyValueCm,
         baselineMovementEaseCm,
-        designEaseCm,
-        stretchDeductionCm,
-        thicknessAllowanceCm,
-        silhouetteAdjustmentCm: designEaseCm,
-        totalAppliedEaseCm,
-        finishedGarmentDimensionCm: Number((bodyValueCm + totalAppliedEaseCm).toFixed(2)),
-        shrinkageRatio: 0,
-        shrinkageCompensationCm: 0,
-        preShrinkCuttingDimensionCm: Number((bodyValueCm + totalAppliedEaseCm).toFixed(2)),
-        cuttingAllowanceFactor: 1.0,
-        isCalculationAvailable: false,
-        unavailableReason: `Calculated negative ease (-${negativeEasePercent.toFixed(1)}%) exceeds maximum authorized policy limit (-${policy.maxPermittedNegativeEasePercent.toFixed(1)}%).`,
+        overagePctMsg,
+        validatedDirection,
         provenanceNotes,
         limitations
-      };
+      );
     }
   }
 
-  // 9. Finished Garment Dimension (Body + Net Finished Ease)
+  // 10. Finished Garment Dimension (Body + Net Finished Ease)
   const finishedGarmentDimensionCm = Number((bodyValueCm + totalAppliedEaseCm).toFixed(2));
 
-  // 10. Directional Shrinkage & Pre-Shrink Cutting Dimension
-  let directionalShrinkagePercent = 0;
-  if (measurementDirection === 'circumference-crossgrain') {
-    directionalShrinkagePercent = fabric.directional?.weft?.shrinkagePercent ?? 0;
-  } else if (measurementDirection === 'length-grainline') {
-    directionalShrinkagePercent = fabric.directional?.warp?.shrinkagePercent ?? 0;
-  } else {
-    directionalShrinkagePercent = Number(
-      (((fabric.directional?.warp?.shrinkagePercent ?? 0) + (fabric.directional?.weft?.shrinkagePercent ?? 0)) / 2).toFixed(2)
-    );
-  }
-
+  // 11. Directional Shrinkage & Pre-Shrink Cutting Dimension
   let shrinkageRatio = 0;
   let cuttingAllowanceFactor = 1.0;
   let preShrinkCuttingDimensionCm = finishedGarmentDimensionCm;
@@ -356,7 +754,7 @@ export function calculateFabricAwareCircumferenceEase(
     }
   }
 
-  // 11. Compile Input Provenance Summary (Section 6)
+  // 12. Compile Input Provenance Summary
   const inputProvenanceSummary: InputProvenanceSummary = {
     measuredInputs: [`bodyMeasurementCm: ${bodyValueCm.toFixed(2)} cm`],
     supplierDeclaredInputs: [],
@@ -389,13 +787,20 @@ export function calculateFabricAwareCircumferenceEase(
     inputProvenanceSummary.measuredInputs.push(`directionalRecoveryPercent: ${directionalRecoveryPercent}%`);
   }
 
+  if (isProvisionalBiasShrinkage) {
+    inputProvenanceSummary.explicitUserAssumptions.push(
+      `Provisional bias shrinkage: ${directionalShrinkagePercent}% (${provisionalBiasShrinkageReason})`
+    );
+  }
+
   if (negativeEasePolicyApplied) {
     inputProvenanceSummary.explicitUserAssumptions.push(
-      `Negative ease authorized by ${negativeEasePolicyApplied.authorizedBy} (max: ${negativeEasePolicyApplied.maxPermittedNegativeEasePercent}%)`
+      `Negative ease authorized by ${negativeEasePolicyApplied.authorizedBy} (max: ${negativeEasePolicyApplied.maxPermittedNegativeEasePercent}%, Intent: ${negativeEasePolicyApplied.fitIntent})`
     );
   }
 
   return {
+    status: 'available',
     circumferenceId,
     measurementDirection: validatedDirection,
     bodyMeasurementCm: bodyValueCm,
@@ -411,8 +816,8 @@ export function calculateFabricAwareCircumferenceEase(
     preShrinkCuttingDimensionCm,
     cuttingAllowanceFactor,
     isCalculationAvailable: true,
-    isProvisionalCalculation: isProvisionalRecovery,
-    provisionalReason: isProvisionalRecovery ? provisionalRecoveryReason : undefined,
+    isProvisionalCalculation: isProvisionalRecovery || isProvisionalBiasShrinkage,
+    provisionalReason: isProvisionalRecovery ? provisionalRecoveryReason : (isProvisionalBiasShrinkage ? provisionalBiasShrinkageReason : undefined),
     negativeEasePolicyApplied,
     inputProvenanceSummary,
     provenanceNotes,
@@ -502,6 +907,7 @@ export function calculateCompleteGarmentEase(
   const hipVal = measurements.lowHip;
   const circumferenceOptions: EaseCalculationOptions = {
     ...options,
+    garmentCategory: options.garmentCategory ?? 'bodice',
     measurementDirection: options.measurementDirection ?? 'circumference-crossgrain'
   };
 
@@ -511,4 +917,3 @@ export function calculateCompleteGarmentEase(
     lowHip: calculateFabricAwareCircumferenceEase('lowHip', hipVal, easeProfile, fabricInput, circumferenceOptions)
   };
 }
-

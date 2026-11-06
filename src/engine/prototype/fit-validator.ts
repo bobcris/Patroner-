@@ -40,11 +40,16 @@ export function validatePhysicalFit(
   let maxAbsDiscrepancy = 0;
 
   // 1. Garment-specific required-measurement registry check
-  const requiredPointsSchema = GARMENT_REQUIRED_POINTS_REGISTRY[prototype.garmentCategory];
-  const isUnsupportedScope = !requiredPointsSchema;
+  const requiredPointsSchema = prototype.garmentCategory ? GARMENT_REQUIRED_POINTS_REGISTRY[prototype.garmentCategory] : undefined;
+  const isUnsupportedScope =
+    !prototype.garmentCategory ||
+    !requiredPointsSchema ||
+    !Array.isArray(requiredPointsSchema) ||
+    requiredPointsSchema.length === 0;
+
   if (isUnsupportedScope) {
     actionableCadCorrections.push(
-      `Garment category '${prototype.garmentCategory}' has no defined required physical validation schema. Validation scope unsupported.`
+      `Garment category '${prototype.garmentCategory ?? 'unspecified'}' has no defined required physical validation schema. Validation scope unsupported.`
     );
   }
 
@@ -112,19 +117,21 @@ export function validatePhysicalFit(
     };
   }
 
-  // 4. Evaluate individual measurement points, duplicate detection, and source verification
-  const seenPointIds = new Set<string>();
+  // 4. Pre-count point IDs to identify all duplicate checkpoint records
+  const pointIdCounts = new Map<string, number>();
+  for (const pt of prototype.measurements) {
+    pointIdCounts.set(pt.pointId, (pointIdCounts.get(pt.pointId) ?? 0) + 1);
+  }
+
   const VALID_SOURCES: MeasurementPointSourceType[] = ['physically-measured', 'calculated', 'estimated'];
 
   const evaluatedPoints: MeasurementPointRecord[] = prototype.measurements.map(pt => {
-    // Check duplicate point IDs
-    const isDuplicate = seenPointIds.has(pt.pointId);
+    // Check duplicate point IDs (any point appearing > 1 time is invalid)
+    const isDuplicate = (pointIdCounts.get(pt.pointId) ?? 0) > 1;
     if (isDuplicate) {
       actionableCadCorrections.push(
         `Duplicate measurement point ID detected: '${pt.pointId}'. Checkpoint IDs must be unique.`
       );
-    } else {
-      seenPointIds.add(pt.pointId);
     }
 
     // Validation of numerical sanity
@@ -199,9 +206,13 @@ export function validatePhysicalFit(
   const requiredPoints = requiredPointsSchema ?? [];
 
   for (const reqPt of requiredPoints) {
-    // Only physically-measured valid points satisfy physical validation checkpoints
-    const matchingPoint = evaluatedPoints.find(p => p.pointId === reqPt);
-    if (!matchingPoint || matchingPoint.status === 'invalid' || matchingPoint.sourceType !== 'physically-measured') {
+    // Only unique, physically-measured valid points satisfy physical validation checkpoints
+    const matchingPoints = evaluatedPoints.filter(p => p.pointId === reqPt);
+    if (
+      matchingPoints.length !== 1 ||
+      matchingPoints[0].status === 'invalid' ||
+      matchingPoints[0].sourceType !== 'physically-measured'
+    ) {
       missingRequiredPoints.push(reqPt);
     }
   }

@@ -1604,26 +1604,34 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                       <span className="text-neutral-500">Wearing Ease:</span>
                       <span>+{workspaceFabricEase.waist.baselineMovementEaseCm.toFixed(2)} cm</span>
                     </div>
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-neutral-500">Net Finished Ease:</span>
-                      <span className="font-bold text-emerald-700">
-                        +{workspaceFabricEase.waist.totalAppliedEaseCm.toFixed(2)} cm
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-[11px] font-bold border-t border-neutral-200 pt-1">
-                      <span className="text-neutral-900">Finished Garment Girth:</span>
-                      <span className="text-neutral-900">
-                        {workspaceFabricEase.waist.finishedGarmentDimensionCm.toFixed(2)} cm
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-amber-800">
-                      <span>Cutting Shrink (+ΔD_sh):</span>
-                      <span>+{workspaceFabricEase.waist.shrinkageCompensationCm.toFixed(2)} cm</span>
-                    </div>
-                    <div className="flex justify-between text-[11px] font-bold text-amber-950 bg-amber-50 p-1 rounded">
-                      <span>Pre-Shrink Cut Dimension:</span>
-                      <span>{workspaceFabricEase.waist.preShrinkCuttingDimensionCm.toFixed(2)} cm</span>
-                    </div>
+                    {workspaceFabricEase.waist.isCalculationAvailable ? (
+                      <>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-neutral-500">Net Finished Ease:</span>
+                          <span className="font-bold text-emerald-700">
+                            +{workspaceFabricEase.waist.totalAppliedEaseCm.toFixed(2)} cm
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[11px] font-bold border-t border-neutral-200 pt-1">
+                          <span className="text-neutral-900">Finished Garment Girth:</span>
+                          <span className="text-neutral-900">
+                            {workspaceFabricEase.waist.finishedGarmentDimensionCm.toFixed(2)} cm
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[11px] text-amber-800">
+                          <span>Cutting Shrink (+ΔD_sh):</span>
+                          <span>+{workspaceFabricEase.waist.shrinkageCompensationCm.toFixed(2)} cm</span>
+                        </div>
+                        <div className="flex justify-between text-[11px] font-bold text-amber-950 bg-amber-50 p-1 rounded">
+                          <span>Pre-Shrink Cut Dimension:</span>
+                          <span>{workspaceFabricEase.waist.preShrinkCuttingDimensionCm.toFixed(2)} cm</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-2 text-[11px] text-amber-800 bg-amber-50/50 rounded font-mono">
+                        Unavailable: {workspaceFabricEase.waist.unavailableReason}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

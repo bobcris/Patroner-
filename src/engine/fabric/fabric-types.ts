@@ -82,6 +82,8 @@ export interface DirectionalProperties {
   bias: {
     stretchPercent: number;    // Bias stretchability (%) [0, 120]
     drapeCoefficient?: number; // Cusick drape coefficient [0.05, 1.0]
+    shrinkagePercent?: number; // Optional measured bias shrinkage (%) [0, 25]
+    elasticRecoveryPercent?: number; // Optional measured bias recovery (%) [0, 100]
   };
 }
 
@@ -157,29 +159,39 @@ export interface FabricValidationResult {
 export type MeasurementDirection = 'circumference-crossgrain' | 'length-grainline' | 'bias';
 
 /**
+/**
  * Explicit authorization policy for negative ease calculations.
  * Negative ease reduces finished garment dimensions below anatomical body measurements.
  * It must never be applied implicitly from fabric stretch or fitted profiles alone.
+ * In Milestone 04.5.3:
+ * - A legacy boolean is rejected.
+ * - Requires explicit matching garmentCategory (missing category is rejected).
+ * - Requires non-empty authorizedBy, sourceAndProvenance, and valid ISO authorizationDate.
+ * - Validates recognized fitIntent and positive finite limits.
+ * - Directional stretch and recovery must satisfy declared policy thresholds.
  */
 export interface NegativeEaseAuthorizationPolicy {
   /**
-   * Explicit authorization flag. Default is false.
+   * Explicit authorization flag. Must be true.
    */
   isAuthorized: boolean;
   /**
-   * Target garment category (e.g. 'bodice', 'activewear', 'swimwear', 'all').
+   * Target garment category (e.g. 'bodice', 'activewear', 'swimwear').
+   * Missing category is a rejection, not a wildcard.
    */
   garmentCategory: string;
   /**
-   * Construction or fit intent (e.g. 'compression-fit', 'corsetry', 'performance-knit').
+   * Construction or fit intent (e.g. 'compression-fit', 'corsetry', 'performance-knit', 'bodycon', 'stretch-contour', 'tailored-fitted').
    */
   fitIntent: string;
   /**
    * Maximum permitted negative ease percentage (e.g. 5.0 for -5% body circumference).
+   * Must be a positive finite number.
    */
   maxPermittedNegativeEasePercent: number;
   /**
    * Optional maximum negative ease in absolute cm (e.g. 3.0 cm).
+   * Must be a positive finite number when defined.
    */
   maxPermittedNegativeEaseCm?: number;
   /**
@@ -199,15 +211,19 @@ export interface NegativeEaseAuthorizationPolicy {
    */
   sourceAndProvenance: string;
   /**
-   * Date authorization was granted (ISO format).
+   * Date authorization was granted (valid ISO format YYYY-MM-DD or full ISO 8601).
    */
-  authorizationDate?: string;
+  authorizationDate: string;
+  /**
+   * Optional expiration date (ISO format). If present and in the past, policy is rejected.
+   */
+  expirationDate?: string;
 }
 
 /**
  * Explicit provisional elastic recovery policy.
- * When laboratory recovery data is missing, recovery-based stretch deductions cannot occur
- * unless an authorized provisional policy is explicitly selected.
+ * When laboratory recovery data is missing, recovery-based calculations cannot occur
+ * unless a complete, authorized provisional policy is explicitly selected.
  */
 export interface ProvisionalRecoveryPolicy {
   /**
@@ -223,13 +239,50 @@ export interface ProvisionalRecoveryPolicy {
    */
   userApproved: boolean;
   /**
-   * Rationale for applying provisional estimation.
+   * Non-empty rationale for applying provisional estimation.
+   */
+  reason: string;
+  /**
+   * Name of user or authority approving the provisional policy.
+   */
+  approvedBy: string;
+  /**
+   * Date provisional policy was approved (valid ISO date string).
+   */
+  approvalDate: string;
+}
+
+/**
+ * Explicit provisional bias shrinkage policy.
+ * Bias shrinkage cannot be fabricated by averaging warp and weft.
+ * When laboratory bias shrinkage is missing, bias calculations with shrinkage compensation
+ * require an explicitly approved provisional bias shrinkage policy.
+ */
+export interface ProvisionalBiasShrinkagePolicy {
+  /**
+   * Whether provisional bias shrinkage estimation is permitted.
+   */
+  allowProvisional: boolean;
+  /**
+   * Explicit confirmation that the user approved this assumption.
+   */
+  userApproved: boolean;
+  /**
+   * Provisional bias shrinkage percentage to apply (0-100%).
+   */
+  provisionalShrinkagePercent: number;
+  /**
+   * Non-empty rationale for applying provisional estimation.
    */
   reason: string;
   /**
    * Name of user approving the provisional policy.
    */
-  approvedBy?: string;
+  approvedBy: string;
+  /**
+   * Date provisional policy was approved (valid ISO date string).
+   */
+  approvalDate: string;
 }
 
 /**
@@ -244,15 +297,32 @@ export interface InputProvenanceSummary {
   calculatedOutputs: string[];
 }
 
+export type FabricEaseCalculationStatus = 'available' | 'unavailable';
+
 /**
- * Breakdown of deterministic ease components calculated for a pattern piece or circumference.
- * Distinguishes Finished Garment Dimension from Pre-Shrink Cutting Dimension.
+ * Common metadata shared by all ease calculation outcomes.
  */
-export interface FabricEaseBreakdown {
+export interface BaseFabricEaseBreakdown {
   circumferenceId: 'bust' | 'waist' | 'lowHip' | 'biceps' | 'wrist';
-  measurementDirection: MeasurementDirection;
+  /**
+   * Explicit measurement direction. Undefined or ambiguous when missing or in conflict;
+   * never substituted with 'circumference-crossgrain' in error/unavailable results.
+   */
+  measurementDirection?: MeasurementDirection;
   bodyMeasurementCm: number;
   baselineMovementEaseCm: number; // Physiological wearing movement ease
+  provenanceNotes: string[];
+  limitations: string[];
+  inputProvenanceSummary?: InputProvenanceSummary;
+}
+
+/**
+ * Successful, physically validated ease calculation result.
+ */
+export interface AvailableFabricEaseBreakdown extends BaseFabricEaseBreakdown {
+  status: 'available';
+  isCalculationAvailable: true;
+  measurementDirection: MeasurementDirection;
   designEaseCm: number;           // Silhouette-specific design ease offset
   stretchDeductionCm: number;     // Negative deduction to compensate for directional stretch
   thicknessAllowanceCm: number;   // Turn-of-cloth circumference expansion
@@ -263,13 +333,39 @@ export interface FabricEaseBreakdown {
   shrinkageCompensationCm: number;// Pre-shrink dimensional increase added to cutting pattern
   preShrinkCuttingDimensionCm: number; // Dimension to cut on flat pattern before wash/press: Finished / (1 - shrinkage)
   cuttingAllowanceFactor: number; // Scale multiplier applied to pattern cutting line for shrinkage (1 / (1 - r))
-  isCalculationAvailable: boolean;
-  unavailableReason?: string;
   isProvisionalCalculation?: boolean;
   provisionalReason?: string;
   negativeEasePolicyApplied?: NegativeEaseAuthorizationPolicy;
-  inputProvenanceSummary?: InputProvenanceSummary;
-  provenanceNotes: string[];
-  limitations: string[];
+  unavailableReason?: undefined;
 }
+
+/**
+ * Unavailable ease calculation result.
+ * Strictly exposes NO usable finished garment or cutting dimensions to prevent
+ * invalid or unverified dimensions from being consumed or cut in production.
+ */
+export interface UnavailableFabricEaseBreakdown extends BaseFabricEaseBreakdown {
+  status: 'unavailable';
+  isCalculationAvailable: false;
+  unavailableReason: string;
+  designEaseCm?: undefined;
+  stretchDeductionCm?: undefined;
+  thicknessAllowanceCm?: undefined;
+  silhouetteAdjustmentCm?: undefined;
+  totalAppliedEaseCm?: undefined;
+  finishedGarmentDimensionCm?: undefined;
+  shrinkageRatio?: undefined;
+  shrinkageCompensationCm?: undefined;
+  preShrinkCuttingDimensionCm?: undefined;
+  cuttingAllowanceFactor?: undefined;
+  isProvisionalCalculation?: false;
+  provisionalReason?: undefined;
+  negativeEasePolicyApplied?: undefined;
+}
+
+/**
+ * Breakdown of deterministic ease components calculated for a pattern piece or circumference.
+ * Discriminated union strictly separating available and unavailable calculations.
+ */
+export type FabricEaseBreakdown = AvailableFabricEaseBreakdown | UnavailableFabricEaseBreakdown;
 

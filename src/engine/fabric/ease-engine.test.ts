@@ -143,15 +143,16 @@ describe('Milestone 04.5.1: Fabric Physics, Provenance & Ease Integrity Audit', 
       assert.equal(waistEase.baselineMovementEaseCm, 4.0);
 
       // Finished garment dimension = Body + Net Finished Ease (EXCLUDES SHRINKAGE)
-      assert.equal(waistEase.finishedGarmentDimensionCm, Number((72.0 + waistEase.totalAppliedEaseCm).toFixed(2)));
+      assert.ok(waistEase.isCalculationAvailable);
+      assert.equal(waistEase.finishedGarmentDimensionCm, Number((72.0 + waistEase.totalAppliedEaseCm!).toFixed(2)));
 
       // Pre-shrink cutting dimension includes shrinkage compensation
-      assert.ok(waistEase.shrinkageCompensationCm > 2.0);
+      assert.ok(waistEase.shrinkageCompensationCm! > 2.0);
       assert.equal(
         waistEase.preShrinkCuttingDimensionCm,
-        Number((waistEase.finishedGarmentDimensionCm + waistEase.shrinkageCompensationCm).toFixed(2))
+        Number((waistEase.finishedGarmentDimensionCm! + waistEase.shrinkageCompensationCm!).toFixed(2))
       );
-      assert.ok(waistEase.preShrinkCuttingDimensionCm > waistEase.finishedGarmentDimensionCm);
+      assert.ok(waistEase.preShrinkCuttingDimensionCm! > waistEase.finishedGarmentDimensionCm!);
     });
 
     it('7. applies directional shrinkage according to measurement direction (crossgrain vs grainline)', () => {
@@ -187,17 +188,30 @@ describe('Milestone 04.5.1: Fabric Physics, Provenance & Ease Integrity Audit', 
       const ponte = ponteLookup.fabric;
       const waistBody = 72.0;
 
-      // With negative ease allowed
+      // With negative ease authorized via valid policy
       const withNegative = calculateFabricAwareCircumferenceEase('waist', waistBody, 'fitted', ponte, {
         measurementDirection: 'circumference-crossgrain',
-        negativeEasePolicyAllowed: true
+        garmentCategory: 'bodice',
+        negativeEasePolicy: {
+          isAuthorized: true,
+          garmentCategory: 'bodice',
+          fitIntent: 'compression-fit',
+          maxPermittedNegativeEasePercent: 5.0,
+          maxPermittedNegativeEaseCm: 3.5,
+          minimumRequiredStretchPercent: 5.0,
+          minimumRequiredRecoveryPercent: 70.0,
+          authorizedBy: 'Lead Pattern Engineer',
+          sourceAndProvenance: 'Spec Standard DOC-EASE-04',
+          authorizationDate: '2026-01-15T00:00:00.000Z'
+        }
       });
-      assert.ok(withNegative.stretchDeductionCm > 0.5);
+      assert.ok(withNegative.isCalculationAvailable);
+      assert.ok((withNegative.stretchDeductionCm ?? 0) > 0.5);
 
-      // With negative ease explicitly disallowed
+      // With negative ease disallowed (no policy)
       const withoutNegative = calculateFabricAwareCircumferenceEase('waist', waistBody, 'classic', ponte, {
         measurementDirection: 'circumference-crossgrain',
-        negativeEasePolicyAllowed: false
+        garmentCategory: 'bodice'
       });
       assert.equal(withoutNegative.stretchDeductionCm, 0.0);
     });
@@ -242,10 +256,10 @@ describe('Milestone 04.5.1: Fabric Physics, Provenance & Ease Integrity Audit', 
       const completeEase = calculateCompleteGarmentEase(baseMeasurements, 'classic', woolLookup.fabric, {
         allowanceForShrinkage: true
       });
-      assert.ok(completeEase.bust.totalAppliedEaseCm > 0);
-      assert.ok(completeEase.waist.totalAppliedEaseCm > 0);
-      assert.ok(completeEase.lowHip.totalAppliedEaseCm > 0);
-      assert.ok(completeEase.bust.preShrinkCuttingDimensionCm > completeEase.bust.finishedGarmentDimensionCm);
+      assert.ok(completeEase.bust.totalAppliedEaseCm! > 0);
+      assert.ok(completeEase.waist.totalAppliedEaseCm! > 0);
+      assert.ok(completeEase.lowHip.totalAppliedEaseCm! > 0);
+      assert.ok(completeEase.bust.preShrinkCuttingDimensionCm! > completeEase.bust.finishedGarmentDimensionCm!);
     });
   });
 });
