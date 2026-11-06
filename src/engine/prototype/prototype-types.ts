@@ -1,8 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import { GarmentCategory } from '../../types';
 
 export type MeasurementPointCategory =
@@ -10,6 +5,18 @@ export type MeasurementPointCategory =
   | 'seam-length'
   | 'width'
   | 'vertical-length';
+
+export type MeasurementPointSourceType =
+  | 'physically-measured'
+  | 'calculated'
+  | 'estimated';
+
+export type MeasurementMethod =
+  | 'caliper'
+  | 'measuring-tape'
+  | '3d-scan'
+  | 'optical-camera'
+  | 'unspecified';
 
 export type FitDefectLocation =
   | 'bust-apex'
@@ -37,12 +44,32 @@ export type FitDefectSeverity =
   | 'moderate'
   | 'critical';
 
-export type MeasurementPointStatus = 'pass' | 'warning' | 'fail';
+export type MeasurementPointStatus = 'pass' | 'warning' | 'fail' | 'invalid';
 
+/**
+ * Strict status rules (Milestone 04.5.1 Audit):
+ * - 'incomplete': required physical measurements are missing, empty, or invalid.
+ * - 'conforming': all required evidence exists and applicable tolerance checks pass.
+ * - 'acceptable-with-adjustments': valid evidence exists but advisory tolerances or non-critical observations need review.
+ * - 'non-conforming': required checks fail or critical fit defects are observed.
+ */
 export type OverallFitStatus =
-  | 'conforming'                   // All measurement points within tolerance, zero critical defects
-  | 'acceptable-with-adjustments' // Minor tolerances exceeded (< 1.5x) or minor visual feedback
-  | 'non-conforming';              // Tolerance failure > 1.5x or critical physical fit defect
+  | 'incomplete'
+  | 'conforming'
+  | 'acceptable-with-adjustments'
+  | 'non-conforming';
+
+export interface PairedSeamTolerancePolicy {
+  sideSeamToleranceCm: number;     // Standard policy: 0.30 cm
+  shoulderSeamToleranceCm: number; // Standard policy: 0.25 cm
+  inseamToleranceCm: number;       // Standard policy: 0.30 cm
+}
+
+export const DEFAULT_PAIRED_SEAM_TOLERANCE_POLICY: PairedSeamTolerancePolicy = {
+  sideSeamToleranceCm: 0.30,
+  shoulderSeamToleranceCm: 0.25,
+  inseamToleranceCm: 0.30
+};
 
 /**
  * An individual point-to-point measurement record comparing the digital CAD nominal value
@@ -52,11 +79,12 @@ export interface MeasurementPointRecord {
   pointId: string;
   label: string;
   category: MeasurementPointCategory;
-  nominalCadCm: number;       // Dimension from computational CAD geometry
-  measuredPhysicalCm: number; // Dimension measured on physical sewn prototype
-  toleranceCm: number;        // Manufacturing tolerance (e.g. 0.20cm for seams, 0.40cm for girth)
+  nominalCadCm: number;       // Dimension from computational CAD geometry (> 0)
+  measuredPhysicalCm: number; // Dimension measured on physical sewn prototype (> 0)
+  toleranceCm: number;        // Manufacturing tolerance (>= 0)
   deltaCm: number;            // measuredPhysicalCm - nominalCadCm
   status: MeasurementPointStatus;
+  sourceType: MeasurementPointSourceType;
   notes?: string;
 }
 
@@ -79,17 +107,22 @@ export interface FitDefectObservation {
 export interface PhysicalPrototypeRecord {
   id: string;
   patternDraftId: string;
+  patternDraftRevision: string;   // Required revision link
   sampleGarmentName: string;
   garmentCategory: GarmentCategory;
   sizeCode: string;
   fabricId: string;
+  fabricRevision?: string;        // Fabric revision link
   fabricName: string;
-  fabricLot: string;
-  tailorName: string;
-  dateSewn: string;
+  fabricLot?: string;
+  constructionDetails?: string;
+  measurementDate: string;        // ISO 8601 date
+  measurementMethod: MeasurementMethod;
+  evaluatorIdentity?: string;     // Evaluator or sample room source
   measurements: MeasurementPointRecord[];
   observations: FitDefectObservation[];
   wearerFeedback?: string;
+  isSyntheticTestFixture?: boolean; // Explicit flag for synthetic test fixtures
   /**
    * Safety invariant: prototype records never confer industrial production readiness.
    */
@@ -109,6 +142,8 @@ export interface FitValidationReport {
   passCount: number;
   warningCount: number;
   failCount: number;
+  invalidCount: number;
+  missingRequiredPoints: string[];
   maxAbsoluteDiscrepancyCm: number;
   meanAbsoluteDiscrepancyCm: number;
   criticalDefectCount: number;
@@ -117,5 +152,7 @@ export interface FitValidationReport {
   observations: FitDefectObservation[];
   actionableCadCorrections: string[];
   summaryMessage: string;
+  isSyntheticEvidence: boolean;
   isProductionReady: false;
 }
+

@@ -30,10 +30,12 @@ import {
 } from 'lucide-react';
 import {
   MOCK_CONFORMING_PROTOTYPE_BODICE_M,
-  MOCK_DISCREPANT_PROTOTYPE_BODICE_M
+  MOCK_DISCREPANT_PROTOTYPE_BODICE_M,
+  SYNTHETIC_TEST_PROTOTYPE_CONFORMING,
+  SYNTHETIC_TEST_PROTOTYPE_DISCREPANT
 } from '../../engine/prototype/prototype-fixtures';
 import { validatePhysicalFit } from '../../engine/prototype/fit-validator';
-import { getEnhancedFabricById } from '../../engine/fabric/fabric-presets';
+import { getEnhancedFabricById, DEFAULT_ILLUSTRATIVE_FABRIC } from '../../engine/fabric/fabric-presets';
 import { calculateCompleteGarmentEase, calculateFabricAdaptedSleeveCapEase } from '../../engine/fabric/ease-engine';
 import { PhysicalPrototypeRecord, FitValidationReport } from '../../engine/prototype/prototype-types';
 
@@ -96,34 +98,45 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     currentSpec.garmentCategory === 'bodice' ? 'piece-bodice-front' : 'piece-skirt-front'
   );
 
-  // Milestone 04.5: Prototype fit validation and fabric-aware calculations
+  // Milestone 04.5 / 04.5.1: Prototype fit validation and fabric-aware calculations
   const activePrototypeRecord: PhysicalPrototypeRecord = React.useMemo(() => {
-    return selectedPrototypeId === 'PROTO-BOD-2026-M-01'
-      ? MOCK_CONFORMING_PROTOTYPE_BODICE_M
-      : MOCK_DISCREPANT_PROTOTYPE_BODICE_M;
+    return selectedPrototypeId === 'PROTO-BOD-2026-M-01' || selectedPrototypeId === 'SYNTH-PROTO-BOD-M-CONFORMING'
+      ? SYNTHETIC_TEST_PROTOTYPE_CONFORMING
+      : SYNTHETIC_TEST_PROTOTYPE_DISCREPANT;
   }, [selectedPrototypeId]);
 
   const activePrototypeReport: FitValidationReport = React.useMemo(() => {
     return validatePhysicalFit(activePrototypeRecord);
   }, [activePrototypeRecord]);
 
-  const workspaceFabric = React.useMemo(() => {
+  const workspaceFabricLookup = React.useMemo(() => {
     return getEnhancedFabricById(currentSpec.fabric.id);
   }, [currentSpec.fabric.id]);
+
+  const workspaceFabric = React.useMemo(() => {
+    return workspaceFabricLookup.status === 'found'
+      ? workspaceFabricLookup.fabric
+      : DEFAULT_ILLUSTRATIVE_FABRIC;
+  }, [workspaceFabricLookup]);
 
   const workspaceFabricEase = React.useMemo(() => {
     return calculateCompleteGarmentEase(
       measurements,
       currentSpec.easeProfile,
       workspaceFabric,
-      { silhouette: currentSpec.silhouette }
+      {
+        silhouette: currentSpec.silhouette,
+        allowanceForShrinkage: true,
+        userExplicitConsentToDefaultFabric: true
+      }
     );
   }, [measurements, currentSpec.easeProfile, workspaceFabric, currentSpec.silhouette]);
 
   const workspaceAdaptedSleeveEase = React.useMemo(() => {
     return calculateFabricAdaptedSleeveCapEase(
       sleeveEaseStrategy,
-      workspaceFabric
+      workspaceFabric,
+      { userExplicitConsentToDefaultFabric: true }
     );
   }, [sleeveEaseStrategy, workspaceFabric]);
 
@@ -498,34 +511,35 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               {/* Prototype Sample Selection Switcher */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-neutral-500 uppercase font-bold mr-1">TRIAL SAMPLE:</span>
+                  <span className="text-[10px] text-neutral-500 uppercase font-bold mr-1">SYNTHETIC BENCHMARK:</span>
                   <button
                     onClick={() => setSelectedPrototypeId('PROTO-BOD-2026-M-01')}
                     className={`px-2.5 py-1 text-xs rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
-                      selectedPrototypeId === 'PROTO-BOD-2026-M-01'
+                      selectedPrototypeId === 'PROTO-BOD-2026-M-01' || selectedPrototypeId === 'SYNTH-PROTO-BOD-M-CONFORMING'
                         ? 'border-emerald-600 bg-emerald-50 text-emerald-950 font-bold shadow-2xs'
                         : 'border-neutral-200 bg-white text-neutral-700 opacity-70 hover:opacity-100'
                     }`}
                   >
-                    <span>Conforming Atelier Prototype (PROTO-BOD-2026-M-01)</span>
+                    <span>Synthetic Conforming Benchmark (Demo Fixture)</span>
                     <span className="text-[9px] bg-emerald-700 text-white px-1 rounded">10/10 PASS</span>
                   </button>
 
                   <button
                     onClick={() => setSelectedPrototypeId('PROTO-BOD-2026-M-DISCREPANT')}
                     className={`px-2.5 py-1 text-xs rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
-                      selectedPrototypeId === 'PROTO-BOD-2026-M-DISCREPANT'
+                      selectedPrototypeId === 'PROTO-BOD-2026-M-DISCREPANT' || selectedPrototypeId === 'SYNTH-PROTO-BOD-M-DISCREPANT'
                         ? 'border-red-600 bg-red-50 text-red-950 font-bold shadow-2xs'
                         : 'border-neutral-200 bg-white text-neutral-700 opacity-70 hover:opacity-100'
                     }`}
                   >
-                    <span>Discrepant Trial Sample (PROTO-BOD-2026-M-DISCREPANT)</span>
+                    <span>Synthetic Discrepant Benchmark (Demo Fixture)</span>
                     <span className="text-[9px] bg-red-700 text-white px-1 rounded">DISCREPANCIES</span>
                   </button>
                 </div>
 
-                <div className="text-[11px] text-neutral-600">
-                  <span>Fabric: <strong>{workspaceFabric.name}</strong> ({workspaceFabric.gsm} GSM)</span>
+                <div className="text-[11px] text-neutral-600 flex items-center gap-1.5">
+                  <span>Fabric: <strong>{workspaceFabric.name}</strong></span>
+                  <span className="text-[9px] bg-neutral-200 text-neutral-800 px-1 rounded">Unverified Reference</span>
                 </div>
               </div>
             </div>
@@ -1472,55 +1486,55 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               </div>
             </div>
           ) : cadViewMode === 'fit' ? (
-            /* Milestone 04.5: Physical Fit Evidence Inspector & Fabric Details */
+            /* Milestone 04.5 / 04.5.1: Physical Fit Evidence Inspector & Fabric Details */
             <div className="space-y-6">
               {/* Prototype Pedigree Card */}
               <div className="bg-white border border-neutral-200 rounded-sm p-5 shadow-2xs space-y-4 font-mono">
                 <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
                   <div>
                     <span className="text-[10px] uppercase text-amber-700 font-bold block">
-                      MODULE 04.5 INSPECTOR
+                      MODULE 04.5.1 AUDIT INSPECTOR
                     </span>
                     <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-900">
-                      Physical Prototype Pedigree
+                      Physical Prototype Evidence
                     </h3>
                   </div>
-                  <Badge variant={activePrototypeReport.overallFitStatus === 'conforming' ? 'success' : 'danger'} size="sm">
-                    {activePrototypeReport.overallFitStatus === 'conforming' ? 'CONFORMING' : 'DISCREPANCIES'}
+                  <Badge variant={activePrototypeReport.overallFitStatus === 'conforming' ? 'success' : activePrototypeReport.overallFitStatus === 'incomplete' ? 'warning' : 'danger'} size="sm">
+                    {activePrototypeReport.overallFitStatus.toUpperCase()}
                   </Badge>
                 </div>
 
                 <div className="space-y-2 text-xs bg-amber-50/60 p-3 rounded border border-amber-200">
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Sample Serial:</span>
+                    <span className="text-neutral-500">Benchmark Serial:</span>
                     <span className="font-bold text-neutral-900">{activePrototypeRecord.id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Evidence Class:</span>
+                    <span className="font-semibold text-amber-900">Synthetic Benchmark Fixture</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Target Size:</span>
                     <span className="font-semibold text-neutral-900">{activePrototypeRecord.sizeCode} (Base EU 38)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Fabric Lot:</span>
-                    <span className="font-semibold text-neutral-900">{activePrototypeRecord.fabricLot}</span>
+                    <span className="text-neutral-500">Draft Revision:</span>
+                    <span className="font-semibold text-neutral-900">{activePrototypeRecord.patternDraftRevision}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Cutting Date:</span>
-                    <span className="text-neutral-900">{activePrototypeRecord.dateSewn}</span>
+                    <span className="text-neutral-500">Measurement Method:</span>
+                    <span className="text-neutral-900 capitalize">{activePrototypeRecord.measurementMethod}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">Master Cutter / Tailor:</span>
-                    <span className="font-semibold text-neutral-900">{activePrototypeRecord.tailorName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">Wearer / Fit Model:</span>
-                    <span className="text-neutral-900">{activePrototypeRecord.sampleGarmentName}</span>
+                    <span className="text-neutral-500">Evaluator / Source:</span>
+                    <span className="font-semibold text-neutral-900">{activePrototypeRecord.evaluatorIdentity ?? 'Automated Benchmark Runner'}</span>
                   </div>
                 </div>
 
                 {activePrototypeRecord.wearerFeedback && (
                   <div className="p-3 bg-neutral-50 rounded border border-neutral-200 text-xs">
                     <span className="text-[10px] uppercase font-bold text-neutral-500 block mb-1">
-                      FIT MODEL &amp; WEARER LOG
+                      SYNTHETIC FIT LOG &amp; TEST COMMENTS
                     </span>
                     <p className="text-neutral-700 italic">
                       "{activePrototypeRecord.wearerFeedback}"
@@ -1567,7 +1581,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-neutral-500">Sleeve Molding:</span>
-                      <span className="font-semibold text-neutral-900">{workspaceFabric.moldingFactor.toFixed(2)}x</span>
+                      <span className="font-semibold text-neutral-900">{workspaceFabric.moldingFactor.toFixed(2)}x (Provisional)</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-neutral-500">Adapted Sleeve Ease:</span>
@@ -1580,27 +1594,35 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   {/* Net Ease Breakdown */}
                   <div className="p-2.5 bg-neutral-50 rounded border border-neutral-200 space-y-1">
                     <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                      Waist Ease Calculation
+                      Waist Ease Calculation (Finished vs Cut)
                     </span>
                     <div className="flex justify-between text-[11px]">
                       <span className="text-neutral-500">Anatomical Baseline:</span>
                       <span>{workspaceFabricEase.waist.bodyMeasurementCm.toFixed(1)} cm</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-neutral-500">Baseline Ease:</span>
+                      <span className="text-neutral-500">Wearing Ease:</span>
                       <span>+{workspaceFabricEase.waist.baselineMovementEaseCm.toFixed(2)} cm</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-neutral-500">Net Garment Ease:</span>
+                      <span className="text-neutral-500">Net Finished Ease:</span>
                       <span className="font-bold text-emerald-700">
                         +{workspaceFabricEase.waist.totalAppliedEaseCm.toFixed(2)} cm
                       </span>
                     </div>
                     <div className="flex justify-between text-[11px] font-bold border-t border-neutral-200 pt-1">
-                      <span className="text-neutral-900">Final Pattern Girth:</span>
+                      <span className="text-neutral-900">Finished Garment Girth:</span>
                       <span className="text-neutral-900">
                         {workspaceFabricEase.waist.finishedGarmentDimensionCm.toFixed(2)} cm
                       </span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-amber-800">
+                      <span>Cutting Shrink (+ΔD_sh):</span>
+                      <span>+{workspaceFabricEase.waist.shrinkageCompensationCm.toFixed(2)} cm</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] font-bold text-amber-950 bg-amber-50 p-1 rounded">
+                      <span>Pre-Shrink Cut Dimension:</span>
+                      <span>{workspaceFabricEase.waist.preShrinkCuttingDimensionCm.toFixed(2)} cm</span>
                     </div>
                   </div>
                 </div>

@@ -3,13 +3,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FabricProperty, FabricStretch, FabricWeight } from '../../types';
+import { FabricProperty, FabricStretch, FabricWeight, EaseProfile } from '../../types';
 
 export type FabricProvenance =
   | 'supplier-declared'
   | 'laboratory-tested'
   | 'user-entered'
   | 'project-default';
+
+export type PropertySourceType =
+  | 'laboratory-measured'
+  | 'supplier-declared'
+  | 'user-measured'
+  | 'user-entered'
+  | 'project-default'
+  | 'estimated'
+  | 'unknown';
+
+export type PropertyVerificationStatus = 'verified' | 'unverified' | 'provisional';
 
 export type FabricTestStandard =
   | 'ISO 5077 / ISO 3759 (Dimensional Stability / Shrinkage)'
@@ -19,6 +30,31 @@ export type FabricTestStandard =
   | 'Internal Atelier Standard';
 
 /**
+ * Property-level audit provenance recording exact measurement origin and conditions.
+ */
+export interface PropertyProvenance<T = number> {
+  value: T;
+  unit: string;
+  sourceType: PropertySourceType;
+  sourceReference?: string;
+  date?: string;
+  testStandard?: string;
+  testConditions?: string;
+  verificationStatus: PropertyVerificationStatus;
+}
+
+export interface FabricPropertyProvenanceRecord {
+  gsm?: PropertyProvenance<number>;
+  thicknessMm?: PropertyProvenance<number>;
+  warpShrinkage?: PropertyProvenance<number>;
+  warpStretch?: PropertyProvenance<number>;
+  weftShrinkage?: PropertyProvenance<number>;
+  weftStretch?: PropertyProvenance<number>;
+  biasStretch?: PropertyProvenance<number>;
+  moldingFactor?: PropertyProvenance<number>;
+}
+
+/**
  * Directional mechanical properties along warp (grainline), weft (crossgrain), and bias.
  */
 export interface DirectionalProperties {
@@ -26,24 +62,26 @@ export interface DirectionalProperties {
    * Lengthwise grainline direction (parallel to warp / selvage).
    */
   warp: {
-    shrinkagePercent: number; // Thermal/steam relaxation shrinkage (%) [0, 15]
+    shrinkagePercent: number; // Thermal/steam relaxation shrinkage (%) [0, 25]
     stretchPercent: number;   // Mechanical elongation under standard tension (%) [0, 50]
     tensileModulusN?: number; // Optional tensile resistance in Newtons
+    elasticRecoveryPercent?: number; // Elastic recovery ratio (0-100%)
   };
   /**
    * Crosswise grain direction (perpendicular to warp, weft / fill).
    */
   weft: {
-    shrinkagePercent: number; // Thermal/steam relaxation shrinkage (%) [0, 15]
+    shrinkagePercent: number; // Thermal/steam relaxation shrinkage (%) [0, 25]
     stretchPercent: number;   // Crosswise elongation under standard tension (%) [0, 100]
     tensileModulusN?: number;
+    elasticRecoveryPercent?: number; // Elastic recovery ratio (0-100%)
   };
   /**
    * 45-degree true bias direction.
    */
   bias: {
     stretchPercent: number;    // Bias stretchability (%) [0, 120]
-    drapeCoefficient?: number; // Cusick drape coefficient [0.10, 0.95] (0.1 = limp liquid, 0.95 = stiff paper)
+    drapeCoefficient?: number; // Cusick drape coefficient [0.05, 1.0]
   };
 }
 
@@ -71,11 +109,11 @@ export interface EnhancedFabricProperty extends FabricProperty {
    */
   moldingFactor: number;
   /**
-   * Provenance of the physical properties data.
+   * Record-level provenance of the physical properties data.
    */
   provenance: FabricProvenance;
   /**
-   * Reference test standard used for physical testing.
+   * Reference test standard used for physical testing (only valid if laboratory-tested).
    */
   testStandard?: FabricTestStandard;
   /**
@@ -83,10 +121,31 @@ export interface EnhancedFabricProperty extends FabricProperty {
    */
   isVerified: boolean;
   /**
+   * Explicit flag identifying illustrative project references.
+   */
+  isIllustrativeReference?: boolean;
+  /**
+   * Detailed property-level provenance map for full scientific traceability.
+   */
+  propertyProvenance?: FabricPropertyProvenanceRecord;
+  /**
+   * Associated revision or lot reference.
+   */
+  revision?: string;
+  /**
+   * Audit warnings or cautions for computational patternmaking.
+   */
+  auditWarnings?: string[];
+  /**
    * Optional notes on fabric handling, pressing temperature, and needle selection.
    */
   handlingNotes?: string[];
 }
+
+export type FabricLookupResult =
+  | { status: 'found'; fabric: EnhancedFabricProperty }
+  | { status: 'not-found'; fabricId?: string; message: string }
+  | { status: 'invalid-record'; fabric: EnhancedFabricProperty; errors: string[] };
 
 export interface FabricValidationResult {
   isValid: boolean;
@@ -95,18 +154,29 @@ export interface FabricValidationResult {
   fabric: EnhancedFabricProperty;
 }
 
+export type MeasurementDirection = 'circumference-crossgrain' | 'length-grainline' | 'bias';
+
 /**
  * Breakdown of deterministic ease components calculated for a pattern piece or circumference.
+ * Distinguishes Finished Garment Dimension from Pre-Shrink Cutting Dimension.
  */
 export interface FabricEaseBreakdown {
   circumferenceId: 'bust' | 'waist' | 'lowHip' | 'biceps' | 'wrist';
+  measurementDirection: MeasurementDirection;
   bodyMeasurementCm: number;
-  baselineMovementEaseCm: number; // Physiological movement ease
-  stretchDeductionCm: number;     // Negative deduction to compensate for weft stretch
-  shrinkageCompensationCm: number;// Positive addition to compensate for steam/laundry shrinkage
+  baselineMovementEaseCm: number; // Physiological wearing movement ease
+  designEaseCm: number;           // Silhouette-specific design ease offset
+  stretchDeductionCm: number;     // Negative deduction to compensate for directional stretch
   thicknessAllowanceCm: number;   // Turn-of-cloth circumference expansion
-  silhouetteAdjustmentCm: number; // Silhouette-specific ease profile offset
-  totalAppliedEaseCm: number;     // Net ease added to body measurement
-  finishedGarmentDimensionCm: number; // Final target pattern circumference
-  cuttingAllowanceFactor: number; // Scale multiplier applied to pattern cutting line for shrinkage
+  silhouetteAdjustmentCm: number; // Retained for compatibility (equal to designEaseCm)
+  totalAppliedEaseCm: number;     // Net finished ease added to body measurement (excluding shrinkage)
+  finishedGarmentDimensionCm: number; // Final target finished garment circumference: Body + Ease
+  shrinkageRatio: number;         // Decimal shrinkage ratio [0, 1)
+  shrinkageCompensationCm: number;// Pre-shrink dimensional increase added to cutting pattern
+  preShrinkCuttingDimensionCm: number; // Dimension to cut on flat pattern before wash/press: Finished / (1 - shrinkage)
+  cuttingAllowanceFactor: number; // Scale multiplier applied to pattern cutting line for shrinkage (1 / (1 - r))
+  isCalculationAvailable: boolean;
+  provenanceNotes: string[];
+  limitations: string[];
 }
+

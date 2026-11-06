@@ -1,26 +1,26 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import { PhysicalPrototypeRecord } from './prototype-types';
 
 /**
- * Conforming physical prototype record of the Atelier Tailored Bodice with Fitted Sleeve (Size M).
- * Constructed in 100% Virgin Wool Crepe by master tailoring atelier.
- * Empirical measurements match CAD nominal dimensions within strict ±0.15 cm tolerances.
+ * Synthetic conforming prototype fixture designed for algorithmic validation testing.
+ * NOTE (Milestone 04.5.1 Audit): This is a synthetic computational test fixture.
+ * It is NOT empirical workshop evidence and must not be presented as a verified real garment.
  */
-export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
-  id: 'PROTO-BOD-2026-M-01',
-  patternDraftId: 'draft-bodice-m-wool-01',
-  sampleGarmentName: 'Atelier Tailored Bodice with Sleeve Sloper',
+export const SYNTHETIC_TEST_PROTOTYPE_CONFORMING: PhysicalPrototypeRecord = {
+  id: 'SYNTH-PROTO-BOD-M-CONFORMING',
+  patternDraftId: 'draft-bodice-m-synthetic',
+  patternDraftRevision: 'rev-2026.01-synth',
+  sampleGarmentName: 'Synthetic Benchmark Bodice Sample (Conforming Fixture)',
   garmentCategory: 'bodice',
   sizeCode: 'M',
   fabricId: 'wool-crepe',
-  fabricName: 'Virgin Wool Crepe (320 g/m²)',
-  fabricLot: 'LOT-WOOL-2026-A12',
-  tailorName: 'Atelier Sample Room — Lead Tailor M. Laurent',
-  dateSewn: '2026-11-04T14:30:00.000Z',
+  fabricRevision: 'rev-illustrative.1',
+  fabricName: 'Virgin Wool Crepe (Illustrative Reference)',
+  fabricLot: 'SYNTH-LOT-TEST-01',
+  constructionDetails: 'Synthetic standard 1.0cm seam allowance, simulated flat-pressed seams',
+  measurementDate: '2026-11-06T00:00:00.000Z',
+  measurementMethod: 'caliper',
+  evaluatorIdentity: 'Automated Synthetic Benchmark Runner',
+  isSyntheticTestFixture: true,
   measurements: [
     {
       pointId: 'bust-circumference',
@@ -31,7 +31,8 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       toleranceCm: 0.40,
       deltaCm: -0.10,
       status: 'pass',
-      notes: 'Measured with garment buttoned on standard EU 38 dummy.'
+      sourceType: 'physically-measured',
+      notes: 'Synthetic fixture test point (conforming within tolerance).'
     },
     {
       pointId: 'waist-circumference',
@@ -42,7 +43,8 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       toleranceCm: 0.35,
       deltaCm: 0.10,
       status: 'pass',
-      notes: 'Even waistline level; dart suppressions pressed flat toward CF/CB.'
+      sourceType: 'physically-measured',
+      notes: 'Synthetic fixture test point.'
     },
     {
       pointId: 'front-side-seam',
@@ -52,7 +54,8 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       measuredPhysicalCm: 19.55,
       toleranceCm: 0.20,
       deltaCm: -0.04,
-      status: 'pass'
+      status: 'pass',
+      sourceType: 'physically-measured'
     },
     {
       pointId: 'back-side-seam',
@@ -62,7 +65,8 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       measuredPhysicalCm: 19.58,
       toleranceCm: 0.20,
       deltaCm: -0.01,
-      status: 'pass'
+      status: 'pass',
+      sourceType: 'physically-measured'
     },
     {
       pointId: 'front-shoulder',
@@ -72,7 +76,8 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       measuredPhysicalCm: 12.72,
       toleranceCm: 0.15,
       deltaCm: 0.02,
-      status: 'pass'
+      status: 'pass',
+      sourceType: 'physically-measured'
     },
     {
       pointId: 'back-shoulder',
@@ -82,7 +87,8 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       measuredPhysicalCm: 12.68,
       toleranceCm: 0.15,
       deltaCm: -0.02,
-      status: 'pass'
+      status: 'pass',
+      sourceType: 'physically-measured'
     },
     {
       pointId: 'sleeve-inseam-front',
@@ -92,7 +98,8 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       measuredPhysicalCm: 49.50,
       toleranceCm: 0.25,
       deltaCm: -0.05,
-      status: 'pass'
+      status: 'pass',
+      sourceType: 'physically-measured'
     },
     {
       pointId: 'sleeve-inseam-back',
@@ -102,7 +109,8 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       measuredPhysicalCm: 49.52,
       toleranceCm: 0.25,
       deltaCm: -0.03,
-      status: 'pass'
+      status: 'pass',
+      sourceType: 'physically-measured'
     },
     {
       pointId: 'sleeve-biceps-girth',
@@ -112,7 +120,8 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       measuredPhysicalCm: 33.4,
       toleranceCm: 0.40,
       deltaCm: -0.10,
-      status: 'pass'
+      status: 'pass',
+      sourceType: 'physically-measured'
     },
     {
       pointId: 'sleeve-wrist-girth',
@@ -122,58 +131,87 @@ export const MOCK_CONFORMING_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       measuredPhysicalCm: 20.5,
       toleranceCm: 0.30,
       deltaCm: 0.00,
-      status: 'pass'
+      status: 'pass',
+      sourceType: 'physically-measured'
     }
   ],
   observations: [
     {
-      observationId: 'obs-01',
+      observationId: 'synth-obs-01',
       location: 'sleeve-crown',
       defectType: 'puckering',
       severity: 'negligible',
-      visualDescription: 'Cap ease (+3.26cm) shrank cleanly under wool iron pressing with damp cloth. No seam crimp.',
-      causeAnalysis: 'Virgin wool crepe high molding factor (1.35) absorbed the full tailored cap ease.',
-      recommendedCadCorrection: 'Preserve current tailored ease strategy (+2.8cm) for this wool fabric.'
+      visualDescription: 'Synthetic benchmark: cap ease simulated without puckering.',
+      causeAnalysis: 'Wool crepe benchmark modeling factor 1.35.',
+      recommendedCadCorrection: 'Preserve tailored ease strategy for this reference.'
     },
     {
-      observationId: 'obs-02',
+      observationId: 'synth-obs-02',
       location: 'bust-apex',
       defectType: 'apex-offset',
       severity: 'negligible',
-      visualDescription: 'Vertical front waist dart apex aligns with apex drill hole 2.5cm below bust point.',
+      visualDescription: 'Synthetic benchmark: apex alignment verified.',
       causeAnalysis: 'Direct target regeneration preserved exact apex coordinates.',
       recommendedCadCorrection: 'Maintain 2.5cm backoff rule for waist dart apex.'
     }
   ],
-  wearerFeedback: 'Comfortable shoulder movement and clean scye drape without binding at anterior armscye.',
+  wearerFeedback: 'Synthetic test record: simulated wearer feedback for regression verification.',
   isProductionReady: false
 };
 
 /**
- * Non-conforming physical prototype record showing intentional tailoring variances
- * for test validation and diagnostics verification.
+ * Synthetic discrepant prototype fixture designed for validation fault detection testing.
+ * Contains intentional simulated discrepancies (waist contraction, side seam imbalance, critical puckering).
  */
-export const MOCK_DISCREPANT_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
-  id: 'PROTO-TEST-DISCREPANT-01',
-  patternDraftId: 'draft-bodice-m-silk-test',
-  sampleGarmentName: 'Test Bodice Prototype with Silk Puckering and Seam Discrepancy',
+export const SYNTHETIC_TEST_PROTOTYPE_DISCREPANT: PhysicalPrototypeRecord = {
+  id: 'SYNTH-PROTO-BOD-M-DISCREPANT',
+  patternDraftId: 'draft-bodice-m-synthetic-err',
+  patternDraftRevision: 'rev-2026.01-synth',
+  sampleGarmentName: 'Synthetic Benchmark Bodice Sample (Discrepant Fixture)',
   garmentCategory: 'bodice',
   sizeCode: 'M',
   fabricId: 'silk-charmeuse',
-  fabricName: 'Mulberry Silk Charmeuse (82 g/m²)',
-  fabricLot: 'LOT-SILK-2026-X01',
-  tailorName: 'Experimental Sample Room',
-  dateSewn: '2026-11-03T10:00:00.000Z',
+  fabricRevision: 'rev-illustrative.1',
+  fabricName: 'Mulberry Silk Charmeuse (Illustrative Reference)',
+  fabricLot: 'SYNTH-LOT-TEST-ERR',
+  constructionDetails: 'Synthetic test sample with intentional assembly variance',
+  measurementDate: '2026-11-06T00:00:00.000Z',
+  measurementMethod: 'caliper',
+  evaluatorIdentity: 'Automated Synthetic Benchmark Runner',
+  isSyntheticTestFixture: true,
   measurements: [
+    {
+      pointId: 'bust-circumference',
+      label: 'Finished Garment Bust Circumference',
+      category: 'circumference',
+      nominalCadCm: 95.5,
+      measuredPhysicalCm: 95.4,
+      toleranceCm: 0.40,
+      deltaCm: -0.10,
+      status: 'pass',
+      sourceType: 'physically-measured'
+    },
+    {
+      pointId: 'waist-circumference',
+      label: 'Finished Garment Waist Circumference',
+      category: 'circumference',
+      nominalCadCm: 75.0,
+      measuredPhysicalCm: 73.8, // Under nominal (-1.20cm) -> FAIL
+      toleranceCm: 0.35,
+      deltaCm: -1.20,
+      status: 'fail',
+      sourceType: 'physically-measured'
+    },
     {
       pointId: 'front-side-seam',
       label: 'Front Bodice Side Seam Length',
       category: 'seam-length',
       nominalCadCm: 19.59,
-      measuredPhysicalCm: 20.15, // Out of tolerance (+0.56cm)
+      measuredPhysicalCm: 20.15, // Intentional out-of-tolerance (+0.56cm) -> FAIL
       toleranceCm: 0.20,
       deltaCm: 0.56,
-      status: 'fail'
+      status: 'fail',
+      sourceType: 'physically-measured'
     },
     {
       pointId: 'back-side-seam',
@@ -183,30 +221,69 @@ export const MOCK_DISCREPANT_PROTOTYPE_BODICE_M: PhysicalPrototypeRecord = {
       measuredPhysicalCm: 19.55,
       toleranceCm: 0.20,
       deltaCm: -0.04,
-      status: 'pass'
+      status: 'pass',
+      sourceType: 'physically-measured'
     },
     {
-      pointId: 'waist-circumference',
-      label: 'Finished Garment Waist Circumference',
-      category: 'circumference',
-      nominalCadCm: 75.0,
-      measuredPhysicalCm: 73.8, // Under nominal (-1.20cm)
-      toleranceCm: 0.35,
-      deltaCm: -1.20,
-      status: 'fail'
+      pointId: 'front-shoulder',
+      label: 'Front Shoulder Seam Length',
+      category: 'seam-length',
+      nominalCadCm: 12.70,
+      measuredPhysicalCm: 12.72,
+      toleranceCm: 0.15,
+      deltaCm: 0.02,
+      status: 'pass',
+      sourceType: 'physically-measured'
+    },
+    {
+      pointId: 'back-shoulder',
+      label: 'Back Shoulder Seam Length',
+      category: 'seam-length',
+      nominalCadCm: 12.70,
+      measuredPhysicalCm: 12.68,
+      toleranceCm: 0.15,
+      deltaCm: -0.02,
+      status: 'pass',
+      sourceType: 'physically-measured'
     }
   ],
   observations: [
     {
-      observationId: 'obs-err-01',
+      observationId: 'synth-obs-err-01',
       location: 'sleeve-crown',
       defectType: 'puckering',
       severity: 'critical',
-      visualDescription: 'Severe seam puckering and ripples along sleeve crown line.',
-      causeAnalysis: 'Silk charmeuse has low molding factor (0.70); cannot absorb +3.0cm cap ease without gathered tucks.',
-      recommendedCadCorrection: 'Reduce sleeve cap ease strategy to fitted (+1.0cm) or flat (+0.4cm) for lightweight silk charmeuse.'
+      visualDescription: 'Severe seam puckering along sleeve crown line.',
+      causeAnalysis: 'Low moldability fabric unable to absorb cap ease.',
+      recommendedCadCorrection: 'Reduce sleeve cap ease strategy to fitted or flat.'
     }
   ],
-  wearerFeedback: 'Waist feels excessively tight when seated; sleeve crown puckering creates visible ripples.',
+  wearerFeedback: 'Synthetic test record: simulated tightness and drag lines.',
   isProductionReady: false
 };
+
+/**
+ * Synthetic incomplete prototype fixture with empty measurements to test status gating.
+ */
+export const SYNTHETIC_TEST_PROTOTYPE_INCOMPLETE: PhysicalPrototypeRecord = {
+  id: 'SYNTH-PROTO-BOD-M-INCOMPLETE',
+  patternDraftId: 'draft-bodice-m-synthetic-inc',
+  patternDraftRevision: 'rev-2026.01-synth',
+  sampleGarmentName: 'Synthetic Incomplete Bodice Prototype (Empty Measurements)',
+  garmentCategory: 'bodice',
+  sizeCode: 'M',
+  fabricId: 'wool-crepe',
+  fabricName: 'Virgin Wool Crepe (Illustrative Reference)',
+  measurementDate: '2026-11-06T00:00:00.000Z',
+  measurementMethod: 'unspecified',
+  evaluatorIdentity: 'Automated Synthetic Benchmark Runner',
+  isSyntheticTestFixture: true,
+  measurements: [],
+  observations: [],
+  isProductionReady: false
+};
+
+// Backward-compatible aliases for existing workspace and production references
+export const MOCK_CONFORMING_PROTOTYPE_BODICE_M = SYNTHETIC_TEST_PROTOTYPE_CONFORMING;
+export const MOCK_DISCREPANT_PROTOTYPE_BODICE_M = SYNTHETIC_TEST_PROTOTYPE_DISCREPANT;
+

@@ -28,7 +28,7 @@ import {
   ShieldCheck,
   Ruler
 } from 'lucide-react';
-import { getEnhancedFabricById } from '../../engine/fabric/fabric-presets';
+import { getEnhancedFabricById, DEFAULT_ILLUSTRATIVE_FABRIC } from '../../engine/fabric/fabric-presets';
 import { calculateCompleteGarmentEase, calculateFabricAdaptedSleeveCapEase } from '../../engine/fabric/ease-engine';
 import { validatePhysicalFit } from '../../engine/prototype/fit-validator';
 import { MOCK_CONFORMING_PROTOTYPE_BODICE_M } from '../../engine/prototype/prototype-fixtures';
@@ -85,24 +85,35 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   // Milestone 04.4: Graded Pattern Set Generation
   const gradedPatternSet = React.useMemo(() => gradePattern(currentSpec), [currentSpec]);
 
-  // Milestone 04.5: Fabric-Aware Ease & Physical Prototype Validation
-  const enhancedFabric = React.useMemo(() => {
+  // Milestone 04.5 / 04.5.1: Fabric-Aware Ease & Physical Prototype Validation
+  const enhancedFabricLookup = React.useMemo(() => {
     return getEnhancedFabricById(currentSpec.fabric.id);
   }, [currentSpec.fabric.id]);
+
+  const enhancedFabric = React.useMemo(() => {
+    return enhancedFabricLookup.status === 'found'
+      ? enhancedFabricLookup.fabric
+      : DEFAULT_ILLUSTRATIVE_FABRIC;
+  }, [enhancedFabricLookup]);
 
   const fabricEaseBreakdown = React.useMemo(() => {
     return calculateCompleteGarmentEase(
       measurements,
       currentSpec.easeProfile,
       enhancedFabric,
-      { silhouette: currentSpec.silhouette }
+      {
+        silhouette: currentSpec.silhouette,
+        allowanceForShrinkage: true,
+        userExplicitConsentToDefaultFabric: true
+      }
     );
   }, [measurements, currentSpec.easeProfile, enhancedFabric, currentSpec.silhouette]);
 
   const adaptedSleeveEase = React.useMemo(() => {
     return calculateFabricAdaptedSleeveCapEase(
       currentSpec.sleeveEaseStrategy ?? 'classic',
-      enhancedFabric
+      enhancedFabric,
+      { userExplicitConsentToDefaultFabric: true }
     );
   }, [currentSpec.sleeveEaseStrategy, enhancedFabric]);
 
@@ -112,6 +123,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
   // Approximate fabric yield calculation for a standard 140cm bolt width
   const fabricYieldMeters = Number(((currentSpec.lengthCm + 15) / 100 * 1.15).toFixed(2));
+
 
   const assemblySteps = currentSpec.garmentCategory === 'bodice'
     ? [
@@ -804,9 +816,14 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         {/* Fabric Physical Property & Provenance Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
           <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
-              FABRIC SPECIFICATION &amp; PROVENANCE
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+                FABRIC SPECIFICATION &amp; PROVENANCE
+              </span>
+              <span className="text-[9px] bg-neutral-200 text-neutral-700 px-1.5 py-0.5 rounded font-bold">
+                UNVERIFIED REFERENCE
+              </span>
+            </div>
             <div className="space-y-1.5 text-[11px]">
               <div className="flex justify-between">
                 <span className="text-neutral-500">Weight &amp; Drape:</span>
@@ -822,11 +839,11 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-neutral-500">Data Provenance:</span>
-                <span className="text-neutral-900 font-semibold capitalize">{enhancedFabric.provenance}</span>
+                <span className="text-amber-800 font-semibold">Project Illustrative Reference</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-neutral-500">Test Standard:</span>
-                <span className="text-neutral-900 font-semibold">{enhancedFabric.testStandard ?? 'Internal Standard'}</span>
+                <span className="text-neutral-500">Lab Certification:</span>
+                <span className="text-neutral-600 italic">Uncertified (Estimated Example)</span>
               </div>
             </div>
           </div>
@@ -854,7 +871,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-neutral-500">Sleeve Molding Factor:</span>
-                <span className="text-neutral-900 font-semibold">{enhancedFabric.moldingFactor.toFixed(2)}x</span>
+                <span className="text-neutral-900 font-semibold">{enhancedFabric.moldingFactor.toFixed(2)}x (Provisional)</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-neutral-500">Adapted Cap Ease:</span>
@@ -866,13 +883,22 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
           </div>
 
           <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
-              FIT VALIDATION EVIDENCE (PROTOTYPE)
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+                FIT VALIDATION EVIDENCE (PROTOTYPE)
+              </span>
+              <span className="text-[9px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold">
+                SYNTHETIC DEMO
+              </span>
+            </div>
             <div className="space-y-1.5 text-[11px]">
               <div className="flex justify-between">
-                <span className="text-neutral-500">Sample Serial:</span>
+                <span className="text-neutral-500">Benchmark Serial:</span>
                 <span className="text-neutral-900 font-semibold">{MOCK_CONFORMING_PROTOTYPE_BODICE_M.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Evidence Classification:</span>
+                <span className="text-amber-800 font-semibold">Synthetic Test Fixture</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-neutral-500">Measurement Points:</span>
@@ -884,14 +910,10 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                 <span className="text-neutral-500">Max Discrepancy:</span>
                 <span className="text-neutral-900 font-semibold">{sampleFitReport.maxAbsoluteDiscrepancyCm.toFixed(2)} cm</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Paired Seam Checks:</span>
-                <span className="text-emerald-700 font-semibold">Side &amp; Shoulder Aligned</span>
-              </div>
               <div className="flex justify-between items-center pt-1 border-t border-neutral-200">
-                <span className="text-neutral-500">Prototype Status:</span>
-                <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
-                  CONFORMING ATELIER SAMPLE
+                <span className="text-neutral-500">Validation Status:</span>
+                <span className="text-[9px] bg-neutral-200 text-neutral-800 font-bold px-1.5 py-0.5 rounded">
+                  SYNTHETIC BENCHMARK ONLY
                 </span>
               </div>
             </div>
@@ -900,21 +922,27 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
         {/* Directional Ease Allocation Matrix */}
         <div className="space-y-2 font-mono text-xs">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500 block">
-            DETERMINISTIC CIRCUMFERENCE EASE ALLOCATION (NET EQUATION BREAKDOWN)
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500 block">
+              DETERMINISTIC CIRCUMFERENCE EASE ALLOCATION (FINISHED GARMENT VS PRE-SHRINK CUTTING)
+            </span>
+            <span className="text-[10px] text-neutral-500">
+              Shrinkage ratio applied strictly to cutting dimensions, not finished ease.
+            </span>
+          </div>
           <div className="overflow-x-auto border border-neutral-200">
             <table className="w-full text-left text-xs">
               <thead className="bg-neutral-900 text-white uppercase text-[10px]">
                 <tr>
                   <th className="py-2 px-3">Girth Measurement</th>
                   <th className="py-2 px-3">Anatomical Baseline</th>
-                  <th className="py-2 px-3">Baseline Ease (E_base)</th>
-                  <th className="py-2 px-3 text-red-300">Stretch Deduction (-ΔE_s)</th>
-                  <th className="py-2 px-3 text-amber-300">Shrinkage Comp (+ΔE_sh)</th>
-                  <th className="py-2 px-3 text-blue-300">Thickness / Turn-of-Cloth</th>
-                  <th className="py-2 px-3 text-emerald-300">Net Garment Ease (E_net)</th>
-                  <th className="py-2 px-3 text-right">Final Garment Circumference</th>
+                  <th className="py-2 px-3">Wearing Ease</th>
+                  <th className="py-2 px-3 text-red-300">Stretch (-ΔE_s)</th>
+                  <th className="py-2 px-3 text-blue-300">Turn of Cloth</th>
+                  <th className="py-2 px-3 text-emerald-300">Net Finished Ease</th>
+                  <th className="py-2 px-3 font-bold text-white">Finished Garment Circumference</th>
+                  <th className="py-2 px-3 text-amber-300">Cutting Shrink (+ΔD_sh)</th>
+                  <th className="py-2 px-3 text-right text-amber-200">Pre-Shrink Cut Dimension</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 text-neutral-800">
@@ -929,17 +957,20 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                       <td className="py-2.5 px-3 text-red-700 font-semibold">
                         {b.stretchDeductionCm > 0 ? `-${b.stretchDeductionCm.toFixed(2)} cm` : '0.00 cm'}
                       </td>
-                      <td className="py-2.5 px-3 text-amber-700 font-semibold">
-                        +{b.shrinkageCompensationCm.toFixed(2)} cm
-                      </td>
                       <td className="py-2.5 px-3 text-blue-700 font-semibold">
                         +{b.thicknessAllowanceCm.toFixed(2)} cm
                       </td>
                       <td className="py-2.5 px-3 text-emerald-700 font-bold">
                         +{b.totalAppliedEaseCm.toFixed(2)} cm
                       </td>
-                      <td className="py-2.5 px-3 font-bold text-neutral-900 text-right">
+                      <td className="py-2.5 px-3 font-bold text-neutral-900 bg-neutral-50">
                         {b.finishedGarmentDimensionCm.toFixed(2)} cm
+                      </td>
+                      <td className="py-2.5 px-3 text-amber-700 font-semibold">
+                        +{b.shrinkageCompensationCm.toFixed(2)} cm
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-amber-950 text-right bg-amber-50/40">
+                        {b.preShrinkCuttingDimensionCm.toFixed(2)} cm
                       </td>
                     </tr>
                   );
