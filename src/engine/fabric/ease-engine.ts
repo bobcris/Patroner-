@@ -28,6 +28,7 @@ export interface EaseCalculationOptions {
   provisionalBiasShrinkagePolicy?: ProvisionalBiasShrinkagePolicy; // Explicit user-approved provisional bias shrinkage policy
   userExplicitConsentToDefaultFabric?: boolean; // Explicit opt-in for illustrative fallback
   garmentCategory?: string; // e.g. 'bodice', 'skirt' - required to match negative ease policy
+  evaluationDate?: string | number | Date; // Injectable timestamp or ISO date for deterministic historical evaluation
 }
 
 /**
@@ -39,17 +40,70 @@ export interface PolicyValidationResult {
 }
 
 /**
- * Validates a negative ease authorization policy at runtime according to Milestone 04.5.3 rules.
+ * Strict ISO 8601 calendar date validator.
+ * Validates syntax, valid calendar dates (leap years, 28-31 days per month, hours/minutes/seconds).
+ */
+export function isValidIso8601Date(dateStr: unknown): boolean {
+  if (typeof dateStr !== 'string' || dateStr.trim() === '') {
+    return false;
+  }
+  const str = dateStr.trim();
+  const isoPattern = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:Z|([+-]\d{2}:?\d{2}))?)?$/;
+  const match = str.match(isoPattern);
+  if (!match) return false;
+
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+
+  if (month < 1 || month > 12) return false;
+  if (day < 1) return false;
+
+  const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const daysInMonths = [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  if (day > daysInMonths[month - 1]) return false;
+
+  if (match[4] !== undefined) {
+    const hour = parseInt(match[4], 10);
+    const minute = parseInt(match[5], 10);
+    const second = parseInt(match[6], 10);
+    if (hour > 23 || minute > 59 || second > 59) return false;
+  }
+
+  const timestamp = Date.parse(str);
+  return !Number.isNaN(timestamp);
+}
+
+/**
+ * Fit intent compatibility matrix mapped to garment category construction capabilities.
+ */
+export const CATEGORY_FIT_INTENT_COMPATIBILITY: Record<string, string[]> = {
+  bodice: ['bodycon', 'stretch-contour', 'corsetry', 'performance-knit', 'tailored-fitted', 'compression-fit'],
+  skirt: ['bodycon', 'stretch-contour', 'performance-knit', 'tailored-fitted', 'compression-fit'],
+  sleeve: ['bodycon', 'stretch-contour', 'performance-knit', 'compression-fit'],
+  trousers: ['bodycon', 'stretch-contour', 'performance-knit', 'tailored-fitted', 'compression-fit'],
+  pants: ['bodycon', 'stretch-contour', 'performance-knit', 'tailored-fitted', 'compression-fit'],
+  leggings: ['bodycon', 'stretch-contour', 'performance-knit', 'compression-fit'],
+  corset: ['corsetry', 'bodycon', 'compression-fit'],
+  dress: ['bodycon', 'stretch-contour', 'corsetry', 'performance-knit', 'tailored-fitted', 'compression-fit']
+};
+
+/**
+ * Validates a negative ease authorization policy at runtime according to Milestone 04.5.3 / 04.5.3.1 rules.
  * - Missing garment category is rejected (not a wildcard).
- * - Requires non-empty authorization source, author, valid ISO date, recognized fit intent, finite non-negative limits.
+ * - Wildcard 'all' is prohibited unless a separately explicit, audited scope is provided.
+ * - Requires non-empty authorization source, author, valid ISO 8601 calendar date, recognized fit intent, finite non-negative limits.
+ * - Verifies fit intent is compatible with garment category construction.
  * - Directional stretch and recovery must satisfy declared policy thresholds.
- * - Expiration date is checked if provided.
+ * - Expiration date is evaluated deterministically against evaluationDate.
  */
 export function validateNegativeEaseAuthorizationPolicy(
   policy: unknown,
   garmentCategory: string | undefined,
   directionalStretchPercent: number,
-  directionalRecoveryPercent: number | undefined
+  directionalRecoveryPercent: number | undefined,
+  evaluationDate?: string | number | Date
 ): PolicyValidationResult {
   if (!policy || typeof policy !== 'object') {
     return { isValid: false, rejectionReason: 'Negative ease authorization policy is missing or not an object.' };
@@ -72,15 +126,27 @@ export function validateNegativeEaseAuthorizationPolicy(
   if (!p.garmentCategory || typeof p.garmentCategory !== 'string' || p.garmentCategory.trim() === '') {
     return {
       isValid: false,
-      rejectionReason: 'Negative ease policy is missing explicit garmentCategory.'
+      rejectionReason: 'Negative ease policy is missing explicit garmentCategory. Missing category is a rejection, not a wildcard.'
     };
   }
 
   const normalizedTargetCat = garmentCategory.trim().toLowerCase();
   const normalizedPolicyCat = p.garmentCategory.trim().toLowerCase();
 
-  // Policy category must match target category.
-  if (normalizedPolicyCat !== 'all' && normalizedPolicyCat !== normalizedTargetCat) {
+  // Multi-category wildcard 'all' audit scope check
+  if (normalizedPolicyCat === 'all') {
+    if (
+      !p.multiCategoryAuditScope ||
+      typeof p.multiCategoryAuditScope !== 'string' ||
+      p.multiCategoryAuditScope.trim().length < 10 ||
+      p.isMultiCategoryAudited !== true
+    ) {
+      return {
+        isValid: false,
+        rejectionReason: 'Wildcard category "all" is prohibited without a separately explicit, audited scope. Provide multiCategoryAuditScope (>= 10 chars) and isMultiCategoryAudited: true, or use explicit category matching.'
+      };
+    }
+  } else if (normalizedPolicyCat !== normalizedTargetCat) {
     return {
       isValid: false,
       rejectionReason: `Policy garmentCategory '${p.garmentCategory}' does not match target garment category '${garmentCategory}'.`
@@ -103,34 +169,41 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
 
-  // Valid ISO authorization date
-  if (!p.authorizationDate || typeof p.authorizationDate !== 'string') {
+  // Valid ISO 8601 calendar authorization date
+  if (!p.authorizationDate || !isValidIso8601Date(p.authorizationDate)) {
     return {
       isValid: false,
-      rejectionReason: 'Negative ease policy missing authorizationDate in ISO format.'
-    };
-  }
-  const authTime = Date.parse(p.authorizationDate);
-  if (Number.isNaN(authTime)) {
-    return {
-      isValid: false,
-      rejectionReason: `Negative ease policy contains invalid authorizationDate '${p.authorizationDate}'. Must be a valid ISO date.`
+      rejectionReason: `Negative ease policy contains invalid authorizationDate '${p.authorizationDate}'. Must be a valid ISO 8601 calendar date.`
     };
   }
 
-  // Expiration check if expirationDate is provided
-  if (p.expirationDate) {
-    const expTime = Date.parse(p.expirationDate);
-    if (Number.isNaN(expTime)) {
+  // Deterministic evaluation date resolution
+  const evalTime = evaluationDate !== undefined
+    ? (typeof evaluationDate === 'string'
+        ? (isValidIso8601Date(evaluationDate) ? Date.parse(evaluationDate) : NaN)
+        : (evaluationDate instanceof Date ? evaluationDate.getTime() : evaluationDate))
+    : Date.now();
+
+  if (Number.isNaN(evalTime)) {
+    return {
+      isValid: false,
+      rejectionReason: `Invalid evaluationDate '${evaluationDate}'. Must be a valid ISO 8601 date, timestamp, or Date object.`
+    };
+  }
+
+  // Expiration check with deterministic evaluation timestamp
+  if (p.expirationDate !== undefined) {
+    if (!isValidIso8601Date(p.expirationDate)) {
       return {
         isValid: false,
-        rejectionReason: `Negative ease policy contains invalid expirationDate '${p.expirationDate}'.`
+        rejectionReason: `Negative ease policy contains invalid expirationDate '${p.expirationDate}'. Must be a valid ISO 8601 calendar date.`
       };
     }
-    if (expTime < Date.now()) {
+    const expTime = Date.parse(p.expirationDate);
+    if (evalTime > expTime) {
       return {
         isValid: false,
-        rejectionReason: `Negative ease policy expired on '${p.expirationDate}'.`
+        rejectionReason: `Negative ease policy expired on '${p.expirationDate}' (evaluated at ${new Date(evalTime).toISOString()}).`
       };
     }
   }
@@ -158,7 +231,16 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
 
-  // Finite non-negative limits
+  // Verify fit intent is compatible with the garment category and construction
+  const compatibleIntents = CATEGORY_FIT_INTENT_COMPATIBILITY[normalizedTargetCat];
+  if (compatibleIntents && !compatibleIntents.includes(normalizedIntent)) {
+    return {
+      isValid: false,
+      rejectionReason: `Fit intent '${p.fitIntent}' is incompatible with garment category '${garmentCategory}' construction. Compatible intents: ${compatibleIntents.join(', ')}.`
+    };
+  }
+
+  // Finite non-negative limits: percentage
   if (
     p.maxPermittedNegativeEasePercent === undefined ||
     !Number.isFinite(p.maxPermittedNegativeEasePercent) ||
@@ -170,6 +252,7 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
 
+  // Finite non-negative limits: centimetre
   if (p.maxPermittedNegativeEaseCm !== undefined) {
     if (!Number.isFinite(p.maxPermittedNegativeEaseCm) || p.maxPermittedNegativeEaseCm <= 0) {
       return {
@@ -203,7 +286,10 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
 
-  if (directionalStretchPercent < p.minimumRequiredStretchPercent) {
+  if (
+    !Number.isFinite(directionalStretchPercent) ||
+    directionalStretchPercent < p.minimumRequiredStretchPercent
+  ) {
     return {
       isValid: false,
       rejectionReason: `Directional stretch (${directionalStretchPercent.toFixed(1)}%) does not satisfy policy minimum required stretch (${p.minimumRequiredStretchPercent.toFixed(1)}%).`
@@ -211,7 +297,11 @@ export function validateNegativeEaseAuthorizationPolicy(
   }
 
   const recovery = directionalRecoveryPercent ?? 0;
-  if (directionalRecoveryPercent === undefined || recovery < p.minimumRequiredRecoveryPercent) {
+  if (
+    directionalRecoveryPercent === undefined ||
+    !Number.isFinite(directionalRecoveryPercent) ||
+    recovery < p.minimumRequiredRecoveryPercent
+  ) {
     return {
       isValid: false,
       rejectionReason: `Directional recovery (${recovery.toFixed(1)}%) does not satisfy policy minimum required recovery (${p.minimumRequiredRecoveryPercent.toFixed(1)}%).`
@@ -261,8 +351,8 @@ export function validateProvisionalRecoveryPolicy(
     return { isValid: false, rejectionReason: 'Provisional recovery policy missing rationale reason.' };
   }
 
-  if (!p.approvalDate || typeof p.approvalDate !== 'string' || Number.isNaN(Date.parse(p.approvalDate))) {
-    return { isValid: false, rejectionReason: 'Provisional recovery policy missing valid ISO approvalDate.' };
+  if (!p.approvalDate || !isValidIso8601Date(p.approvalDate)) {
+    return { isValid: false, rejectionReason: 'Provisional recovery policy missing valid ISO 8601 approvalDate.' };
   }
 
   return { isValid: true, recoveryPercent: p.provisionalRecoveryPercent };
@@ -308,8 +398,8 @@ export function validateProvisionalBiasShrinkagePolicy(
     return { isValid: false, rejectionReason: 'Provisional bias shrinkage policy missing rationale reason.' };
   }
 
-  if (!p.approvalDate || typeof p.approvalDate !== 'string' || Number.isNaN(Date.parse(p.approvalDate))) {
-    return { isValid: false, rejectionReason: 'Provisional bias shrinkage policy missing valid ISO approvalDate.' };
+  if (!p.approvalDate || !isValidIso8601Date(p.approvalDate)) {
+    return { isValid: false, rejectionReason: 'Provisional bias shrinkage policy missing valid ISO 8601 approvalDate.' };
   }
 
   return { isValid: true, shrinkagePercent: p.provisionalShrinkagePercent };
@@ -424,7 +514,8 @@ export function calculateFabricAwareCircumferenceEase(
   const provenanceNotes: string[] = [];
   const limitations: string[] = [
     'Stretch deduction uses provisional project model; not certified by tensile load-elongation curve testing.',
-    'Turn-of-cloth model assumes uniform circular cylinder neutral axis shift (t/2).'
+    'Turn-of-cloth model assumes uniform circular cylinder neutral axis shift (t/2).',
+    'Negative ease calculation is a geometric 1D circumferential stretch reduction based on directional recovery; it does not model dynamic pressure gradient, muscular support, hydrostatic compression, or performance-garment suitability, which require laboratory pressure testing (e.g. BS 6612 / NF G30-102B).'
   ];
 
   const baseEaseProfile = EASE_TABLE[easeProfile] ?? EASE_TABLE.classic;
@@ -640,7 +731,8 @@ export function calculateFabricAwareCircumferenceEase(
       options.negativeEasePolicy,
       options.garmentCategory,
       directionalStretchPercent,
-      directionalRecoveryPercent
+      directionalRecoveryPercent,
+      options.evaluationDate
     );
 
     if (policyValidation.isValid) {
@@ -818,6 +910,10 @@ export function calculateFabricAwareCircumferenceEase(
     isCalculationAvailable: true,
     isProvisionalCalculation: isProvisionalRecovery || isProvisionalBiasShrinkage,
     provisionalReason: isProvisionalRecovery ? provisionalRecoveryReason : (isProvisionalBiasShrinkage ? provisionalBiasShrinkageReason : undefined),
+    isProvisionalRecovery,
+    provisionalRecoveryPolicyApplied: isProvisionalRecovery ? options.provisionalRecoveryPolicy : undefined,
+    isProvisionalBiasShrinkage,
+    provisionalBiasShrinkagePolicyApplied: isProvisionalBiasShrinkage ? options.provisionalBiasShrinkagePolicy : undefined,
     negativeEasePolicyApplied,
     inputProvenanceSummary,
     provenanceNotes,

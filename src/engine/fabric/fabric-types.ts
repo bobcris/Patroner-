@@ -178,8 +178,17 @@ export interface NegativeEaseAuthorizationPolicy {
   /**
    * Target garment category (e.g. 'bodice', 'activewear', 'swimwear').
    * Missing category is a rejection, not a wildcard.
+   * Wildcard 'all' is prohibited unless multiCategoryAuditScope is defined and isMultiCategoryAudited is true.
    */
   garmentCategory: string;
+  /**
+   * Explicit auditable multi-category scope description if garmentCategory is 'all'.
+   */
+  multiCategoryAuditScope?: string;
+  /**
+   * Confirmation of explicit audit when multi-category scope is declared.
+   */
+  isMultiCategoryAudited?: boolean;
   /**
    * Construction or fit intent (e.g. 'compression-fit', 'corsetry', 'performance-knit', 'bodycon', 'stretch-contour', 'tailored-fitted').
    */
@@ -215,7 +224,7 @@ export interface NegativeEaseAuthorizationPolicy {
    */
   authorizationDate: string;
   /**
-   * Optional expiration date (ISO format). If present and in the past, policy is rejected.
+   * Optional expiration date (ISO format). If present and evaluation timestamp is past expiry, policy is rejected.
    */
   expirationDate?: string;
 }
@@ -335,6 +344,10 @@ export interface AvailableFabricEaseBreakdown extends BaseFabricEaseBreakdown {
   cuttingAllowanceFactor: number; // Scale multiplier applied to pattern cutting line for shrinkage (1 / (1 - r))
   isProvisionalCalculation?: boolean;
   provisionalReason?: string;
+  isProvisionalRecovery?: boolean;
+  provisionalRecoveryPolicyApplied?: ProvisionalRecoveryPolicy;
+  isProvisionalBiasShrinkage?: boolean;
+  provisionalBiasShrinkagePolicyApplied?: ProvisionalBiasShrinkagePolicy;
   negativeEasePolicyApplied?: NegativeEaseAuthorizationPolicy;
   unavailableReason?: undefined;
 }
@@ -360,6 +373,10 @@ export interface UnavailableFabricEaseBreakdown extends BaseFabricEaseBreakdown 
   cuttingAllowanceFactor?: undefined;
   isProvisionalCalculation?: false;
   provisionalReason?: undefined;
+  isProvisionalRecovery?: undefined;
+  provisionalRecoveryPolicyApplied?: undefined;
+  isProvisionalBiasShrinkage?: undefined;
+  provisionalBiasShrinkagePolicyApplied?: undefined;
   negativeEasePolicyApplied?: undefined;
 }
 

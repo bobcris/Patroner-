@@ -16,8 +16,18 @@ import {
 import {
   calculateCompleteGarmentEase,
   calculateFabricAdaptedSleeveCapEase,
-  calculateFabricAwareCircumferenceEase
+  calculateFabricAwareCircumferenceEase,
+  isValidIso8601Date,
+  validateNegativeEaseAuthorizationPolicy,
+  validateProvisionalRecoveryPolicy,
+  validateProvisionalBiasShrinkagePolicy,
+  CATEGORY_FIT_INTENT_COMPATIBILITY
 } from './ease-engine';
+import {
+  NegativeEaseAuthorizationPolicy,
+  ProvisionalRecoveryPolicy,
+  ProvisionalBiasShrinkagePolicy
+} from './fabric-types';
 import { validatePhysicalFit } from '../prototype/fit-validator';
 import {
   SYNTHETIC_TEST_PROTOTYPE_CONFORMING,
@@ -1018,5 +1028,415 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
       assert.ok(report.missingRequiredPoints.includes('front-side-seam'));
     });
   });
+
+  describe('Milestone 04.5.3.1: Final Publication Reconciliation & Authorization Integrity Verification', () => {
+    const validBodicePolicy: NegativeEaseAuthorizationPolicy = {
+      isAuthorized: true,
+      garmentCategory: 'bodice',
+      fitIntent: 'bodycon',
+      maxPermittedNegativeEasePercent: 5.0,
+      maxPermittedNegativeEaseCm: 3.0,
+      minimumRequiredStretchPercent: 15.0,
+      minimumRequiredRecoveryPercent: 70.0,
+      authorizedBy: 'Lead Pattern Engineer',
+      sourceAndProvenance: 'Spec Standard PAT-0453-1',
+      authorizationDate: '2026-11-01T09:00:00Z',
+      expirationDate: '2027-11-01T09:00:00Z'
+    };
+
+    const ponteLookup = getEnhancedFabricById('ponte-roma');
+    const ponteFabric = ponteLookup.status === 'found' ? ponteLookup.fabric : DEFAULT_ILLUSTRATIVE_FABRIC;
+    const highStretchFabric = {
+      ...ponteFabric,
+      directional: {
+        ...ponteFabric.directional,
+        weft: {
+          shrinkagePercent: 1.0,
+          stretchPercent: 35.0, // 35% stretch
+          elasticRecoveryPercent: 90.0 // 90% recovery
+        }
+      }
+    };
+
+    it('audit-M4531-1: rejects negative ease policy when target garmentCategory is missing or empty', () => {
+      const res1 = validateNegativeEaseAuthorizationPolicy(validBodicePolicy, undefined, 25, 80);
+      assert.equal(res1.isValid, false);
+      assert.ok(res1.rejectionReason?.includes('Target garment category is missing'));
+
+      const res2 = validateNegativeEaseAuthorizationPolicy(validBodicePolicy, '', 25, 80);
+      assert.equal(res2.isValid, false);
+      assert.ok(res2.rejectionReason?.includes('Target garment category is missing'));
+
+      const policyNoCat = { ...validBodicePolicy, garmentCategory: '' };
+      const res3 = validateNegativeEaseAuthorizationPolicy(policyNoCat, 'bodice', 25, 80);
+      assert.equal(res3.isValid, false);
+      assert.ok(res3.rejectionReason?.includes('missing explicit garmentCategory'));
+    });
+
+    it('audit-M4531-2: rejects wildcard category "all" without a separately explicit, audited scope', () => {
+      const bareWildcardPolicy: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        garmentCategory: 'all'
+      };
+
+      const res = validateNegativeEaseAuthorizationPolicy(bareWildcardPolicy, 'bodice', 25, 80);
+      assert.equal(res.isValid, false);
+      assert.ok(res.rejectionReason?.includes('Wildcard category "all" is prohibited without a separately explicit, audited scope'));
+    });
+
+    it('audit-M4531-3: accepts wildcard category "all" when explicit multiCategoryAuditScope and audit approval are provided', () => {
+      const auditedWildcardPolicy: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        garmentCategory: 'all',
+        multiCategoryAuditScope: 'Audited across multi-category stretch activewear collection (bodice, skirt, leggings)',
+        isMultiCategoryAudited: true
+      };
+
+      const res = validateNegativeEaseAuthorizationPolicy(auditedWildcardPolicy, 'bodice', 25, 80);
+      assert.equal(res.isValid, true);
+    });
+
+    it('audit-M4531-4: rejects fit intent incompatible with garment category construction', () => {
+      // Corsetry is not structurally compatible with standalone skirt or sleeve construction
+      const corsetryOnSkirt: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        garmentCategory: 'skirt',
+        fitIntent: 'corsetry'
+      };
+
+      const resSkirt = validateNegativeEaseAuthorizationPolicy(corsetryOnSkirt, 'skirt', 25, 80);
+      assert.equal(resSkirt.isValid, false);
+      assert.ok(resSkirt.rejectionReason?.includes('incompatible with garment category'));
+
+      const corsetryOnSleeve: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        garmentCategory: 'sleeve',
+        fitIntent: 'corsetry'
+      };
+      const resSleeve = validateNegativeEaseAuthorizationPolicy(corsetryOnSleeve, 'sleeve', 25, 80);
+      assert.equal(resSleeve.isValid, false);
+      assert.ok(resSleeve.rejectionReason?.includes('incompatible with garment category'));
+    });
+
+    it('audit-M4531-5: accepts recognized fit intents compatible with garment category construction', () => {
+      const corsetryOnBodice: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        garmentCategory: 'bodice',
+        fitIntent: 'corsetry'
+      };
+      const resBodice = validateNegativeEaseAuthorizationPolicy(corsetryOnBodice, 'bodice', 25, 80);
+      assert.equal(resBodice.isValid, true);
+
+      const stretchContourOnSkirt: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        garmentCategory: 'skirt',
+        fitIntent: 'stretch-contour'
+      };
+      const resSkirt = validateNegativeEaseAuthorizationPolicy(stretchContourOnSkirt, 'skirt', 25, 80);
+      assert.equal(resSkirt.isValid, true);
+    });
+
+    it('audit-M4531-6: strictly rejects non-ISO dates and non-existent calendar dates', () => {
+      assert.equal(isValidIso8601Date(''), false);
+      assert.equal(isValidIso8601Date('2026-02-31'), false, 'Feb 31 does not exist');
+      assert.equal(isValidIso8601Date('2025-02-29'), false, '2025 is not a leap year');
+      assert.equal(isValidIso8601Date('2026-04-31'), false, 'April has only 30 days');
+      assert.equal(isValidIso8601Date('2026-13-01'), false, 'Month 13 does not exist');
+      assert.equal(isValidIso8601Date('11/06/2026'), false, 'Slash format is not ISO 8601');
+      assert.equal(isValidIso8601Date('Nov 6, 2026'), false, 'Word format is not ISO 8601');
+      assert.equal(isValidIso8601Date('2026-11-06T25:00:00Z'), false, 'Hour 25 is invalid');
+
+      // Test policy with invalid calendar authorizationDate
+      const badDatePolicy: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        authorizationDate: '2026-02-31'
+      };
+      const res = validateNegativeEaseAuthorizationPolicy(badDatePolicy, 'bodice', 25, 80);
+      assert.equal(res.isValid, false);
+      assert.ok(res.rejectionReason?.includes('Must be a valid ISO 8601 calendar date'));
+    });
+
+    it('audit-M4531-7: accepts valid ISO 8601 calendar dates including leap years', () => {
+      assert.equal(isValidIso8601Date('2024-02-29'), true, '2024 is a leap year');
+      assert.equal(isValidIso8601Date('2026-11-06'), true);
+      assert.equal(isValidIso8601Date('2026-11-06T12:00:00Z'), true);
+      assert.equal(isValidIso8601Date('2026-11-06T12:00:00.000Z'), true);
+      assert.equal(isValidIso8601Date('2026-11-06T12:00:00+02:00'), true);
+    });
+
+    it('audit-M4531-8: evaluates expiration deterministically using injectable evaluationDate immediately before, at, and after expiry', () => {
+      const expiringPolicy: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        authorizationDate: '2026-10-01T00:00:00Z',
+        expirationDate: '2026-11-06T12:00:00.000Z'
+      };
+
+      // 1. Immediately before expiry (1 second prior): VALID
+      const beforeRes = validateNegativeEaseAuthorizationPolicy(
+        expiringPolicy,
+        'bodice',
+        25,
+        80,
+        '2026-11-06T11:59:59.000Z'
+      );
+      assert.equal(beforeRes.isValid, true);
+
+      // 2. Exactly at expiry: VALID (evalTime === expTime)
+      const atRes = validateNegativeEaseAuthorizationPolicy(
+        expiringPolicy,
+        'bodice',
+        25,
+        80,
+        '2026-11-06T12:00:00.000Z'
+      );
+      assert.equal(atRes.isValid, true);
+
+      // 3. Immediately after expiry (1 second after): EXPIRED / REJECTED
+      const afterRes = validateNegativeEaseAuthorizationPolicy(
+        expiringPolicy,
+        'bodice',
+        25,
+        80,
+        '2026-11-06T12:00:01.000Z'
+      );
+      assert.equal(afterRes.isValid, false);
+      assert.ok(afterRes.rejectionReason?.includes('expired on'));
+    });
+
+    it('audit-M4531-9: allows historical calculations to be reproduced deterministically with evaluation timestamp', () => {
+      const historicalPolicy: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        authorizationDate: '2023-01-01T00:00:00Z',
+        expirationDate: '2023-12-31T23:59:59Z'
+      };
+
+      // Today without timestamp: policy has expired
+      const modernEval = validateNegativeEaseAuthorizationPolicy(historicalPolicy, 'bodice', 25, 80);
+      assert.equal(modernEval.isValid, false);
+
+      // Historical reproduction at time of drafting: VALID
+      const historicalEval = validateNegativeEaseAuthorizationPolicy(
+        historicalPolicy,
+        'bodice',
+        25,
+        80,
+        '2023-06-15T12:00:00Z'
+      );
+      assert.equal(historicalEval.isValid, true);
+    });
+
+    it('audit-M4531-10: produces valid negative-ease result when authorized where model and inputs support it', () => {
+      // High stretch ponte: 35% weft stretch, 85% recovery
+      // Body waist: 68cm, baseline ease: 2.0cm
+      // Stretch ratio: (35 - 3) * 0.05 * 0.85 = 32 * 0.0425 = 1.36
+      // Stretch deduction: 2.0 * 1.36 = 2.72 cm
+      // Turn of cloth (0.9mm / 10 = 0.09cm): 2 * pi * 0.09 * 0.5 * 1 = 0.28 cm
+      // Net ease: 2.0 + 0.0 + 0.28 - 2.72 = -0.44 cm (NEGATIVE EASE)
+      // Finished dimension: 68.0 - 0.44 = 67.56 cm
+      const result = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice',
+        negativeEasePolicy: {
+          ...validBodicePolicy,
+          maxPermittedNegativeEasePercent: 5.0,
+          maxPermittedNegativeEaseCm: 2.0
+        }
+      });
+
+      assert.equal(result.isCalculationAvailable, true);
+      assert.equal(result.status, 'available');
+      if (result.isCalculationAvailable) {
+        assert.ok(result.totalAppliedEaseCm < 0, `Total applied ease must be negative (got ${result.totalAppliedEaseCm})`);
+        assert.ok(result.finishedGarmentDimensionCm < result.bodyMeasurementCm, 'Finished garment must be smaller than body measurement');
+        assert.equal(result.finishedGarmentDimensionCm, Number((68.0 + result.totalAppliedEaseCm).toFixed(2)));
+        assert.ok(result.negativeEasePolicyApplied !== undefined);
+      }
+    });
+
+    it('audit-M4531-11: independently enforces maxPermittedNegativeEaseCm limit', () => {
+      // Calculated negative ease is ~0.64 cm.
+      // If policy strictly restricts cm limit to 0.20 cm, it must be rejected!
+      const restrictiveCmPolicy: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        maxPermittedNegativeEasePercent: 10.0, // generous percentage limit
+        maxPermittedNegativeEaseCm: 0.20       // strict cm limit (exceeded by 0.64 cm)
+      };
+
+      const result = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice',
+        negativeEasePolicy: restrictiveCmPolicy
+      });
+
+      assert.equal(result.isCalculationAvailable, false);
+      assert.equal(result.status, 'unavailable');
+      assert.ok(result.unavailableReason?.includes('exceeds maximum authorized policy limit'));
+      assert.ok(result.unavailableReason?.includes('cm'));
+    });
+
+    it('audit-M4531-12: independently enforces maxPermittedNegativeEasePercent limit', () => {
+      // Calculated negative ease is ~0.64 cm on 68cm waist = 0.94%.
+      // If policy restricts percent to 0.30%, it must be rejected!
+      const restrictivePctPolicy: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        maxPermittedNegativeEasePercent: 0.30, // strict percentage limit (exceeded by 0.94%)
+        maxPermittedNegativeEaseCm: 5.0        // generous cm limit
+      };
+
+      const result = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice',
+        negativeEasePolicy: restrictivePctPolicy
+      });
+
+      assert.equal(result.isCalculationAvailable, false);
+      assert.equal(result.status, 'unavailable');
+      assert.ok(result.unavailableReason?.includes('exceeds maximum authorized policy limit'));
+      assert.ok(result.unavailableReason?.includes('%'));
+    });
+
+    it('audit-M4531-13: unauthorized or invalid policy never produces negative ease (clamped to zero)', () => {
+      // Calculate without policy
+      const resultNoPolicy = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice'
+      });
+
+      assert.equal(resultNoPolicy.isCalculationAvailable, true);
+      if (resultNoPolicy.isCalculationAvailable) {
+        assert.ok(resultNoPolicy.totalAppliedEaseCm >= 0, 'Without policy, net ease cannot be negative');
+        assert.ok(resultNoPolicy.finishedGarmentDimensionCm >= resultNoPolicy.bodyMeasurementCm);
+      }
+    });
+
+    it('audit-M4531-14: missing or inadequate recovery rejects negative ease policy activation', () => {
+      const highThresholdPolicy: NegativeEaseAuthorizationPolicy = {
+        ...validBodicePolicy,
+        minimumRequiredRecoveryPercent: 95.0 // highStretchFabric has 90% recovery, below 95% threshold
+      };
+
+      const result = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice',
+        negativeEasePolicy: highThresholdPolicy
+      });
+
+      // Policy is rejected -> negative ease cannot activate -> clamped to non-negative
+      assert.equal(result.isCalculationAvailable, true);
+      if (result.isCalculationAvailable) {
+        assert.ok(result.totalAppliedEaseCm >= 0);
+        assert.ok(result.provenanceNotes.some(n => n.includes('does not satisfy policy minimum required recovery')));
+      }
+    });
+
+    it('audit-M4531-15: rejects non-finite, negative, or out-of-range stretch and recovery values', () => {
+      const resNaN = validateNegativeEaseAuthorizationPolicy(validBodicePolicy, 'bodice', NaN, 80);
+      assert.equal(resNaN.isValid, false);
+
+      const resRecoveryOverflow = validateNegativeEaseAuthorizationPolicy(
+        { ...validBodicePolicy, minimumRequiredRecoveryPercent: 120 },
+        'bodice',
+        25,
+        80
+      );
+      assert.equal(resRecoveryOverflow.isValid, false);
+      assert.ok(resRecoveryOverflow.rejectionReason?.includes('between 0 and 100'));
+    });
+
+    it('audit-M4531-16: verified that model limitations note is included in all calculation outputs', () => {
+      const result = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', ponteFabric, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice',
+        negativeEasePolicy: validBodicePolicy
+      });
+
+      assert.ok(result.limitations.length >= 3);
+      assert.ok(
+        result.limitations.some(l =>
+          l.includes('does not model dynamic pressure gradient, muscular support, hydrostatic compression, or performance-garment suitability')
+        )
+      );
+    });
+
+    it('audit-M4531-17: verifies provisional recovery and bias shrinkage approvals survive in calculation outputs', () => {
+      const provRecPolicy: ProvisionalRecoveryPolicy = {
+        allowProvisionalRecovery: true,
+        provisionalRecoveryPercent: 80,
+        userApproved: true,
+        reason: 'Laboratory tension test pending for lot R42',
+        approvedBy: 'Senior Textile Technologist',
+        approvalDate: '2026-11-01'
+      };
+
+      const testFabricWithoutRecovery = {
+        ...ponteFabric,
+        directional: {
+          ...ponteFabric.directional,
+          weft: {
+            ...ponteFabric.directional.weft,
+            elasticRecoveryPercent: undefined
+          }
+        }
+      };
+
+      const result = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', testFabricWithoutRecovery, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice',
+        provisionalRecoveryPolicy: provRecPolicy
+      });
+
+      assert.equal(result.isCalculationAvailable, true);
+      assert.equal(result.status, 'available');
+      if (result.isCalculationAvailable) {
+        assert.equal(result.isProvisionalCalculation, true);
+        assert.equal(result.isProvisionalRecovery, true);
+        assert.equal(result.provisionalRecoveryPolicyApplied?.approvedBy, 'Senior Textile Technologist');
+        assert.ok(result.inputProvenanceSummary?.explicitUserAssumptions.some(a => a.includes('Provisional recovery')));
+      }
+    });
+
+    it('audit-M4531-18: verifies original fabric evidence is never overwritten by provisional replacement values', () => {
+      const provRecPolicy: ProvisionalRecoveryPolicy = {
+        allowProvisionalRecovery: true,
+        provisionalRecoveryPercent: 80,
+        userApproved: true,
+        reason: 'Temporary prototype check',
+        approvedBy: 'Lead Patternmaker',
+        approvalDate: '2026-11-01'
+      };
+
+      const originalFabric = {
+        ...ponteFabric,
+        directional: {
+          ...ponteFabric.directional,
+          weft: {
+            ...ponteFabric.directional.weft,
+            elasticRecoveryPercent: undefined // unmeasured
+          }
+        }
+      };
+
+      calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', originalFabric, {
+        measurementDirection: 'circumference-crossgrain',
+        garmentCategory: 'bodice',
+        provisionalRecoveryPolicy: provRecPolicy
+      });
+
+      // Original fabric weft recovery MUST remain undefined (never mutated or overwritten)
+      assert.equal(originalFabric.directional.weft.elasticRecoveryPercent, undefined);
+    });
+
+    it('audit-M4531-19: enforces isProductionReady = false invariant strictly across all prototype reports and summaries', () => {
+      const reportConforming = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_CONFORMING);
+      assert.equal(reportConforming.isProductionReady, false);
+
+      const reportDiscrepant = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_DISCREPANT);
+      assert.equal(reportDiscrepant.isProductionReady, false);
+
+      const reportIncomplete = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_INCOMPLETE);
+      assert.equal(reportIncomplete.isProductionReady, false);
+    });
+  });
 });
+
 

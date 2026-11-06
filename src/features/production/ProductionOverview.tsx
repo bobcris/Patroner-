@@ -951,7 +951,19 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                   const girthLabel = girth === 'bust' ? 'Bust Circumference' : girth === 'waist' ? 'Waist Circumference' : 'Low Hip Circumference';
                   return (
                     <tr key={girth} className="hover:bg-neutral-50 transition-colors">
-                      <td className="py-2.5 px-3 font-bold text-neutral-900">{girthLabel}</td>
+                      <td className="py-2.5 px-3 font-bold text-neutral-900">
+                        <div>{girthLabel}</div>
+                        {b.isCalculationAvailable && b.isProvisionalCalculation && (
+                          <span className="text-[9px] bg-amber-100 text-amber-900 px-1 py-0.2 rounded font-mono font-normal block mt-0.5">
+                            PROVISIONAL {b.isProvisionalRecovery ? 'RECOVERY' : ''} {b.isProvisionalBiasShrinkage ? 'BIAS SHRINKAGE' : ''}
+                          </span>
+                        )}
+                        {b.isCalculationAvailable && b.totalAppliedEaseCm < 0 && (
+                          <span className="text-[9px] bg-purple-100 text-purple-900 px-1 py-0.2 rounded font-mono font-normal block mt-0.5">
+                            NEGATIVE EASE AUTHORIZED
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2.5 px-3">{b.bodyMeasurementCm.toFixed(1)} cm</td>
                       <td className="py-2.5 px-3">+{b.baselineMovementEaseCm.toFixed(2)} cm</td>
                       {b.isCalculationAvailable ? (
