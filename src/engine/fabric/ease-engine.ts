@@ -6,6 +6,8 @@ import {
   FabricEaseBreakdown,
   InputProvenanceSummary,
   MeasurementDirection,
+  MultiCategoryAuditEvidence,
+  MultiCategoryAuditEvidenceType,
   NegativeEaseAuthorizationPolicy,
   ProvisionalBiasShrinkagePolicy,
   ProvisionalRecoveryPolicy,
@@ -75,6 +77,17 @@ export function isValidIso8601Date(dateStr: unknown): boolean {
   return !Number.isNaN(timestamp);
 }
 
+export const RECOGNIZED_FIT_INTENTS = [
+  'bodycon',
+  'compression-fit',
+  'stretch-contour',
+  'corsetry',
+  'performance-knit',
+  'tailored-fitted'
+] as const;
+
+export type RecognizedFitIntent = (typeof RECOGNIZED_FIT_INTENTS)[number];
+
 /**
  * Fit intent compatibility matrix mapped to garment category construction capabilities.
  */
@@ -90,10 +103,82 @@ export const CATEGORY_FIT_INTENT_COMPATIBILITY: Record<string, string[]> = {
 };
 
 /**
- * Validates a negative ease authorization policy at runtime according to Milestone 04.5.3 / 04.5.3.1 rules.
+ * Explicit registration mechanism for custom garment categories and their validated fit intents.
+ * Requires a non-empty category name and a non-empty array of recognized fit intents.
+ */
+export function registerCustomGarmentCategoryCompatibility(
+  category: string,
+  compatibleIntents: string[]
+): { success: boolean; error?: string } {
+  if (!category || typeof category !== 'string' || category.trim() === '') {
+    return { success: false, error: 'Category name must be a non-empty string.' };
+  }
+  if (!Array.isArray(compatibleIntents) || compatibleIntents.length === 0) {
+    return { success: false, error: 'Compatible intents must be a non-empty array of recognized fit intents.' };
+  }
+  const normalizedCategory = category.trim().toLowerCase();
+  const normalizedIntents: string[] = [];
+
+  for (const intent of compatibleIntents) {
+    if (!intent || typeof intent !== 'string' || intent.trim() === '') {
+      return { success: false, error: 'Fit intent entries must be non-empty strings.' };
+    }
+    const normIntent = intent.trim().toLowerCase();
+    if (!RECOGNIZED_FIT_INTENTS.includes(normIntent as any)) {
+      return {
+        success: false,
+        error: `Unrecognized fit intent '${intent}'. Must be one of: ${RECOGNIZED_FIT_INTENTS.join(', ')}.`
+      };
+    }
+    if (!normalizedIntents.includes(normIntent)) {
+      normalizedIntents.push(normIntent);
+    }
+  }
+
+  CATEGORY_FIT_INTENT_COMPATIBILITY[normalizedCategory] = normalizedIntents;
+  return { success: true };
+}
+
+/**
+ * Normalizes an ISO 8601 calendar date, timestamp string, number, or Date object to UTC epoch milliseconds.
+ * - Date-only strings 'YYYY-MM-DD' are interpreted as UTC midnight (00:00:00.000Z).
+ * - Datetime strings with timezone offsets are parsed to UTC epoch ms.
+ * - Datetime strings without timezone offset are treated as UTC.
+ */
+export function normalizeIsoDateToUtcEpoch(dateInput: string | number | Date): number {
+  if (typeof dateInput === 'number') {
+    return Number.isFinite(dateInput) ? dateInput : NaN;
+  }
+  if (dateInput instanceof Date) {
+    return dateInput.getTime();
+  }
+  if (typeof dateInput === 'string') {
+    const trimmed = dateInput.trim();
+    if (!isValidIso8601Date(trimmed)) {
+      return NaN;
+    }
+    // Date-only: YYYY-MM-DD -> append T00:00:00.000Z to ensure UTC midnight
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return Date.parse(`${trimmed}T00:00:00.000Z`);
+    }
+    // Datetime with no timezone designation: treat as UTC
+    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(trimmed)) {
+      return Date.parse(`${trimmed.replace(' ', 'T')}Z`);
+    }
+    return Date.parse(trimmed.replace(' ', 'T'));
+  }
+  return NaN;
+}
+
+/**
+ * Validates a negative ease authorization policy at runtime according to Milestone 04.5.3 / 04.5.3.1 / 04.5.3.2 rules.
  * - Missing garment category is rejected (not a wildcard).
- * - Wildcard 'all' is prohibited unless a separately explicit, audited scope is provided.
+ * - Fail-closed: unsupported/unregistered garment category is rejected immediately.
+ * - Wildcard 'all' is prohibited unless supported by auditable MultiCategoryAuditEvidence covering target category.
+ * - Disallows self-asserted boolean alone without structured audit evidence.
  * - Requires non-empty authorization source, author, valid ISO 8601 calendar date, recognized fit intent, finite non-negative limits.
+ * - Enforces authorizationDate <= evaluationDate (future authorizations cannot be applied to evaluations predating approval).
+ * - Enforces expirationDate >= authorizationDate when present.
  * - Verifies fit intent is compatible with garment category construction.
  * - Directional stretch and recovery must satisfy declared policy thresholds.
  * - Expiration date is evaluated deterministically against evaluationDate.
@@ -123,6 +208,18 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
 
+  const normalizedTargetCat = garmentCategory.trim().toLowerCase();
+
+  // Fail-closed validation: target garment category must exist in compatibility registry
+  const compatibleIntents = CATEGORY_FIT_INTENT_COMPATIBILITY[normalizedTargetCat];
+  if (!compatibleIntents || compatibleIntents.length === 0) {
+    const supported = Object.keys(CATEGORY_FIT_INTENT_COMPATIBILITY).sort().join(', ');
+    return {
+      isValid: false,
+      rejectionReason: `Unsupported garment category '${garmentCategory}'. Supported categories with verified compatibility: ${supported}.`
+    };
+  }
+
   if (!p.garmentCategory || typeof p.garmentCategory !== 'string' || p.garmentCategory.trim() === '') {
     return {
       isValid: false,
@@ -130,20 +227,101 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
 
-  const normalizedTargetCat = garmentCategory.trim().toLowerCase();
   const normalizedPolicyCat = p.garmentCategory.trim().toLowerCase();
 
-  // Multi-category wildcard 'all' audit scope check
+  // Multi-category wildcard 'all' audit scope check & structured evidence validation
   if (normalizedPolicyCat === 'all') {
     if (
       !p.multiCategoryAuditScope ||
       typeof p.multiCategoryAuditScope !== 'string' ||
-      p.multiCategoryAuditScope.trim().length < 10 ||
-      p.isMultiCategoryAudited !== true
+      p.multiCategoryAuditScope.trim().length < 10
     ) {
       return {
         isValid: false,
-        rejectionReason: 'Wildcard category "all" is prohibited without a separately explicit, audited scope. Provide multiCategoryAuditScope (>= 10 chars) and isMultiCategoryAudited: true, or use explicit category matching.'
+        rejectionReason: 'Wildcard category "all" is prohibited without a separately explicit, audited scope description (multiCategoryAuditScope >= 10 chars).'
+      };
+    }
+
+    if (!p.multiCategoryAuditEvidence || typeof p.multiCategoryAuditEvidence !== 'object') {
+      return {
+        isValid: false,
+        rejectionReason: 'Wildcard category "all" requires structured multiCategoryAuditEvidence. A self-asserted boolean (isMultiCategoryAudited: true) is not acceptable proof of independent audit.'
+      };
+    }
+
+    const evidence = p.multiCategoryAuditEvidence;
+
+    const VALID_EVIDENCE_TYPES: MultiCategoryAuditEvidenceType[] = [
+      'internally-recorded-declaration',
+      'laboratory-certified-test',
+      'quality-management-audit',
+      'third-party-conformity-assessment'
+    ];
+
+    if (!evidence.evidenceType || !VALID_EVIDENCE_TYPES.includes(evidence.evidenceType)) {
+      return {
+        isValid: false,
+        rejectionReason: `Invalid multiCategoryAuditEvidence evidenceType '${evidence.evidenceType}'. Must be one of: ${VALID_EVIDENCE_TYPES.join(', ')}.`
+      };
+    }
+
+    if (!evidence.auditScope || typeof evidence.auditScope !== 'string' || evidence.auditScope.trim().length < 10) {
+      return {
+        isValid: false,
+        rejectionReason: 'multiCategoryAuditEvidence missing valid auditScope (minimum 10 characters required).'
+      };
+    }
+
+    if (!evidence.auditedBy || typeof evidence.auditedBy !== 'string' || evidence.auditedBy.trim() === '') {
+      return {
+        isValid: false,
+        rejectionReason: 'multiCategoryAuditEvidence missing non-empty auditedBy identity.'
+      };
+    }
+
+    if (!evidence.evidenceReference || typeof evidence.evidenceReference !== 'string' || evidence.evidenceReference.trim() === '') {
+      return {
+        isValid: false,
+        rejectionReason: 'multiCategoryAuditEvidence missing non-empty evidenceReference.'
+      };
+    }
+
+    if (!evidence.auditDate || !isValidIso8601Date(evidence.auditDate)) {
+      return {
+        isValid: false,
+        rejectionReason: `multiCategoryAuditEvidence contains invalid auditDate '${evidence.auditDate}'. Must be a valid ISO 8601 calendar date.`
+      };
+    }
+
+    if (!Array.isArray(evidence.authorizedCategories) || evidence.authorizedCategories.length === 0) {
+      return {
+        isValid: false,
+        rejectionReason: 'multiCategoryAuditEvidence must specify a non-empty array of authorizedCategories.'
+      };
+    }
+
+    const normalizedAuthorizedCategories = evidence.authorizedCategories.map(c =>
+      typeof c === 'string' ? c.trim().toLowerCase() : ''
+    );
+    if (!normalizedAuthorizedCategories.includes(normalizedTargetCat)) {
+      return {
+        isValid: false,
+        rejectionReason: `Multi-category audit evidence does not cover target garment category '${garmentCategory}'. Authorized categories: ${evidence.authorizedCategories.join(', ')}.`
+      };
+    }
+
+    // Contradictory verification metadata check
+    if (evidence.evidenceType === 'internally-recorded-declaration' && evidence.isIndependentlyVerified === true) {
+      return {
+        isValid: false,
+        rejectionReason: "Contradictory audit evidence: 'internally-recorded-declaration' cannot claim isIndependentlyVerified: true."
+      };
+    }
+
+    if (evidence.evidenceType !== 'internally-recorded-declaration' && evidence.isIndependentlyVerified !== true) {
+      return {
+        isValid: false,
+        rejectionReason: `Contradictory audit evidence: '${evidence.evidenceType}' must have isIndependentlyVerified: true.`
       };
     }
   } else if (normalizedPolicyCat !== normalizedTargetCat) {
@@ -177,17 +355,32 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
 
-  // Deterministic evaluation date resolution
-  const evalTime = evaluationDate !== undefined
-    ? (typeof evaluationDate === 'string'
-        ? (isValidIso8601Date(evaluationDate) ? Date.parse(evaluationDate) : NaN)
-        : (evaluationDate instanceof Date ? evaluationDate.getTime() : evaluationDate))
-    : Date.now();
+  const authTime = normalizeIsoDateToUtcEpoch(p.authorizationDate);
+  if (Number.isNaN(authTime)) {
+    return {
+      isValid: false,
+      rejectionReason: `Negative ease policy contains unparseable authorizationDate '${p.authorizationDate}'.`
+    };
+  }
+
+  // Deterministic evaluation date resolution normalized to UTC epoch
+  const evalDateInput = evaluationDate !== undefined ? evaluationDate : Date.now();
+  const evalTime = normalizeIsoDateToUtcEpoch(evalDateInput);
 
   if (Number.isNaN(evalTime)) {
     return {
       isValid: false,
       rejectionReason: `Invalid evaluationDate '${evaluationDate}'. Must be a valid ISO 8601 date, timestamp, or Date object.`
+    };
+  }
+
+  // Objective A: Authorization must not be in the future relative to evaluation date (authorizationDate <= evaluationDate)
+  if (authTime > evalTime) {
+    const authIso = new Date(authTime).toISOString();
+    const evalIso = new Date(evalTime).toISOString();
+    return {
+      isValid: false,
+      rejectionReason: `Negative ease authorization date '${p.authorizationDate}' (${authIso}) is in the future relative to evaluation date (${evalIso}). Authorizations cannot be applied retroactively.`
     };
   }
 
@@ -199,7 +392,19 @@ export function validateNegativeEaseAuthorizationPolicy(
         rejectionReason: `Negative ease policy contains invalid expirationDate '${p.expirationDate}'. Must be a valid ISO 8601 calendar date.`
       };
     }
-    const expTime = Date.parse(p.expirationDate);
+    const expTime = normalizeIsoDateToUtcEpoch(p.expirationDate);
+    if (Number.isNaN(expTime)) {
+      return {
+        isValid: false,
+        rejectionReason: `Negative ease policy contains unparseable expirationDate '${p.expirationDate}'.`
+      };
+    }
+    if (expTime < authTime) {
+      return {
+        isValid: false,
+        rejectionReason: `Negative ease policy contains contradictory dates: expirationDate '${p.expirationDate}' predates authorizationDate '${p.authorizationDate}'.`
+      };
+    }
     if (evalTime > expTime) {
       return {
         isValid: false,
@@ -209,14 +414,6 @@ export function validateNegativeEaseAuthorizationPolicy(
   }
 
   // Recognized fit intent
-  const RECOGNIZED_FIT_INTENTS = [
-    'bodycon',
-    'compression-fit',
-    'stretch-contour',
-    'corsetry',
-    'performance-knit',
-    'tailored-fitted'
-  ];
   if (!p.fitIntent || typeof p.fitIntent !== 'string' || p.fitIntent.trim() === '') {
     return {
       isValid: false,
@@ -224,7 +421,7 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
   const normalizedIntent = p.fitIntent.trim().toLowerCase();
-  if (!RECOGNIZED_FIT_INTENTS.includes(normalizedIntent)) {
+  if (!RECOGNIZED_FIT_INTENTS.includes(normalizedIntent as any)) {
     return {
       isValid: false,
       rejectionReason: `Unrecognized fitIntent '${p.fitIntent}'. Must be one of: ${RECOGNIZED_FIT_INTENTS.join(', ')}.`
@@ -232,8 +429,7 @@ export function validateNegativeEaseAuthorizationPolicy(
   }
 
   // Verify fit intent is compatible with the garment category and construction
-  const compatibleIntents = CATEGORY_FIT_INTENT_COMPATIBILITY[normalizedTargetCat];
-  if (compatibleIntents && !compatibleIntents.includes(normalizedIntent)) {
+  if (!compatibleIntents.includes(normalizedIntent)) {
     return {
       isValid: false,
       rejectionReason: `Fit intent '${p.fitIntent}' is incompatible with garment category '${garmentCategory}' construction. Compatible intents: ${compatibleIntents.join(', ')}.`
@@ -741,6 +937,15 @@ export function calculateFabricAwareCircumferenceEase(
       provenanceNotes.push(
         `Negative ease explicitly authorized for category '${options.negativeEasePolicy.garmentCategory}' by ${options.negativeEasePolicy.authorizedBy} (Intent: ${options.negativeEasePolicy.fitIntent}, Auth Date: ${options.negativeEasePolicy.authorizationDate}).`
       );
+      if (
+        options.negativeEasePolicy.garmentCategory.toLowerCase() === 'all' &&
+        options.negativeEasePolicy.multiCategoryAuditEvidence
+      ) {
+        const ev = options.negativeEasePolicy.multiCategoryAuditEvidence;
+        provenanceNotes.push(
+          `Multi-category audit evidence applied: [${ev.evidenceType}] Ref: ${ev.evidenceReference} by ${ev.auditedBy} (${ev.isIndependentlyVerified ? 'Independently Verified' : 'Internal Declaration'}).`
+        );
+      }
     } else {
       provenanceNotes.push(
         `Negative ease policy rejected: ${policyValidation.rejectionReason}`
@@ -886,6 +1091,21 @@ export function calculateFabricAwareCircumferenceEase(
   }
 
   if (negativeEasePolicyApplied) {
+    if (
+      negativeEasePolicyApplied.garmentCategory.toLowerCase() === 'all' &&
+      negativeEasePolicyApplied.multiCategoryAuditEvidence
+    ) {
+      const ev = negativeEasePolicyApplied.multiCategoryAuditEvidence;
+      if (ev.isIndependentlyVerified) {
+        inputProvenanceSummary.measuredInputs.push(
+          `Multi-category audit [${ev.evidenceType}]: ${ev.evidenceReference} by ${ev.auditedBy} (${ev.auditScope})`
+        );
+      } else {
+        inputProvenanceSummary.explicitUserAssumptions.push(
+          `Multi-category declaration [${ev.evidenceType}]: ${ev.evidenceReference} by ${ev.auditedBy}`
+        );
+      }
+    }
     inputProvenanceSummary.explicitUserAssumptions.push(
       `Negative ease authorized by ${negativeEasePolicyApplied.authorizedBy} (max: ${negativeEasePolicyApplied.maxPermittedNegativeEasePercent}%, Intent: ${negativeEasePolicyApplied.fitIntent})`
     );

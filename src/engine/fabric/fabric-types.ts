@@ -170,6 +170,68 @@ export type MeasurementDirection = 'circumference-crossgrain' | 'length-grainlin
  * - Validates recognized fitIntent and positive finite limits.
  * - Directional stretch and recovery must satisfy declared policy thresholds.
  */
+/**
+ * Structured classifications of multi-category audit evidence.
+ * Preserves the distinction between self-asserted internal declarations
+ * and independently verifiable audit evidence.
+ */
+export type MultiCategoryAuditEvidenceType =
+  | 'internally-recorded-declaration'
+  | 'laboratory-certified-test'
+  | 'quality-management-audit'
+  | 'third-party-conformity-assessment';
+
+/**
+ * Audit evidence provenance record supporting multi-category negative-ease authorizations.
+ */
+export interface MultiCategoryAuditEvidence {
+  /**
+   * Provenance classification: declaration vs independent audit.
+   */
+  evidenceType: MultiCategoryAuditEvidenceType;
+  /**
+   * Technical scope of the audit (e.g. collection, fabric range, pattern blocks).
+   * Minimum 10 characters required.
+   */
+  auditScope: string;
+  /**
+   * Identity or role of the approving or auditing authority.
+   */
+  auditedBy: string;
+  /**
+   * Document identifier, lab certificate number, or internal QA record reference.
+   */
+  evidenceReference: string;
+  /**
+   * Date the audit was performed or declaration recorded (valid ISO 8601 calendar date).
+   */
+  auditDate: string;
+  /**
+   * Explicit array of garment categories verified by this audit evidence.
+   */
+  authorizedCategories: string[];
+  /**
+   * Strictly false for internally-recorded-declaration; true only for independent third-party or certified audits.
+   */
+  isIndependentlyVerified: boolean;
+  /**
+   * Optional technical verification notes or laboratory test standard references.
+   */
+  verificationNotes?: string[];
+}
+
+/**
+ * Explicit authorization policy for negative ease calculations.
+ * Negative ease reduces finished garment dimensions below anatomical body measurements.
+ * It must never be applied implicitly from fabric stretch or fitted profiles alone.
+ * In Milestone 04.5.3 / 04.5.3.2:
+ * - A legacy boolean is rejected.
+ * - Requires explicit matching garmentCategory (missing category is rejected).
+ * - Wildcard 'all' requires auditable multiCategoryAuditEvidence.
+ * - Requires non-empty authorizedBy, sourceAndProvenance, and valid ISO authorizationDate <= evaluationDate.
+ * - Validates recognized fitIntent and positive finite limits.
+ * - Directional stretch and recovery must satisfy declared policy thresholds.
+ */
 export interface NegativeEaseAuthorizationPolicy {
   /**
    * Explicit authorization flag. Must be true.
@@ -178,7 +240,7 @@ export interface NegativeEaseAuthorizationPolicy {
   /**
    * Target garment category (e.g. 'bodice', 'activewear', 'swimwear').
    * Missing category is a rejection, not a wildcard.
-   * Wildcard 'all' is prohibited unless multiCategoryAuditScope is defined and isMultiCategoryAudited is true.
+   * Wildcard 'all' is prohibited unless multiCategoryAuditEvidence is supplied with matching category coverage.
    */
   garmentCategory: string;
   /**
@@ -186,9 +248,15 @@ export interface NegativeEaseAuthorizationPolicy {
    */
   multiCategoryAuditScope?: string;
   /**
-   * Confirmation of explicit audit when multi-category scope is declared.
+   * Assertion flag for multi-category audit.
+   * Note: A self-asserted boolean alone is never accepted as independent evidence.
    */
   isMultiCategoryAudited?: boolean;
+  /**
+   * Structured audit evidence provenance supporting multi-category authorization.
+   * Required when garmentCategory is 'all'.
+   */
+  multiCategoryAuditEvidence?: MultiCategoryAuditEvidence;
   /**
    * Construction or fit intent (e.g. 'compression-fit', 'corsetry', 'performance-knit', 'bodycon', 'stretch-contour', 'tailored-fitted').
    */

@@ -18,12 +18,16 @@ import {
   calculateFabricAdaptedSleeveCapEase,
   calculateFabricAwareCircumferenceEase,
   isValidIso8601Date,
+  normalizeIsoDateToUtcEpoch,
+  registerCustomGarmentCategoryCompatibility,
   validateNegativeEaseAuthorizationPolicy,
   validateProvisionalRecoveryPolicy,
   validateProvisionalBiasShrinkagePolicy,
-  CATEGORY_FIT_INTENT_COMPATIBILITY
+  CATEGORY_FIT_INTENT_COMPATIBILITY,
+  RECOGNIZED_FIT_INTENTS
 } from './ease-engine';
 import {
+  MultiCategoryAuditEvidence,
   NegativeEaseAuthorizationPolicy,
   ProvisionalRecoveryPolicy,
   ProvisionalBiasShrinkagePolicy
@@ -1089,7 +1093,16 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
         ...validBodicePolicy,
         garmentCategory: 'all',
         multiCategoryAuditScope: 'Audited across multi-category stretch activewear collection (bodice, skirt, leggings)',
-        isMultiCategoryAudited: true
+        isMultiCategoryAudited: true,
+        multiCategoryAuditEvidence: {
+          evidenceType: 'quality-management-audit',
+          auditScope: 'Audited across multi-category stretch activewear collection (bodice, skirt, leggings)',
+          auditedBy: 'QA Technical Board Lead',
+          evidenceReference: 'QMA-2026-ACT-04',
+          auditDate: '2026-11-01',
+          authorizedCategories: ['bodice', 'skirt', 'leggings'],
+          isIndependentlyVerified: true
+        }
       };
 
       const res = validateNegativeEaseAuthorizationPolicy(auditedWildcardPolicy, 'bodice', 25, 80);
@@ -1435,6 +1448,536 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
 
       const reportIncomplete = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_INCOMPLETE);
       assert.equal(reportIncomplete.isProductionReady, false);
+    });
+  });
+
+  describe('Milestone 04.5.3.2: Authorization Boundary Hardening & Audit-Evidence Integrity', () => {
+    const ponteLookup = getEnhancedFabricById('ponte-roma');
+    const ponteFabric = ponteLookup.status === 'found' ? ponteLookup.fabric : DEFAULT_ILLUSTRATIVE_FABRIC;
+
+    const baseValidPolicy: NegativeEaseAuthorizationPolicy = {
+      isAuthorized: true,
+      garmentCategory: 'bodice',
+      fitIntent: 'stretch-contour',
+      maxPermittedNegativeEasePercent: 5.0,
+      maxPermittedNegativeEaseCm: 2.0,
+      minimumRequiredStretchPercent: 15.0,
+      minimumRequiredRecoveryPercent: 75.0,
+      authorizedBy: 'Lead Pattern Engineer',
+      sourceAndProvenance: 'Spec-2026-M4532',
+      authorizationDate: '2026-11-01T00:00:00.000Z'
+    };
+
+    const highStretchFabric = {
+      ...ponteFabric,
+      directional: {
+        ...ponteFabric.directional,
+        weft: {
+          shrinkagePercent: 1.0,
+          stretchPercent: 35.0,
+          elasticRecoveryPercent: 90.0
+        }
+      }
+    };
+
+    describe('Objective A: Authorization-date integrity & normalized comparisons', () => {
+      it('audit-M4532-1: accepts authorization dated before evaluation date (authorizationDate < evaluationDate)', () => {
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-10-15T00:00:00.000Z'
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-01T00:00:00.000Z');
+        assert.equal(res.isValid, true);
+      });
+
+      it('audit-M4532-2: accepts authorization dated exactly at evaluation date (authorizationDate === evaluationDate)', () => {
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-11-01T12:00:00.000Z'
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-01T12:00:00.000Z');
+        assert.equal(res.isValid, true);
+      });
+
+      it('audit-M4532-3: strictly rejects authorization dated after evaluation date (authorizationDate > evaluationDate)', () => {
+        const futurePolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-11-10T00:00:00.000Z'
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(futurePolicy, 'bodice', 25, 80, '2026-11-01T00:00:00.000Z');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes('is in the future relative to evaluation date'));
+        assert.ok(res.rejectionReason?.includes('Authorizations cannot be applied retroactively'));
+      });
+
+      it('audit-M4532-4: rejects future authorization applied to historical evaluation', () => {
+        const policy2026: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-06-01T00:00:00.000Z'
+        };
+        const resHistorical = validateNegativeEaseAuthorizationPolicy(
+          policy2026,
+          'bodice',
+          25,
+          80,
+          '2024-03-15T10:00:00.000Z'
+        );
+        assert.equal(resHistorical.isValid, false);
+        assert.ok(resHistorical.rejectionReason?.includes('is in the future relative to evaluation date'));
+      });
+
+      it('audit-M4532-5: normalizes date-only strings to UTC midnight and handles timezone offsets consistently', () => {
+        const epochDateOnly = normalizeIsoDateToUtcEpoch('2026-11-01');
+        assert.equal(epochDateOnly, Date.parse('2026-11-01T00:00:00.000Z'));
+
+        const epochOffset = normalizeIsoDateToUtcEpoch('2026-11-01T02:00:00+02:00');
+        assert.equal(epochOffset, epochDateOnly);
+
+        const offsetPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-11-01T02:00:00+02:00'
+        };
+        const resValid = validateNegativeEaseAuthorizationPolicy(
+          offsetPolicy,
+          'bodice',
+          25,
+          80,
+          '2026-11-01T01:00:00.000Z'
+        );
+        assert.equal(resValid.isValid, true);
+
+        const resEarly = validateNegativeEaseAuthorizationPolicy(
+          offsetPolicy,
+          'bodice',
+          25,
+          80,
+          '2026-10-31T23:59:59.000Z'
+        );
+        assert.equal(resEarly.isValid, false);
+      });
+
+      it('audit-M4532-6: rejects invalid calendar dates in authorization and expiration dates', () => {
+        const badAuthPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2025-02-29'
+        };
+        const resAuth = validateNegativeEaseAuthorizationPolicy(badAuthPolicy, 'bodice', 25, 80);
+        assert.equal(resAuth.isValid, false);
+        assert.ok(resAuth.rejectionReason?.includes('Must be a valid ISO 8601 calendar date'));
+
+        const badExpPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-11-01',
+          expirationDate: '2026-04-31'
+        };
+        const resExp = validateNegativeEaseAuthorizationPolicy(badExpPolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(resExp.isValid, false);
+        assert.ok(resExp.rejectionReason?.includes('Must be a valid ISO 8601 calendar date'));
+      });
+
+      it('audit-M4532-7: rejects contradictory policy where expirationDate predates authorizationDate', () => {
+        const contradictoryPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-11-05T00:00:00.000Z',
+          expirationDate: '2026-11-01T00:00:00.000Z'
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(
+          contradictoryPolicy,
+          'bodice',
+          25,
+          80,
+          '2026-11-06T00:00:00.000Z'
+        );
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes('contradictory dates: expirationDate'));
+        assert.ok(res.rejectionReason?.includes('predates authorizationDate'));
+      });
+
+      it('audit-M4532-8: preserves exact expiration boundary (evalTime <= expTime valid, evalTime > expTime invalid)', () => {
+        const expiringPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-11-01T00:00:00.000Z',
+          expirationDate: '2026-11-05T12:00:00.000Z'
+        };
+
+        const resBefore = validateNegativeEaseAuthorizationPolicy(
+          expiringPolicy,
+          'bodice',
+          25,
+          80,
+          '2026-11-05T11:59:59.999Z'
+        );
+        assert.equal(resBefore.isValid, true);
+
+        const resAt = validateNegativeEaseAuthorizationPolicy(
+          expiringPolicy,
+          'bodice',
+          25,
+          80,
+          '2026-11-05T12:00:00.000Z'
+        );
+        assert.equal(resAt.isValid, true);
+
+        const resAfter = validateNegativeEaseAuthorizationPolicy(
+          expiringPolicy,
+          'bodice',
+          25,
+          80,
+          '2026-11-05T12:00:00.001Z'
+        );
+        assert.equal(resAfter.isValid, false);
+        assert.ok(resAfter.rejectionReason?.includes('expired on'));
+      });
+    });
+
+    describe('Objective B: Closed garment-category compatibility validation', () => {
+      it('audit-M4532-9: verifies default registry contains standard garment categories and valid intents', () => {
+        const expectedCategories = ['bodice', 'skirt', 'sleeve', 'trousers', 'pants', 'leggings', 'corset', 'dress'];
+        for (const cat of expectedCategories) {
+          assert.ok(CATEGORY_FIT_INTENT_COMPATIBILITY[cat], `Category '${cat}' must exist in registry`);
+          const intents = CATEGORY_FIT_INTENT_COMPATIBILITY[cat];
+          assert.ok(intents.length > 0);
+          for (const intent of intents) {
+            assert.ok(RECOGNIZED_FIT_INTENTS.includes(intent as any), `Intent '${intent}' must be recognized`);
+          }
+        }
+      });
+
+      it('audit-M4532-10: fail-closed validation strictly rejects unknown/unsupported garment categories', () => {
+        const unsupportedCategories = ['space-suit', 'armchair', 'outerwear', 'footwear', 'tent'];
+        for (const unsupp of unsupportedCategories) {
+          const policy: NegativeEaseAuthorizationPolicy = {
+            ...baseValidPolicy,
+            garmentCategory: unsupp
+          };
+          const res = validateNegativeEaseAuthorizationPolicy(policy, unsupp, 25, 80, '2026-11-02');
+          assert.equal(res.isValid, false, `Category '${unsupp}' must be rejected`);
+          assert.ok(res.rejectionReason?.includes(`Unsupported garment category '${unsupp}'`));
+          assert.ok(res.rejectionReason?.includes('Supported categories with verified compatibility'));
+        }
+      });
+
+      it('audit-M4532-11: strictly rejects missing, empty, or whitespace target garment category', () => {
+        const resMissing = validateNegativeEaseAuthorizationPolicy(baseValidPolicy, undefined, 25, 80);
+        assert.equal(resMissing.isValid, false);
+        assert.ok(resMissing.rejectionReason?.includes('Target garment category is missing'));
+
+        const resEmpty = validateNegativeEaseAuthorizationPolicy(baseValidPolicy, '   ', 25, 80);
+        assert.equal(resEmpty.isValid, false);
+        assert.ok(resEmpty.rejectionReason?.includes('Target garment category is missing'));
+      });
+
+      it('audit-M4532-12: calculateFabricAwareCircumferenceEase fails gracefully when category is unsupported', () => {
+        const result = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+          measurementDirection: 'circumference-crossgrain',
+          garmentCategory: 'unsupported-suit',
+          negativeEasePolicy: {
+            ...baseValidPolicy,
+            garmentCategory: 'unsupported-suit'
+          },
+          evaluationDate: '2026-11-02'
+        });
+
+        assert.equal(result.isCalculationAvailable, true);
+        assert.equal(result.negativeEasePolicyApplied, undefined);
+        assert.ok(result.totalAppliedEaseCm >= 0);
+        assert.ok(result.provenanceNotes.some(n => n.includes("Unsupported garment category 'unsupported-suit'")));
+      });
+
+      it('audit-M4532-13: registerCustomGarmentCategoryCompatibility permits extending supported categories with recognized intents', () => {
+        const regRes = registerCustomGarmentCategoryCompatibility('active-jumpsuit', [
+          'compression-fit',
+          'performance-knit',
+          'stretch-contour'
+        ]);
+        assert.equal(regRes.success, true);
+        assert.ok(CATEGORY_FIT_INTENT_COMPATIBILITY['active-jumpsuit']);
+        assert.deepEqual(CATEGORY_FIT_INTENT_COMPATIBILITY['active-jumpsuit'], [
+          'compression-fit',
+          'performance-knit',
+          'stretch-contour'
+        ]);
+
+        const customPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'active-jumpsuit',
+          fitIntent: 'compression-fit'
+        };
+        const evalRes = validateNegativeEaseAuthorizationPolicy(customPolicy, 'active-jumpsuit', 25, 80, '2026-11-02');
+        assert.equal(evalRes.isValid, true);
+      });
+
+      it('audit-M4532-14: registerCustomGarmentCategoryCompatibility rejects invalid registration inputs', () => {
+        const resEmptyCat = registerCustomGarmentCategoryCompatibility('', ['compression-fit']);
+        assert.equal(resEmptyCat.success, false);
+        assert.ok(resEmptyCat.error?.includes('non-empty string'));
+
+        const resEmptyIntents = registerCustomGarmentCategoryCompatibility('swimwear', []);
+        assert.equal(resEmptyIntents.success, false);
+        assert.ok(resEmptyIntents.error?.includes('non-empty array'));
+
+        const resBadIntent = registerCustomGarmentCategoryCompatibility('swimwear', ['compression-fit', 'loose-fit' as any]);
+        assert.equal(resBadIntent.success, false);
+        assert.ok(resBadIntent.error?.includes("Unrecognized fit intent 'loose-fit'"));
+      });
+
+      it('audit-M4532-15: custom category strictly rejects incompatible fit intents', () => {
+        const customPolicyIncompatible: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'active-jumpsuit',
+          fitIntent: 'corsetry'
+        };
+        const evalRes = validateNegativeEaseAuthorizationPolicy(
+          customPolicyIncompatible,
+          'active-jumpsuit',
+          25,
+          80,
+          '2026-11-02'
+        );
+        assert.equal(evalRes.isValid, false);
+        assert.ok(evalRes.rejectionReason?.includes("Fit intent 'corsetry' is incompatible with garment category 'active-jumpsuit'"));
+      });
+    });
+
+    describe('Objective C: Multi-category audit evidence provenance & independent verification', () => {
+      const validIndependentEvidence: MultiCategoryAuditEvidence = {
+        evidenceType: 'quality-management-audit',
+        auditScope: 'Full stretch compression fit verification across bodice, skirt, and leggings blocks',
+        auditedBy: 'Senior Quality Assurance Lead',
+        evidenceReference: 'QMA-2026-M4532-001',
+        auditDate: '2026-10-25',
+        authorizedCategories: ['bodice', 'skirt', 'leggings'],
+        isIndependentlyVerified: true,
+        verificationNotes: ['Conducted according to ISO 13934 tensile standards under atelier conditions.']
+      };
+
+      it('audit-M4532-16: rejects wildcard category "all" when isMultiCategoryAudited: true is asserted without multiCategoryAuditEvidence', () => {
+        const booleanOnlyPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Multi-category stretch range covering bodice, skirt, and leggings',
+          isMultiCategoryAudited: true
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(booleanOnlyPolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes('requires structured multiCategoryAuditEvidence'));
+        assert.ok(res.rejectionReason?.includes('A self-asserted boolean (isMultiCategoryAudited: true) is not acceptable proof'));
+      });
+
+      it('audit-M4532-17: rejects wildcard category "all" when auditScope is missing or under 10 characters', () => {
+        const shortScopePolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Scope <10',
+          multiCategoryAuditEvidence: {
+            ...validIndependentEvidence,
+            auditScope: 'Scope <10'
+          }
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(shortScopePolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes('multiCategoryAuditScope >= 10 chars'));
+      });
+
+      it('audit-M4532-18: rejects wildcard category "all" when auditedBy or evidenceReference is missing', () => {
+        const missingAuditorPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Multi-category stretch range covering bodice, skirt, and leggings',
+          multiCategoryAuditEvidence: {
+            ...validIndependentEvidence,
+            auditedBy: ''
+          }
+        };
+        const resAuditor = validateNegativeEaseAuthorizationPolicy(missingAuditorPolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(resAuditor.isValid, false);
+        assert.ok(resAuditor.rejectionReason?.includes('missing non-empty auditedBy identity'));
+
+        const missingRefPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Multi-category stretch range covering bodice, skirt, and leggings',
+          multiCategoryAuditEvidence: {
+            ...validIndependentEvidence,
+            evidenceReference: '   '
+          }
+        };
+        const resRef = validateNegativeEaseAuthorizationPolicy(missingRefPolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(resRef.isValid, false);
+        assert.ok(resRef.rejectionReason?.includes('missing non-empty evidenceReference'));
+      });
+
+      it('audit-M4532-19: rejects wildcard category "all" when auditDate is invalid or non-ISO', () => {
+        const badDatePolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Multi-category stretch range covering bodice, skirt, and leggings',
+          multiCategoryAuditEvidence: {
+            ...validIndependentEvidence,
+            auditDate: '2026-02-31'
+          }
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(badDatePolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes("contains invalid auditDate '2026-02-31'"));
+      });
+
+      it('audit-M4532-20: rejects wildcard category "all" when target category is not in authorizedCategories', () => {
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Multi-category stretch range covering bodice, skirt, and leggings',
+          multiCategoryAuditEvidence: {
+            ...validIndependentEvidence,
+            authorizedCategories: ['skirt', 'leggings']
+          }
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes("does not cover target garment category 'bodice'"));
+        assert.ok(res.rejectionReason?.includes('Authorized categories: skirt, leggings'));
+      });
+
+      it('audit-M4532-21: rejects contradictory claim where internally-recorded-declaration claims isIndependentlyVerified: true', () => {
+        const contradictoryInternalPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Multi-category stretch range covering bodice, skirt, and leggings',
+          multiCategoryAuditEvidence: {
+            ...validIndependentEvidence,
+            evidenceType: 'internally-recorded-declaration',
+            isIndependentlyVerified: true
+          }
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(contradictoryInternalPolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes("Contradictory audit evidence: 'internally-recorded-declaration' cannot claim isIndependentlyVerified: true"));
+      });
+
+      it('audit-M4532-22: rejects contradictory claim where independent evidence types claim isIndependentlyVerified: false', () => {
+        const independentTypes: Array<MultiCategoryAuditEvidence['evidenceType']> = [
+          'laboratory-certified-test',
+          'quality-management-audit',
+          'third-party-conformity-assessment'
+        ];
+        for (const evType of independentTypes) {
+          const contradictoryPolicy: NegativeEaseAuthorizationPolicy = {
+            ...baseValidPolicy,
+            garmentCategory: 'all',
+            multiCategoryAuditScope: 'Multi-category stretch range covering bodice, skirt, and leggings',
+            multiCategoryAuditEvidence: {
+              ...validIndependentEvidence,
+              evidenceType: evType,
+              isIndependentlyVerified: false
+            }
+          };
+          const res = validateNegativeEaseAuthorizationPolicy(contradictoryPolicy, 'bodice', 25, 80, '2026-11-02');
+          assert.equal(res.isValid, false);
+          assert.ok(res.rejectionReason?.includes(`Contradictory audit evidence: '${evType}' must have isIndependentlyVerified: true`));
+        }
+      });
+
+      it('audit-M4532-23: accepts valid independent multi-category audit evidence and records it accurately in provenance', () => {
+        const validPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Multi-category stretch range covering bodice, skirt, and leggings',
+          multiCategoryAuditEvidence: validIndependentEvidence
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(validPolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(res.isValid, true);
+
+        const calc = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+          measurementDirection: 'circumference-crossgrain',
+          garmentCategory: 'bodice',
+          negativeEasePolicy: validPolicy,
+          evaluationDate: '2026-11-02'
+        });
+
+        assert.equal(calc.isCalculationAvailable, true);
+        assert.equal(calc.status, 'available');
+        if (calc.isCalculationAvailable) {
+          assert.ok(calc.totalAppliedEaseCm < 0);
+          assert.ok(calc.provenanceNotes.some(n => n.includes('Multi-category audit evidence applied: [quality-management-audit]')));
+          assert.ok(calc.inputProvenanceSummary?.measuredInputs.some(i => i.includes('Multi-category audit [quality-management-audit]')));
+        }
+      });
+
+      it('audit-M4532-24: accepts valid internal declaration multi-category evidence with isIndependentlyVerified: false and records it as assumption', () => {
+        const internalDeclarationEvidence: MultiCategoryAuditEvidence = {
+          evidenceType: 'internally-recorded-declaration',
+          auditScope: 'Internal pattern engineering team cross-category stretch assessment',
+          auditedBy: 'Atelier Head Patternmaker',
+          evidenceReference: 'INT-DEC-2026-08',
+          auditDate: '2026-10-30',
+          authorizedCategories: ['bodice', 'skirt'],
+          isIndependentlyVerified: false
+        };
+
+        const validInternalPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Internal pattern engineering team cross-category stretch assessment',
+          multiCategoryAuditEvidence: internalDeclarationEvidence
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(validInternalPolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(res.isValid, true);
+
+        const calc = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+          measurementDirection: 'circumference-crossgrain',
+          garmentCategory: 'bodice',
+          negativeEasePolicy: validInternalPolicy,
+          evaluationDate: '2026-11-02'
+        });
+
+        assert.equal(calc.isCalculationAvailable, true);
+        if (calc.isCalculationAvailable) {
+          assert.ok(calc.provenanceNotes.some(n => n.includes('Internal Declaration')));
+          assert.ok(calc.inputProvenanceSummary?.explicitUserAssumptions.some(a => a.includes('Multi-category declaration [internally-recorded-declaration]')));
+        }
+      });
+
+      it('audit-M4532-25: confirms single-category policy is unaffected and does not require multiCategoryAuditEvidence', () => {
+        const singleCategoryPolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'bodice'
+        };
+        const res = validateNegativeEaseAuthorizationPolicy(singleCategoryPolicy, 'bodice', 25, 80, '2026-11-02');
+        assert.equal(res.isValid, true);
+      });
+    });
+
+    describe('Integration & Invariants', () => {
+      it('audit-M4532-26: full calculation rejects negative ease when authorization date postdates evaluation date', () => {
+        const futurePolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-11-15T00:00:00.000Z'
+        };
+        const result = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+          measurementDirection: 'circumference-crossgrain',
+          garmentCategory: 'bodice',
+          negativeEasePolicy: futurePolicy,
+          evaluationDate: '2026-11-01T00:00:00.000Z'
+        });
+
+        assert.equal(result.isCalculationAvailable, true);
+        assert.equal(result.negativeEasePolicyApplied, undefined);
+        assert.ok(result.totalAppliedEaseCm >= 0);
+        assert.ok(result.provenanceNotes.some(n => n.includes('is in the future relative to evaluation date')));
+      });
+
+      it('audit-M4532-27: strictly enforces isProductionReady = false invariant across all prototype reports', () => {
+        const reportConforming = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_CONFORMING);
+        assert.equal(reportConforming.isProductionReady, false);
+
+        const reportDiscrepant = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_DISCREPANT);
+        assert.equal(reportDiscrepant.isProductionReady, false);
+
+        const reportIncomplete = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_INCOMPLETE);
+        assert.equal(reportIncomplete.isProductionReady, false);
+      });
     });
   });
 });
