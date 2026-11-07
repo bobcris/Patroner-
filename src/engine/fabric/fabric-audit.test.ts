@@ -19,9 +19,13 @@ import {
   calculateFabricAwareCircumferenceEase,
   isValidIso8601Date,
   normalizeIsoDateToUtcEpoch,
+  createFabricCategoryRegistry,
+  canonicalizeAuditScope,
   registerCustomGarmentCategoryCompatibility,
   resetCustomGarmentCategoryRegistry,
+  getCategoryFitIntentCompatibility,
   getAllSupportedGarmentCategories,
+  STANDARD_GARMENT_CATEGORIES,
   validateNegativeEaseAuthorizationPolicy,
   evaluateAuditEvidenceTrust,
   validateProvisionalRecoveryPolicy,
@@ -36,8 +40,11 @@ import {
   NegativeEaseAuthorizationPolicy,
   ProvisionalRecoveryPolicy,
   ProvisionalBiasShrinkagePolicy,
-  AuditEvidenceTrustClassification
+  AuditEvidenceTrustClassification,
+  FabricCategoryRegistry,
+  EnhancedFabricProperty
 } from './fabric-types';
+import { STANDARD_SIZING_SYSTEM } from '../measurements/standards';
 import { validatePhysicalFit } from '../prototype/fit-validator';
 import {
   SYNTHETIC_TEST_PROTOTYPE_CONFORMING,
@@ -1749,7 +1756,7 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
     describe('Objective C: Multi-category audit evidence provenance & independent verification', () => {
       const validIndependentEvidence: MultiCategoryAuditEvidence = {
         evidenceType: 'quality-management-audit',
-        auditScope: 'Full stretch compression fit verification across bodice, skirt, and leggings blocks',
+        auditScope: 'Multi-category stretch range covering bodice, skirt, and leggings',
         auditedBy: 'Senior Quality Assurance Lead',
         evidenceReference: 'QMA-2026-M4532-001',
         auditDate: '2026-10-25',
@@ -2386,6 +2393,562 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
 
         const reportIncomplete = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_INCOMPLETE);
         assert.equal(reportIncomplete.isProductionReady, false);
+      });
+    });
+  });
+
+  describe('Milestone 04.5.3.4: Tenant-Isolated Fabric Policy Registry & Audit Scope Integrity', () => {
+    const baseValidPolicy: NegativeEaseAuthorizationPolicy = {
+      isAuthorized: true,
+      garmentCategory: 'bodice',
+      fitIntent: 'compression-fit',
+      maxPermittedNegativeEasePercent: 5.0,
+      maxPermittedNegativeEaseCm: 4.0,
+      minimumRequiredStretchPercent: 15.0,
+      minimumRequiredRecoveryPercent: 70.0,
+      authorizedBy: 'Lead Technical Patternmaker',
+      sourceAndProvenance: 'SPEC-DOC-4534-COMP',
+      authorizationDate: '2026-10-30'
+    };
+
+    const ponteLookup = getEnhancedFabricById('ponte-roma');
+    const ponteFabric = ponteLookup.status === 'found' ? ponteLookup.fabric : DEFAULT_ILLUSTRATIVE_FABRIC;
+
+    const highStretchFabric: EnhancedFabricProperty = {
+      ...ponteFabric,
+      id: 'active-stretch-knit-4534',
+      name: 'Active Compression Knit M4534',
+      gsm: 280,
+      thicknessMm: 0.8,
+      moldingFactor: 1.0,
+      provenance: 'laboratory-tested' as const,
+      isVerified: true,
+      directional: {
+        warp: { stretchPercent: 20.0, shrinkagePercent: 1.0, elasticRecoveryPercent: 90 },
+        weft: { stretchPercent: 30.0, shrinkagePercent: 1.0, elasticRecoveryPercent: 90 },
+        bias: { stretchPercent: 35.0, shrinkagePercent: 2.0, elasticRecoveryPercent: 85 }
+      }
+    };
+
+    describe('Scope A: Tenant-Isolated Category Registry Context', () => {
+      it('audit-M4534-1: createFabricCategoryRegistry creates an isolated context where custom categories in Tenant A are not observable in Tenant B', () => {
+        const tenantA = createFabricCategoryRegistry({ tenantId: 'tenant-a' });
+        const tenantB = createFabricCategoryRegistry({ tenantId: 'tenant-b' });
+
+        const regResult = tenantA.registerCustomCategory('cycling-suit', ['compression-fit', 'performance-knit']);
+        assert.equal(regResult.success, true);
+
+        // Tenant A can resolve cycling-suit
+        assert.deepEqual(tenantA.getCompatibility('cycling-suit'), ['compression-fit', 'performance-knit']);
+        assert.ok(tenantA.getAllSupportedCategories().includes('cycling-suit'));
+
+        // Tenant B cannot resolve cycling-suit
+        assert.equal(tenantB.getCompatibility('cycling-suit'), undefined);
+        assert.equal(tenantB.getAllSupportedCategories().includes('cycling-suit'), false);
+      });
+
+      it('audit-M4534-2: registering a custom category in Tenant A does not affect a newly created context', () => {
+        const tenantA = createFabricCategoryRegistry({ tenantId: 'tenant-a' });
+        tenantA.registerCustomCategory('rowing-unitard', ['compression-fit']);
+
+        const tenantC = createFabricCategoryRegistry({ tenantId: 'tenant-c' });
+        assert.equal(tenantC.getCompatibility('rowing-unitard'), undefined);
+        assert.equal(tenantC.getAllSupportedCategories().includes('rowing-unitard'), false);
+      });
+
+      it('audit-M4534-3: custom registration in Tenant A does not leak into the global module fallback registry', () => {
+        resetCustomGarmentCategoryRegistry();
+        const tenantA = createFabricCategoryRegistry({ tenantId: 'tenant-a' });
+        tenantA.registerCustomCategory('speed-skating-skin', ['compression-fit']);
+
+        // Module fallback registry should not have speed-skating-skin
+        assert.equal(getCategoryFitIntentCompatibility('speed-skating-skin'), undefined);
+        assert.equal(getAllSupportedGarmentCategories().includes('speed-skating-skin'), false);
+      });
+
+      it('audit-M4534-4: disposing Tenant A clears its registrations and does not affect Tenant B or standard categories', () => {
+        const tenantA = createFabricCategoryRegistry({ tenantId: 'tenant-a' });
+        const tenantB = createFabricCategoryRegistry({ tenantId: 'tenant-b' });
+
+        tenantA.registerCustomCategory('triathlon-suit', ['compression-fit']);
+        tenantB.registerCustomCategory('climbing-tights', ['compression-fit']);
+
+        assert.ok(tenantA.getCompatibility('triathlon-suit'));
+        assert.ok(tenantB.getCompatibility('climbing-tights'));
+
+        tenantA.dispose();
+
+        // Tenant A is disposed
+        assert.equal(tenantA.getCompatibility('triathlon-suit'), undefined);
+        assert.equal(tenantA.getCompatibility('bodice'), undefined); // Disposed context resolves undefined
+        assert.deepEqual(tenantA.getAllSupportedCategories(), [...STANDARD_GARMENT_CATEGORIES].sort());
+
+        // Attempting to register on disposed registry fails gracefully
+        const failedReg = tenantA.registerCustomCategory('new-suit', ['compression-fit']);
+        assert.equal(failedReg.success, false);
+        assert.ok(failedReg.error?.includes('disposed'));
+
+        // Tenant B remains completely functional and unaffected
+        assert.deepEqual(tenantB.getCompatibility('climbing-tights'), ['compression-fit']);
+        assert.ok(tenantB.getCompatibility('bodice'));
+      });
+
+      it('audit-M4534-5: standard categories remain immutable across all registry contexts and cannot be overridden', () => {
+        const tenantA = createFabricCategoryRegistry({ tenantId: 'tenant-a' });
+
+        // Attempt to override 'bodice'
+        const overrideResult = tenantA.registerCustomCategory('bodice', ['corsetry']);
+        assert.equal(overrideResult.success, false);
+        assert.ok(overrideResult.error?.includes('Cannot override or mutate default standard garment category'));
+
+        // Standard compatibility is unmodified
+        assert.deepEqual(tenantA.getCompatibility('bodice'), DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY['bodice']);
+        assert.equal(tenantA.isStandard('bodice'), true);
+        assert.equal(tenantA.isStandard('custom-category'), false);
+      });
+
+      it('audit-M4534-6: two tenant contexts can independently register the same category name with differing intents', () => {
+        const tenantA = createFabricCategoryRegistry({ tenantId: 'tenant-a' });
+        const tenantB = createFabricCategoryRegistry({ tenantId: 'tenant-b' });
+
+        const regA = tenantA.registerCustomCategory('gymnastics-leotard', ['compression-fit', 'stretch-contour']);
+        const regB = tenantB.registerCustomCategory('gymnastics-leotard', ['bodycon', 'performance-knit']);
+
+        assert.equal(regA.success, true);
+        assert.equal(regB.success, true);
+
+        assert.deepEqual(tenantA.getCompatibility('gymnastics-leotard'), ['compression-fit', 'stretch-contour']);
+        assert.deepEqual(tenantB.getCompatibility('gymnastics-leotard'), ['bodycon', 'performance-knit']);
+      });
+
+      it('audit-M4534-7: calculateFabricAwareCircumferenceEase enforces tenant isolation via options.categoryRegistry', () => {
+        const tenantA = createFabricCategoryRegistry({ tenantId: 'tenant-a' });
+        const tenantB = createFabricCategoryRegistry({ tenantId: 'tenant-b' });
+
+        tenantA.registerCustomCategory('cycling-suit', ['compression-fit']);
+
+        const policyA: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'cycling-suit'
+        };
+
+        // Evaluation in Tenant A context succeeds
+        const calcA = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+          measurementDirection: 'circumference-crossgrain',
+          garmentCategory: 'cycling-suit',
+          negativeEasePolicy: policyA,
+          evaluationDate: '2026-11-01',
+          categoryRegistry: tenantA
+        });
+
+        assert.equal(calcA.isCalculationAvailable, true);
+        assert.ok(calcA.totalAppliedEaseCm < 0);
+        assert.ok(calcA.provenanceNotes.some(n => n.includes("category 'cycling-suit'")));
+
+        // Evaluation of identical policy in Tenant B context fails closed because cycling-suit is not registered in Tenant B
+        const calcB = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+          measurementDirection: 'circumference-crossgrain',
+          garmentCategory: 'cycling-suit',
+          negativeEasePolicy: policyA,
+          evaluationDate: '2026-11-01',
+          categoryRegistry: tenantB
+        });
+
+        assert.equal(calcB.isCalculationAvailable, true);
+        assert.equal(calcB.negativeEasePolicyApplied, undefined);
+        assert.ok(calcB.totalAppliedEaseCm >= 0);
+        assert.ok(calcB.provenanceNotes.some(n => n.includes("Unsupported garment category 'cycling-suit'")));
+      });
+
+      it('audit-M4534-8: validateNegativeEaseAuthorizationPolicy strictly rejects categories unregistered in passed registry', () => {
+        const tenantA = createFabricCategoryRegistry();
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'aerobic-singlet'
+        };
+
+        const resUnregistered = validateNegativeEaseAuthorizationPolicy(
+          policy,
+          'aerobic-singlet',
+          25,
+          80,
+          '2026-11-01',
+          undefined,
+          tenantA
+        );
+        assert.equal(resUnregistered.isValid, false);
+        assert.ok(resUnregistered.rejectionReason?.includes("Unsupported garment category 'aerobic-singlet'"));
+
+        tenantA.registerCustomCategory('aerobic-singlet', ['compression-fit']);
+
+        const resRegistered = validateNegativeEaseAuthorizationPolicy(
+          policy,
+          'aerobic-singlet',
+          25,
+          80,
+          '2026-11-01',
+          undefined,
+          tenantA
+        );
+        assert.equal(resRegistered.isValid, true);
+      });
+    });
+
+    describe('Scope B: Multi-Category Audit Scope Integrity & Canonical Matching', () => {
+      const canonicalScopeStr = 'Full collection activewear range testing 2026';
+
+      it('audit-M4534-9: matching audit scopes are accepted and validate successfully', () => {
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: canonicalScopeStr,
+          multiCategoryAuditEvidence: {
+            evidenceType: 'laboratory-certified-test',
+            auditScope: canonicalScopeStr,
+            auditedBy: 'Lab Verifier',
+            evidenceReference: 'LAB-2026-01',
+            auditDate: '2026-10-25',
+            authorizedCategories: ['bodice', 'skirt'],
+            isIndependentlyVerified: true
+          }
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-01');
+        assert.equal(res.isValid, true);
+      });
+
+      it('audit-M4534-10: scope mismatch between policy and evidence is rejected with observable error', () => {
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Full collection activewear range testing 2026',
+          multiCategoryAuditEvidence: {
+            evidenceType: 'laboratory-certified-test',
+            auditScope: 'Different collection swimwear range testing 2026',
+            auditedBy: 'Lab Verifier',
+            evidenceReference: 'LAB-2026-01',
+            auditDate: '2026-10-25',
+            authorizedCategories: ['bodice', 'skirt'],
+            isIndependentlyVerified: true
+          }
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-01');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes('Audit scope mismatch'));
+        assert.ok(res.rejectionReason?.includes('Full collection activewear range testing 2026'));
+        assert.ok(res.rejectionReason?.includes('Different collection swimwear range testing 2026'));
+      });
+
+      it('audit-M4534-11: canonicalizeAuditScope collapses whitespace runs and normalizes Unicode NFKC', () => {
+        const scopeWithWhitespace = '  Full   collection \t activewear \n  range   testing 2026  ';
+        const canonicalRes = canonicalizeAuditScope(scopeWithWhitespace);
+        assert.equal(canonicalRes.isValid, true);
+        assert.equal(canonicalRes.canonical, 'Full collection activewear range testing 2026');
+
+        // Scopes that differ only in whitespace collapse to the same canonical representation
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: '  Full   collection    activewear range testing 2026  ',
+          multiCategoryAuditEvidence: {
+            evidenceType: 'laboratory-certified-test',
+            auditScope: 'Full collection activewear   range testing 2026',
+            auditedBy: 'Lab Verifier',
+            evidenceReference: 'LAB-2026-01',
+            auditDate: '2026-10-25',
+            authorizedCategories: ['bodice'],
+            isIndependentlyVerified: true
+          }
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-01');
+        assert.equal(res.isValid, true);
+      });
+
+      it('audit-M4534-12: scope canonicalization preserves casing so distinct formal scopes do not collide', () => {
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'FULL COLLECTION ACTIVEWEAR RANGE TESTING 2026',
+          multiCategoryAuditEvidence: {
+            evidenceType: 'laboratory-certified-test',
+            auditScope: 'full collection activewear range testing 2026',
+            auditedBy: 'Lab Verifier',
+            evidenceReference: 'LAB-2026-01',
+            auditDate: '2026-10-25',
+            authorizedCategories: ['bodice'],
+            isIndependentlyVerified: true
+          }
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-01');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes('Audit scope mismatch'));
+      });
+
+      it('audit-M4534-13: missing, blank, or whitespace-only scope strings fail closed with informative errors', () => {
+        assert.equal(canonicalizeAuditScope(undefined).isValid, false);
+        assert.equal(canonicalizeAuditScope(null).isValid, false);
+        assert.equal(canonicalizeAuditScope('').isValid, false);
+        assert.equal(canonicalizeAuditScope('     ').isValid, false);
+
+        const emptyScopePolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: '   ',
+          multiCategoryAuditEvidence: {
+            evidenceType: 'laboratory-certified-test',
+            auditScope: 'Full collection activewear range testing',
+            auditedBy: 'Lab Verifier',
+            evidenceReference: 'LAB-2026-01',
+            auditDate: '2026-10-25',
+            authorizedCategories: ['bodice'],
+            isIndependentlyVerified: true
+          }
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(emptyScopePolicy, 'bodice', 25, 80, '2026-11-01');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes('multiCategoryAuditScope >= 10 chars'));
+      });
+
+      it('audit-M4534-14: audit scope shorter than 10 characters fails closed on canonical length check', () => {
+        const shortScope = 'Scope 123'; // 9 chars
+        const res = canonicalizeAuditScope(shortScope);
+        assert.equal(res.isValid, false);
+        assert.ok(res.error?.includes('at least 10 characters'));
+      });
+
+      it('audit-M4534-15: wildcard "all" fails closed when target category is not in authorizedCategories even with matching scopes', () => {
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: canonicalScopeStr,
+          multiCategoryAuditEvidence: {
+            evidenceType: 'laboratory-certified-test',
+            auditScope: canonicalScopeStr,
+            auditedBy: 'Lab Verifier',
+            evidenceReference: 'LAB-2026-01',
+            auditDate: '2026-10-25',
+            authorizedCategories: ['skirt', 'leggings'], // Missing 'bodice'
+            isIndependentlyVerified: true
+          }
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-01');
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes("does not cover target garment category 'bodice'"));
+      });
+
+      it('audit-M4534-16: wildcard "all" fails closed when authorizedCategories lists an unregistered category under context registry', () => {
+        const tenant = createFabricCategoryRegistry({ tenantId: 'tenant-strict' });
+
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: canonicalScopeStr,
+          multiCategoryAuditEvidence: {
+            evidenceType: 'laboratory-certified-test',
+            auditScope: canonicalScopeStr,
+            auditedBy: 'Lab Verifier',
+            evidenceReference: 'LAB-2026-01',
+            auditDate: '2026-10-25',
+            authorizedCategories: ['bodice', 'unregistered-diving-suit'],
+            isIndependentlyVerified: true
+          }
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-01', undefined, tenant);
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes("contains unsupported category 'unregistered-diving-suit'"));
+      });
+
+      it('audit-M4534-17: calculateFabricAwareCircumferenceEase rejects negative ease on scope mismatch and documents rejection in provenance', () => {
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Scope A for activewear collection',
+          multiCategoryAuditEvidence: {
+            evidenceType: 'laboratory-certified-test',
+            auditScope: 'Scope B for swimwear collection',
+            auditedBy: 'Lab Verifier',
+            evidenceReference: 'LAB-2026-01',
+            auditDate: '2026-10-25',
+            authorizedCategories: ['bodice'],
+            isIndependentlyVerified: true
+          }
+        };
+
+        const calc = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+          measurementDirection: 'circumference-crossgrain',
+          garmentCategory: 'bodice',
+          negativeEasePolicy: policy,
+          evaluationDate: '2026-11-01'
+        });
+
+        assert.equal(calc.isCalculationAvailable, true);
+        assert.equal(calc.negativeEasePolicyApplied, undefined);
+        assert.ok(calc.totalAppliedEaseCm >= 0);
+        assert.ok(calc.provenanceNotes.some(n => n.includes('Audit scope mismatch')));
+      });
+    });
+
+    describe('Scope C: Authorization & Evaluation Boundary Audit', () => {
+      it('audit-M4534-18: non-function trustedVerifier is rejected and defaults to unverified-external-claim', () => {
+        const evidence: MultiCategoryAuditEvidence = {
+          evidenceType: 'third-party-conformity-assessment',
+          auditScope: 'Third-party testing verification range',
+          auditedBy: 'Testing Bureau',
+          evidenceReference: 'TB-9901',
+          auditDate: '2026-10-25',
+          authorizedCategories: ['bodice'],
+          isIndependentlyVerified: true
+        };
+
+        // Pass non-function (e.g. injected object or boolean)
+        // @ts-expect-error Testing untrusted input boundary
+        const trustResObject = evaluateAuditEvidenceTrust(evidence, { verified: true });
+        assert.equal(trustResObject.trustClassification, 'unverified-external-claim');
+        assert.equal(trustResObject.isAuthentic, false);
+
+        // @ts-expect-error Testing untrusted input boundary
+        const trustResString = evaluateAuditEvidenceTrust(evidence, 'true');
+        assert.equal(trustResString.trustClassification, 'unverified-external-claim');
+      });
+
+      it('audit-M4534-19: registering a category in registry context does not automatically authorize negative ease', () => {
+        const tenant = createFabricCategoryRegistry();
+        tenant.registerCustomCategory('active-shorts', ['compression-fit']);
+
+        // Evaluation without negativeEasePolicy must not apply negative ease
+        const calc = calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+          measurementDirection: 'circumference-crossgrain',
+          garmentCategory: 'active-shorts',
+          categoryRegistry: tenant
+        });
+
+        assert.equal(calc.isCalculationAvailable, true);
+        assert.equal(calc.negativeEasePolicyApplied, undefined);
+        assert.ok(calc.totalAppliedEaseCm >= 0); // No negative ease without explicit authorization policy
+      });
+
+      it('audit-M4534-20: authorizing a policy does not register or mutate categories', () => {
+        const tenant = createFabricCategoryRegistry();
+        const initialCategories = tenant.getAllSupportedCategories();
+
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'bodice'
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(policy, 'bodice', 25, 80, '2026-11-01', undefined, tenant);
+        assert.equal(res.isValid, true);
+
+        // Categories remain exactly unchanged
+        assert.deepEqual(tenant.getAllSupportedCategories(), initialCategories);
+      });
+
+      it('audit-M4534-21: concurrent evaluations with separate registries do not leak state', async () => {
+        const tenant1 = createFabricCategoryRegistry({ tenantId: 't1' });
+        const tenant2 = createFabricCategoryRegistry({ tenantId: 't2' });
+
+        tenant1.registerCustomCategory('suit-1', ['compression-fit']);
+        tenant2.registerCustomCategory('suit-2', ['performance-knit']);
+
+        const eval1 = Promise.resolve().then(() => {
+          return calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+            measurementDirection: 'circumference-crossgrain',
+            garmentCategory: 'suit-1',
+            categoryRegistry: tenant1
+          });
+        });
+
+        const eval2 = Promise.resolve().then(() => {
+          return calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+            measurementDirection: 'circumference-crossgrain',
+            garmentCategory: 'suit-2',
+            categoryRegistry: tenant2
+          });
+        });
+
+        const [res1, res2] = await Promise.all([eval1, eval2]);
+        assert.equal(res1.isCalculationAvailable, true);
+        assert.equal(res2.isCalculationAvailable, true);
+        assert.equal(tenant1.getCompatibility('suit-2'), undefined);
+        assert.equal(tenant2.getCompatibility('suit-1'), undefined);
+      });
+
+      it('audit-M4534-22: directional fabric properties and input objects are not mutated during evaluation', () => {
+        const tenant = createFabricCategoryRegistry();
+        const fabricSnapshot = JSON.parse(JSON.stringify(highStretchFabric));
+
+        calculateFabricAwareCircumferenceEase('waist', 68.0, 'classic', highStretchFabric, {
+          measurementDirection: 'circumference-crossgrain',
+          garmentCategory: 'bodice',
+          categoryRegistry: tenant
+        });
+
+        assert.deepEqual(highStretchFabric, fabricSnapshot);
+      });
+
+      it('audit-M4534-23: historical date validation and future authorization rejection remain strictly intact under isolated registries', () => {
+        const tenant = createFabricCategoryRegistry();
+        const futurePolicy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          authorizationDate: '2026-11-15'
+        };
+
+        const res = validateNegativeEaseAuthorizationPolicy(
+          futurePolicy,
+          'bodice',
+          25,
+          80,
+          '2026-11-01',
+          undefined,
+          tenant
+        );
+        assert.equal(res.isValid, false);
+        assert.ok(res.rejectionReason?.includes('is in the future relative to evaluation date'));
+      });
+
+      it('audit-M4534-24: strictly preserves isProductionReady = false across all prototype reports', () => {
+        const reportConforming = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_CONFORMING);
+        assert.equal(reportConforming.isProductionReady, false);
+
+        const reportDiscrepant = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_DISCREPANT);
+        assert.equal(reportDiscrepant.isProductionReady, false);
+
+        const reportIncomplete = validatePhysicalFit(SYNTHETIC_TEST_PROTOTYPE_INCOMPLETE);
+        assert.equal(reportIncomplete.isProductionReady, false);
+      });
+
+      it('audit-M4534-25: calculateCompleteGarmentEase propagates categoryRegistry cleanly to all circumference evaluations', () => {
+        const tenant = createFabricCategoryRegistry({ tenantId: 'complete-ease-tenant' });
+        tenant.registerCustomCategory('performance-jumpsuit', ['compression-fit']);
+
+        const policy: NegativeEaseAuthorizationPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'performance-jumpsuit'
+        };
+
+        const measurements = STANDARD_SIZING_SYSTEM.sizes.M;
+        const results = calculateCompleteGarmentEase(measurements, 'classic', highStretchFabric, {
+          garmentCategory: 'performance-jumpsuit',
+          measurementDirection: 'circumference-crossgrain',
+          negativeEasePolicy: policy,
+          evaluationDate: '2026-11-01',
+          categoryRegistry: tenant
+        });
+
+        assert.equal(results.bust.isCalculationAvailable, true);
+        assert.equal(results.waist.isCalculationAvailable, true);
+        assert.equal(results.lowHip.isCalculationAvailable, true);
+
+        if (results.waist.isCalculationAvailable) {
+          assert.ok(results.waist.totalAppliedEaseCm < 0);
+          assert.ok(results.waist.provenanceNotes.some(n => n.includes("category 'performance-jumpsuit'")));
+        }
       });
     });
   });

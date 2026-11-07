@@ -4,6 +4,7 @@ import {
   AuditEvidenceTrustClassification,
   AvailableFabricEaseBreakdown,
   EnhancedFabricProperty,
+  FabricCategoryRegistry,
   FabricEaseBreakdown,
   InputProvenanceSummary,
   MeasurementDirection,
@@ -35,6 +36,7 @@ export interface EaseCalculationOptions {
   garmentCategory?: string; // e.g. 'bodice', 'skirt' - required to match negative ease policy
   evaluationDate?: string | number | Date; // Injectable timestamp or ISO date for deterministic historical evaluation
   trustedVerifier?: TrustedAuditVerifier; // Optional independent verification authority callback
+  categoryRegistry?: FabricCategoryRegistry; // Optional tenant-isolated category registry context
 }
 
 /**
@@ -127,7 +129,7 @@ export function isStandardGarmentCategory(category: string): boolean {
 }
 
 /**
- * Isolated registry for explicitly registered custom garment categories.
+ * Isolated registry for explicitly registered custom garment categories (module fallback).
  */
 const customCategoryRegistry = new Map<string, readonly string[]>();
 
@@ -140,9 +142,97 @@ export function resetCustomGarmentCategoryRegistry(): void {
 }
 
 /**
- * Resolves compatibility list for any supported garment category (standard or custom).
+ * Factory function creating an isolated garment category compatibility registry.
+ * Guarantees tenant isolation: custom category registrations inside one context
+ * cannot be observed, modified, or accessed from another context.
+ * Standard categories remain strictly immutable.
  */
-export function getCategoryFitIntentCompatibility(category: string): readonly string[] | undefined {
+export function createFabricCategoryRegistry(options?: { tenantId?: string }): FabricCategoryRegistry {
+  const localRegistry = new Map<string, readonly string[]>();
+  let isDisposed = false;
+
+  return {
+    id: options?.tenantId,
+    isStandard(category: string): boolean {
+      return isStandardGarmentCategory(category);
+    },
+    getCompatibility(category: string): readonly string[] | undefined {
+      if (isDisposed) return undefined;
+      if (!category || typeof category !== 'string') return undefined;
+      const normalized = category.trim().toLowerCase();
+      if (normalized in DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY) {
+        return DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY[normalized];
+      }
+      return localRegistry.get(normalized);
+    },
+    getAllSupportedCategories(): string[] {
+      if (isDisposed) return [...STANDARD_GARMENT_CATEGORIES].sort();
+      const set = new Set<string>(STANDARD_GARMENT_CATEGORIES);
+      for (const cat of localRegistry.keys()) {
+        set.add(cat);
+      }
+      return Array.from(set).sort();
+    },
+    registerCustomCategory(category: string, compatibleIntents: string[]): { success: boolean; error?: string } {
+      if (isDisposed) {
+        return { success: false, error: 'Cannot register category on a disposed FabricCategoryRegistry.' };
+      }
+      if (!category || typeof category !== 'string' || category.trim() === '') {
+        return { success: false, error: 'Category name must be a non-empty string.' };
+      }
+      const normalizedCategory = category.trim().toLowerCase();
+
+      // Standard categories cannot be overridden or mutated
+      if (isStandardGarmentCategory(normalizedCategory)) {
+        return {
+          success: false,
+          error: `Cannot override or mutate default standard garment category '${category}'. Standard categories are immutable.`
+        };
+      }
+
+      if (!Array.isArray(compatibleIntents) || compatibleIntents.length === 0) {
+        return { success: false, error: 'Compatible intents must be a non-empty array of recognized fit intents.' };
+      }
+
+      const normalizedIntents: string[] = [];
+
+      for (const intent of compatibleIntents) {
+        if (!intent || typeof intent !== 'string' || intent.trim() === '') {
+          return { success: false, error: 'Fit intent entries must be non-empty strings.' };
+        }
+        const normIntent = intent.trim().toLowerCase();
+        if (!isRecognizedFitIntent(normIntent)) {
+          return {
+            success: false,
+            error: `Unrecognized fit intent '${intent}'. Must be one of: ${RECOGNIZED_FIT_INTENTS.join(', ')}.`
+          };
+        }
+        if (!normalizedIntents.includes(normIntent)) {
+          normalizedIntents.push(normIntent);
+        }
+      }
+
+      localRegistry.set(normalizedCategory, Object.freeze(normalizedIntents));
+      return { success: true };
+    },
+    dispose(): void {
+      isDisposed = true;
+      localRegistry.clear();
+    }
+  };
+}
+
+/**
+ * Resolves compatibility list for any supported garment category (standard or custom).
+ * If an explicit registry is provided, resolves strictly within that registry context.
+ */
+export function getCategoryFitIntentCompatibility(
+  category: string,
+  registry?: FabricCategoryRegistry
+): readonly string[] | undefined {
+  if (registry) {
+    return registry.getCompatibility(category);
+  }
   if (!category || typeof category !== 'string') return undefined;
   const normalized = category.trim().toLowerCase();
   if (normalized in DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY) {
@@ -153,8 +243,12 @@ export function getCategoryFitIntentCompatibility(category: string): readonly st
 
 /**
  * Lists all currently supported garment categories (standard and registered custom).
+ * If an explicit registry is provided, lists categories supported within that registry context.
  */
-export function getAllSupportedGarmentCategories(): string[] {
+export function getAllSupportedGarmentCategories(registry?: FabricCategoryRegistry): string[] {
+  if (registry) {
+    return registry.getAllSupportedCategories();
+  }
   const set = new Set<string>(STANDARD_GARMENT_CATEGORIES);
   for (const cat of customCategoryRegistry.keys()) {
     set.add(cat);
@@ -167,11 +261,16 @@ export function getAllSupportedGarmentCategories(): string[] {
  * - Requires a non-empty category name and a non-empty array of recognized fit intents.
  * - STRICTLY PROHIBITS overriding or mutating default standard garment categories.
  * - Prevents silent weakening of default fit-intent compatibility rules.
+ * - If an explicit registry is provided, registers within that context; otherwise registers in module fallback registry.
  */
 export function registerCustomGarmentCategoryCompatibility(
   category: string,
-  compatibleIntents: string[]
+  compatibleIntents: string[],
+  registry?: FabricCategoryRegistry
 ): { success: boolean; error?: string } {
+  if (registry) {
+    return registry.registerCustomCategory(category, compatibleIntents);
+  }
   if (!category || typeof category !== 'string' || category.trim() === '') {
     return { success: false, error: 'Category name must be a non-empty string.' };
   }
@@ -209,6 +308,47 @@ export function registerCustomGarmentCategoryCompatibility(
 
   customCategoryRegistry.set(normalizedCategory, Object.freeze(normalizedIntents));
   return { success: true };
+}
+
+/**
+ * Canonicalizes and validates an audit scope string.
+ * Applies Unicode NFKC normalization, collapses interior whitespace runs, and trims.
+ * Enforces non-empty, non-whitespace, and minimum 10 characters.
+ * Preserves casing to retain distinct technical semantic intent.
+ */
+export function canonicalizeAuditScope(scope: unknown): {
+  isValid: boolean;
+  canonical?: string;
+  error?: string;
+} {
+  if (typeof scope !== 'string') {
+    return {
+      isValid: false,
+      error: 'Audit scope must be a string.'
+    };
+  }
+
+  // Unicode NFKC normalization + collapse interior whitespace runs + trim
+  const canonical = scope.normalize('NFKC').trim().replace(/\s+/g, ' ');
+
+  if (canonical.length === 0) {
+    return {
+      isValid: false,
+      error: 'Audit scope cannot be empty or whitespace-only.'
+    };
+  }
+
+  if (canonical.length < 10) {
+    return {
+      isValid: false,
+      error: `Audit scope must be at least 10 characters in length (got ${canonical.length} characters after canonicalization).`
+    };
+  }
+
+  return {
+    isValid: true,
+    canonical
+  };
 }
 
 /**
@@ -352,7 +492,8 @@ export function validateNegativeEaseAuthorizationPolicy(
   directionalStretchPercent: number,
   directionalRecoveryPercent: number | undefined,
   evaluationDate?: string | number | Date,
-  trustedVerifier?: TrustedAuditVerifier
+  trustedVerifier?: TrustedAuditVerifier,
+  categoryRegistry?: FabricCategoryRegistry
 ): PolicyValidationResult {
   if (!policy || typeof policy !== 'object') {
     return { isValid: false, rejectionReason: 'Negative ease authorization policy is missing or not an object.' };
@@ -374,10 +515,20 @@ export function validateNegativeEaseAuthorizationPolicy(
 
   const normalizedTargetCat = garmentCategory.trim().toLowerCase();
 
+  const lookupCompatibility = (cat: string) =>
+    categoryRegistry
+      ? categoryRegistry.getCompatibility(cat)
+      : getCategoryFitIntentCompatibility(cat);
+
+  const listSupportedCategories = () =>
+    categoryRegistry
+      ? categoryRegistry.getAllSupportedCategories()
+      : getAllSupportedGarmentCategories();
+
   // Fail-closed validation: target garment category must exist in compatibility registry
-  const compatibleIntents = getCategoryFitIntentCompatibility(normalizedTargetCat);
+  const compatibleIntents = lookupCompatibility(normalizedTargetCat);
   if (!compatibleIntents || compatibleIntents.length === 0) {
-    const supported = getAllSupportedGarmentCategories().join(', ');
+    const supported = listSupportedCategories().join(', ');
     return {
       isValid: false,
       rejectionReason: `Unsupported garment category '${garmentCategory}'. Supported categories with verified compatibility: ${supported}.`
@@ -439,6 +590,31 @@ export function validateNegativeEaseAuthorizationPolicy(
       };
     }
 
+    // Single authoritative scope matching: canonicalize both and verify exact match
+    const policyScopeNorm = canonicalizeAuditScope(p.multiCategoryAuditScope);
+    const evidenceScopeNorm = canonicalizeAuditScope(evidence.auditScope);
+
+    if (!policyScopeNorm.isValid) {
+      return {
+        isValid: false,
+        rejectionReason: `Policy multiCategoryAuditScope is invalid: ${policyScopeNorm.error}`
+      };
+    }
+
+    if (!evidenceScopeNorm.isValid) {
+      return {
+        isValid: false,
+        rejectionReason: `Evidence auditScope is invalid: ${evidenceScopeNorm.error}`
+      };
+    }
+
+    if (policyScopeNorm.canonical !== evidenceScopeNorm.canonical) {
+      return {
+        isValid: false,
+        rejectionReason: `Audit scope mismatch: policy multiCategoryAuditScope ('${p.multiCategoryAuditScope}') does not match evidence auditScope ('${evidence.auditScope}').`
+      };
+    }
+
     if (!evidence.auditedBy || typeof evidence.auditedBy !== 'string' || evidence.auditedBy.trim() === '') {
       return {
         isValid: false,
@@ -477,7 +653,7 @@ export function validateNegativeEaseAuthorizationPolicy(
         };
       }
       const normCat = cat.trim().toLowerCase();
-      if (!getCategoryFitIntentCompatibility(normCat)) {
+      if (!lookupCompatibility(normCat)) {
         return {
           isValid: false,
           rejectionReason: `multiCategoryAuditEvidence contains unsupported category '${cat}'. All authorized categories must be registered in the compatibility registry.`
@@ -1153,7 +1329,8 @@ export function calculateFabricAwareCircumferenceEase(
       directionalStretchPercent,
       directionalRecoveryPercent,
       options.evaluationDate,
-      options.trustedVerifier
+      options.trustedVerifier,
+      options.categoryRegistry
     );
 
     if (policyValidation.isValid) {

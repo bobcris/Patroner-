@@ -182,6 +182,40 @@ export type MultiCategoryAuditEvidenceType =
   | 'third-party-conformity-assessment';
 
 /**
+ * Tenant-isolated garment category compatibility registry context.
+ * Standard garment categories remain immutable across all registries.
+ * Custom category registrations within a registry context are isolated
+ * and do not leak to other tenants, calculations, or global module state.
+ */
+export interface FabricCategoryRegistry {
+  /**
+   * Optional tenant or context identifier for provenance and tracking.
+   */
+  readonly id?: string;
+  /**
+   * Resolves the list of compatible fit intents for a garment category within this registry context.
+   */
+  getCompatibility(category: string): readonly string[] | undefined;
+  /**
+   * Returns all supported garment categories (standard union with context-registered custom categories).
+   */
+  getAllSupportedCategories(): string[];
+  /**
+   * Checks whether a category is one of the built-in immutable standard categories.
+   */
+  isStandard(category: string): boolean;
+  /**
+   * Registers a custom category with validated fit intents within this registry context.
+   * Standard categories cannot be overridden or mutated.
+   */
+  registerCustomCategory(category: string, compatibleIntents: string[]): { success: boolean; error?: string };
+  /**
+   * Disposes this registry context, clearing custom registrations.
+   */
+  dispose(): void;
+}
+
+/**
  * Rigorous trust tier for multi-category audit evidence.
  * A caller-submitted record can NEVER acquire an authenticated independent tier
  * without independent authentication from a trusted verification authority.
