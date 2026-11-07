@@ -182,6 +182,17 @@ export type MultiCategoryAuditEvidenceType =
   | 'third-party-conformity-assessment';
 
 /**
+ * Rigorous trust tier for multi-category audit evidence.
+ * A caller-submitted record can NEVER acquire an authenticated independent tier
+ * without independent authentication from a trusted verification authority.
+ */
+export type AuditEvidenceTrustClassification =
+  | 'declared-internal'         // Caller submitted internal declaration
+  | 'unverified-external-claim' // Caller asserts laboratory/third-party evidence, but no external verification authority has authenticated it
+  | 'authenticated-independent' // Authenticated by trusted verifier (if configured)
+  | 'rejected-invalid';         // Fails syntax, coverage, date, or structural validation
+
+/**
  * Audit evidence provenance record supporting multi-category negative-ease authorizations.
  */
 export interface MultiCategoryAuditEvidence {
@@ -212,8 +223,13 @@ export interface MultiCategoryAuditEvidence {
   authorizedCategories: string[];
   /**
    * Strictly false for internally-recorded-declaration; true only for independent third-party or certified audits.
+   * Note: A self-asserted true flag alone does not confer authenticated-independent trust tier.
    */
   isIndependentlyVerified: boolean;
+  /**
+   * Evaluated or assigned trust classification.
+   */
+  trustClassification?: AuditEvidenceTrustClassification;
   /**
    * Optional technical verification notes or laboratory test standard references.
    */
@@ -257,6 +273,10 @@ export interface NegativeEaseAuthorizationPolicy {
    * Required when garmentCategory is 'all'.
    */
   multiCategoryAuditEvidence?: MultiCategoryAuditEvidence;
+  /**
+   * Evidence trust classification assigned or evaluated by the system.
+   */
+  evidenceTrustClassification?: AuditEvidenceTrustClassification;
   /**
    * Construction or fit intent (e.g. 'compression-fit', 'corsetry', 'performance-knit', 'bodycon', 'stretch-contour', 'tailored-fitted').
    */
@@ -417,6 +437,7 @@ export interface AvailableFabricEaseBreakdown extends BaseFabricEaseBreakdown {
   isProvisionalBiasShrinkage?: boolean;
   provisionalBiasShrinkagePolicyApplied?: ProvisionalBiasShrinkagePolicy;
   negativeEasePolicyApplied?: NegativeEaseAuthorizationPolicy;
+  auditEvidenceTrustClassification?: AuditEvidenceTrustClassification;
   unavailableReason?: undefined;
 }
 
@@ -446,6 +467,7 @@ export interface UnavailableFabricEaseBreakdown extends BaseFabricEaseBreakdown 
   isProvisionalBiasShrinkage?: undefined;
   provisionalBiasShrinkagePolicyApplied?: undefined;
   negativeEasePolicyApplied?: undefined;
+  auditEvidenceTrustClassification?: undefined;
 }
 
 /**

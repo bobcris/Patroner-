@@ -1,6 +1,7 @@
 import { BodyMeasurements, EaseProfile, FabricProperty, Silhouette, SleeveEaseStrategy } from '../../types';
 import { EASE_TABLE, SLEEVE_EASE_TABLE } from '../measurements/standards';
 import {
+  AuditEvidenceTrustClassification,
   AvailableFabricEaseBreakdown,
   EnhancedFabricProperty,
   FabricEaseBreakdown,
@@ -14,6 +15,8 @@ import {
   UnavailableFabricEaseBreakdown
 } from './fabric-types';
 import { DEFAULT_ILLUSTRATIVE_FABRIC, getEnhancedFabricById } from './fabric-presets';
+
+export type TrustedAuditVerifier = (evidence: MultiCategoryAuditEvidence) => boolean;
 
 export interface EaseCalculationOptions {
   silhouette?: Silhouette;
@@ -31,6 +34,7 @@ export interface EaseCalculationOptions {
   userExplicitConsentToDefaultFabric?: boolean; // Explicit opt-in for illustrative fallback
   garmentCategory?: string; // e.g. 'bodice', 'skirt' - required to match negative ease policy
   evaluationDate?: string | number | Date; // Injectable timestamp or ISO date for deterministic historical evaluation
+  trustedVerifier?: TrustedAuditVerifier; // Optional independent verification authority callback
 }
 
 /**
@@ -39,6 +43,7 @@ export interface EaseCalculationOptions {
 export interface PolicyValidationResult {
   isValid: boolean;
   rejectionReason?: string;
+  evidenceTrustClassification?: AuditEvidenceTrustClassification;
 }
 
 /**
@@ -89,22 +94,79 @@ export const RECOGNIZED_FIT_INTENTS = [
 export type RecognizedFitIntent = (typeof RECOGNIZED_FIT_INTENTS)[number];
 
 /**
- * Fit intent compatibility matrix mapped to garment category construction capabilities.
+ * Strict type guard for recognized fit intents without 'as any' casts.
  */
-export const CATEGORY_FIT_INTENT_COMPATIBILITY: Record<string, string[]> = {
-  bodice: ['bodycon', 'stretch-contour', 'corsetry', 'performance-knit', 'tailored-fitted', 'compression-fit'],
-  skirt: ['bodycon', 'stretch-contour', 'performance-knit', 'tailored-fitted', 'compression-fit'],
-  sleeve: ['bodycon', 'stretch-contour', 'performance-knit', 'compression-fit'],
-  trousers: ['bodycon', 'stretch-contour', 'performance-knit', 'tailored-fitted', 'compression-fit'],
-  pants: ['bodycon', 'stretch-contour', 'performance-knit', 'tailored-fitted', 'compression-fit'],
-  leggings: ['bodycon', 'stretch-contour', 'performance-knit', 'compression-fit'],
-  corset: ['corsetry', 'bodycon', 'compression-fit'],
-  dress: ['bodycon', 'stretch-contour', 'corsetry', 'performance-knit', 'tailored-fitted', 'compression-fit']
-};
+export function isRecognizedFitIntent(intent: unknown): intent is RecognizedFitIntent {
+  if (typeof intent !== 'string') return false;
+  const normalized = intent.trim().toLowerCase();
+  return (RECOGNIZED_FIT_INTENTS as readonly string[]).includes(normalized);
+}
 
 /**
- * Explicit registration mechanism for custom garment categories and their validated fit intents.
- * Requires a non-empty category name and a non-empty array of recognized fit intents.
+ * Default standard garment category fit intent compatibility definitions.
+ * Immutable: deeply frozen to prevent direct mutation or weakening of default rules.
+ */
+export const DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  bodice: Object.freeze(['bodycon', 'stretch-contour', 'corsetry', 'performance-knit', 'tailored-fitted', 'compression-fit']),
+  skirt: Object.freeze(['bodycon', 'stretch-contour', 'performance-knit', 'tailored-fitted', 'compression-fit']),
+  sleeve: Object.freeze(['bodycon', 'stretch-contour', 'performance-knit', 'compression-fit']),
+  trousers: Object.freeze(['bodycon', 'stretch-contour', 'performance-knit', 'tailored-fitted', 'compression-fit']),
+  pants: Object.freeze(['bodycon', 'stretch-contour', 'performance-knit', 'tailored-fitted', 'compression-fit']),
+  leggings: Object.freeze(['bodycon', 'stretch-contour', 'performance-knit', 'compression-fit']),
+  corset: Object.freeze(['corsetry', 'bodycon', 'compression-fit']),
+  dress: Object.freeze(['bodycon', 'stretch-contour', 'corsetry', 'performance-knit', 'tailored-fitted', 'compression-fit'])
+});
+
+export const STANDARD_GARMENT_CATEGORIES: readonly string[] = Object.freeze(
+  Object.keys(DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY)
+);
+
+export function isStandardGarmentCategory(category: string): boolean {
+  if (!category || typeof category !== 'string') return false;
+  return STANDARD_GARMENT_CATEGORIES.includes(category.trim().toLowerCase());
+}
+
+/**
+ * Isolated registry for explicitly registered custom garment categories.
+ */
+const customCategoryRegistry = new Map<string, readonly string[]>();
+
+/**
+ * Resets custom garment category registry (useful for test isolation).
+ * Default standard categories remain untouched.
+ */
+export function resetCustomGarmentCategoryRegistry(): void {
+  customCategoryRegistry.clear();
+}
+
+/**
+ * Resolves compatibility list for any supported garment category (standard or custom).
+ */
+export function getCategoryFitIntentCompatibility(category: string): readonly string[] | undefined {
+  if (!category || typeof category !== 'string') return undefined;
+  const normalized = category.trim().toLowerCase();
+  if (normalized in DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY) {
+    return DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY[normalized];
+  }
+  return customCategoryRegistry.get(normalized);
+}
+
+/**
+ * Lists all currently supported garment categories (standard and registered custom).
+ */
+export function getAllSupportedGarmentCategories(): string[] {
+  const set = new Set<string>(STANDARD_GARMENT_CATEGORIES);
+  for (const cat of customCategoryRegistry.keys()) {
+    set.add(cat);
+  }
+  return Array.from(set).sort();
+}
+
+/**
+ * Controlled registration mechanism for custom garment categories and their validated fit intents.
+ * - Requires a non-empty category name and a non-empty array of recognized fit intents.
+ * - STRICTLY PROHIBITS overriding or mutating default standard garment categories.
+ * - Prevents silent weakening of default fit-intent compatibility rules.
  */
 export function registerCustomGarmentCategoryCompatibility(
   category: string,
@@ -113,10 +175,20 @@ export function registerCustomGarmentCategoryCompatibility(
   if (!category || typeof category !== 'string' || category.trim() === '') {
     return { success: false, error: 'Category name must be a non-empty string.' };
   }
+  const normalizedCategory = category.trim().toLowerCase();
+
+  // Acceptance standard: No custom category may silently weaken the default fit-intent compatibility rules.
+  if (isStandardGarmentCategory(normalizedCategory)) {
+    return {
+      success: false,
+      error: `Cannot override or mutate default standard garment category '${category}'. Standard categories are immutable.`
+    };
+  }
+
   if (!Array.isArray(compatibleIntents) || compatibleIntents.length === 0) {
     return { success: false, error: 'Compatible intents must be a non-empty array of recognized fit intents.' };
   }
-  const normalizedCategory = category.trim().toLowerCase();
+
   const normalizedIntents: string[] = [];
 
   for (const intent of compatibleIntents) {
@@ -124,7 +196,7 @@ export function registerCustomGarmentCategoryCompatibility(
       return { success: false, error: 'Fit intent entries must be non-empty strings.' };
     }
     const normIntent = intent.trim().toLowerCase();
-    if (!RECOGNIZED_FIT_INTENTS.includes(normIntent as any)) {
+    if (!isRecognizedFitIntent(normIntent)) {
       return {
         success: false,
         error: `Unrecognized fit intent '${intent}'. Must be one of: ${RECOGNIZED_FIT_INTENTS.join(', ')}.`
@@ -135,9 +207,53 @@ export function registerCustomGarmentCategoryCompatibility(
     }
   }
 
-  CATEGORY_FIT_INTENT_COMPATIBILITY[normalizedCategory] = normalizedIntents;
+  customCategoryRegistry.set(normalizedCategory, Object.freeze(normalizedIntents));
   return { success: true };
 }
+
+/**
+ * Exported compatibility dictionary with Proxy protection:
+ * Allows read access `CATEGORY_FIT_INTENT_COMPATIBILITY[cat]` for backward compatibility,
+ * but STRICTLY THROWS on direct mutation to preserve registry immutability.
+ */
+export const CATEGORY_FIT_INTENT_COMPATIBILITY: Record<string, string[]> = new Proxy(
+  {} as Record<string, string[]>,
+  {
+    get(_target, prop: string | symbol) {
+      if (typeof prop !== 'string') return undefined;
+      const comp = getCategoryFitIntentCompatibility(prop);
+      return comp ? [...comp] : undefined;
+    },
+    set() {
+      throw new TypeError(
+        'CATEGORY_FIT_INTENT_COMPATIBILITY is immutable. Direct mutation is prohibited to prevent weakening default compatibility rules. Use registerCustomGarmentCategoryCompatibility().'
+      );
+    },
+    deleteProperty() {
+      throw new TypeError('CATEGORY_FIT_INTENT_COMPATIBILITY is immutable. Deleting categories from registry is prohibited.');
+    },
+    has(_target, prop: string | symbol) {
+      if (typeof prop !== 'string') return false;
+      return getCategoryFitIntentCompatibility(prop) !== undefined;
+    },
+    ownKeys() {
+      return getAllSupportedGarmentCategories();
+    },
+    getOwnPropertyDescriptor(_target, prop: string | symbol) {
+      if (typeof prop !== 'string') return undefined;
+      const comp = getCategoryFitIntentCompatibility(prop);
+      if (comp) {
+        return {
+          configurable: false,
+          enumerable: true,
+          value: [...comp],
+          writable: false
+        };
+      }
+      return undefined;
+    }
+  }
+);
 
 /**
  * Normalizes an ISO 8601 calendar date, timestamp string, number, or Date object to UTC epoch milliseconds.
@@ -171,11 +287,58 @@ export function normalizeIsoDateToUtcEpoch(dateInput: string | number | Date): n
 }
 
 /**
- * Validates a negative ease authorization policy at runtime according to Milestone 04.5.3 / 04.5.3.1 / 04.5.3.2 rules.
+ * Evaluates audit evidence trust tier against authenticating trust boundaries.
+ * Rules:
+ * 1. A caller-provided evidence type, reference, or boolean NEVER confers independent authentication.
+ * 2. If no trusted verifier is provided or verifies the claim, the classification MUST be preserved as an unverified external claim.
+ * 3. Never invent an external verifier.
+ */
+export function evaluateAuditEvidenceTrust(
+  evidence: MultiCategoryAuditEvidence,
+  trustedVerifier?: TrustedAuditVerifier
+): {
+  trustClassification: AuditEvidenceTrustClassification;
+  isAuthentic: boolean;
+  rationale: string;
+} {
+  if (evidence.evidenceType === 'internally-recorded-declaration') {
+    return {
+      trustClassification: 'declared-internal',
+      isAuthentic: false, // Internal declaration is not independently authenticated
+      rationale: 'Self-declared internal atelier/engineering record; not claiming independent testing.'
+    };
+  }
+
+  // Caller claims laboratory or third-party audit
+  if (typeof trustedVerifier === 'function') {
+    const verified = trustedVerifier(evidence);
+    if (verified === true) {
+      return {
+        trustClassification: 'authenticated-independent',
+        isAuthentic: true,
+        rationale: `Authenticated by verified independent authority (${evidence.auditedBy}).`
+      };
+    }
+  }
+
+  // Without a trusted verifier that confirms the claim, preserve explicitly unverified status
+  return {
+    trustClassification: 'unverified-external-claim',
+    isAuthentic: false,
+    rationale: `Caller claims external evidence '${evidence.evidenceType}' (${evidence.evidenceReference}), but no trusted independent verification authority authenticated the record.`
+  };
+}
+
+/**
+ * Validates a negative ease authorization policy at runtime according to Milestone 04.5.3 / 04.5.3.1 / 04.5.3.2 / 04.5.3.3 rules.
  * - Missing garment category is rejected (not a wildcard).
  * - Fail-closed: unsupported/unregistered garment category is rejected immediately.
+ * - Controlled category registration: custom categories cannot weaken or mutate standard defaults.
  * - Wildcard 'all' is prohibited unless supported by auditable MultiCategoryAuditEvidence covering target category.
+ * - Multi-category audit evidence auditDate must not postdate evaluationDate or authorizationDate.
+ * - All categories listed in authorizedCategories must be registered and valid.
  * - Disallows self-asserted boolean alone without structured audit evidence.
+ * - Evaluates trust boundaries: caller claims of independent testing are preserved as unverified-external-claim unless authenticated by a trusted verifier.
  * - Requires non-empty authorization source, author, valid ISO 8601 calendar date, recognized fit intent, finite non-negative limits.
  * - Enforces authorizationDate <= evaluationDate (future authorizations cannot be applied to evaluations predating approval).
  * - Enforces expirationDate >= authorizationDate when present.
@@ -188,7 +351,8 @@ export function validateNegativeEaseAuthorizationPolicy(
   garmentCategory: string | undefined,
   directionalStretchPercent: number,
   directionalRecoveryPercent: number | undefined,
-  evaluationDate?: string | number | Date
+  evaluationDate?: string | number | Date,
+  trustedVerifier?: TrustedAuditVerifier
 ): PolicyValidationResult {
   if (!policy || typeof policy !== 'object') {
     return { isValid: false, rejectionReason: 'Negative ease authorization policy is missing or not an object.' };
@@ -211,9 +375,9 @@ export function validateNegativeEaseAuthorizationPolicy(
   const normalizedTargetCat = garmentCategory.trim().toLowerCase();
 
   // Fail-closed validation: target garment category must exist in compatibility registry
-  const compatibleIntents = CATEGORY_FIT_INTENT_COMPATIBILITY[normalizedTargetCat];
+  const compatibleIntents = getCategoryFitIntentCompatibility(normalizedTargetCat);
   if (!compatibleIntents || compatibleIntents.length === 0) {
-    const supported = Object.keys(CATEGORY_FIT_INTENT_COMPATIBILITY).sort().join(', ');
+    const supported = getAllSupportedGarmentCategories().join(', ');
     return {
       isValid: false,
       rejectionReason: `Unsupported garment category '${garmentCategory}'. Supported categories with verified compatibility: ${supported}.`
@@ -228,6 +392,8 @@ export function validateNegativeEaseAuthorizationPolicy(
   }
 
   const normalizedPolicyCat = p.garmentCategory.trim().toLowerCase();
+
+  let evaluatedEvidence: MultiCategoryAuditEvidence | undefined = undefined;
 
   // Multi-category wildcard 'all' audit scope check & structured evidence validation
   if (normalizedPolicyCat === 'all') {
@@ -250,6 +416,7 @@ export function validateNegativeEaseAuthorizationPolicy(
     }
 
     const evidence = p.multiCategoryAuditEvidence;
+    evaluatedEvidence = evidence;
 
     const VALID_EVIDENCE_TYPES: MultiCategoryAuditEvidenceType[] = [
       'internally-recorded-declaration',
@@ -300,9 +467,25 @@ export function validateNegativeEaseAuthorizationPolicy(
       };
     }
 
-    const normalizedAuthorizedCategories = evidence.authorizedCategories.map(c =>
-      typeof c === 'string' ? c.trim().toLowerCase() : ''
-    );
+    // Validate that every authorized category in evidence is registered and non-empty
+    const normalizedAuthorizedCategories: string[] = [];
+    for (const cat of evidence.authorizedCategories) {
+      if (typeof cat !== 'string' || cat.trim() === '') {
+        return {
+          isValid: false,
+          rejectionReason: 'multiCategoryAuditEvidence authorizedCategories contains empty or whitespace category name.'
+        };
+      }
+      const normCat = cat.trim().toLowerCase();
+      if (!getCategoryFitIntentCompatibility(normCat)) {
+        return {
+          isValid: false,
+          rejectionReason: `multiCategoryAuditEvidence contains unsupported category '${cat}'. All authorized categories must be registered in the compatibility registry.`
+        };
+      }
+      normalizedAuthorizedCategories.push(normCat);
+    }
+
     if (!normalizedAuthorizedCategories.includes(normalizedTargetCat)) {
       return {
         isValid: false,
@@ -413,7 +596,36 @@ export function validateNegativeEaseAuthorizationPolicy(
     }
   }
 
-  // Recognized fit intent
+  // Audit-date validation against evaluation time and authorization time
+  if (evaluatedEvidence) {
+    const auditTime = normalizeIsoDateToUtcEpoch(evaluatedEvidence.auditDate);
+    if (Number.isNaN(auditTime)) {
+      return {
+        isValid: false,
+        rejectionReason: `multiCategoryAuditEvidence contains unparseable auditDate '${evaluatedEvidence.auditDate}'.`
+      };
+    }
+
+    if (auditTime > evalTime) {
+      const auditIso = new Date(auditTime).toISOString();
+      const evalIso = new Date(evalTime).toISOString();
+      return {
+        isValid: false,
+        rejectionReason: `Audit evidence date '${evaluatedEvidence.auditDate}' (${auditIso}) is in the future relative to calculation evaluation date (${evalIso}). Audit evidence cannot postdate evaluation.`
+      };
+    }
+
+    if (auditTime > authTime) {
+      const auditIso = new Date(auditTime).toISOString();
+      const authIso = new Date(authTime).toISOString();
+      return {
+        isValid: false,
+        rejectionReason: `Audit evidence date '${evaluatedEvidence.auditDate}' (${auditIso}) postdates policy authorizationDate '${p.authorizationDate}' (${authIso}). Authorizations cannot cite future audit evidence.`
+      };
+    }
+  }
+
+  // Recognized fit intent (strict type guard without 'as any')
   if (!p.fitIntent || typeof p.fitIntent !== 'string' || p.fitIntent.trim() === '') {
     return {
       isValid: false,
@@ -421,7 +633,7 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
   const normalizedIntent = p.fitIntent.trim().toLowerCase();
-  if (!RECOGNIZED_FIT_INTENTS.includes(normalizedIntent as any)) {
+  if (!isRecognizedFitIntent(normalizedIntent)) {
     return {
       isValid: false,
       rejectionReason: `Unrecognized fitIntent '${p.fitIntent}'. Must be one of: ${RECOGNIZED_FIT_INTENTS.join(', ')}.`
@@ -504,7 +716,13 @@ export function validateNegativeEaseAuthorizationPolicy(
     };
   }
 
-  return { isValid: true };
+  let evidenceTrustClassification: AuditEvidenceTrustClassification | undefined = undefined;
+  if (evaluatedEvidence) {
+    const trustResult = evaluateAuditEvidenceTrust(evaluatedEvidence, trustedVerifier);
+    evidenceTrustClassification = trustResult.trustClassification;
+  }
+
+  return { isValid: true, evidenceTrustClassification };
 }
 
 /**
@@ -715,7 +933,13 @@ export function calculateFabricAwareCircumferenceEase(
   ];
 
   const baseEaseProfile = EASE_TABLE[easeProfile] ?? EASE_TABLE.classic;
-  const baseEaseVal = (baseEaseProfile as any)[circumferenceId] ?? (circumferenceId === 'bust' ? 5.5 : 3.0);
+  const baseEaseVal = circumferenceId === 'bust'
+    ? baseEaseProfile.bust
+    : (circumferenceId === 'waist'
+        ? baseEaseProfile.waist
+        : (circumferenceId === 'lowHip'
+            ? baseEaseProfile.hip
+            : (circumferenceId === 'biceps' ? 3.0 : 2.0)));
   const baselineMovementEaseCm = Number(baseEaseVal.toFixed(2));
 
   // 1. Resolve measurement direction and check for conflicting inputs
@@ -928,12 +1152,16 @@ export function calculateFabricAwareCircumferenceEase(
       options.garmentCategory,
       directionalStretchPercent,
       directionalRecoveryPercent,
-      options.evaluationDate
+      options.evaluationDate,
+      options.trustedVerifier
     );
 
     if (policyValidation.isValid) {
       allowNegativeEase = true;
-      negativeEasePolicyApplied = options.negativeEasePolicy;
+      negativeEasePolicyApplied = {
+        ...options.negativeEasePolicy,
+        evidenceTrustClassification: policyValidation.evidenceTrustClassification
+      };
       provenanceNotes.push(
         `Negative ease explicitly authorized for category '${options.negativeEasePolicy.garmentCategory}' by ${options.negativeEasePolicy.authorizedBy} (Intent: ${options.negativeEasePolicy.fitIntent}, Auth Date: ${options.negativeEasePolicy.authorizationDate}).`
       );
@@ -942,8 +1170,10 @@ export function calculateFabricAwareCircumferenceEase(
         options.negativeEasePolicy.multiCategoryAuditEvidence
       ) {
         const ev = options.negativeEasePolicy.multiCategoryAuditEvidence;
+        const trustLabel = policyValidation.evidenceTrustClassification ?? 'unverified-external-claim';
+        const verificationTypeLabel = ev.isIndependentlyVerified ? 'Independently Verified' : 'Internal Declaration';
         provenanceNotes.push(
-          `Multi-category audit evidence applied: [${ev.evidenceType}] Ref: ${ev.evidenceReference} by ${ev.auditedBy} (${ev.isIndependentlyVerified ? 'Independently Verified' : 'Internal Declaration'}).`
+          `Multi-category audit evidence applied: [${ev.evidenceType}] Ref: ${ev.evidenceReference} by ${ev.auditedBy} (${verificationTypeLabel}, Trust classification: ${trustLabel}).`
         );
       }
     } else {
@@ -1135,6 +1365,7 @@ export function calculateFabricAwareCircumferenceEase(
     isProvisionalBiasShrinkage,
     provisionalBiasShrinkagePolicyApplied: isProvisionalBiasShrinkage ? options.provisionalBiasShrinkagePolicy : undefined,
     negativeEasePolicyApplied,
+    auditEvidenceTrustClassification: negativeEasePolicyApplied?.evidenceTrustClassification,
     inputProvenanceSummary,
     provenanceNotes,
     limitations
