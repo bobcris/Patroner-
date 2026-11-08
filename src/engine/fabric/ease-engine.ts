@@ -450,13 +450,22 @@ export function evaluateAuditEvidenceTrust(
   }
 
   // Caller claims laboratory or third-party audit
+  // Controlled application boundary: verifier callback must originate from trusted application infrastructure.
   if (typeof trustedVerifier === 'function') {
-    const verified = trustedVerifier(evidence);
-    if (verified === true) {
+    try {
+      const verified = trustedVerifier(evidence);
+      if (verified === true) {
+        return {
+          trustClassification: 'authenticated-independent',
+          isAuthentic: true,
+          rationale: `Authenticated by verified independent authority (${evidence.auditedBy}).`
+        };
+      }
+    } catch {
       return {
-        trustClassification: 'authenticated-independent',
-        isAuthentic: true,
-        rationale: `Authenticated by verified independent authority (${evidence.auditedBy}).`
+        trustClassification: 'unverified-external-claim',
+        isAuthentic: false,
+        rationale: `Verification authority callback failed during evaluation; preserved as unverified external claim.`
       };
     }
   }

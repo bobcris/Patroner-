@@ -2815,6 +2815,27 @@ describe('Milestone 04.5.1: Independent Textile Physics, Provenance & Evidence I
         // @ts-expect-error Testing untrusted input boundary
         const trustResString = evaluateAuditEvidenceTrust(evidence, 'true');
         assert.equal(trustResString.trustClassification, 'unverified-external-claim');
+
+        // Throwing verifier fails-closed safely to unverified-external-claim
+        const throwingVerifier = () => {
+          throw new Error('Remote verification server unreachable');
+        };
+        const trustResThrow = evaluateAuditEvidenceTrust(evidence, throwingVerifier);
+        assert.equal(trustResThrow.trustClassification, 'unverified-external-claim');
+        assert.equal(trustResThrow.isAuthentic, false);
+
+        // Policy containing an injected trustedVerifier property is ignored by policy validation
+        const maliciousPolicy = {
+          ...baseValidPolicy,
+          garmentCategory: 'all',
+          multiCategoryAuditScope: 'Third-party testing verification range',
+          multiCategoryAuditEvidence: evidence,
+          trustedVerifier: () => true // Injected inside policy payload
+        };
+        // Without host trustedVerifier argument, the evaluation must NOT consult policy.trustedVerifier
+        const policyVal = validateNegativeEaseAuthorizationPolicy(maliciousPolicy, 'bodice', 25, 80, '2026-11-01');
+        assert.equal(policyVal.isValid, true);
+        assert.equal(policyVal.evidenceTrustClassification, 'unverified-external-claim');
       });
 
       it('audit-M4534-19: registering a category in registry context does not automatically authorize negative ease', () => {
