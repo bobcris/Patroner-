@@ -129,16 +129,11 @@ export function isStandardGarmentCategory(category: string): boolean {
 }
 
 /**
- * Isolated registry for explicitly registered custom garment categories (module fallback).
- */
-const customCategoryRegistry = new Map<string, readonly string[]>();
-
-/**
- * Resets custom garment category registry (useful for test isolation).
- * Default standard categories remain untouched.
+ * @deprecated Global custom category registry was eliminated in Milestone 04.5.3.4.1 to enforce tenant isolation.
+ * Use an explicit FabricCategoryRegistry instance and call registry.dispose().
  */
 export function resetCustomGarmentCategoryRegistry(): void {
-  customCategoryRegistry.clear();
+  // No-op: global custom category state has been eliminated.
 }
 
 /**
@@ -223,91 +218,55 @@ export function createFabricCategoryRegistry(options?: { tenantId?: string }): F
 }
 
 /**
- * Resolves compatibility list for any supported garment category (standard or custom).
- * If an explicit registry is provided, resolves strictly within that registry context.
+ * Resolves compatibility list for any supported garment category.
+ * Standard categories resolve from immutable built-in definitions.
+ * Custom categories resolve strictly from an explicitly supplied FabricCategoryRegistry instance.
+ * Without an explicit registry context, custom category lookups fail closed (return undefined).
  */
 export function getCategoryFitIntentCompatibility(
   category: string,
   registry?: FabricCategoryRegistry
 ): readonly string[] | undefined {
-  if (registry) {
-    return registry.getCompatibility(category);
-  }
   if (!category || typeof category !== 'string') return undefined;
   const normalized = category.trim().toLowerCase();
   if (normalized in DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY) {
     return DEFAULT_CATEGORY_FIT_INTENT_COMPATIBILITY[normalized];
   }
-  return customCategoryRegistry.get(normalized);
+  if (registry) {
+    return registry.getCompatibility(normalized);
+  }
+  return undefined;
 }
 
 /**
- * Lists all currently supported garment categories (standard and registered custom).
- * If an explicit registry is provided, lists categories supported within that registry context.
+ * Lists all supported garment categories.
+ * Without a registry, returns strictly immutable standard built-in categories.
+ * With an explicit registry context, returns standard categories unioned with custom categories registered in that context.
  */
 export function getAllSupportedGarmentCategories(registry?: FabricCategoryRegistry): string[] {
   if (registry) {
     return registry.getAllSupportedCategories();
   }
-  const set = new Set<string>(STANDARD_GARMENT_CATEGORIES);
-  for (const cat of customCategoryRegistry.keys()) {
-    set.add(cat);
-  }
-  return Array.from(set).sort();
+  return [...STANDARD_GARMENT_CATEGORIES].sort();
 }
 
 /**
  * Controlled registration mechanism for custom garment categories and their validated fit intents.
- * - Requires a non-empty category name and a non-empty array of recognized fit intents.
- * - STRICTLY PROHIBITS overriding or mutating default standard garment categories.
- * - Prevents silent weakening of default fit-intent compatibility rules.
- * - If an explicit registry is provided, registers within that context; otherwise registers in module fallback registry.
+ * Requires an explicit FabricCategoryRegistry instance to ensure tenant isolation.
+ * In Milestone 04.5.3.4.1, registering without an explicit registry context fails closed with an explicit error.
  */
 export function registerCustomGarmentCategoryCompatibility(
   category: string,
   compatibleIntents: string[],
   registry?: FabricCategoryRegistry
 ): { success: boolean; error?: string } {
-  if (registry) {
-    return registry.registerCustomCategory(category, compatibleIntents);
-  }
-  if (!category || typeof category !== 'string' || category.trim() === '') {
-    return { success: false, error: 'Category name must be a non-empty string.' };
-  }
-  const normalizedCategory = category.trim().toLowerCase();
-
-  // Acceptance standard: No custom category may silently weaken the default fit-intent compatibility rules.
-  if (isStandardGarmentCategory(normalizedCategory)) {
+  if (!registry) {
     return {
       success: false,
-      error: `Cannot override or mutate default standard garment category '${category}'. Standard categories are immutable.`
+      error: 'Explicit FabricCategoryRegistry instance is strictly required to register custom garment categories. Global registration is prohibited to ensure tenant isolation.'
     };
   }
-
-  if (!Array.isArray(compatibleIntents) || compatibleIntents.length === 0) {
-    return { success: false, error: 'Compatible intents must be a non-empty array of recognized fit intents.' };
-  }
-
-  const normalizedIntents: string[] = [];
-
-  for (const intent of compatibleIntents) {
-    if (!intent || typeof intent !== 'string' || intent.trim() === '') {
-      return { success: false, error: 'Fit intent entries must be non-empty strings.' };
-    }
-    const normIntent = intent.trim().toLowerCase();
-    if (!isRecognizedFitIntent(normIntent)) {
-      return {
-        success: false,
-        error: `Unrecognized fit intent '${intent}'. Must be one of: ${RECOGNIZED_FIT_INTENTS.join(', ')}.`
-      };
-    }
-    if (!normalizedIntents.includes(normIntent)) {
-      normalizedIntents.push(normIntent);
-    }
-  }
-
-  customCategoryRegistry.set(normalizedCategory, Object.freeze(normalizedIntents));
-  return { success: true };
+  return registry.registerCustomCategory(category, compatibleIntents);
 }
 
 /**
@@ -366,7 +325,7 @@ export const CATEGORY_FIT_INTENT_COMPATIBILITY: Record<string, string[]> = new P
     },
     set() {
       throw new TypeError(
-        'CATEGORY_FIT_INTENT_COMPATIBILITY is immutable. Direct mutation is prohibited to prevent weakening default compatibility rules. Use registerCustomGarmentCategoryCompatibility().'
+        'CATEGORY_FIT_INTENT_COMPATIBILITY is immutable. Direct mutation is prohibited. Custom categories require an explicit FabricCategoryRegistry instance.'
       );
     },
     deleteProperty() {
@@ -384,7 +343,7 @@ export const CATEGORY_FIT_INTENT_COMPATIBILITY: Record<string, string[]> = new P
       const comp = getCategoryFitIntentCompatibility(prop);
       if (comp) {
         return {
-          configurable: false,
+          configurable: true,
           enumerable: true,
           value: [...comp],
           writable: false
