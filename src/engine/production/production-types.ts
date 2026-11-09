@@ -26,7 +26,7 @@ import {
 } from '../../types';
 import { SegmentRole } from '../geometry/primitives';
 import { AssemblyValidationStatus } from '../assembly/assembly-types';
-import { DirectionalProperties, FabricProvenance } from '../fabric/fabric-types';
+import { DirectionalProperties, FabricProvenance, FabricPropertyProvenanceRecord } from '../fabric/fabric-types';
 
 export const PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION = '1.0.0' as const;
 export type ProductionPatternSnapshotSchemaVersion = typeof PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION;
@@ -71,6 +71,15 @@ export interface MeasurementSetSnapshot {
 }
 
 /**
+ * Allowable fabric provenance states in a production snapshot.
+ * Unresolved or missing provenance remains explicitly 'unknown' or 'unverified'.
+ */
+export type FabricSnapshotProvenance =
+  | FabricProvenance
+  | 'unknown'
+  | 'unverified';
+
+/**
  * Immutable snapshot of material specification capturing property verification details.
  */
 export interface FabricSpecificationSnapshot {
@@ -84,9 +93,11 @@ export interface FabricSpecificationSnapshot {
   readonly gsm?: number;
   readonly thicknessMm?: number;
   readonly moldingFactor?: number;
-  readonly provenance: FabricProvenance;
+  readonly provenance: FabricSnapshotProvenance;
   readonly isVerified: boolean;
   readonly propertyVerificationDetails?: Readonly<Record<string, boolean>>;
+  readonly propertyProvenance?: FabricPropertyProvenanceRecord;
+  readonly testStandard?: string;
   readonly laboratoryReference?: string;
   readonly supplierReference?: string;
   readonly isIllustrative: boolean;
@@ -138,6 +149,16 @@ export interface GeometricSegmentSnapshot {
 }
 
 /**
+ * Bounding box for a contour, explicitly indicating whether it is an exact bounds
+ * (for rectilinear geometry) or a polyline-sampled approximation (for curves).
+ * Full exact geometry is preserved in segments to enable exact recomputation.
+ */
+export interface ContourBoundingBoxSnapshot extends BoundingBox {
+  readonly isApproximate: boolean;
+  readonly basis: 'exact' | 'sampled-polyline-approximation';
+}
+
+/**
  * Pure plain-data representation of a closed or open geometric contour.
  */
 export interface GeometricContourSnapshot {
@@ -146,7 +167,7 @@ export interface GeometricContourSnapshot {
   readonly winding?: 'clockwise' | 'counter-clockwise' | 'degenerate' | 'collinear';
   readonly segments: readonly GeometricSegmentSnapshot[];
   readonly totalLengthCm: number;
-  readonly boundingBox: BoundingBox;
+  readonly boundingBox: ContourBoundingBoxSnapshot;
 }
 
 /**
@@ -169,7 +190,7 @@ export interface PatternPieceSnapshot {
   readonly notches: readonly Notch[];
   readonly seams: readonly SeamLine[];
   readonly drillHoles?: readonly Point[];
-  readonly boundingBox: BoundingBox;
+  readonly boundingBox: ContourBoundingBoxSnapshot;
   readonly description: string;
   readonly stitchingContour?: GeometricContourSnapshot;
   readonly cuttingContour?: GeometricContourSnapshot;
@@ -384,3 +405,54 @@ export interface CurrentRevisionInputs {
   readonly patternPieces?: readonly PatternPiece[];
   readonly engineVersion?: string;
 }
+
+/**
+  * Base error class for all production snapshot operations.
+  */
+export class ProductionSnapshotError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProductionSnapshotError';
+  }
+}
+
+/**
+  * Error thrown when geometry serialization encounters non-finite coordinates or invalid topology.
+  */
+export class ProductionSnapshotGeometryError extends ProductionSnapshotError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProductionSnapshotGeometryError';
+  }
+}
+
+/**
+  * Error thrown when measurement values, units, or origin provenance violate contracts.
+  */
+export class ProductionSnapshotMeasurementError extends ProductionSnapshotError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProductionSnapshotMeasurementError';
+  }
+}
+
+/**
+  * Error thrown when material properties or physical fabric parameters are invalid.
+  */
+export class ProductionSnapshotFabricError extends ProductionSnapshotError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProductionSnapshotFabricError';
+  }
+}
+
+/**
+  * Error thrown when snapshot structural or semantic validation fails.
+  */
+export class ProductionSnapshotValidationError extends ProductionSnapshotError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProductionSnapshotValidationError';
+  }
+}
+

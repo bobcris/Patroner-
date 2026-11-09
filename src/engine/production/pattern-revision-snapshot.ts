@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createHash } from 'node:crypto';
 import {
   BoundingBox,
   Dart,
@@ -23,27 +22,49 @@ import {
   LineSegment
 } from '../geometry/primitives';
 import { EnhancedFabricProperty } from '../fabric/fabric-types';
+import { sha256Hex } from './crypto';
 import {
   ApprovalStateSummary,
+  ContourBoundingBoxSnapshot,
   CreateProductionPatternRevisionInput,
   CurrentRevisionInputs,
   DesignSpecificationSnapshot,
   DraftingConfigurationSnapshot,
   EngineProvenanceRecord,
+  FabricSnapshotProvenance,
   FabricSpecificationSnapshot,
   GeometricContourSnapshot,
   GeometricSegmentSnapshot,
   MeasurementApprovalRecord,
+  MeasurementOrigin,
   MeasurementSetSnapshot,
   PatternPieceSnapshot,
   ProductionPatternRevisionSnapshot,
   PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION,
+  ProductionSnapshotFabricError,
+  ProductionSnapshotGeometryError,
+  ProductionSnapshotMeasurementError,
+  ProductionSnapshotValidationError,
   RevisionComparisonResult,
   RevisionInputMismatch
 } from './production-types';
 
-export const CURRENT_ENGINE_VERSION = '0.4.6.1';
+export const CURRENT_ENGINE_VERSION = '0.4.6.1.1';
 export const CURRENT_SNAPSHOT_ENGINE = 'Patroner Production Revision Engine';
+
+export const VALID_MEASUREMENT_ORIGINS: readonly MeasurementOrigin[] = [
+  'user-entered',
+  'standard-chart',
+  'imported',
+  'ai-estimated',
+  'unknown'
+] as const;
+
+function isValidIsoDate(dateStr: unknown): boolean {
+  if (typeof dateStr !== 'string' || dateStr.trim() === '') return false;
+  const epoch = Date.parse(dateStr);
+  return Number.isFinite(epoch);
+}
 
 /**
  * Deep freezes an object recursively to guarantee runtime immutability.
@@ -76,62 +97,144 @@ export function deepFreeze<T>(obj: T): Readonly<T> {
 
 /**
  * Serializes a class-based or interface-based GeometricSegment into a pure plain-data snapshot.
- * Eliminates method references while strictly preserving all topological and geometric properties.
+ * Eliminates method references while strictly preserving exact finite coordinates without rounding.
+ * Rejects non-finite coordinates with ProductionSnapshotGeometryError.
  */
 export function serializeGeometricSegmentSnapshot(seg: GeometricSegment): GeometricSegmentSnapshot {
+  if (!seg || typeof seg !== 'object') {
+    throw new ProductionSnapshotGeometryError('Invalid segment: segment must be a non-null object.');
+  }
+
   if (seg.type === 'line') {
     const line = seg as LineSegment;
+    if (!Number.isFinite(line.start.x) || !Number.isFinite(line.start.y)) {
+      throw new ProductionSnapshotGeometryError(
+        `Segment '${line.id}' start coordinates must be finite (received x=${line.start.x}, y=${line.start.y}).`
+      );
+    }
+    if (!Number.isFinite(line.end.x) || !Number.isFinite(line.end.y)) {
+      throw new ProductionSnapshotGeometryError(
+        `Segment '${line.id}' end coordinates must be finite (received x=${line.end.x}, y=${line.end.y}).`
+      );
+    }
+
+    const seamAllowanceCm = Number.isFinite(line.seamAllowanceCm) ? line.seamAllowanceCm : 0;
+    if (seamAllowanceCm < 0) {
+      throw new ProductionSnapshotGeometryError(
+        `Segment '${line.id}' seamAllowanceCm cannot be negative (received ${line.seamAllowanceCm}).`
+      );
+    }
+
+    const length = line.lengthCm();
+    if (!Number.isFinite(length) || length < 0) {
+      throw new ProductionSnapshotGeometryError(
+        `Segment '${line.id}' length must be non-negative finite (received ${length}).`
+      );
+    }
+
     return {
       id: line.id,
       type: 'line',
-      start: { x: Number(line.start.x.toFixed(3)), y: Number(line.start.y.toFixed(3)) },
-      end: { x: Number(line.end.x.toFixed(3)), y: Number(line.end.y.toFixed(3)) },
-      seamAllowanceCm: line.seamAllowanceCm,
+      start: { x: line.start.x, y: line.start.y },
+      end: { x: line.end.x, y: line.end.y },
+      seamAllowanceCm,
       isFold: Boolean(line.isFold),
       seamId: line.seamId,
       sourceSegmentId: line.sourceSegmentId,
       role: line.role,
-      lengthCm: line.lengthCm()
+      lengthCm: length
     };
   }
 
-  const bezier = seg as CubicBezierCurve;
-  return {
-    id: bezier.id,
-    type: 'bezier',
-    start: { x: Number(bezier.p0.x.toFixed(3)), y: Number(bezier.p0.y.toFixed(3)) },
-    end: { x: Number(bezier.p3.x.toFixed(3)), y: Number(bezier.p3.y.toFixed(3)) },
-    controlPoints: [
-      { x: Number(bezier.cp1.x.toFixed(3)), y: Number(bezier.cp1.y.toFixed(3)) },
-      { x: Number(bezier.cp2.x.toFixed(3)), y: Number(bezier.cp2.y.toFixed(3)) }
-    ],
-    seamAllowanceCm: bezier.seamAllowanceCm,
-    isFold: Boolean(bezier.isFold),
-    seamId: bezier.seamId,
-    sourceSegmentId: bezier.sourceSegmentId,
-    role: bezier.role,
-    lengthCm: bezier.lengthCm()
-  };
+  if (seg.type === 'bezier') {
+    const bezier = seg as CubicBezierCurve;
+    if (!Number.isFinite(bezier.p0.x) || !Number.isFinite(bezier.p0.y)) {
+      throw new ProductionSnapshotGeometryError(
+        `Bézier segment '${bezier.id}' p0 start must be finite (received x=${bezier.p0.x}, y=${bezier.p0.y}).`
+      );
+    }
+    if (!Number.isFinite(bezier.p3.x) || !Number.isFinite(bezier.p3.y)) {
+      throw new ProductionSnapshotGeometryError(
+        `Bézier segment '${bezier.id}' p3 end must be finite (received x=${bezier.p3.x}, y=${bezier.p3.y}).`
+      );
+    }
+    if (!Number.isFinite(bezier.cp1.x) || !Number.isFinite(bezier.cp1.y)) {
+      throw new ProductionSnapshotGeometryError(
+        `Bézier segment '${bezier.id}' cp1 must be finite (received x=${bezier.cp1.x}, y=${bezier.cp1.y}).`
+      );
+    }
+    if (!Number.isFinite(bezier.cp2.x) || !Number.isFinite(bezier.cp2.y)) {
+      throw new ProductionSnapshotGeometryError(
+        `Bézier segment '${bezier.id}' cp2 must be finite (received x=${bezier.cp2.x}, y=${bezier.cp2.y}).`
+      );
+    }
+
+    const seamAllowanceCm = Number.isFinite(bezier.seamAllowanceCm) ? bezier.seamAllowanceCm : 0;
+    if (seamAllowanceCm < 0) {
+      throw new ProductionSnapshotGeometryError(
+        `Bézier segment '${bezier.id}' seamAllowanceCm cannot be negative (received ${bezier.seamAllowanceCm}).`
+      );
+    }
+
+    const length = bezier.lengthCm();
+    if (!Number.isFinite(length) || length < 0) {
+      throw new ProductionSnapshotGeometryError(
+        `Bézier segment '${bezier.id}' length must be non-negative finite (received ${length}).`
+      );
+    }
+
+    return {
+      id: bezier.id,
+      type: 'bezier',
+      start: { x: bezier.p0.x, y: bezier.p0.y },
+      end: { x: bezier.p3.x, y: bezier.p3.y },
+      controlPoints: [
+        { x: bezier.cp1.x, y: bezier.cp1.y },
+        { x: bezier.cp2.x, y: bezier.cp2.y }
+      ],
+      seamAllowanceCm,
+      isFold: Boolean(bezier.isFold),
+      seamId: bezier.seamId,
+      sourceSegmentId: bezier.sourceSegmentId,
+      role: bezier.role,
+      lengthCm: length
+    };
+  }
+
+  throw new ProductionSnapshotGeometryError(
+    `Unsupported segment type '${(seg as { type?: unknown }).type}'. Only 'line' and 'bezier' are supported.`
+  );
 }
 
 /**
  * Serializes a GeometricContour instance into a pure plain-data snapshot.
+ * Preserves exact segment coordinates and classifies bounding box approximation status.
  */
 export function serializeGeometricContourSnapshot(contour: GeometricContour): GeometricContourSnapshot {
+  if (!contour || !Array.isArray(contour.segments)) {
+    throw new ProductionSnapshotGeometryError('Invalid contour: contour must contain an array of segments.');
+  }
+
   const segments = contour.segments.map(serializeGeometricSegmentSnapshot);
-  const totalLengthCm = Number(
-    segments.reduce((acc, s) => acc + s.lengthCm, 0).toFixed(2)
-  );
+  const totalLengthCm = segments.reduce((acc, s) => acc + s.lengthCm, 0);
+
+  const hasCurves = segments.some(s => s.type === 'bezier');
+  const sampledPoints = contour.toPolyline ? contour.toPolyline(8) : contour.getVertices();
+  const rawBb = computeBoundingBox(sampledPoints);
+
+  const boundingBox: ContourBoundingBoxSnapshot = {
+    ...rawBb,
+    isApproximate: hasCurves,
+    basis: hasCurves ? 'sampled-polyline-approximation' : 'exact'
+  };
 
   return {
     id: contour.id,
     isClosed: contour.isClosed,
-    winding: contour.getWinding(),
+    winding: contour.getWinding ? contour.getWinding() : undefined,
     segments,
     totalLengthCm,
-    boundingBox: computeBoundingBox(
-      contour.toPolyline ? contour.toPolyline(8) : contour.getVertices()
-    )
+    boundingBox
   };
 }
 
@@ -151,65 +254,64 @@ export function serializePatternPieceSnapshot(
     ? serializeGeometricContourSnapshot(piece.cuttingContour)
     : undefined;
 
-  const darts: Dart[] = (piece.darts || []).map(d => ({
+  // Determine piece bounding box
+  let boundingBox: ContourBoundingBoxSnapshot;
+  if (cuttingContour) {
+    boundingBox = cuttingContour.boundingBox;
+  } else if (stitchingContour) {
+    boundingBox = stitchingContour.boundingBox;
+  } else {
+    const rawBb = piece.boundingBox ?? { minX: 0, minY: 0, maxX: 0, maxY: 0, widthCm: 0, heightCm: 0 };
+    boundingBox = {
+      ...rawBb,
+      isApproximate: false,
+      basis: 'exact'
+    };
+  }
+
+  const darts = (piece.darts || []).map(d => ({
     id: d.id,
-    apex: { x: Number(d.apex.x.toFixed(3)), y: Number(d.apex.y.toFixed(3)) },
-    legLeft: { x: Number(d.legLeft.x.toFixed(3)), y: Number(d.legLeft.y.toFixed(3)) },
-    legRight: { x: Number(d.legRight.x.toFixed(3)), y: Number(d.legRight.y.toFixed(3)) },
+    peak: { x: d.peak.x, y: d.peak.y },
+    leftPoint: { x: d.leftPoint.x, y: d.leftPoint.y },
+    rightPoint: { x: d.rightPoint.x, y: d.rightPoint.y },
+    depthCm: d.depthCm,
     widthCm: d.widthCm,
-    lengthCm: d.lengthCm
+    type: d.type
   }));
 
-  const notches: Notch[] = (piece.notches || []).map(n => ({
+  const notches = (piece.notches || []).map(n => ({
     id: n.id,
-    position: { x: Number(n.position.x.toFixed(3)), y: Number(n.position.y.toFixed(3)) },
-    normalAngleDeg: n.normalAngleDeg,
+    point: { x: n.point.x, y: n.point.y },
+    distanceAlongSegment: n.distanceAlongSegment,
+    targetSegmentId: n.targetSegmentId,
     type: n.type,
-    label: n.label
+    depthMm: n.depthMm,
+    angleDeg: n.angleDeg
   }));
 
-  const seams: SeamLine[] = (piece.seams || []).map(s => ({
+  const seams = (piece.seams || []).map(s => ({
     id: s.id,
-    name: s.name,
-    startPoint: { x: Number(s.startPoint.x.toFixed(3)), y: Number(s.startPoint.y.toFixed(3)) },
-    endPoint: { x: Number(s.endPoint.x.toFixed(3)), y: Number(s.endPoint.y.toFixed(3)) },
-    lengthCm: s.lengthCm,
-    type: s.type,
-    pathData: s.pathData,
-    startTangent: s.startTangent ? { ...s.startTangent } : undefined,
-    endTangent: s.endTangent ? { ...s.endTangent } : undefined,
+    startPoint: { x: s.startPoint.x, y: s.startPoint.y },
+    endPoint: { x: s.endPoint.x, y: s.endPoint.y },
+    seamAllowanceCm: s.seamAllowanceCm,
+    seamType: s.seamType,
     pairedPieceId: s.pairedPieceId,
-    pairedSeamName: s.pairedSeamName,
-    segmentId: s.segmentId,
-    segmentIds: s.segmentIds ? [...s.segmentIds] : undefined
+    pairedSeamId: s.pairedSeamId
   }));
-
-  const drillHoles: Point[] = (piece.drillHoles || []).map(p => ({
-    x: Number(p.x.toFixed(3)),
-    y: Number(p.y.toFixed(3))
-  }));
-
-  const boundingBox: BoundingBox = {
-    minX: piece.boundingBox.minX,
-    minY: piece.boundingBox.minY,
-    maxX: piece.boundingBox.maxX,
-    maxY: piece.boundingBox.maxY,
-    widthCm: piece.boundingBox.widthCm,
-    heightCm: piece.boundingBox.heightCm
-  };
 
   const grainline: GrainLine = {
-    start: { x: Number(piece.grainline.start.x.toFixed(3)), y: Number(piece.grainline.start.y.toFixed(3)) },
-    end: { x: Number(piece.grainline.end.x.toFixed(3)), y: Number(piece.grainline.end.y.toFixed(3)) },
-    direction: piece.grainline.direction
+    start: { x: piece.grainline.start.x, y: piece.grainline.start.y },
+    end: { x: piece.grainline.end.x, y: piece.grainline.end.y },
+    angleDeg: piece.grainline.angleDeg
   };
 
-  const offsetDiagnostics = piece.offsetResult?.diagnostics
-    ? piece.offsetResult.diagnostics.map(d => ({ ...d }))
+  const drillHoles = piece.drillHoles
+    ? piece.drillHoles.map(pt => ({ x: pt.x, y: pt.y }))
     : undefined;
 
-  const warnings = piece.offsetResult?.warnings ? [...piece.offsetResult.warnings] : [];
-  const errors = piece.offsetResult?.errors ? [...piece.offsetResult.errors] : [];
+  const offsetDiagnostics = piece.offsetDiagnostics
+    ? piece.offsetDiagnostics.map(diag => ({ ...diag }))
+    : undefined;
 
   return {
     id: piece.id,
@@ -218,8 +320,8 @@ export function serializePatternPieceSnapshot(
     garmentCategory: piece.garmentCategory,
     sizeCode,
     cutCount: piece.cutCount,
-    onFold: Boolean(piece.onFold),
-    material: piece.material || 'self',
+    onFold: piece.onFold,
+    material: piece.material,
     cutPathData: piece.cutPathData,
     sewPathData: piece.sewPathData,
     seamAllowanceWidthCm: piece.seamAllowanceWidthCm,
@@ -229,38 +331,68 @@ export function serializePatternPieceSnapshot(
     seams,
     drillHoles,
     boundingBox,
-    description: piece.description || '',
+    description: piece.description,
     stitchingContour,
     cuttingContour,
     offsetDiagnostics,
-    warnings,
-    errors
+    warnings: piece.warnings ? [...piece.warnings] : [],
+    errors: piece.errors ? [...piece.errors] : []
   };
 }
 
 /**
  * Creates an immutable snapshot of body measurements with explicit provenance and approval.
+ *
+ * Strict Architectural Rules:
+ * - Missing provenance defaults to 'unknown', NEVER 'user-entered'.
+ * - Empty measurement names are rejected.
+ * - Non-finite, zero, or negative measurement values are rejected.
+ * - Exact finite values are preserved without silent rounding.
+ * - Invalid origin enum values are rejected.
+ * - AI-estimated measurements remain pending unless explicit human approval metadata is supplied.
  */
 export function createMeasurementSetSnapshot(
   values: Record<string, number>,
   options: {
-    defaultOrigin?: MeasurementSetSnapshot['defaultOrigin'];
-    perMeasurementOrigin?: Record<string, MeasurementSetSnapshot['defaultOrigin']>;
+    defaultOrigin?: MeasurementOrigin;
+    perMeasurementOrigin?: Record<string, MeasurementOrigin>;
     approval?: Partial<MeasurementApprovalRecord>;
     notes?: string[];
   } = {}
 ): MeasurementSetSnapshot {
-  const clonedValues: Record<string, number> = {};
-  for (const [k, v] of Object.entries(values)) {
-    if (typeof v === 'number' && Number.isFinite(v)) {
-      clonedValues[k] = Number(v.toFixed(2));
-    }
+  if (!values || typeof values !== 'object' || Object.keys(values).length === 0) {
+    throw new ProductionSnapshotMeasurementError('Measurement values record must be a non-empty object.');
   }
 
-  const defaultOrigin = options.defaultOrigin ?? 'user-entered';
-  const perMeasurementOrigin: Record<string, MeasurementSetSnapshot['defaultOrigin']> = {};
+  const defaultOrigin: MeasurementOrigin = options.defaultOrigin ?? 'unknown';
+  if (!VALID_MEASUREMENT_ORIGINS.includes(defaultOrigin)) {
+    throw new ProductionSnapshotMeasurementError(
+      `Invalid measurement defaultOrigin '${defaultOrigin}'. Must be one of: ${VALID_MEASUREMENT_ORIGINS.join(', ')}.`
+    );
+  }
+
+  const clonedValues: Record<string, number> = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (typeof k !== 'string' || k.trim() === '') {
+      throw new ProductionSnapshotMeasurementError('Measurement key name cannot be empty or whitespace.');
+    }
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
+      throw new ProductionSnapshotMeasurementError(
+        `Measurement '${k}' must be a finite positive number in centimeters (received ${v}).`
+      );
+    }
+    // Exact value preserved without silent rounding
+    clonedValues[k] = v;
+  }
+
+  const perMeasurementOrigin: Record<string, MeasurementOrigin> = {};
   if (options.perMeasurementOrigin) {
     for (const [k, orig] of Object.entries(options.perMeasurementOrigin)) {
+      if (!VALID_MEASUREMENT_ORIGINS.includes(orig)) {
+        throw new ProductionSnapshotMeasurementError(
+          `Invalid perMeasurementOrigin '${orig}' for '${k}'. Must be one of: ${VALID_MEASUREMENT_ORIGINS.join(', ')}.`
+        );
+      }
       perMeasurementOrigin[k] = orig;
     }
   }
@@ -268,13 +400,21 @@ export function createMeasurementSetSnapshot(
   // Safety rule: AI-estimated measurements cannot be approved without explicit approval metadata
   const requestedState = options.approval?.state ?? 'pending';
   let approvalState = requestedState;
-  const isAiOrigin = defaultOrigin === 'ai-estimated' || Object.values(perMeasurementOrigin).includes('ai-estimated');
+  const isAiOrigin =
+    defaultOrigin === 'ai-estimated' ||
+    Object.values(perMeasurementOrigin).includes('ai-estimated');
 
   if (isAiOrigin && requestedState === 'approved') {
     if (!options.approval?.approvedBy || !options.approval?.approvedAt) {
       // Revert to pending: cannot approve AI estimates without explicit human approver
       approvalState = 'pending';
     }
+  }
+
+  if (options.approval?.approvedAt && !isValidIsoDate(options.approval.approvedAt)) {
+    throw new ProductionSnapshotMeasurementError(
+      `Invalid measurement approval timestamp '${options.approval.approvedAt}'. Must be a valid ISO 8601 string.`
+    );
   }
 
   const approval: MeasurementApprovalRecord = {
@@ -297,40 +437,120 @@ export function createMeasurementSetSnapshot(
 
 /**
  * Creates an immutable snapshot of a fabric specification.
+ *
+ * Strict Architectural Rules:
+ * - Missing provenance defaults to 'unknown' or explicitly unresolved, NEVER 'project-default'.
+ * - Property-level provenance and verification details are preserved without fabrication.
+ * - Invalid physical property values (e.g. non-positive GSM or impossible stretch) are rejected.
+ * - Laboratory/supplier references and revisions are preserved only when non-empty.
  */
 export function createFabricSpecificationSnapshot(
   fabric: FabricProperty | EnhancedFabricProperty
 ): FabricSpecificationSnapshot {
+  if (!fabric || typeof fabric !== 'object') {
+    throw new ProductionSnapshotFabricError('Fabric specification must be a non-null object.');
+  }
+  if (!fabric.id || typeof fabric.id !== 'string' || fabric.id.trim() === '') {
+    throw new ProductionSnapshotFabricError('Fabric specification missing required non-empty ID.');
+  }
+
   const enhanced = fabric as EnhancedFabricProperty;
   const extra = fabric as unknown as Record<string, unknown>;
 
-  const directional = enhanced.directional
-    ? {
-        warp: { ...enhanced.directional.warp },
-        weft: { ...enhanced.directional.weft },
-        bias: { ...enhanced.directional.bias }
+  // Physical bounds verification
+  if (enhanced.gsm !== undefined) {
+    if (!Number.isFinite(enhanced.gsm) || enhanced.gsm <= 0) {
+      throw new ProductionSnapshotFabricError(
+        `Fabric GSM must be a positive finite number (received ${enhanced.gsm}).`
+      );
+    }
+  }
+
+  if (enhanced.thicknessMm !== undefined) {
+    if (!Number.isFinite(enhanced.thicknessMm) || enhanced.thicknessMm <= 0) {
+      throw new ProductionSnapshotFabricError(
+        `Fabric thicknessMm must be a positive finite number (received ${enhanced.thicknessMm}).`
+      );
+    }
+  }
+
+  if (enhanced.moldingFactor !== undefined) {
+    if (!Number.isFinite(enhanced.moldingFactor) || enhanced.moldingFactor <= 0) {
+      throw new ProductionSnapshotFabricError(
+        `Fabric moldingFactor must be a positive finite number (received ${enhanced.moldingFactor}).`
+      );
+    }
+  }
+
+  let directional: Readonly<EnhancedFabricProperty['directional']> | undefined = undefined;
+  if (enhanced.directional) {
+    const warp = enhanced.directional.warp;
+    const weft = enhanced.directional.weft;
+    const bias = enhanced.directional.bias;
+
+    if (warp) {
+      if (!Number.isFinite(warp.shrinkagePercent) || warp.shrinkagePercent < 0 || warp.shrinkagePercent > 100) {
+        throw new ProductionSnapshotFabricError(`Invalid warp shrinkagePercent: ${warp.shrinkagePercent}`);
       }
-    : undefined;
+      if (!Number.isFinite(warp.stretchPercent) || warp.stretchPercent < 0 || warp.stretchPercent > 200) {
+        throw new ProductionSnapshotFabricError(`Invalid warp stretchPercent: ${warp.stretchPercent}`);
+      }
+    }
+    if (weft) {
+      if (!Number.isFinite(weft.shrinkagePercent) || weft.shrinkagePercent < 0 || weft.shrinkagePercent > 100) {
+        throw new ProductionSnapshotFabricError(`Invalid weft shrinkagePercent: ${weft.shrinkagePercent}`);
+      }
+      if (!Number.isFinite(weft.stretchPercent) || weft.stretchPercent < 0 || weft.stretchPercent > 200) {
+        throw new ProductionSnapshotFabricError(`Invalid weft stretchPercent: ${weft.stretchPercent}`);
+      }
+    }
+    if (bias) {
+      if (!Number.isFinite(bias.stretchPercent) || bias.stretchPercent < 0 || bias.stretchPercent > 200) {
+        throw new ProductionSnapshotFabricError(`Invalid bias stretchPercent: ${bias.stretchPercent}`);
+      }
+    }
+
+    directional = {
+      warp: { ...warp },
+      weft: { ...weft },
+      bias: { ...bias }
+    };
+  }
 
   const propertyVerificationDetails = (extra.propertyVerificationDetails as Record<string, boolean> | undefined)
     ? { ...(extra.propertyVerificationDetails as Record<string, boolean>) }
     : undefined;
 
-  const fabricRevision = typeof enhanced.revision === 'string'
-    ? enhanced.revision
-    : typeof extra.revisionId === 'string'
-      ? (extra.revisionId as string)
-      : typeof extra.lotNumber === 'string'
-        ? (extra.lotNumber as string)
-        : undefined;
-
-  const laboratoryReference = typeof extra.laboratoryReference === 'string'
-    ? (extra.laboratoryReference as string)
+  const propertyProvenance = enhanced.propertyProvenance
+    ? { ...enhanced.propertyProvenance }
     : undefined;
 
-  const supplierReference = typeof extra.supplierReference === 'string'
-    ? (extra.supplierReference as string)
-    : undefined;
+  const fabricRevision =
+    typeof enhanced.revision === 'string' && enhanced.revision.trim() !== ''
+      ? enhanced.revision.trim()
+      : typeof extra.revisionId === 'string' && (extra.revisionId as string).trim() !== ''
+        ? (extra.revisionId as string).trim()
+        : typeof extra.lotNumber === 'string' && (extra.lotNumber as string).trim() !== ''
+          ? (extra.lotNumber as string).trim()
+          : undefined;
+
+  const testStandard =
+    typeof enhanced.testStandard === 'string' && enhanced.testStandard.trim() !== ''
+      ? enhanced.testStandard.trim()
+      : undefined;
+
+  const laboratoryReference =
+    typeof extra.laboratoryReference === 'string' && (extra.laboratoryReference as string).trim() !== ''
+      ? (extra.laboratoryReference as string).trim()
+      : testStandard;
+
+  const supplierReference =
+    typeof extra.supplierReference === 'string' && (extra.supplierReference as string).trim() !== ''
+      ? (extra.supplierReference as string).trim()
+      : undefined;
+
+  // Provenance must default to 'unknown', NEVER 'project-default'
+  const provenance: FabricSnapshotProvenance = enhanced.provenance ?? 'unknown';
 
   return {
     fabricId: fabric.id,
@@ -343,9 +563,11 @@ export function createFabricSpecificationSnapshot(
     gsm: enhanced.gsm,
     thicknessMm: enhanced.thicknessMm,
     moldingFactor: enhanced.moldingFactor,
-    provenance: enhanced.provenance ?? 'project-default',
+    provenance,
     isVerified: Boolean(enhanced.isVerified),
     propertyVerificationDetails,
+    propertyProvenance,
+    testStandard,
     laboratoryReference,
     supplierReference,
     isIllustrative: Boolean(enhanced.isIllustrativeReference ?? extra.isIllustrative),
@@ -359,19 +581,22 @@ export function createFabricSpecificationSnapshot(
 export function createDesignSpecificationSnapshot(
   design: DesignSpecification
 ): DesignSpecificationSnapshot {
+  if (!design || typeof design !== 'object') {
+    throw new ProductionSnapshotValidationError('Design specification must be a non-null object.');
+  }
+
   const constructionFeatures = (design.constructionFeatures || []).map(f => ({ ...f }));
   const designNotes = design.designNotes ? [...design.designNotes] : [];
 
-  let aiEstimates: DesignSpecificationSnapshot['aiEstimates'] = undefined;
-  if (design.aiEstimates) {
-    aiEstimates = {
-      suggestedSilhouette: design.aiEstimates.suggestedSilhouette,
-      styleConfidenceScore: design.aiEstimates.styleConfidenceScore,
-      suggestedFabrics: [...design.aiEstimates.suggestedFabrics],
-      technicalAdvice: design.aiEstimates.technicalAdvice,
-      disclaimer: design.aiEstimates.disclaimer
-    };
-  }
+  const aiEstimates = design.aiEstimates
+    ? {
+        suggestedSilhouette: design.aiEstimates.suggestedSilhouette,
+        styleConfidenceScore: design.aiEstimates.styleConfidenceScore,
+        suggestedFabrics: [...(design.aiEstimates.suggestedFabrics || [])],
+        technicalAdvice: design.aiEstimates.technicalAdvice,
+        disclaimer: design.aiEstimates.disclaimer
+      }
+    : undefined;
 
   return {
     id: design.id,
@@ -393,18 +618,19 @@ export function createDesignSpecificationSnapshot(
 
 /**
  * Produces a stable, order-independent canonical JSON string of any object.
- * Numbers are rounded to 4 decimal places to prevent floating-point platform noise.
+ * Numbers are converted to standard IEEE-754 string representation without silent truncation or rounding.
+ * Key properties are sorted alphabetically at every level.
  */
 export function canonicalizeJson(value: unknown): string {
   if (value === null || typeof value !== 'object') {
     if (typeof value === 'number') {
-      return Number.isFinite(value) ? Number(value.toFixed(4)).toString() : 'null';
+      return Number.isFinite(value) ? value.toString() : 'null';
     }
     return JSON.stringify(value);
   }
 
   if (Array.isArray(value)) {
-    const items = value.map(canonicalizeJson);
+    const items = value.map(x => (x === undefined ? 'null' : canonicalizeJson(x)));
     return `[${items.join(',')}]`;
   }
 
@@ -419,22 +645,85 @@ export function canonicalizeJson(value: unknown): string {
 /**
  * Computes a deterministic SHA-256 fingerprint from canonical snapshot data.
  * Documented boundary: This is an integrity digest of the computational pattern state,
- * not a cryptographic digital signature or public-key certificate.
+ * NOT a cryptographic digital signature or public-key certificate.
  */
 export function computeCanonicalFingerprint(data: object): string {
   const canonical = canonicalizeJson(data);
-  return createHash('sha256').update(canonical).digest('hex');
+  return sha256Hex(canonical);
+}
+
+/**
+ * Computes the authoritative Content Fingerprint for a ProductionPatternRevisionSnapshot.
+ *
+ * Exact Field Inclusion Contract:
+ * - schemaVersion
+ * - garmentCategory
+ * - targetSize
+ * - designSpecification
+ * - measurementSet
+ * - approvalState
+ * - fabricSpecification
+ * - patternPieces
+ * - draftingConfiguration
+ * - validation
+ * - assemblySummary
+ * - gradingSummary
+ * - physicalValidationStatus
+ * - engineProvenance
+ *
+ * Explicitly Excluded Non-Engineering Metadata:
+ * - projectId (workspace container ID)
+ * - revisionId (revision identifier instance)
+ * - parentRevisionId (lineage reference)
+ * - revisionIndex (local branch index)
+ * - createdAt (timestamp of snapshot creation)
+ * - createdBy (user or automated process identity)
+ * - canonicalFingerprint (the self-referential hash digest)
+ */
+export function computeCanonicalRevisionFingerprint(
+  snapshot: Omit<ProductionPatternRevisionSnapshot, 'canonicalFingerprint'> | ProductionPatternRevisionSnapshot
+): string {
+  const payload = {
+    schemaVersion: snapshot.schemaVersion,
+    garmentCategory: snapshot.garmentCategory,
+    targetSize: snapshot.targetSize,
+    designSpecification: snapshot.designSpecification,
+    measurementSet: snapshot.measurementSet,
+    approvalState: snapshot.approvalState,
+    fabricSpecification: snapshot.fabricSpecification,
+    patternPieces: snapshot.patternPieces,
+    draftingConfiguration: snapshot.draftingConfiguration,
+    validation: snapshot.validation,
+    assemblySummary: snapshot.assemblySummary,
+    gradingSummary: snapshot.gradingSummary,
+    physicalValidationStatus: snapshot.approvalState.physicalPrototypeValidation,
+    engineProvenance: snapshot.engineProvenance
+  };
+
+  return computeCanonicalFingerprint(payload);
 }
 
 /**
  * Creates an authoritative, deeply-frozen ProductionPatternRevisionSnapshot.
  * Binds identity, design, measurements, fabric, geometry, validation, and provenance.
+ *
+ * Strict Rule: Requires explicit revisionId. Random or time-based implicit generation is prohibited.
  */
 export function createProductionPatternRevision(
   input: CreateProductionPatternRevisionInput
 ): ProductionPatternRevisionSnapshot {
+  if (!input.projectId || typeof input.projectId !== 'string' || input.projectId.trim() === '') {
+    throw new ProductionSnapshotValidationError('Missing required non-empty projectId.');
+  }
+
+  if (!input.revisionId || typeof input.revisionId !== 'string' || input.revisionId.trim() === '') {
+    throw new ProductionSnapshotValidationError(
+      'Missing required explicit revisionId. Uncontrolled implicit random or time-based generation is prohibited.'
+    );
+  }
+
   const timestamp = input.createdAt ?? new Date().toISOString();
-  const revisionId = input.revisionId ?? `rev-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const revisionId = input.revisionId.trim();
   const revisionIndex = input.revisionIndex ?? 1;
 
   // 1. Snapshot sub-components
@@ -460,64 +749,32 @@ export function createProductionPatternRevision(
     dartStyle: input.draftingConfiguration?.dartStyle ?? input.designSpecification.dartStyle ?? 'waist',
     sleeveEaseStrategy: input.draftingConfiguration?.sleeveEaseStrategy ?? input.designSpecification.sleeveEaseStrategy ?? 'classic',
     seamAllowanceCm: input.draftingConfiguration?.seamAllowanceCm ?? 1.5,
-    waistAllowanceCm: input.draftingConfiguration?.waistAllowanceCm ?? 1.0,
-    hemAllowanceCm: input.draftingConfiguration?.hemAllowanceCm ?? 2.5,
-    neckAllowanceCm: input.draftingConfiguration?.neckAllowanceCm ?? 1.0,
-    armholeAllowanceCm: input.draftingConfiguration?.armholeAllowanceCm ?? 1.0,
-    shoulderAllowanceCm: input.draftingConfiguration?.shoulderAllowanceCm ?? 1.0,
-    bezierToleranceCm: input.draftingConfiguration?.bezierToleranceCm ?? 0.05,
-    miterLimit: input.draftingConfiguration?.miterLimit ?? 2.5,
-    categoryRegistryId: input.draftingConfiguration?.categoryRegistryId,
-    negativeEasePolicyApplied: input.draftingConfiguration?.negativeEasePolicyApplied ?? false,
-    customOptions: input.draftingConfiguration?.customOptions ? { ...input.draftingConfiguration.customOptions } : undefined
+    hemAllowanceCm: input.draftingConfiguration?.hemAllowanceCm ?? 3.0,
+    easeProfile: input.draftingConfiguration?.easeProfile ?? input.designSpecification.easeProfile,
+    additionalParameters: input.draftingConfiguration?.additionalParameters
+      ? { ...input.draftingConfiguration.additionalParameters }
+      : undefined
   };
 
-  // 4. Engine provenance
-  const engineProvenance: EngineProvenanceRecord = {
-    engineVersion: input.engineProvenance?.engineVersion ?? CURRENT_ENGINE_VERSION,
-    appVersion: input.engineProvenance?.appVersion,
-    gitCommit: input.engineProvenance?.gitCommit,
-    buildTimestamp: input.engineProvenance?.buildTimestamp,
-    snapshotEngine: CURRENT_SNAPSHOT_ENGINE
-  };
-
-  // 5. Approval state model
+  // 4. Approval State Summary
   const approvalState: ApprovalStateSummary = {
     designApproval: designSnapshot.isApproved ? 'approved' : 'pending',
     measurementApproval: measurementSnapshot.approval.state,
     patternGeometryValidation: input.validation.status,
-    assemblyValidation: input.assemblySummary?.status ?? (
-      input.designSpecification.garmentCategory === 'bodice' ? 'unassessed-missing-data' : 'not-applicable'
-    ),
-    gradingValidation: input.gradingSummary
-      ? (input.gradingSummary.isOverallGradingValid ? 'valid' : 'invalid')
-      : 'not-applicable',
     physicalPrototypeValidation: input.physicalValidationStatus ?? 'not-assessed'
   };
 
-  // 6. Pre-fingerprint data envelope
-  const payloadForFingerprint = {
-    schemaVersion: PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION,
-    projectId: input.projectId,
-    revisionId,
-    parentRevisionId: input.parentRevisionId,
-    revisionIndex,
-    createdAt: timestamp,
-    garmentCategory: input.designSpecification.garmentCategory,
-    targetSize: input.targetSize,
-    designSpecification: designSnapshot,
-    measurementSet: measurementSnapshot,
-    fabricSpecification: fabricSnapshot,
-    patternPieces: pieceSnapshots,
-    draftingConfiguration: draftingConfig,
-    validationStatus: input.validation.status,
-    engineProvenance
+  // 5. Engine Provenance
+  const engineProvenance: EngineProvenanceRecord = {
+    engineVersion: input.engineProvenance?.engineVersion ?? CURRENT_ENGINE_VERSION,
+    buildTimestamp: input.engineProvenance?.buildTimestamp ?? new Date().toISOString(),
+    gitCommitSha: input.engineProvenance?.gitCommitSha,
+    deterministicCalculation: input.engineProvenance?.deterministicCalculation ?? true,
+    engineName: input.engineProvenance?.engineName ?? CURRENT_SNAPSHOT_ENGINE
   };
 
-  const canonicalFingerprint = computeCanonicalFingerprint(payloadForFingerprint);
-
-  // 7. Assemble master snapshot
-  const rawSnapshot: ProductionPatternRevisionSnapshot = {
+  // 6. Compute Canonical Fingerprint over authoritative content
+  const preliminarySnapshot = {
     schemaVersion: PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION,
     projectId: input.projectId,
     revisionId,
@@ -537,7 +794,14 @@ export function createProductionPatternRevision(
     gradingSummary: input.gradingSummary as ProductionPatternRevisionSnapshot['gradingSummary'],
     engineProvenance,
     approvalState,
-    isProductionReady: false,
+    isProductionReady: false as const
+  };
+
+  const canonicalFingerprint = computeCanonicalRevisionFingerprint(preliminarySnapshot);
+
+  // 7. Assemble master snapshot
+  const rawSnapshot: ProductionPatternRevisionSnapshot = {
+    ...preliminarySnapshot,
     canonicalFingerprint
   };
 
@@ -610,7 +874,7 @@ export function compareRevisionInputs(
         description: `Ease profile changed from '${snapshot.designSpecification.easeProfile}' to '${ds.easeProfile}'.`
       });
     }
-    if (ds.lengthCm !== undefined && Math.abs(ds.lengthCm - snapshot.designSpecification.lengthCm) > 0.1) {
+    if (ds.lengthCm !== undefined && Math.abs(ds.lengthCm - snapshot.designSpecification.lengthCm) > 0.001) {
       mismatches.push({
         path: 'designSpecification.lengthCm',
         field: 'lengthCm',
@@ -652,30 +916,19 @@ export function compareRevisionInputs(
           field: key,
           baselineValue: undefined,
           currentValue: val,
-          severity: 'breaking',
-          description: `New measurement '${key}' added with value ${val} cm.`
+          severity: 'advisory',
+          description: `Measurement '${key}' added with value ${val} cm.`
         });
-      } else if (Math.abs(val - baselineVal) > 0.05) {
+      } else if (Math.abs(baselineVal - val) > 0.0001) {
         mismatches.push({
           path: `measurementSet.values.${key}`,
           field: key,
           baselineValue: baselineVal,
           currentValue: val,
           severity: 'breaking',
-          description: `Measurement '${key}' changed from ${baselineVal} cm to ${val} cm (Δ = ${(val - baselineVal).toFixed(2)} cm).`
+          description: `Measurement '${key}' changed from ${baselineVal} cm to ${val} cm.`
         });
       }
-    }
-
-    if (current.measurements.approval?.state && current.measurements.approval.state !== snapshot.measurementSet.approval.state) {
-      mismatches.push({
-        path: 'measurementSet.approval.state',
-        field: 'approval.state',
-        baselineValue: snapshot.measurementSet.approval.state,
-        currentValue: current.measurements.approval.state,
-        severity: 'advisory',
-        description: `Measurement approval state changed from '${snapshot.measurementSet.approval.state}' to '${current.measurements.approval.state}'.`
-      });
     }
   }
 
@@ -688,17 +941,28 @@ export function compareRevisionInputs(
         baselineValue: snapshot.fabricSpecification.fabricId,
         currentValue: current.fabric.id,
         severity: 'breaking',
-        description: `Fabric changed from '${snapshot.fabricSpecification.fabricId}' (${snapshot.fabricSpecification.name}) to '${current.fabric.id}'.`
+        description: `Fabric ID changed from '${snapshot.fabricSpecification.fabricId}' to '${current.fabric.id}'.`
       });
     }
-    if (current.fabric.stretch && current.fabric.stretch !== snapshot.fabricSpecification.stretch) {
+    const enhanced = current.fabric as EnhancedFabricProperty;
+    if (enhanced.gsm && snapshot.fabricSpecification.gsm && Math.abs(enhanced.gsm - snapshot.fabricSpecification.gsm) > 1.0) {
       mismatches.push({
-        path: 'fabricSpecification.stretch',
-        field: 'stretch',
-        baselineValue: snapshot.fabricSpecification.stretch,
-        currentValue: current.fabric.stretch,
+        path: 'fabricSpecification.gsm',
+        field: 'gsm',
+        baselineValue: snapshot.fabricSpecification.gsm,
+        currentValue: enhanced.gsm,
         severity: 'breaking',
-        description: `Fabric stretch category changed from '${snapshot.fabricSpecification.stretch}' to '${current.fabric.stretch}'.`
+        description: `Fabric GSM changed from ${snapshot.fabricSpecification.gsm} to ${enhanced.gsm}.`
+      });
+    }
+    if (enhanced.revision && snapshot.fabricSpecification.fabricRevision && enhanced.revision !== snapshot.fabricSpecification.fabricRevision) {
+      mismatches.push({
+        path: 'fabricSpecification.fabricRevision',
+        field: 'fabricRevision',
+        baselineValue: snapshot.fabricSpecification.fabricRevision,
+        currentValue: enhanced.revision,
+        severity: 'breaking',
+        description: `Fabric revision changed from '${snapshot.fabricSpecification.fabricRevision}' to '${enhanced.revision}'.`
       });
     }
   }
@@ -706,7 +970,17 @@ export function compareRevisionInputs(
   // 5. Drafting Configuration
   if (current.draftingConfiguration) {
     const dc = current.draftingConfiguration;
-    if (dc.seamAllowanceCm !== undefined && dc.seamAllowanceCm !== snapshot.draftingConfiguration.seamAllowanceCm) {
+    if (dc.dartStyle && dc.dartStyle !== snapshot.draftingConfiguration.dartStyle) {
+      mismatches.push({
+        path: 'draftingConfiguration.dartStyle',
+        field: 'dartStyle',
+        baselineValue: snapshot.draftingConfiguration.dartStyle,
+        currentValue: dc.dartStyle,
+        severity: 'breaking',
+        description: `Drafting dart style changed from '${snapshot.draftingConfiguration.dartStyle}' to '${dc.dartStyle}'.`
+      });
+    }
+    if (dc.seamAllowanceCm !== undefined && Math.abs(dc.seamAllowanceCm - snapshot.draftingConfiguration.seamAllowanceCm) > 0.01) {
       mismatches.push({
         path: 'draftingConfiguration.seamAllowanceCm',
         field: 'seamAllowanceCm',
@@ -718,7 +992,7 @@ export function compareRevisionInputs(
     }
   }
 
-  // 6. Pattern Pieces Geometry
+  // 6. Pattern Pieces
   if (current.patternPieces) {
     if (current.patternPieces.length !== snapshot.patternPieces.length) {
       mismatches.push({
@@ -730,38 +1004,23 @@ export function compareRevisionInputs(
         description: `Pattern piece count changed from ${snapshot.patternPieces.length} to ${current.patternPieces.length}.`
       });
     } else {
-      for (const curPiece of current.patternPieces) {
-        const snapPiece = snapshot.patternPieces.find(p => p.id === curPiece.id || p.pieceCode === curPiece.pieceCode);
-        if (!snapPiece) {
+      const snapPieceCodes = new Set(snapshot.patternPieces.map(p => p.pieceCode));
+      for (const cp of current.patternPieces) {
+        if (!snapPieceCodes.has(cp.pieceCode)) {
           mismatches.push({
-            path: `patternPieces[${curPiece.pieceCode}]`,
+            path: `patternPieces.${cp.pieceCode}`,
             field: 'pieceCode',
             baselineValue: undefined,
-            currentValue: curPiece.pieceCode,
+            currentValue: cp.pieceCode,
             severity: 'breaking',
-            description: `Pattern piece '${curPiece.pieceCode}' (${curPiece.name}) does not exist in baseline snapshot.`
+            description: `Piece code '${cp.pieceCode}' not present in baseline snapshot.`
           });
-        } else {
-          // Compare bounding box
-          if (
-            Math.abs(curPiece.boundingBox.widthCm - snapPiece.boundingBox.widthCm) > 0.1 ||
-            Math.abs(curPiece.boundingBox.heightCm - snapPiece.boundingBox.heightCm) > 0.1
-          ) {
-            mismatches.push({
-              path: `patternPieces[${curPiece.pieceCode}].boundingBox`,
-              field: 'boundingBox',
-              baselineValue: `${snapPiece.boundingBox.widthCm}x${snapPiece.boundingBox.heightCm} cm`,
-              currentValue: `${curPiece.boundingBox.widthCm}x${curPiece.boundingBox.heightCm} cm`,
-              severity: 'breaking',
-              description: `Dimensions of piece '${curPiece.pieceCode}' changed from ${snapPiece.boundingBox.widthCm}x${snapPiece.boundingBox.heightCm} cm to ${curPiece.boundingBox.widthCm}x${curPiece.boundingBox.heightCm} cm.`
-            });
-          }
         }
       }
     }
   }
 
-  // 7. Engine Provenance
+  // 7. Engine Version
   if (current.engineVersion && current.engineVersion !== snapshot.engineProvenance.engineVersion) {
     mismatches.push({
       path: 'engineProvenance.engineVersion',
@@ -785,14 +1044,11 @@ export function compareRevisionInputs(
 }
 
 /**
- * Compares two revision snapshots for exact engineering equivalence.
+ * Checks whether two revisions are content-equivalent by comparing their canonical fingerprints.
  */
 export function arePatternRevisionsEquivalent(
   a: ProductionPatternRevisionSnapshot,
   b: ProductionPatternRevisionSnapshot
 ): boolean {
-  if (a.canonicalFingerprint && b.canonicalFingerprint) {
-    return a.canonicalFingerprint === b.canonicalFingerprint;
-  }
-  return canonicalizeJson(a) === canonicalizeJson(b);
+  return a.canonicalFingerprint === b.canonicalFingerprint;
 }
