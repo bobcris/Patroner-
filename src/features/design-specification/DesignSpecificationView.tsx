@@ -10,6 +10,8 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { CheckCircle2, ShieldCheck, ArrowRight, Plus, Trash2, Edit3, Compass, Scissors } from 'lucide-react';
 
+import { computeSpecificationFingerprint } from '../../engine/production';
+
 interface DesignSpecificationViewProps {
   spec: DesignSpecification;
   onUpdateSpec: (updated: DesignSpecification) => void;
@@ -30,17 +32,74 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
 
   const toggleApproval = () => {
     const willBeApproved = !spec.isApproved;
+    const now = new Date().toISOString();
+    const specRevId = willBeApproved
+      ? (spec.specificationRevisionId ?? `spec-${spec.id}-v${spec.version}`)
+      : `spec-${spec.id}-v${spec.version + 1}`;
+
+    if (willBeApproved) {
+      const updatedSpec: DesignSpecification = {
+        ...spec,
+        isApproved: true,
+        approvalState: 'approved',
+        approvalAuthorityTier: 'unauthenticated_local_session',
+        approvedAt: now,
+        approvedBy: 'Local Atelier Operator',
+        approvalProvenance: 'unauthenticated-local-approval',
+        specificationRevisionId: specRevId
+      };
+      const fp = computeSpecificationFingerprint(updatedSpec);
+      updatedSpec.approvalRecord = {
+        approverId: 'approver-local-session',
+        approverName: 'Local Atelier Operator',
+        authorityTier: 'unauthenticated_local_session',
+        approvedAt: now,
+        targetRevisionId: specRevId,
+        targetSpecificationFingerprint: fp,
+        notes: 'Unauthenticated local session approval for CAD simulation'
+      };
+      onUpdateSpec(updatedSpec);
+    } else {
+      onUpdateSpec({
+        ...spec,
+        isApproved: false,
+        approvalState: 'revoked',
+        approvalAuthorityTier: undefined,
+        approvedAt: undefined,
+        approvedBy: undefined,
+        approvalRecord: spec.approvalRecord ? {
+          ...spec.approvalRecord,
+          revocationReason: 'Revoked by user in Design Specification'
+        } : undefined,
+        approvalProvenance: 'designer-edited',
+        version: spec.version + 1,
+        parentRevisionId: spec.specificationRevisionId,
+        specificationRevisionId: specRevId
+      });
+    }
+  };
+
+  const handleLengthChange = (newLengthCm: number) => {
+    if (newLengthCm <= 30 || newLengthCm >= 150) return;
+    const nextVersion = spec.version + 1;
+    const nextRevId = `spec-${spec.id}-v${nextVersion}`;
     onUpdateSpec({
       ...spec,
-      isApproved: willBeApproved,
-      approvedAt: willBeApproved ? new Date().toISOString() : undefined,
-      approvedBy: willBeApproved ? 'Head of Atelier' : undefined,
-      approvalProvenance: willBeApproved ? 'designer-approved' : 'designer-edited',
-      version: willBeApproved ? spec.version : spec.version + 1,
-      parentRevisionId: willBeApproved ? spec.parentRevisionId : spec.specificationRevisionId,
-      specificationRevisionId: willBeApproved
-        ? (spec.specificationRevisionId ?? `spec-${spec.id}-v${spec.version}`)
-        : `spec-${spec.id}-v${spec.version + 1}`
+      lengthCm: newLengthCm,
+      targetFinishedDimensions: {
+        ...spec.targetFinishedDimensions,
+        length: newLengthCm
+      },
+      version: nextVersion,
+      parentRevisionId: spec.specificationRevisionId,
+      specificationRevisionId: nextRevId,
+      isApproved: false,
+      approvalState: 'draft',
+      approvalAuthorityTier: undefined,
+      approvalRecord: undefined,
+      approvedBy: undefined,
+      approvedAt: undefined,
+      approvalProvenance: 'designer-edited'
     });
   };
 
@@ -54,6 +113,9 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
       parentRevisionId: spec.specificationRevisionId,
       specificationRevisionId: `spec-${spec.id}-v${nextVersion}`,
       isApproved: false,
+      approvalState: 'draft',
+      approvalAuthorityTier: undefined,
+      approvalRecord: undefined,
       approvedBy: undefined,
       approvedAt: undefined,
       approvalProvenance: 'designer-edited'
@@ -126,27 +188,52 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
         </div>
 
         {/* Approval Toggle */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
           {spec.isApproved ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-mono text-emerald-800 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                APPROVED FOR PATTERN DRAFTING
+                <span>APPROVED FOR PATTERN DRAFTING</span>
+                <span className="text-[10px] text-emerald-600 border-l border-emerald-300 pl-1.5">
+                  {spec.approvalAuthorityTier === 'demonstration_fixture'
+                    ? 'Demonstration Fixture'
+                    : 'Local Unauthenticated Session'}
+                </span>
               </span>
               <Button variant="outline" size="sm" onClick={toggleApproval}>
                 Revoke Approval
               </Button>
             </div>
+          ) : spec.approvalState === 'revoked' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-mono text-rose-800 bg-rose-50 border border-rose-300 px-3 py-1.5 rounded flex items-center gap-1.5">
+                <span>APPROVAL REVOKED</span>
+              </span>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={toggleApproval}
+                icon={<ShieldCheck className="w-4 h-4" />}
+                className="font-mono text-xs uppercase tracking-wider"
+              >
+                Re-Approve (Local Session)
+              </Button>
+            </div>
           ) : (
-            <Button
-              variant="primary"
-              size="md"
-              onClick={toggleApproval}
-              icon={<ShieldCheck className="w-4 h-4" />}
-              className="font-mono text-xs uppercase tracking-wider"
-            >
-              Approve Specification &amp; Lock Geometry
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-mono text-amber-800 bg-amber-50 border border-amber-300 px-3 py-1.5 rounded flex items-center gap-1.5">
+                <span>DRAFT SPECIFICATION</span>
+              </span>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={toggleApproval}
+                icon={<ShieldCheck className="w-4 h-4" />}
+                className="font-mono text-xs uppercase tracking-wider"
+              >
+                Approve Specification (Local Session)
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -178,8 +265,45 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
             </div>
 
             <div>
-              <span className="text-neutral-400 font-mono uppercase block text-[10px]">TARGET FINISHED LENGTH</span>
-              <span className="font-semibold text-neutral-900 font-mono text-sm">{spec.lengthCm} cm</span>
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-400 font-mono uppercase block text-[10px]">TARGET FINISHED LENGTH</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleLengthChange(64)}
+                    className={`px-2 py-0.5 text-[10px] font-mono rounded border cursor-pointer ${
+                      spec.lengthCm === 64
+                        ? 'bg-neutral-900 text-white border-neutral-900 font-bold'
+                        : 'bg-neutral-100 hover:bg-neutral-200 border-neutral-300 text-neutral-700'
+                    }`}
+                  >
+                    64 cm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleLengthChange(68)}
+                    className={`px-2 py-0.5 text-[10px] font-mono rounded border cursor-pointer ${
+                      spec.lengthCm === 68
+                        ? 'bg-neutral-900 text-white border-neutral-900 font-bold'
+                        : 'bg-neutral-100 hover:bg-neutral-200 border-neutral-300 text-neutral-700'
+                    }`}
+                  >
+                    68 cm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleLengthChange(72)}
+                    className={`px-2 py-0.5 text-[10px] font-mono rounded border cursor-pointer ${
+                      spec.lengthCm === 72
+                        ? 'bg-neutral-900 text-white border-neutral-900 font-bold'
+                        : 'bg-neutral-100 hover:bg-neutral-200 border-neutral-300 text-neutral-700'
+                    }`}
+                  >
+                    72 cm
+                  </button>
+                </div>
+              </div>
+              <span className="font-semibold text-neutral-900 font-mono text-base block mt-0.5">{spec.lengthCm} cm</span>
               <span className="text-[10px] text-neutral-500 block">Measured from natural waistline to hem fold</span>
             </div>
 

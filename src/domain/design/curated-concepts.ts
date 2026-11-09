@@ -22,9 +22,11 @@ export const INITIAL_CONCEPTS: DesignSpecification[] = [
     lengthCm: 68,
     specificationRevisionId: 'spec-skirt-01-rev1',
     isApproved: true,
+    approvalState: 'approved',
+    approvalAuthorityTier: 'demonstration_fixture',
     approvedBy: 'Head of Atelier',
     approvedAt: '2026-10-31T12:00:00Z',
-    approvalProvenance: 'designer-approved',
+    approvalProvenance: 'demonstration-fixture',
     version: 1,
     explicitEaseCm: {
       waist: 6.0,
@@ -107,6 +109,7 @@ export const INITIAL_CONCEPTS: DesignSpecification[] = [
       'Back zipper with self-fabric facing.'
     ],
     isApproved: false,
+    approvalState: 'draft',
     version: 1,
     aiEstimates: {
       suggestedSilhouette: 'A-Line Swing',
@@ -158,7 +161,11 @@ export const INITIAL_CONCEPTS: DesignSpecification[] = [
       'Side seam lengths and shoulder seam lengths between Front and Back match within 0.05cm.'
     ],
     isApproved: true,
+    approvalState: 'approved',
+    approvalAuthorityTier: 'demonstration_fixture',
+    approvedBy: 'Head of Atelier',
     approvedAt: '2026-11-01T12:00:00Z',
+    approvalProvenance: 'demonstration-fixture',
     version: 1,
     aiEstimates: {
       suggestedSilhouette: 'Tailored Structured Bodice Sloper',

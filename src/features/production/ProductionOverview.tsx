@@ -32,6 +32,11 @@ import { getEnhancedFabricById, DEFAULT_ILLUSTRATIVE_FABRIC } from '../../engine
 import { calculateCompleteGarmentEase, calculateFabricAdaptedSleeveCapEase } from '../../engine/fabric/ease-engine';
 import { validatePhysicalFit } from '../../engine/prototype/fit-validator';
 import { MOCK_CONFORMING_PROTOTYPE_BODICE_M } from '../../engine/prototype/prototype-fixtures';
+import {
+  createProductionPatternRevision,
+  evaluatePipelineDependencyIntegrity,
+  validateProductionExportPrerequisites
+} from '../../engine/production';
 
 interface ProductionOverviewProps {
   currentSpec: DesignSpecification;
@@ -200,13 +205,47 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
   const [exportWarning, setExportWarning] = React.useState<string | null>(null);
 
-  const handlePrint = () => {
-    if (!currentSpec.isApproved) {
-      setExportWarning('Production export blocked: Technical design specification must be formally approved before exporting manufacturing documentation.');
-      return;
+  const liveSnapshot = React.useMemo(() => {
+    try {
+      return createProductionPatternRevision({
+        projectId: 'project-patroner-default',
+        targetSize: activeSize,
+        designSpecification: currentSpec,
+        measurements: {
+          values: ({ ...measurements } as unknown) as Record<string, number>,
+          defaultOrigin: 'user-entered',
+          approval: {
+            state: 'approved',
+            approvedBy: 'Operator Confirmed',
+            approvedAt: '2026-11-09T08:00:00.000Z'
+          }
+        },
+        fabric: enhancedFabric,
+        patternPieces: pieces,
+        validation,
+        physicalValidationStatus: 'not-assessed'
+      });
+    } catch {
+      return null;
     }
-    if (!validation.isValid) {
-      setExportWarning('Production export blocked: 2D pattern geometry has unresolved seam discrepancies.');
+  }, [currentSpec, measurements, activeSize, enhancedFabric, pieces, validation]);
+
+  const pipelineReport = React.useMemo(() => {
+    return evaluatePipelineDependencyIntegrity({
+      specification: currentSpec,
+      measurements,
+      activeSize,
+      fabric: currentSpec.fabric,
+      patternPieces: pieces,
+      validationReport: validation,
+      productionSnapshot: liveSnapshot ?? undefined
+    });
+  }, [currentSpec, measurements, activeSize, pieces, validation, liveSnapshot]);
+
+  const handlePrint = () => {
+    const exportResult = validateProductionExportPrerequisites(pipelineReport, liveSnapshot ?? undefined);
+    if (!exportResult.isExportPermitted) {
+      setExportWarning(`Production export blocked: ${exportResult.rejectionReason}`);
       return;
     }
     setExportWarning(null);

@@ -24,7 +24,43 @@ export type SpecificationValueProvenance =
   | 'designer-edited'
   | 'designer-approved'
   | 'system-derived'
+  | 'unauthenticated-local-approval'
+  | 'demonstration-fixture'
   | 'unknown';
+
+/**
+ * Formal approval lifecycle state of an engineering specification revision.
+ */
+export type SpecificationApprovalState =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'revoked'
+  | 'superseded'
+  | 'invalid';
+
+/**
+ * Authority classification for specification approval.
+ * Prevents unauthenticated local or demo approval from masquerading as verified organizational sign-off.
+ */
+export type ApprovalAuthorityTier =
+  | 'unauthenticated_local_session'
+  | 'demonstration_fixture'
+  | 'cryptographic_principal';
+
+/**
+ * Immutable cryptographic approval record binding an approver to an exact specification fingerprint.
+ */
+export interface SpecificationApprovalRecord {
+  readonly approverId: string;
+  readonly approverName: string;
+  readonly authorityTier: ApprovalAuthorityTier;
+  readonly approvedAt: string; // ISO 8601
+  readonly targetRevisionId: string;
+  readonly targetSpecificationFingerprint: string;
+  readonly revocationReason?: string;
+  readonly notes?: string;
+}
 
 /**
  * Explicit target finished garment dimensions specified by designer or system.
@@ -93,6 +129,9 @@ export interface AuthoritativeGarmentSpecification {
   readonly constructionFeatures: readonly GarmentConstructionFeature[];
   readonly designNotes: readonly string[];
   readonly isApproved: boolean;
+  readonly approvalState: SpecificationApprovalState;
+  readonly approvalAuthorityTier?: ApprovalAuthorityTier;
+  readonly approvalRecord?: SpecificationApprovalRecord;
   readonly approvedBy?: string;
   readonly approvedAt?: string; // ISO 8601 date string
   readonly approvalProvenance: SpecificationValueProvenance;
@@ -138,6 +177,9 @@ export interface CreateAuthoritativeSpecificationInput {
   readonly constructionFeatures?: readonly GarmentConstructionFeature[];
   readonly designNotes?: readonly string[];
   readonly isApproved?: boolean;
+  readonly approvalState?: SpecificationApprovalState;
+  readonly approvalAuthorityTier?: ApprovalAuthorityTier;
+  readonly approvalRecord?: SpecificationApprovalRecord;
   readonly approvedBy?: string;
   readonly approvedAt?: string;
   readonly approvalProvenance?: SpecificationValueProvenance;

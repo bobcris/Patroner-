@@ -95,24 +95,46 @@ export interface DesignSpecification {
   version: number;
   specificationRevisionId?: string;
   parentRevisionId?: string;
+  projectId?: string;
+  fabricRevision?: string;
+  fabricProvenance?: 'supplier-declared' | 'laboratory-tested' | 'user-entered' | 'project-default' | 'unknown' | 'unverified';
   approvedBy?: string;
-  approvalProvenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown';
+  approvalState?: 'draft' | 'pending_approval' | 'approved' | 'revoked' | 'superseded' | 'invalid';
+  approvalAuthorityTier?: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+  approvalRecord?: {
+    approverId: string;
+    approverName: string;
+    authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+    approvedAt: string;
+    targetRevisionId: string;
+    targetSpecificationFingerprint: string;
+    revocationReason?: string;
+    notes?: string;
+  };
+  approvalProvenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown' | 'unauthenticated-local-approval' | 'demonstration-fixture';
   explicitEaseCm?: {
     waist?: number;
     hip?: number;
     bust?: number;
     biceps?: number;
     wrist?: number;
+    neck?: number;
   };
   targetFinishedDimensions?: {
     waist?: number;
     hip?: number;
     bust?: number;
     length?: number;
+    chest?: number;
+    acrossBack?: number;
+    bicep?: number;
+    wrist?: number;
   };
   seamAllowanceCm?: number;
   hemAllowanceCm?: number;
   waistAllowanceCm?: number;
+  neckAllowanceCm?: number;
+  armholeAllowanceCm?: number;
   /**
    * Clearly separated AI-inferred proposals before human validation
    */
