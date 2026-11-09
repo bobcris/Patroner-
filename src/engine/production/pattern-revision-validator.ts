@@ -466,8 +466,7 @@ export function validateProductionPatternRevision(
     errors.push(
       `Invalid canonicalFingerprint '${s.canonicalFingerprint}'. Must be a 64-character lowercase hexadecimal SHA-256 string.`
     );
-  } else if (errors.length === 0) {
-    // Only recompute fingerprint if all prerequisite structures are valid
+  } else {
     try {
       const computedFingerprint = computeCanonicalRevisionFingerprint(s as ProductionPatternRevisionSnapshot);
       if (s.canonicalFingerprint !== computedFingerprint) {

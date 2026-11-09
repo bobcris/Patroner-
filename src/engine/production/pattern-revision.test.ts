@@ -8,7 +8,10 @@ import assert from 'node:assert/strict';
 
 import {
   arePatternRevisionsEquivalent,
+  canonicalizeJson,
   compareRevisionInputs,
+  computeCanonicalFingerprint,
+  computeCanonicalRevisionFingerprint,
   createDesignSpecificationSnapshot,
   createFabricSpecificationSnapshot,
   createMeasurementSetSnapshot,
@@ -24,11 +27,18 @@ import {
   CreateProductionPatternRevisionInput,
   PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION,
   ProductionPatternRevisionSnapshot,
-  ProductionPatternSnapshotSchemaVersion
+  ProductionPatternSnapshotSchemaVersion,
+  ProductionSnapshotError,
+  ProductionSnapshotFabricError,
+  ProductionSnapshotGeometryError,
+  ProductionSnapshotMeasurementError,
+  ProductionSnapshotValidationError
 } from './production-types';
+import { sha256Hex } from './crypto';
 import {
   BodyMeasurements,
   DesignSpecification,
+  FabricProperty,
   PatternPiece,
   ValidationReport
 } from '../../types';
@@ -683,4 +693,307 @@ describe('Milestone 04.6.1: Authoritative Pattern Snapshot & Revision Integrity'
       assert.equal(arePatternRevisionsEquivalent(snap1, snap2), true);
     });
   });
+
+  describe('7. Milestone 04.6.1.1: Production Snapshot Integrity Hardening', () => {
+    it('h-1. defaults missing measurement provenance strictly to unknown', () => {
+      const measSnap = createMeasurementSetSnapshot({ waist: 68 });
+      assert.equal(measSnap.defaultOrigin, 'unknown');
+      assert.notEqual(measSnap.defaultOrigin, 'user-entered');
+    });
+
+    it('h-2. rejects empty measurement names, non-finite, zero, or negative values', () => {
+      assert.throws(() => {
+        createMeasurementSetSnapshot({ '   ': 68 });
+      }, ProductionSnapshotMeasurementError);
+
+      assert.throws(() => {
+        createMeasurementSetSnapshot({ waist: 0 });
+      }, ProductionSnapshotMeasurementError);
+
+      assert.throws(() => {
+        createMeasurementSetSnapshot({ waist: -10 });
+      }, ProductionSnapshotMeasurementError);
+
+      assert.throws(() => {
+        createMeasurementSetSnapshot({ waist: NaN });
+      }, ProductionSnapshotMeasurementError);
+    });
+
+    it('h-3. strictly enforces AI approval boundary and requires valid approver and ISO timestamp', () => {
+      // AI origin with approved state but missing metadata reverts to pending
+      const aiPending = createMeasurementSetSnapshot(
+        { waist: 68 },
+        { defaultOrigin: 'ai-estimated', approval: { state: 'approved' } }
+      );
+      assert.equal(aiPending.approval.state, 'pending');
+
+      // AI origin with full metadata succeeds
+      const aiApproved = createMeasurementSetSnapshot(
+        { waist: 68 },
+        {
+          defaultOrigin: 'ai-estimated',
+          approval: {
+            state: 'approved',
+            approvedBy: 'Senior Cutter',
+            approvedAt: '2026-11-08T12:00:00.000Z'
+          }
+        }
+      );
+      assert.equal(aiApproved.approval.state, 'approved');
+
+      // Invalid ISO timestamp throws
+      assert.throws(() => {
+        createMeasurementSetSnapshot(
+          { waist: 68 },
+          {
+            defaultOrigin: 'user-entered',
+            approval: {
+              state: 'approved',
+              approvedBy: 'Tailor',
+              approvedAt: 'not-a-valid-date'
+            }
+          }
+        );
+      }, ProductionSnapshotMeasurementError);
+    });
+
+    it('h-4. preserves fabric provenance without converting unknown into project-default', () => {
+      const unverifiedFabric: FabricProperty = {
+        id: 'mystery-crepe',
+        name: 'Mystery Crepe',
+        composition: 'Unknown blend',
+        weight: 'medium',
+        stretch: 'none',
+        recommendedEaseCm: { waist: 2, hip: 3 },
+        drapeDescription: 'Flowing drape'
+      };
+      const snap = createFabricSpecificationSnapshot(unverifiedFabric);
+      assert.equal(snap.provenance, 'unknown');
+      assert.notEqual(snap.provenance, 'project-default');
+    });
+
+    it('h-5. preserves property-level provenance from EnhancedFabricProperty without fabricating laboratory verification', () => {
+      const enhancedFabricWithProvenance = {
+        ...testFabric,
+        provenance: 'laboratory-tested' as const,
+        isVerified: true,
+        testStandard: 'ISO 5077 / ISO 3759 (Dimensional Stability / Shrinkage)',
+        propertyProvenance: {
+          gsm: {
+            value: 240,
+            unit: 'g/m²',
+            sourceType: 'laboratory-measured' as const,
+            verificationStatus: 'verified' as const,
+            testStandard: 'ISO 3801'
+          }
+        }
+      };
+      const snap = createFabricSpecificationSnapshot(enhancedFabricWithProvenance);
+      assert.equal(snap.provenance, 'laboratory-tested');
+      assert.equal(snap.isVerified, true);
+      assert.ok(snap.propertyProvenance);
+      assert.equal(snap.propertyProvenance.gsm?.value, 240);
+      assert.equal(snap.propertyProvenance.gsm?.verificationStatus, 'verified');
+    });
+
+    it('h-6. preserves exact finite coordinates without silent rounding', () => {
+      const exactX = 12.3456789123;
+      const exactY = 45.6789123456;
+      const line = new LineSegment('precise-line', { x: exactX, y: exactY }, { x: 100.123456, y: 200.654321 });
+      const snap = serializeGeometricSegmentSnapshot(line);
+
+      assert.equal(snap.start.x, exactX);
+      assert.equal(snap.start.y, exactY);
+    });
+
+    it('h-7. rejects non-finite Bézier control points during serialization', () => {
+      const badBezier = new CubicBezierCurve(
+        'bad-bezier',
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: NaN, y: 10 },
+        { x: 20, y: 0 }
+      );
+      assert.throws(() => {
+        serializeGeometricSegmentSnapshot(badBezier);
+      }, ProductionSnapshotGeometryError);
+
+      const validBezier = new CubicBezierCurve(
+        'curve-test',
+        { x: 0, y: 0 },
+        { x: 10, y: 10 },
+        { x: 20, y: 10 },
+        { x: 30, y: 0 }
+      );
+      const snap = serializeGeometricSegmentSnapshot(validBezier);
+      assert.equal(snap.controlPoints?.[0].x, 10);
+      assert.equal(snap.controlPoints?.[1].x, 20);
+    });
+
+    it('h-8. detects fingerprint mismatch after geometry mutation', () => {
+      const snap = createProductionPatternRevision(createValidTestSnapshotInput());
+      assert.equal(validateProductionPatternRevision(snap).isValid, true);
+
+      // Tamper with first piece geometry
+      const tamperedPieces = snap.patternPieces.map((p, idx) => {
+        if (idx === 0 && p.stitchingContour) {
+          const firstSeg = p.stitchingContour.segments[0];
+          const mutatedSeg = { ...firstSeg, start: { x: firstSeg.start.x + 10.0, y: firstSeg.start.y } };
+          return {
+            ...p,
+            stitchingContour: {
+              ...p.stitchingContour,
+              segments: [mutatedSeg, ...p.stitchingContour.segments.slice(1)]
+            }
+          };
+        }
+        return p;
+      });
+
+      const tamperedSnap = { ...snap, patternPieces: tamperedPieces };
+      const val = validateProductionPatternRevision(tamperedSnap);
+      assert.equal(val.isValid, false);
+      assert.ok(val.errors.some(e => e.includes('Canonical fingerprint mismatch')));
+    });
+
+    it('h-9. detects fingerprint mismatch after measurement mutation', () => {
+      const snap = createProductionPatternRevision(createValidTestSnapshotInput());
+      const tamperedSnap = {
+        ...snap,
+        measurementSet: {
+          ...snap.measurementSet,
+          values: { ...snap.measurementSet.values, waist: snap.measurementSet.values.waist + 4.0 }
+        }
+      };
+      const val = validateProductionPatternRevision(tamperedSnap);
+      assert.equal(val.isValid, false);
+      assert.ok(val.errors.some(e => e.includes('Canonical fingerprint mismatch')));
+    });
+
+    it('h-10. detects fingerprint mismatch after fabric mutation', () => {
+      const snap = createProductionPatternRevision(createValidTestSnapshotInput());
+      const tamperedSnap = {
+        ...snap,
+        fabricSpecification: {
+          ...snap.fabricSpecification,
+          gsm: (snap.fabricSpecification.gsm ?? 200) + 50
+        }
+      };
+      const val = validateProductionPatternRevision(tamperedSnap);
+      assert.equal(val.isValid, false);
+      assert.ok(val.errors.some(e => e.includes('Canonical fingerprint mismatch')));
+    });
+
+    it('h-11. detects fingerprint mismatch after approval-state mutation', () => {
+      const snap = createProductionPatternRevision(createValidTestSnapshotInput());
+      const tamperedSnap = {
+        ...snap,
+        approvalState: {
+          ...snap.approvalState,
+          designApproval: 'rejected' as const
+        }
+      };
+      const val = validateProductionPatternRevision(tamperedSnap);
+      assert.equal(val.isValid, false);
+      assert.ok(val.errors.some(e => e.includes('Canonical fingerprint mismatch')));
+    });
+
+    it('h-12. detects fingerprint mismatch after validation-state mutation', () => {
+      const snap = createProductionPatternRevision(createValidTestSnapshotInput());
+      const tamperedSnap = {
+        ...snap,
+        validation: {
+          ...snap.validation,
+          isValid: false,
+          status: 'invalid' as const
+        }
+      };
+      const val = validateProductionPatternRevision(tamperedSnap);
+      assert.equal(val.isValid, false);
+      assert.ok(val.errors.some(e => e.includes('Canonical fingerprint mismatch')));
+    });
+
+    it('h-13. rejects invalid fingerprint encodings (uppercase, non-hex, wrong length)', () => {
+      const snap = createProductionPatternRevision(createValidTestSnapshotInput());
+
+      const uppercaseSnap = { ...snap, canonicalFingerprint: snap.canonicalFingerprint.toUpperCase() };
+      const valUpper = validateProductionPatternRevision(uppercaseSnap);
+      assert.equal(valUpper.isValid, false);
+      assert.ok(valUpper.errors.some(e => e.includes('Invalid canonicalFingerprint')));
+
+      const shortSnap = { ...snap, canonicalFingerprint: 'abcd1234' };
+      const valShort = validateProductionPatternRevision(shortSnap);
+      assert.equal(valShort.isValid, false);
+
+      const nonHexSnap = { ...snap, canonicalFingerprint: 'z'.repeat(64) };
+      const valNonHex = validateProductionPatternRevision(nonHexSnap);
+      assert.equal(valNonHex.isValid, false);
+    });
+
+    it('h-14. rejects invalid contour metadata (loop gaps exceeding tolerance)', () => {
+      const snap = createProductionPatternRevision(createValidTestSnapshotInput());
+      const brokenPiece = {
+        ...snap.patternPieces[0],
+        stitchingContour: {
+          ...snap.patternPieces[0].stitchingContour!,
+          segments: [
+            ...snap.patternPieces[0].stitchingContour!.segments.slice(0, -1),
+            // Disconnect last segment end
+            {
+              ...snap.patternPieces[0].stitchingContour!.segments[snap.patternPieces[0].stitchingContour!.segments.length - 1],
+              end: { x: 999.0, y: 999.0 }
+            }
+          ]
+        }
+      };
+
+      const brokenSnap = { ...snap, patternPieces: [brokenPiece, snap.patternPieces[1]] };
+      const val = validateProductionPatternRevision(brokenSnap);
+      assert.equal(val.isValid, false);
+      assert.ok(val.errors.some(e => e.includes('loop closure gap') || e.includes('disconnected')));
+    });
+
+    it('h-15. guarantees order-independent stable canonicalization without number truncation', () => {
+      const objA = { z: 12.34567, a: 'hello', m: [3, 2, 1] };
+      const objB = { a: 'hello', m: [3, 2, 1], z: 12.34567 };
+
+      const canonA = canonicalizeJson(objA);
+      const canonB = canonicalizeJson(objB);
+
+      assert.equal(canonA, canonB);
+      assert.equal(canonA, '{"a":"hello","m":[3,2,1],"z":12.34567}');
+    });
+
+    it('h-16. executes browser-compatible sha256Hex matching NIST standard vectors without node:crypto', () => {
+      // NIST test vectors
+      assert.equal(
+        sha256Hex(''),
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+      );
+      assert.equal(
+        sha256Hex('abc'),
+        'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+      );
+    });
+
+    it('h-17. guarantees reproducible revision identity: equivalent content yields identical fingerprint across IDs and timestamps', () => {
+      const inputA = createValidTestSnapshotInput({
+        revisionId: 'rev-atelier-alpha',
+        createdAt: '2026-11-01T00:00:00.000Z',
+        createdBy: 'Alice'
+      });
+      const inputB = createValidTestSnapshotInput({
+        revisionId: 'rev-atelier-beta',
+        createdAt: '2026-11-08T23:59:59.000Z',
+        createdBy: 'Bob'
+      });
+
+      const snapA = createProductionPatternRevision(inputA);
+      const snapB = createProductionPatternRevision(inputB);
+
+      assert.equal(snapA.canonicalFingerprint, snapB.canonicalFingerprint);
+      assert.equal(arePatternRevisionsEquivalent(snapA, snapB), true);
+    });
+  });
 });
+

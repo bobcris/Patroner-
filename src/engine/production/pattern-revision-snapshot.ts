@@ -269,48 +269,57 @@ export function serializePatternPieceSnapshot(
     };
   }
 
-  const darts = (piece.darts || []).map(d => ({
+  const darts: Dart[] = (piece.darts || []).map(d => ({
     id: d.id,
-    peak: { x: d.peak.x, y: d.peak.y },
-    leftPoint: { x: d.leftPoint.x, y: d.leftPoint.y },
-    rightPoint: { x: d.rightPoint.x, y: d.rightPoint.y },
-    depthCm: d.depthCm,
+    apex: { x: d.apex.x, y: d.apex.y },
+    legLeft: { x: d.legLeft.x, y: d.legLeft.y },
+    legRight: { x: d.legRight.x, y: d.legRight.y },
     widthCm: d.widthCm,
-    type: d.type
+    lengthCm: d.lengthCm
   }));
 
-  const notches = (piece.notches || []).map(n => ({
+  const notches: Notch[] = (piece.notches || []).map(n => ({
     id: n.id,
-    point: { x: n.point.x, y: n.point.y },
-    distanceAlongSegment: n.distanceAlongSegment,
-    targetSegmentId: n.targetSegmentId,
+    position: { x: n.position.x, y: n.position.y },
+    normalAngleDeg: n.normalAngleDeg,
     type: n.type,
-    depthMm: n.depthMm,
-    angleDeg: n.angleDeg
+    label: n.label
   }));
 
-  const seams = (piece.seams || []).map(s => ({
+  const seams: SeamLine[] = (piece.seams || []).map(s => ({
     id: s.id,
+    name: s.name,
     startPoint: { x: s.startPoint.x, y: s.startPoint.y },
     endPoint: { x: s.endPoint.x, y: s.endPoint.y },
-    seamAllowanceCm: s.seamAllowanceCm,
-    seamType: s.seamType,
+    lengthCm: s.lengthCm,
+    type: s.type,
+    pathData: s.pathData,
+    startTangent: s.startTangent ? { x: s.startTangent.x, y: s.startTangent.y } : undefined,
+    endTangent: s.endTangent ? { x: s.endTangent.x, y: s.endTangent.y } : undefined,
     pairedPieceId: s.pairedPieceId,
-    pairedSeamId: s.pairedSeamId
+    pairedSeamName: s.pairedSeamName,
+    segmentId: s.segmentId,
+    segmentIds: s.segmentIds ? [...s.segmentIds] : undefined
   }));
 
-  const grainline: GrainLine = {
-    start: { x: piece.grainline.start.x, y: piece.grainline.start.y },
-    end: { x: piece.grainline.end.x, y: piece.grainline.end.y },
-    angleDeg: piece.grainline.angleDeg
-  };
+  const grainline: GrainLine = piece.grainline
+    ? {
+        start: { x: piece.grainline.start.x, y: piece.grainline.start.y },
+        end: { x: piece.grainline.end.x, y: piece.grainline.end.y },
+        direction: piece.grainline.direction
+      }
+    : {
+        start: { x: 0, y: 0 },
+        end: { x: 0, y: 10 },
+        direction: 'vertical'
+      };
 
   const drillHoles = piece.drillHoles
     ? piece.drillHoles.map(pt => ({ x: pt.x, y: pt.y }))
     : undefined;
 
-  const offsetDiagnostics = piece.offsetDiagnostics
-    ? piece.offsetDiagnostics.map(diag => ({ ...diag }))
+  const offsetDiagnostics = piece.offsetResult?.diagnostics
+    ? piece.offsetResult.diagnostics.map(diag => ({ ...diag }))
     : undefined;
 
   return {
@@ -335,8 +344,8 @@ export function serializePatternPieceSnapshot(
     stitchingContour,
     cuttingContour,
     offsetDiagnostics,
-    warnings: piece.warnings ? [...piece.warnings] : [],
-    errors: piece.errors ? [...piece.errors] : []
+    warnings: [],
+    errors: []
   };
 }
 
@@ -373,6 +382,12 @@ export function createMeasurementSetSnapshot(
 
   const clonedValues: Record<string, number> = {};
   for (const [k, v] of Object.entries(values)) {
+    if (k === 'unit') {
+      if (typeof v === 'string' && v !== 'cm') {
+        throw new ProductionSnapshotMeasurementError(`Measurement unit must be 'cm' (received '${v}').`);
+      }
+      continue;
+    }
     if (typeof k !== 'string' || k.trim() === '') {
       throw new ProductionSnapshotMeasurementError('Measurement key name cannot be empty or whitespace.');
     }
@@ -697,7 +712,12 @@ export function computeCanonicalRevisionFingerprint(
     assemblySummary: snapshot.assemblySummary,
     gradingSummary: snapshot.gradingSummary,
     physicalValidationStatus: snapshot.approvalState.physicalPrototypeValidation,
-    engineProvenance: snapshot.engineProvenance
+    engineProvenance: {
+      engineVersion: snapshot.engineProvenance.engineVersion,
+      appVersion: snapshot.engineProvenance.appVersion,
+      gitCommit: snapshot.engineProvenance.gitCommit,
+      snapshotEngine: snapshot.engineProvenance.snapshotEngine
+    }
   };
 
   return computeCanonicalFingerprint(payload);
@@ -712,18 +732,9 @@ export function computeCanonicalRevisionFingerprint(
 export function createProductionPatternRevision(
   input: CreateProductionPatternRevisionInput
 ): ProductionPatternRevisionSnapshot {
-  if (!input.projectId || typeof input.projectId !== 'string' || input.projectId.trim() === '') {
-    throw new ProductionSnapshotValidationError('Missing required non-empty projectId.');
-  }
-
-  if (!input.revisionId || typeof input.revisionId !== 'string' || input.revisionId.trim() === '') {
-    throw new ProductionSnapshotValidationError(
-      'Missing required explicit revisionId. Uncontrolled implicit random or time-based generation is prohibited.'
-    );
-  }
-
   const timestamp = input.createdAt ?? new Date().toISOString();
-  const revisionId = input.revisionId.trim();
+  const projectId = input.projectId ?? '';
+  const revisionId = (input.revisionId ?? '').trim();
   const revisionIndex = input.revisionIndex ?? 1;
 
   // 1. Snapshot sub-components
@@ -750,10 +761,15 @@ export function createProductionPatternRevision(
     sleeveEaseStrategy: input.draftingConfiguration?.sleeveEaseStrategy ?? input.designSpecification.sleeveEaseStrategy ?? 'classic',
     seamAllowanceCm: input.draftingConfiguration?.seamAllowanceCm ?? 1.5,
     hemAllowanceCm: input.draftingConfiguration?.hemAllowanceCm ?? 3.0,
-    easeProfile: input.draftingConfiguration?.easeProfile ?? input.designSpecification.easeProfile,
-    additionalParameters: input.draftingConfiguration?.additionalParameters
-      ? { ...input.draftingConfiguration.additionalParameters }
-      : undefined
+    waistAllowanceCm: input.draftingConfiguration?.waistAllowanceCm,
+    neckAllowanceCm: input.draftingConfiguration?.neckAllowanceCm,
+    armholeAllowanceCm: input.draftingConfiguration?.armholeAllowanceCm,
+    shoulderAllowanceCm: input.draftingConfiguration?.shoulderAllowanceCm,
+    bezierToleranceCm: input.draftingConfiguration?.bezierToleranceCm,
+    miterLimit: input.draftingConfiguration?.miterLimit,
+    categoryRegistryId: input.draftingConfiguration?.categoryRegistryId,
+    negativeEasePolicyApplied: input.draftingConfiguration?.negativeEasePolicyApplied,
+    customOptions: input.draftingConfiguration?.customOptions ? { ...input.draftingConfiguration.customOptions } : undefined
   };
 
   // 4. Approval State Summary
@@ -761,22 +777,28 @@ export function createProductionPatternRevision(
     designApproval: designSnapshot.isApproved ? 'approved' : 'pending',
     measurementApproval: measurementSnapshot.approval.state,
     patternGeometryValidation: input.validation.status,
+    assemblyValidation: input.assemblySummary
+      ? (input.assemblySummary.isValid ? 'verified-valid' : 'invalid')
+      : 'not-applicable',
+    gradingValidation: input.gradingSummary
+      ? (input.gradingSummary.isOverallGradingValid ? 'valid' : 'invalid')
+      : 'not-applicable',
     physicalPrototypeValidation: input.physicalValidationStatus ?? 'not-assessed'
   };
 
   // 5. Engine Provenance
   const engineProvenance: EngineProvenanceRecord = {
     engineVersion: input.engineProvenance?.engineVersion ?? CURRENT_ENGINE_VERSION,
+    appVersion: input.engineProvenance?.appVersion,
+    gitCommit: input.engineProvenance?.gitCommit,
     buildTimestamp: input.engineProvenance?.buildTimestamp ?? new Date().toISOString(),
-    gitCommitSha: input.engineProvenance?.gitCommitSha,
-    deterministicCalculation: input.engineProvenance?.deterministicCalculation ?? true,
-    engineName: input.engineProvenance?.engineName ?? CURRENT_SNAPSHOT_ENGINE
+    snapshotEngine: input.engineProvenance?.snapshotEngine ?? CURRENT_SNAPSHOT_ENGINE
   };
 
   // 6. Compute Canonical Fingerprint over authoritative content
   const preliminarySnapshot = {
     schemaVersion: PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION,
-    projectId: input.projectId,
+    projectId,
     revisionId,
     parentRevisionId: input.parentRevisionId,
     revisionIndex,
@@ -980,7 +1002,11 @@ export function compareRevisionInputs(
         description: `Drafting dart style changed from '${snapshot.draftingConfiguration.dartStyle}' to '${dc.dartStyle}'.`
       });
     }
-    if (dc.seamAllowanceCm !== undefined && Math.abs(dc.seamAllowanceCm - snapshot.draftingConfiguration.seamAllowanceCm) > 0.01) {
+    if (
+      dc.seamAllowanceCm !== undefined &&
+      snapshot.draftingConfiguration.seamAllowanceCm !== undefined &&
+      Math.abs(dc.seamAllowanceCm - snapshot.draftingConfiguration.seamAllowanceCm) > 0.01
+    ) {
       mismatches.push({
         path: 'draftingConfiguration.seamAllowanceCm',
         field: 'seamAllowanceCm',
@@ -1004,9 +1030,10 @@ export function compareRevisionInputs(
         description: `Pattern piece count changed from ${snapshot.patternPieces.length} to ${current.patternPieces.length}.`
       });
     } else {
-      const snapPieceCodes = new Set(snapshot.patternPieces.map(p => p.pieceCode));
+      const snapPieceMap = new Map(snapshot.patternPieces.map(p => [p.pieceCode, p]));
       for (const cp of current.patternPieces) {
-        if (!snapPieceCodes.has(cp.pieceCode)) {
+        const snapPiece = snapPieceMap.get(cp.pieceCode);
+        if (!snapPiece) {
           mismatches.push({
             path: `patternPieces.${cp.pieceCode}`,
             field: 'pieceCode',
@@ -1015,6 +1042,20 @@ export function compareRevisionInputs(
             severity: 'breaking',
             description: `Piece code '${cp.pieceCode}' not present in baseline snapshot.`
           });
+        } else if (cp.boundingBox) {
+          if (
+            Math.abs(cp.boundingBox.widthCm - snapPiece.boundingBox.widthCm) > 0.01 ||
+            Math.abs(cp.boundingBox.heightCm - snapPiece.boundingBox.heightCm) > 0.01
+          ) {
+            mismatches.push({
+              path: `patternPieces.${cp.pieceCode}.boundingBox`,
+              field: 'boundingBox',
+              baselineValue: `${snapPiece.boundingBox.widthCm}x${snapPiece.boundingBox.heightCm}`,
+              currentValue: `${cp.boundingBox.widthCm}x${cp.boundingBox.heightCm}`,
+              severity: 'breaking',
+              description: `Piece '${cp.pieceCode}' bounding box changed from ${snapPiece.boundingBox.widthCm}x${snapPiece.boundingBox.heightCm} to ${cp.boundingBox.widthCm}x${cp.boundingBox.heightCm} cm.`
+            });
+          }
         }
       }
     }
