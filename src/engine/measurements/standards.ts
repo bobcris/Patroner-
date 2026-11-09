@@ -226,14 +226,26 @@ export function validateBodyMeasurements(m: Partial<BodyMeasurements>): Measurem
   };
 }
 
+export interface GarmentDimensionOptions {
+  targetLengthCm?: number;
+  explicitEaseCm?: {
+    waist?: number;
+    hip?: number;
+    bust?: number;
+  };
+}
+
 /**
  * Pure calculation to determine finished garment dimensions from body measurements,
  * applied ease, and fabric stretch compensation.
+ * Consumes authoritative targetLengthCm and explicitEaseCm when provided,
+ * eliminating silent overrides.
  */
 export function calculateGarmentDimensions(
   body: BodyMeasurements,
   easeProfile: EaseProfile,
-  fabric?: FabricProperty
+  fabric?: FabricProperty,
+  options?: GarmentDimensionOptions
 ): {
   garmentWaistCm: number;
   garmentHipCm: number;
@@ -241,7 +253,7 @@ export function calculateGarmentDimensions(
   appliedWaistEaseCm: number;
   appliedHipEaseCm: number;
 } {
-  const baseEase = EASE_TABLE[easeProfile];
+  const baseEase = EASE_TABLE[easeProfile] ?? EASE_TABLE.classic;
   
   // Fabric stretch reduction: if fabric has stretch, mechanical ease is adjusted downwards
   let stretchFactorWaist = 1.0;
@@ -255,13 +267,20 @@ export function calculateGarmentDimensions(
     stretchFactorHip = 0.5;
   }
 
-  const appliedWaistEase = Number((baseEase.waist * stretchFactorWaist).toFixed(1));
-  const appliedHipEase = Number((baseEase.hip * stretchFactorHip).toFixed(1));
+  const rawWaistEase = options?.explicitEaseCm?.waist !== undefined ? options.explicitEaseCm.waist : baseEase.waist;
+  const rawHipEase = options?.explicitEaseCm?.hip !== undefined ? options.explicitEaseCm.hip : baseEase.hip;
+
+  const appliedWaistEase = Number((rawWaistEase * stretchFactorWaist).toFixed(1));
+  const appliedHipEase = Number((rawHipEase * stretchFactorHip).toFixed(1));
+
+  const totalLength = options?.targetLengthCm !== undefined && options.targetLengthCm > 0
+    ? options.targetLengthCm
+    : (body.skirtLength || 64);
 
   return {
     garmentWaistCm: Number((body.waist + appliedWaistEase).toFixed(1)),
     garmentHipCm: Number((body.lowHip + appliedHipEase).toFixed(1)),
-    totalLengthCm: body.skirtLength,
+    totalLengthCm: totalLength,
     appliedWaistEaseCm: appliedWaistEase,
     appliedHipEaseCm: appliedHipEase
   };
@@ -407,14 +426,15 @@ export function validateBodiceMeasurements(m: Partial<BodyMeasurements>): Measur
 export function calculateBodiceGarmentDimensions(
   body: BodyMeasurements,
   easeProfile: EaseProfile,
-  fabric?: FabricProperty
+  fabric?: FabricProperty,
+  options?: GarmentDimensionOptions
 ): {
   garmentBustCm: number;
   garmentWaistCm: number;
   appliedBustEaseCm: number;
   appliedWaistEaseCm: number;
 } {
-  const baseEase = EASE_TABLE[easeProfile];
+  const baseEase = EASE_TABLE[easeProfile] ?? EASE_TABLE.classic;
 
   let stretchFactorBust = 1.0;
   let stretchFactorWaist = 1.0;
@@ -427,8 +447,11 @@ export function calculateBodiceGarmentDimensions(
     stretchFactorWaist = 0.5;
   }
 
-  const appliedBustEase = Number((baseEase.bust * stretchFactorBust).toFixed(1));
-  const appliedWaistEase = Number((baseEase.waist * stretchFactorWaist).toFixed(1));
+  const rawBustEase = options?.explicitEaseCm?.bust !== undefined ? options.explicitEaseCm.bust : baseEase.bust;
+  const rawWaistEase = options?.explicitEaseCm?.waist !== undefined ? options.explicitEaseCm.waist : baseEase.waist;
+
+  const appliedBustEase = Number((rawBustEase * stretchFactorBust).toFixed(1));
+  const appliedWaistEase = Number((rawWaistEase * stretchFactorWaist).toFixed(1));
   const bustVal = body.bust ?? 90;
 
   return {

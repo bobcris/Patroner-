@@ -60,8 +60,8 @@ export function draftBodiceBlock(
   }
 
   // Tolerances and allowances
-  const sideSeamAllowance = options.seamAllowanceCm ?? 1.5;
-  const waistAllowance = options.waistAllowanceCm ?? 1.0;
+  const sideSeamAllowance = options.seamAllowanceCm ?? design.seamAllowanceCm ?? 1.5;
+  const waistAllowance = options.waistAllowanceCm ?? design.waistAllowanceCm ?? 1.0;
   const neckAllowance = options.neckAllowanceCm ?? 1.0;
   const armholeAllowance = options.armholeAllowanceCm ?? 1.0;
   const shoulderAllowance = options.shoulderAllowanceCm ?? 1.0;
@@ -69,7 +69,10 @@ export function draftBodiceBlock(
   const miterLimit = options.miterLimit ?? 2.5;
 
   // 2. Finished Dimensions & Ease Calculation
-  const dims = calculateBodiceGarmentDimensions(measurements, design.easeProfile, design.fabric);
+  const dims = calculateBodiceGarmentDimensions(measurements, design.easeProfile, design.fabric, {
+    explicitEaseCm: design.explicitEaseCm,
+    targetLengthCm: design.lengthCm
+  });
   const garmentBust = dims.garmentBustCm;
   const garmentWaist = dims.garmentWaistCm;
 

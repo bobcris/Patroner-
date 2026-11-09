@@ -115,6 +115,17 @@ export interface DesignSpecificationSnapshot {
   readonly silhouette: Silhouette;
   readonly easeProfile: EaseProfile;
   readonly lengthCm: number;
+  readonly specificationRevisionId?: string;
+  readonly parentRevisionId?: string;
+  readonly approvedBy?: string;
+  readonly approvalProvenance?: string;
+  readonly explicitEaseCm?: Readonly<Record<string, number>>;
+  readonly targetFinishedDimensions?: Readonly<Record<string, number>>;
+  readonly allowances?: Readonly<{
+    seamAllowanceCm?: number;
+    hemAllowanceCm?: number;
+    waistAllowanceCm?: number;
+  }>;
   readonly dartStyle?: BodiceDartStyle;
   readonly sleeveEaseStrategy?: SleeveEaseStrategy;
   readonly constructionFeatures: readonly GarmentConstructionFeature[];

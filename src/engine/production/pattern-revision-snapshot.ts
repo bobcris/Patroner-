@@ -621,6 +621,19 @@ export function createDesignSpecificationSnapshot(
     silhouette: design.silhouette,
     easeProfile: design.easeProfile,
     lengthCm: design.lengthCm,
+    specificationRevisionId: design.specificationRevisionId,
+    parentRevisionId: design.parentRevisionId,
+    approvedBy: design.approvedBy,
+    approvalProvenance: design.approvalProvenance,
+    explicitEaseCm: design.explicitEaseCm ? { ...design.explicitEaseCm } : undefined,
+    targetFinishedDimensions: design.targetFinishedDimensions ? { ...design.targetFinishedDimensions } : undefined,
+    allowances: design.seamAllowanceCm !== undefined || design.hemAllowanceCm !== undefined || design.waistAllowanceCm !== undefined
+      ? {
+          seamAllowanceCm: design.seamAllowanceCm,
+          hemAllowanceCm: design.hemAllowanceCm,
+          waistAllowanceCm: design.waistAllowanceCm
+        }
+      : undefined,
     dartStyle: design.dartStyle,
     sleeveEaseStrategy: design.sleeveEaseStrategy,
     constructionFeatures,
@@ -904,6 +917,16 @@ export function compareRevisionInputs(
         currentValue: ds.lengthCm,
         severity: 'breaking',
         description: `Length changed from ${snapshot.designSpecification.lengthCm} cm to ${ds.lengthCm} cm.`
+      });
+    }
+    if (ds.specificationRevisionId && snapshot.designSpecification.specificationRevisionId && ds.specificationRevisionId !== snapshot.designSpecification.specificationRevisionId) {
+      mismatches.push({
+        path: 'designSpecification.specificationRevisionId',
+        field: 'specificationRevisionId',
+        baselineValue: snapshot.designSpecification.specificationRevisionId,
+        currentValue: ds.specificationRevisionId,
+        severity: 'breaking',
+        description: `Specification revision changed from '${snapshot.designSpecification.specificationRevisionId}' to '${ds.specificationRevisionId}'.`
       });
     }
     if (ds.dartStyle && ds.dartStyle !== snapshot.designSpecification.dartStyle) {

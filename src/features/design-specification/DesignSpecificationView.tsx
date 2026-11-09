@@ -29,19 +29,34 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
   const [showAddModal, setShowAddModal] = useState(false);
 
   const toggleApproval = () => {
+    const willBeApproved = !spec.isApproved;
     onUpdateSpec({
       ...spec,
-      isApproved: !spec.isApproved,
-      approvedAt: !spec.isApproved ? new Date().toISOString() : undefined,
-      version: spec.version + 1
+      isApproved: willBeApproved,
+      approvedAt: willBeApproved ? new Date().toISOString() : undefined,
+      approvedBy: willBeApproved ? 'Head of Atelier' : undefined,
+      approvalProvenance: willBeApproved ? 'designer-approved' : 'designer-edited',
+      version: willBeApproved ? spec.version : spec.version + 1,
+      parentRevisionId: willBeApproved ? spec.parentRevisionId : spec.specificationRevisionId,
+      specificationRevisionId: willBeApproved
+        ? (spec.specificationRevisionId ?? `spec-${spec.id}-v${spec.version}`)
+        : `spec-${spec.id}-v${spec.version + 1}`
     });
   };
 
   const handleEaseChange = (ease: EaseProfile) => {
+    const nextVersion = spec.version + 1;
     onUpdateSpec({
       ...spec,
       easeProfile: ease,
-      version: spec.version + 1
+      explicitEaseCm: undefined,
+      version: nextVersion,
+      parentRevisionId: spec.specificationRevisionId,
+      specificationRevisionId: `spec-${spec.id}-v${nextVersion}`,
+      isApproved: false,
+      approvedBy: undefined,
+      approvedAt: undefined,
+      approvalProvenance: 'designer-edited'
     });
   };
 
@@ -57,10 +72,17 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
       patternImpact: newFeatureImpact.trim() || 'Deterministic offset applied during drafting.'
     };
 
+    const nextVersion = spec.version + 1;
     onUpdateSpec({
       ...spec,
       constructionFeatures: [...spec.constructionFeatures, newFeature],
-      version: spec.version + 1
+      version: nextVersion,
+      parentRevisionId: spec.specificationRevisionId,
+      specificationRevisionId: `spec-${spec.id}-v${nextVersion}`,
+      isApproved: false,
+      approvedBy: undefined,
+      approvedAt: undefined,
+      approvalProvenance: 'designer-edited'
     });
 
     setNewFeatureName('');
@@ -70,10 +92,17 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
   };
 
   const handleRemoveFeature = (id: string) => {
+    const nextVersion = spec.version + 1;
     onUpdateSpec({
       ...spec,
       constructionFeatures: spec.constructionFeatures.filter(f => f.id !== id),
-      version: spec.version + 1
+      version: nextVersion,
+      parentRevisionId: spec.specificationRevisionId,
+      specificationRevisionId: `spec-${spec.id}-v${nextVersion}`,
+      isApproved: false,
+      approvedBy: undefined,
+      approvedAt: undefined,
+      approvalProvenance: 'designer-edited'
     });
   };
 
@@ -216,7 +245,8 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
                     <div className="flex items-center justify-between font-mono font-medium uppercase text-[11px]">
                       <span>{ease}</span>
                       <span>
-                        +{EASE_TABLE[ease].waist}cm W / +{EASE_TABLE[ease].hip}cm H
+                        +{spec.easeProfile === ease && spec.explicitEaseCm?.waist !== undefined ? spec.explicitEaseCm.waist : EASE_TABLE[ease].waist}cm W / +{spec.easeProfile === ease && spec.explicitEaseCm?.hip !== undefined ? spec.explicitEaseCm.hip : EASE_TABLE[ease].hip}cm H
+                        {spec.easeProfile === ease && spec.explicitEaseCm && ' (Authoritative)'}
                       </span>
                     </div>
                     <p className={`text-[10px] mt-0.5 ${spec.easeProfile === ease ? 'text-neutral-300' : 'text-neutral-500'}`}>

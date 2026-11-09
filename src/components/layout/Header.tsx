@@ -15,6 +15,8 @@ interface HeaderProps {
   isApproved: boolean;
   isDraftValid: boolean;
   activeDesignName: string;
+  specificationRevisionId?: string;
+  isSynchronized?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,7 +24,9 @@ export const Header: React.FC<HeaderProps> = ({
   onTabChange,
   isApproved,
   isDraftValid,
-  activeDesignName
+  activeDesignName,
+  specificationRevisionId,
+  isSynchronized = true
 }) => {
   return (
     <header className="border-b border-neutral-200 bg-white/90 backdrop-blur-md sticky top-0 z-40">
@@ -62,6 +66,11 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="hidden sm:flex items-center gap-2 text-xs text-neutral-600 bg-neutral-50 px-2.5 py-1 rounded border border-neutral-200">
             <span className="text-neutral-400 font-mono text-[10px]">CURRENT:</span>
             <span className="font-medium text-neutral-800 truncate max-w-[200px]">{activeDesignName}</span>
+            {specificationRevisionId && (
+              <span className="font-mono text-[10px] text-neutral-500 bg-neutral-200 px-1 py-0.2 rounded-xs">
+                {specificationRevisionId}
+              </span>
+            )}
             {isApproved ? (
               <Badge variant="success" size="sm">Approved</Badge>
             ) : (
@@ -69,6 +78,9 @@ export const Header: React.FC<HeaderProps> = ({
             )}
             {isDraftValid && (
               <Badge variant="dark" size="sm">CAD Ready</Badge>
+            )}
+            {!isSynchronized && (
+              <Badge variant="danger" size="sm">Pipeline Stale</Badge>
             )}
           </div>
         </div>

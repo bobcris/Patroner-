@@ -20,6 +20,24 @@ export const INITIAL_CONCEPTS: DesignSpecification[] = [
     },
     easeProfile: 'classic',
     lengthCm: 68,
+    specificationRevisionId: 'spec-skirt-01-rev1',
+    isApproved: true,
+    approvedBy: 'Head of Atelier',
+    approvedAt: '2026-10-31T12:00:00Z',
+    approvalProvenance: 'designer-approved',
+    version: 1,
+    explicitEaseCm: {
+      waist: 6.0,
+      hip: 5.0
+    },
+    targetFinishedDimensions: {
+      length: 68.0,
+      waist: 78.0,
+      hip: 103.0
+    },
+    seamAllowanceCm: 1.5,
+    hemAllowanceCm: 3.0,
+    waistAllowanceCm: 1.0,
     constructionFeatures: [
       {
         id: 'feat-01',
@@ -47,9 +65,6 @@ export const INITIAL_CONCEPTS: DesignSpecification[] = [
       'Waist finished with internal grosgrain stay-ribbon (3cm width) instead of external waistband.',
       'Front panel cut on fold; back panel cut in 2 pieces.'
     ],
-    isApproved: true,
-    approvedAt: '2026-10-31T12:00:00Z',
-    version: 1,
     aiEstimates: {
       suggestedSilhouette: 'Tailored Column / Architectural Straight',
       styleConfidenceScore: 96,

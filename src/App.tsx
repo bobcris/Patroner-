@@ -17,17 +17,31 @@ import { MeasurementWorkspace } from './features/measurements/MeasurementWorkspa
 import { PatternWorkspace } from './features/pattern-workspace/PatternWorkspace';
 import { ProductionOverview } from './features/production/ProductionOverview';
 
+import { evaluatePipelineDependencyIntegrity } from './engine/production';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('studio');
   const [currentSpec, setCurrentSpec] = useState<DesignSpecification>(INITIAL_CONCEPTS[0]);
   const [activeSize, setActiveSize] = useState<StandardSize | 'custom'>('M');
-  const [measurements, setMeasurements] = useState<BodyMeasurements>(STANDARD_SIZING_SYSTEM.sizes.M);
+  const [measurements, setMeasurements] = useState<BodyMeasurements>({
+    ...STANDARD_SIZING_SYSTEM.sizes.M,
+    skirtLength: INITIAL_CONCEPTS[0].lengthCm
+  });
 
   // Compute live validation status for current draft
   const pieces = currentSpec.garmentCategory === 'bodice'
     ? draftBodiceBlock(measurements, currentSpec)
     : draftSkirtBlock(measurements, currentSpec);
   const validation = validatePatternDraft(pieces);
+
+  const pipelineReport = evaluatePipelineDependencyIntegrity({
+    specification: currentSpec,
+    measurements,
+    activeSize: String(activeSize),
+    fabric: currentSpec.fabric,
+    patternPieces: pieces,
+    validationReport: validation
+  });
 
   const handleUpdateMeasurements = (m: BodyMeasurements, sizeLabel: StandardSize | 'custom') => {
     setMeasurements(m);
@@ -43,6 +57,8 @@ export default function App() {
         isApproved={currentSpec.isApproved}
         isDraftValid={validation.isValid}
         activeDesignName={currentSpec.name}
+        specificationRevisionId={currentSpec.specificationRevisionId ?? `spec-${currentSpec.id}-v${currentSpec.version}`}
+        isSynchronized={pipelineReport.isPipelineSynchronized}
       />
 
       {/* Main Workspace View Router */}

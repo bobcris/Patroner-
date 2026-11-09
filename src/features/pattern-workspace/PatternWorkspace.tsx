@@ -127,10 +127,11 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
       {
         silhouette: currentSpec.silhouette,
         allowanceForShrinkage: true,
-        userExplicitConsentToDefaultFabric: true
+        userExplicitConsentToDefaultFabric: true,
+        explicitEaseCm: currentSpec.explicitEaseCm
       }
     );
-  }, [measurements, currentSpec.easeProfile, workspaceFabric, currentSpec.silhouette]);
+  }, [measurements, currentSpec.easeProfile, workspaceFabric, currentSpec.silhouette, currentSpec.explicitEaseCm]);
 
   const workspaceAdaptedSleeveEase = React.useMemo(() => {
     return calculateFabricAdaptedSleeveCapEase(
@@ -187,8 +188,14 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
   const validationReport = validatePatternDraft(pieces);
   const garmentDims = currentSpec.garmentCategory === 'bodice'
-    ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric)
-    : calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric);
+    ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric, {
+        explicitEaseCm: currentSpec.explicitEaseCm,
+        targetLengthCm: currentSpec.lengthCm
+      })
+    : calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric, {
+        explicitEaseCm: currentSpec.explicitEaseCm,
+        targetLengthCm: currentSpec.lengthCm
+      });
 
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) || pieces[0];
 

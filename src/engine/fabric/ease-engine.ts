@@ -37,6 +37,13 @@ export interface EaseCalculationOptions {
   evaluationDate?: string | number | Date; // Injectable timestamp or ISO date for deterministic historical evaluation
   trustedVerifier?: TrustedAuditVerifier; // Optional independent verification authority callback
   categoryRegistry?: FabricCategoryRegistry; // Optional tenant-isolated category registry context
+  explicitEaseCm?: {
+    waist?: number;
+    hip?: number;
+    bust?: number;
+    biceps?: number;
+    wrist?: number;
+  };
 }
 
 /**
@@ -1077,13 +1084,21 @@ export function calculateFabricAwareCircumferenceEase(
   ];
 
   const baseEaseProfile = EASE_TABLE[easeProfile] ?? EASE_TABLE.classic;
-  const baseEaseVal = circumferenceId === 'bust'
+  let baseEaseVal = circumferenceId === 'bust'
     ? baseEaseProfile.bust
     : (circumferenceId === 'waist'
         ? baseEaseProfile.waist
         : (circumferenceId === 'lowHip'
             ? baseEaseProfile.hip
             : (circumferenceId === 'biceps' ? 3.0 : 2.0)));
+
+  const explicitEaseMap = options.explicitEaseCm as Record<string, number | undefined> | undefined;
+  const explicitVal = circumferenceId === 'lowHip' ? (explicitEaseMap?.hip ?? explicitEaseMap?.lowHip) : explicitEaseMap?.[circumferenceId];
+  if (explicitVal !== undefined) {
+    baseEaseVal = explicitVal;
+    provenanceNotes.push(`Authoritative explicit ease applied for ${circumferenceId}: +${baseEaseVal} cm.`);
+  }
+
   const baselineMovementEaseCm = Number(baseEaseVal.toFixed(2));
 
   // 1. Resolve measurement direction and check for conflicting inputs

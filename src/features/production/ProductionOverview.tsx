@@ -79,8 +79,14 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   }
 
   const dims = currentSpec.garmentCategory === 'bodice'
-    ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric)
-    : calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric);
+    ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric, {
+        explicitEaseCm: currentSpec.explicitEaseCm,
+        targetLengthCm: currentSpec.lengthCm
+      })
+    : calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric, {
+        explicitEaseCm: currentSpec.explicitEaseCm,
+        targetLengthCm: currentSpec.lengthCm
+      });
 
   // Milestone 04.4: Graded Pattern Set Generation
   const gradedPatternSet = React.useMemo(() => gradePattern(currentSpec), [currentSpec]);
@@ -104,10 +110,11 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       {
         silhouette: currentSpec.silhouette,
         allowanceForShrinkage: true,
-        userExplicitConsentToDefaultFabric: true
+        userExplicitConsentToDefaultFabric: true,
+        explicitEaseCm: currentSpec.explicitEaseCm
       }
     );
-  }, [measurements, currentSpec.easeProfile, enhancedFabric, currentSpec.silhouette]);
+  }, [measurements, currentSpec.easeProfile, enhancedFabric, currentSpec.silhouette, currentSpec.explicitEaseCm]);
 
   const adaptedSleeveEase = React.useMemo(() => {
     return calculateFabricAdaptedSleeveCapEase(
@@ -191,7 +198,18 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         }
       ];
 
+  const [exportWarning, setExportWarning] = React.useState<string | null>(null);
+
   const handlePrint = () => {
+    if (!currentSpec.isApproved) {
+      setExportWarning('Production export blocked: Technical design specification must be formally approved before exporting manufacturing documentation.');
+      return;
+    }
+    if (!validation.isValid) {
+      setExportWarning('Production export blocked: 2D pattern geometry has unresolved seam discrepancies.');
+      return;
+    }
+    setExportWarning(null);
     window.print();
   };
 
@@ -235,24 +253,39 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         </div>
       </div>
 
+      {exportWarning && (
+        <div className="p-3 bg-red-50 border border-red-300 rounded text-red-900 text-xs font-mono flex items-center justify-between">
+          <span>{exportWarning}</span>
+          <button onClick={() => setExportWarning(null)} className="text-red-700 hover:text-red-950 font-bold ml-2">✕</button>
+        </div>
+      )}
+
       {/* Production Certification Banner */}
       <div className="bg-neutral-900 text-white rounded-sm p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2 font-mono text-xs">
-            <span className="text-neutral-400">STATUS:</span>
+          <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+            <span className="text-neutral-400">TIERED STATUS:</span>
             {validation.isValid ? (
-              <Badge variant="success" size="sm">SAMPLE CUT VALIDATED</Badge>
+              <Badge variant="success" size="sm">2D CAD GEOMETRY VALIDATED</Badge>
             ) : (
               <Badge variant="danger" size="sm">GEOMETRY REVISION REQUIRED</Badge>
             )}
+            <Badge variant="neutral" size="sm">PHYSICAL SAMPLE: UNASSESSED</Badge>
+            <Badge variant="neutral" size="sm">PROTOTYPE: SYNTHETIC FIXTURE ONLY</Badge>
             <span className="text-neutral-400">|</span>
-            <span className="text-neutral-300">DRAFT REF: {currentSpec.id}</span>
+            <span className="text-neutral-300">
+              SPEC REV: {currentSpec.specificationRevisionId ?? `v${currentSpec.version}`}
+            </span>
+            <span className="text-neutral-400">|</span>
+            <span className="text-emerald-400">
+              APPROVAL: {currentSpec.isApproved ? (currentSpec.approvedBy ? `APPROVED BY ${currentSpec.approvedBy.toUpperCase()}` : 'APPROVED') : 'PENDING'}
+            </span>
           </div>
           <h3 className="text-lg font-serif font-bold tracking-tight">
             Tech Pack for: {currentSpec.name} (Size {activeSize})
           </h3>
           <p className="text-xs text-neutral-400">
-            {validation.declaration}
+            {validation.declaration} • Note: 2D seam validation does not constitute physical sample or fit certification.
           </p>
         </div>
 

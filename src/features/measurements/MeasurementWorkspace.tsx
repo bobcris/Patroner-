@@ -48,15 +48,32 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
   };
 
   const garmentDims = !isBodice
-    ? calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric)
-    : { garmentWaistCm: measurements.waist + 4, garmentHipCm: measurements.lowHip + 5, totalLengthCm: measurements.skirtLength, appliedWaistEaseCm: 4, appliedHipEaseCm: 5 };
+    ? calculateGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric, {
+        targetLengthCm: currentSpec.lengthCm,
+        explicitEaseCm: currentSpec.explicitEaseCm
+      })
+    : {
+        garmentWaistCm: measurements.waist + (currentSpec.explicitEaseCm?.waist ?? 4),
+        garmentHipCm: measurements.lowHip + (currentSpec.explicitEaseCm?.hip ?? 5),
+        totalLengthCm: currentSpec.lengthCm,
+        appliedWaistEaseCm: currentSpec.explicitEaseCm?.waist ?? 4,
+        appliedHipEaseCm: currentSpec.explicitEaseCm?.hip ?? 5
+      };
   
-  const bodiceDims = isBodice ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric) : null;
+  const bodiceDims = isBodice
+    ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric, {
+        targetLengthCm: currentSpec.lengthCm,
+        explicitEaseCm: currentSpec.explicitEaseCm
+      })
+    : null;
   const sleeveDims = isBodice ? calculateSleeveGarmentDimensions(measurements, currentSpec.sleeveEaseStrategy ?? 'classic', currentSpec.fabric) : null;
 
   const handleSelectStandardSize = (size: StandardSize) => {
     setSelectedSize(size);
-    const standardValues = STANDARD_SIZING_SYSTEM.sizes[size];
+    const standardValues: BodyMeasurements = {
+      ...STANDARD_SIZING_SYSTEM.sizes[size],
+      skirtLength: currentSpec.lengthCm || STANDARD_SIZING_SYSTEM.sizes[size].skirtLength
+    };
     setMeasurements(standardValues);
     onUpdateMeasurements(standardValues, size);
   };

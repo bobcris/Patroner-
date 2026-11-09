@@ -35,14 +35,17 @@ export function draftSkirtBlock(
   design: DesignSpecification,
   options: SkirtDraftOptions = {}
 ): PatternPiece[] {
-  const sideSeamAllowance = options.seamAllowanceCm ?? 1.5;
-  const waistAllowance = options.waistAllowanceCm ?? 1.0;
-  const hemAllowance = options.hemAllowanceCm ?? 3.0;
+  const sideSeamAllowance = options.seamAllowanceCm ?? design.seamAllowanceCm ?? 1.5;
+  const waistAllowance = options.waistAllowanceCm ?? design.waistAllowanceCm ?? 1.0;
+  const hemAllowance = options.hemAllowanceCm ?? design.hemAllowanceCm ?? 3.0;
   const bezierToleranceCm = options.bezierToleranceCm ?? 0.05;
   const miterLimit = options.miterLimit ?? 2.5;
 
   // Calculate finished dimensions
-  const dims = calculateGarmentDimensions(measurements, design.easeProfile, design.fabric);
+  const dims = calculateGarmentDimensions(measurements, design.easeProfile, design.fabric, {
+    targetLengthCm: design.lengthCm,
+    explicitEaseCm: design.explicitEaseCm
+  });
   const totalLength = design.lengthCm || measurements.skirtLength || 64;
   const waistToHip = measurements.waistToHip || 20.5;
 

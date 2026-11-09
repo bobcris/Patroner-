@@ -93,6 +93,26 @@ export interface DesignSpecification {
   isApproved: boolean;
   approvedAt?: string;
   version: number;
+  specificationRevisionId?: string;
+  parentRevisionId?: string;
+  approvedBy?: string;
+  approvalProvenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown';
+  explicitEaseCm?: {
+    waist?: number;
+    hip?: number;
+    bust?: number;
+    biceps?: number;
+    wrist?: number;
+  };
+  targetFinishedDimensions?: {
+    waist?: number;
+    hip?: number;
+    bust?: number;
+    length?: number;
+  };
+  seamAllowanceCm?: number;
+  hemAllowanceCm?: number;
+  waistAllowanceCm?: number;
   /**
    * Clearly separated AI-inferred proposals before human validation
    */
