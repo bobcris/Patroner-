@@ -58,6 +58,9 @@ export interface PipelineArtifactRecord {
   readonly regenerationRequired: boolean;
   readonly validationStatus?: string;
   readonly upstreamDependencies: readonly string[];
+  readonly upstreamFingerprints?: Readonly<Record<string, string>>;
+  readonly generatedContentFingerprint?: string;
+  readonly engineVersion?: string;
   readonly lastEvaluatedAt: string;
 }
 

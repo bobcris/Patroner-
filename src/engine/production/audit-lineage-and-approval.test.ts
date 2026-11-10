@@ -240,10 +240,10 @@ describe('Milestone 04.6.2.1: Independent Engineering Audit & Data Lineage Integ
       // CRITICAL CHECK: Anatomical body measurements remain current!
       assert.equal(updatedReport.artifacts.measurements.status, 'current');
 
-      // Derived artifacts must be stale
+      // Derived artifacts: drafting is stale because pieces (68cm) do not match modifiedSpec (72cm)
       assert.equal(updatedReport.artifacts['finished-dimensions'].status, 'current');
-      assert.equal(updatedReport.artifacts.drafting.status, 'current'); // until pieces checked or snapshot checked
-      assert.equal(updatedReport.artifacts['production-export'].status, 'pending');
+      assert.equal(updatedReport.artifacts.drafting.status, 'stale');
+      assert.equal(updatedReport.artifacts['production-export'].status, 'stale');
       assert.equal(updatedReport.artifacts.specification.status, 'pending');
     });
 

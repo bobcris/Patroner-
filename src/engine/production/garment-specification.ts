@@ -4,17 +4,21 @@
  */
 
 import { DesignSpecification } from '../../types';
-import { CURRENT_ENGINE_VERSION } from './pattern-revision-snapshot';
+import { CURRENT_ENGINE_VERSION, CURRENT_SNAPSHOT_ENGINE } from './pattern-revision-snapshot';
 import { canonicalizeJson, deepFreeze } from './pattern-revision-snapshot';
 import { sha256Hex } from './crypto';
 import {
   ApprovalAuthorityTier,
   AuthoritativeGarmentSpecification,
   CreateAuthoritativeSpecificationInput,
+  SpecificationApprovalEvent,
   SpecificationApprovalRecord,
   SpecificationApprovalState,
+  SpecificationLifecycleEvent,
+  SpecificationRevocationEvent,
   SpecificationValueProvenance
 } from './garment-specification-types';
+import { EnhancedFabricProperty } from '../fabric/fabric-types';
 import { ProductionSnapshotValidationError } from './production-types';
 
 /**
@@ -27,59 +31,213 @@ function isValidIsoDate(dateStr: unknown): boolean {
 }
 
 /**
- * Computes a deterministic SHA-256 fingerprint for specification engineering parameters.
- * Used for cryptographic approval binding and tamper detection.
+ * Computes a deterministic SHA-256 fingerprint for ALL engineering-significant specification fields.
+ * Used for cryptographic approval binding, tamper detection, and dependency tracking.
+ *
+ * Excludes volatile metadata (createdAt, updatedAt) that does not affect engineering outcomes.
  */
 export function computeSpecificationFingerprint(
   spec: AuthoritativeGarmentSpecification | CreateAuthoritativeSpecificationInput | DesignSpecification
 ): string {
+  // 1. Identity and revision
+  const garmentId = 'garmentId' in spec && spec.garmentId
+    ? spec.garmentId
+    : ('id' in spec && (spec as DesignSpecification).id ? (spec as DesignSpecification).id : 'garment');
+
+  const version = spec.version ?? 1;
+  const specificationRevisionId = spec.specificationRevisionId ?? `spec-${garmentId}-v${version}`;
+  const parentRevisionId = spec.parentRevisionId ?? null;
+  const projectId = ('projectId' in spec && spec.projectId) ? spec.projectId : 'project-patroner-default';
+  const garmentCategory = spec.garmentCategory;
+
+  // 2. Target Finished Dimensions (extract all fields without loss)
   let lengthCm = 0;
+  let waistCm: number | null = null;
+  let hipCm: number | null = null;
+  let bustCm: number | null = null;
+  let chestCm: number | null = null;
+  let acrossBackCm: number | null = null;
+  let bicepCm: number | null = null;
+  let wristCm: number | null = null;
+
   if ('targetFinishedDimensions' in spec && spec.targetFinishedDimensions) {
-    const td = spec.targetFinishedDimensions as { lengthCm?: number; length?: number };
-    if (typeof td.lengthCm === 'number') {
-      lengthCm = td.lengthCm;
-    } else if (typeof td.length === 'number') {
-      lengthCm = td.length;
-    }
+    const td = spec.targetFinishedDimensions as {
+      lengthCm?: number;
+      length?: number;
+      waistCm?: number;
+      waist?: number;
+      hipCm?: number;
+      hip?: number;
+      bustCm?: number;
+      bust?: number;
+      chestCm?: number;
+      chest?: number;
+      acrossBackCm?: number;
+      acrossBack?: number;
+      bicepCm?: number;
+      bicep?: number;
+      wristCm?: number;
+      wrist?: number;
+    };
+    if (typeof td.lengthCm === 'number') lengthCm = td.lengthCm;
+    else if (typeof td.length === 'number') lengthCm = td.length;
+
+    waistCm = typeof td.waistCm === 'number' ? td.waistCm : (typeof td.waist === 'number' ? td.waist : null);
+    hipCm = typeof td.hipCm === 'number' ? td.hipCm : (typeof td.hip === 'number' ? td.hip : null);
+    bustCm = typeof td.bustCm === 'number' ? td.bustCm : (typeof td.bust === 'number' ? td.bust : null);
+    chestCm = typeof td.chestCm === 'number' ? td.chestCm : (typeof td.chest === 'number' ? td.chest : null);
+    acrossBackCm = typeof td.acrossBackCm === 'number' ? td.acrossBackCm : (typeof td.acrossBack === 'number' ? td.acrossBack : null);
+    bicepCm = typeof td.bicepCm === 'number' ? td.bicepCm : (typeof td.bicep === 'number' ? td.bicep : null);
+    wristCm = typeof td.wristCm === 'number' ? td.wristCm : (typeof td.wrist === 'number' ? td.wrist : null);
   }
+
   if (!lengthCm && 'lengthCm' in spec && typeof spec.lengthCm === 'number') {
     lengthCm = spec.lengthCm;
   }
 
-  const payload = {
-    garmentCategory: spec.garmentCategory,
-    silhouette: spec.silhouette,
-    lengthCm,
-    explicitEaseCm: spec.explicitEaseCm,
-    easeProfile: spec.easeProfile,
-    fabricId: spec.fabric?.id,
-    dartStyle: spec.dartStyle,
-    sleeveEaseStrategy: spec.sleeveEaseStrategy,
-    constructionFeatures: spec.constructionFeatures?.map(f => ({
-      id: f.id,
-      category: f.category,
-      name: f.name,
-      patternImpact: f.patternImpact
-    })),
-    allowances: 'allowances' in spec && spec.allowances ? {
-      seam: spec.allowances.seamAllowanceCm,
-      hem: spec.allowances.hemAllowanceCm,
-      waist: spec.allowances.waistAllowanceCm,
-      neck: spec.allowances.neckAllowanceCm,
-      armhole: spec.allowances.armholeAllowanceCm
-    } : {
-      seam: (spec as DesignSpecification).seamAllowanceCm,
-      hem: (spec as DesignSpecification).hemAllowanceCm,
-      waist: (spec as DesignSpecification).waistAllowanceCm,
-      neck: (spec as DesignSpecification).neckAllowanceCm,
-      armhole: (spec as DesignSpecification).armholeAllowanceCm
-    }
+  // 3. Design and construction features
+  const constructionFeatures = Array.isArray(spec.constructionFeatures)
+    ? [...spec.constructionFeatures]
+        .map(f => ({
+          id: f.id,
+          category: f.category,
+          name: f.name,
+          description: f.description ?? '',
+          patternImpact: f.patternImpact ?? ''
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id))
+    : [];
+
+  const designNotes = Array.isArray(spec.designNotes)
+    ? [...spec.designNotes].filter(n => typeof n === 'string' && n.trim() !== '').sort()
+    : [];
+
+  // 4. Fabric Engineering Properties
+  const fab = spec.fabric;
+  const enhanced = fab as Partial<EnhancedFabricProperty> | undefined;
+  const fabricData = fab ? {
+    id: fab.id,
+    name: fab.name,
+    weight: fab.weight,
+    stretch: fab.stretch,
+    gsm: enhanced?.gsm ?? null,
+    thicknessMm: enhanced?.thicknessMm ?? null,
+    moldingFactor: enhanced?.moldingFactor ?? null,
+    directional: enhanced?.directional ? {
+      warp: enhanced.directional.warp ? {
+        shrinkagePercent: enhanced.directional.warp.shrinkagePercent,
+        stretchPercent: enhanced.directional.warp.stretchPercent
+      } : null,
+      weft: enhanced.directional.weft ? {
+        shrinkagePercent: enhanced.directional.weft.shrinkagePercent,
+        stretchPercent: enhanced.directional.weft.stretchPercent
+      } : null,
+      bias: enhanced.directional.bias ? {
+        stretchPercent: enhanced.directional.bias.stretchPercent
+      } : null
+    } : null,
+    fabricRevision: 'fabricRevision' in spec && spec.fabricRevision
+      ? spec.fabricRevision
+      : (enhanced?.revision ?? null),
+    fabricProvenance: 'fabricProvenance' in spec && spec.fabricProvenance
+      ? spec.fabricProvenance
+      : (enhanced?.provenance ?? 'unknown')
+  } : null;
+
+  // 5. Allowances
+  let allowances = {
+    seamAllowanceCm: 1.5,
+    hemAllowanceCm: 3.0,
+    waistAllowanceCm: 1.0,
+    neckAllowanceCm: 1.0,
+    armholeAllowanceCm: 1.0,
+    shoulderAllowanceCm: 1.0
   };
+
+  if ('allowances' in spec && spec.allowances) {
+    const a = spec.allowances;
+    allowances = {
+      seamAllowanceCm: a.seamAllowanceCm ?? 1.5,
+      hemAllowanceCm: a.hemAllowanceCm ?? 3.0,
+      waistAllowanceCm: a.waistAllowanceCm ?? 1.0,
+      neckAllowanceCm: a.neckAllowanceCm ?? 1.0,
+      armholeAllowanceCm: a.armholeAllowanceCm ?? 1.0,
+      shoulderAllowanceCm: a.shoulderAllowanceCm ?? 1.0
+    };
+  } else {
+    const ds = spec as DesignSpecification;
+    allowances = {
+      seamAllowanceCm: ds.seamAllowanceCm ?? 1.5,
+      hemAllowanceCm: ds.hemAllowanceCm ?? 3.0,
+      waistAllowanceCm: ds.waistAllowanceCm ?? 1.0,
+      neckAllowanceCm: ds.neckAllowanceCm ?? 1.0,
+      armholeAllowanceCm: ds.armholeAllowanceCm ?? 1.0,
+      shoulderAllowanceCm: ds.shoulderAllowanceCm ?? 1.0
+    };
+  }
+
+  // 6. Explicit Ease
+  const explicitEase = spec.explicitEaseCm ? {
+    waist: spec.explicitEaseCm.waist ?? null,
+    hip: spec.explicitEaseCm.hip ?? null,
+    bust: spec.explicitEaseCm.bust ?? null,
+    biceps: spec.explicitEaseCm.biceps ?? null,
+    wrist: spec.explicitEaseCm.wrist ?? null,
+    neck: spec.explicitEaseCm.neck ?? null
+  } : null;
+
+  // 7. AI Estimates (relevant where consumed)
+  const aiEstimates = spec.aiEstimates ? {
+    suggestedSilhouette: spec.aiEstimates.suggestedSilhouette ?? null,
+    styleConfidenceScore: spec.aiEstimates.styleConfidenceScore ?? null,
+    suggestedFabrics: Array.isArray(spec.aiEstimates.suggestedFabrics)
+      ? [...spec.aiEstimates.suggestedFabrics].sort()
+      : [],
+    technicalAdvice: spec.aiEstimates.technicalAdvice ?? null
+  } : null;
+
+  // 8. Engine version
+  const engineVersion = ('engineProvenance' in spec && spec.engineProvenance?.engineVersion)
+    ? spec.engineProvenance.engineVersion
+    : CURRENT_ENGINE_VERSION;
+
+  const payload = {
+    projectId,
+    garmentId,
+    specificationRevisionId,
+    parentRevisionId,
+    version,
+    garmentCategory,
+    silhouette: spec.silhouette,
+    prompt: spec.prompt ?? '',
+    dartStyle: spec.dartStyle ?? null,
+    sleeveEaseStrategy: spec.sleeveEaseStrategy ?? null,
+    constructionFeatures,
+    designNotes,
+    fabric: fabricData,
+    targetFinishedDimensions: {
+      lengthCm,
+      waistCm,
+      hipCm,
+      bustCm,
+      chestCm,
+      acrossBackCm,
+      bicepCm,
+      wristCm
+    },
+    explicitEaseCm: explicitEase,
+    easeProfile: spec.easeProfile,
+    allowances,
+    aiEstimates,
+    engineVersion
+  };
+
   return sha256Hex(canonicalizeJson(payload));
 }
 
 /**
- * Verifies whether a specification revision has a valid, non-tampered approval record.
+ * Verifies whether a specification revision has a valid, untampered approval record.
+ * Recomputes the canonical specification fingerprint and enforces strict authority tier validation.
  */
 export function verifySpecificationApproval(
   spec: AuthoritativeGarmentSpecification | DesignSpecification
@@ -92,7 +250,7 @@ export function verifySpecificationApproval(
   const currentFingerprint = computeSpecificationFingerprint(spec);
   const specId = 'garmentId' in spec && spec.garmentId
     ? spec.garmentId
-    : ('id' in spec ? (spec as DesignSpecification).id : 'garment');
+    : ('id' in spec && (spec as DesignSpecification).id ? (spec as DesignSpecification).id : 'garment');
   const specRevId = spec.specificationRevisionId ?? `spec-${specId}-v${spec.version || 1}`;
 
   if (!spec.isApproved) {
@@ -123,42 +281,90 @@ export function verifySpecificationApproval(
     };
   }
 
-  // If approvalRecord exists, verify cryptographic binding
-  if (spec.approvalRecord) {
-    if (spec.approvalRecord.targetRevisionId !== specRevId) {
+  if (!spec.approvalRecord) {
+    if (spec.approvalAuthorityTier === 'demonstration_fixture') {
+      if (!spec.approvedBy || spec.approvedBy.trim() === '') {
+        return {
+          isValid: false,
+          state: 'invalid',
+          reason: 'Approved demonstration fixture lacks an approver identity.',
+          fingerprint: currentFingerprint
+        };
+      }
+      if (!spec.approvedAt || !isValidIsoDate(spec.approvedAt)) {
+        return {
+          isValid: false,
+          state: 'invalid',
+          reason: 'Approved demonstration fixture lacks a valid ISO approval timestamp.',
+          fingerprint: currentFingerprint
+        };
+      }
       return {
-        isValid: false,
-        state: 'invalid',
-        reason: `Approval record target revision '${spec.approvalRecord.targetRevisionId}' does not match specification revision '${specRevId}'.`,
+        isValid: true,
+        state: 'approved',
         fingerprint: currentFingerprint
       };
     }
-    if (spec.approvalRecord.targetSpecificationFingerprint !== currentFingerprint) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        reason: 'Specification content has been modified after approval was granted; content fingerprint mismatch.',
-        fingerprint: currentFingerprint
-      };
-    }
-  } else {
-    // If no approvalRecord, verify basic credentials
-    if (!spec.approvedBy || spec.approvedBy.trim() === '') {
-      return {
-        isValid: false,
-        state: 'invalid',
-        reason: 'Approved specification lacks an approver identity.',
-        fingerprint: currentFingerprint
-      };
-    }
-    if (!spec.approvedAt || !isValidIsoDate(spec.approvedAt)) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        reason: 'Approved specification lacks a valid ISO approval timestamp.',
-        fingerprint: currentFingerprint
-      };
-    }
+
+    return {
+      isValid: false,
+      state: 'invalid',
+      reason: 'Approved specification lacks an authoritative approval record.',
+      fingerprint: currentFingerprint
+    };
+  }
+
+  const record = spec.approvalRecord;
+
+  // Verify exact revision ID
+  if (record.targetRevisionId !== specRevId) {
+    return {
+      isValid: false,
+      state: 'invalid',
+      reason: `Approval record target revision '${record.targetRevisionId}' does not match specification revision '${specRevId}'.`,
+      fingerprint: currentFingerprint
+    };
+  }
+
+  // Verify exact specification fingerprint
+  if (record.targetSpecificationFingerprint !== currentFingerprint) {
+    return {
+      isValid: false,
+      state: 'invalid',
+      reason: 'Specification content has been modified after approval was granted; content fingerprint mismatch.',
+      fingerprint: currentFingerprint
+    };
+  }
+
+  // Verify authority tier
+  if (record.authorityTier === 'cryptographic_principal') {
+    // Cryptographic principal must remain unavailable until genuine authentication provider exists
+    return {
+      isValid: false,
+      state: 'invalid',
+      reason: 'cryptographic_principal authority tier is unavailable without cryptographic provider configuration.',
+      fingerprint: currentFingerprint
+    };
+  }
+
+  // Verify approver identity
+  if (!record.approverName || record.approverName.trim() === '' || !record.approverId || record.approverId.trim() === '') {
+    return {
+      isValid: false,
+      state: 'invalid',
+      reason: 'Approved specification approval record lacks a valid approver identity.',
+      fingerprint: currentFingerprint
+    };
+  }
+
+  // Verify approval timestamp
+  if (!record.approvedAt || !isValidIsoDate(record.approvedAt)) {
+    return {
+      isValid: false,
+      state: 'invalid',
+      reason: 'Approved specification approval record lacks a valid ISO approval timestamp.',
+      fingerprint: currentFingerprint
+    };
   }
 
   return {
@@ -238,7 +444,8 @@ export function createAuthoritativeGarmentSpecification(
     hemAllowanceCm: input.allowances?.hemAllowanceCm ?? 3.0,
     waistAllowanceCm: input.allowances?.waistAllowanceCm ?? 1.0,
     neckAllowanceCm: input.allowances?.neckAllowanceCm ?? 1.0,
-    armholeAllowanceCm: input.allowances?.armholeAllowanceCm ?? 1.0
+    armholeAllowanceCm: input.allowances?.armholeAllowanceCm ?? 1.0,
+    shoulderAllowanceCm: input.allowances?.shoulderAllowanceCm ?? 1.0
   };
 
   const engineProvenance = {
@@ -248,33 +455,76 @@ export function createAuthoritativeGarmentSpecification(
     ...(input.engineProvenance ?? {})
   };
 
-  // Compute specification fingerprint for approval record
+  // Compute preliminary specification to generate canonical fingerprint
   const tempSpecPayload = {
+    projectId: input.projectId ?? 'project-patroner-default',
+    garmentId: input.garmentId ?? input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    specificationRevisionId: specId,
+    parentRevisionId: input.parentRevisionId,
+    version,
+    name: input.name.trim(),
     garmentCategory: input.garmentCategory,
     silhouette: input.silhouette,
-    lengthCm: input.lengthCm,
-    explicitEaseCm: input.explicitEaseCm,
-    easeProfile: input.easeProfile,
+    prompt: input.prompt ?? '',
+    color: input.color ?? { name: 'Chalk Oatmeal', hex: '#E8E3D9' },
     fabric: input.fabric,
+    fabricRevision: input.fabricRevision,
+    fabricProvenance: input.fabricProvenance ?? 'unknown',
+    easeProfile: input.easeProfile,
+    explicitEaseCm: input.explicitEaseCm,
+    targetFinishedDimensions,
     dartStyle: input.dartStyle,
     sleeveEaseStrategy: input.sleeveEaseStrategy,
-    constructionFeatures: input.constructionFeatures,
-    allowances
+    allowances,
+    constructionFeatures: input.constructionFeatures ?? [],
+    designNotes: input.designNotes ?? [],
+    aiEstimates: input.aiEstimates,
+    engineProvenance
   };
+
   const specFingerprint = computeSpecificationFingerprint(tempSpecPayload as unknown as AuthoritativeGarmentSpecification);
 
   let approvalRecord: SpecificationApprovalRecord | undefined = undefined;
+  let approvalHistory: SpecificationLifecycleEvent[] = input.approvalHistory ? [...input.approvalHistory] : [];
+  let revocationRecord: SpecificationRevocationEvent | undefined = input.revocationRecord;
+
   if (isApproved) {
     if (input.approvalRecord && input.approvalRecord.targetSpecificationFingerprint === specFingerprint) {
       approvalRecord = input.approvalRecord;
     } else {
-      approvalRecord = {
+      const eventId = `appr-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const approvalEvent: SpecificationApprovalEvent = {
+        id: eventId,
+        eventType: 'approval',
+        targetRevisionId: specId,
+        targetSpecificationFingerprint: specFingerprint,
         approverId: `approver-${(approvedBy ?? 'operator').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
         approverName: approvedBy ?? 'Local Operator',
         authorityTier: approvalAuthorityTier ?? 'unauthenticated_local_session',
         approvedAt: approvedAt!,
+        provenance: approvalProvenance
+      };
+
+      approvalRecord = {
+        eventId,
+        approverId: approvalEvent.approverId,
+        approverName: approvalEvent.approverName,
+        authorityTier: approvalEvent.authorityTier,
+        approvedAt: approvalEvent.approvedAt,
         targetRevisionId: specId,
-        targetSpecificationFingerprint: specFingerprint
+        targetSpecificationFingerprint: specFingerprint,
+        provenance: approvalProvenance
+      };
+
+      approvalHistory.push(approvalEvent);
+    }
+  } else if (approvalState === 'revoked' && input.revocationRecord) {
+    revocationRecord = input.revocationRecord;
+    if (input.approvalRecord) {
+      approvalRecord = {
+        ...input.approvalRecord,
+        revocation: revocationRecord,
+        revocationReason: revocationRecord.reason
       };
     }
   }
@@ -305,6 +555,8 @@ export function createAuthoritativeGarmentSpecification(
     approvalState,
     approvalAuthorityTier,
     approvalRecord,
+    approvalHistory: approvalHistory.length > 0 ? approvalHistory : undefined,
+    revocationRecord,
     approvedBy,
     approvedAt,
     approvalProvenance,
@@ -326,14 +578,17 @@ export function reviseAuthoritativeGarmentSpecification(
   base: AuthoritativeGarmentSpecification,
   updates: Partial<CreateAuthoritativeSpecificationInput>
 ): AuthoritativeGarmentSpecification {
-  const newVersion = base.version + 1;
+  const newVersion = updates.version ?? (base.version + 1);
   const newRevisionId = updates.specificationRevisionId ?? `spec-${base.garmentId}-v${newVersion}`;
+  const parentRevisionId = updates.parentRevisionId !== undefined
+    ? updates.parentRevisionId
+    : (newVersion === base.version ? base.parentRevisionId : base.specificationRevisionId);
 
   return createAuthoritativeGarmentSpecification({
     projectId: updates.projectId ?? base.projectId,
     garmentId: updates.garmentId ?? base.garmentId,
     specificationRevisionId: newRevisionId,
-    parentRevisionId: base.specificationRevisionId,
+    parentRevisionId,
     version: newVersion,
     name: updates.name ?? base.name,
     garmentCategory: updates.garmentCategory ?? base.garmentCategory,
@@ -363,6 +618,8 @@ export function reviseAuthoritativeGarmentSpecification(
     approvalState: updates.approvalState ?? (updates.isApproved ? 'approved' : 'draft'),
     approvalAuthorityTier: updates.approvalAuthorityTier,
     approvalRecord: updates.approvalRecord,
+    approvalHistory: updates.approvalHistory ?? base.approvalHistory,
+    revocationRecord: updates.revocationRecord,
     approvedBy: updates.approvedBy,
     approvedAt: updates.approvedAt,
     approvalProvenance: updates.approvalProvenance ?? 'designer-edited',
@@ -412,54 +669,130 @@ export function approveAuthoritativeGarmentSpecification(
     throw new ProductionSnapshotValidationError('Approval timestamp must be a valid ISO 8601 date.');
   }
 
+  if (authorityTier === 'cryptographic_principal') {
+    throw new ProductionSnapshotValidationError(
+      'cryptographic_principal authority tier is unavailable without cryptographic provider configuration.'
+    );
+  }
+
   const specFingerprint = computeSpecificationFingerprint(spec);
-  const approvalRecord: SpecificationApprovalRecord = {
+  const eventId = `appr-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const approvalEvent: SpecificationApprovalEvent = {
+    id: eventId,
+    eventType: 'approval',
+    targetRevisionId: spec.specificationRevisionId,
+    targetSpecificationFingerprint: specFingerprint,
     approverId: `approver-${approvedBy.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
     approverName: approvedBy.trim(),
     authorityTier,
     approvedAt,
-    targetRevisionId: spec.specificationRevisionId,
-    targetSpecificationFingerprint: specFingerprint,
-    notes
+    notes,
+    provenance: authorityTier === 'demonstration_fixture' ? 'demonstration-fixture' : 'unauthenticated-local-approval'
   };
 
-  const provenance: SpecificationValueProvenance = authorityTier === 'demonstration_fixture'
-    ? 'demonstration-fixture'
-    : 'unauthenticated-local-approval';
+  const approvalRecord: SpecificationApprovalRecord = {
+    eventId,
+    approverId: approvalEvent.approverId,
+    approverName: approvalEvent.approverName,
+    authorityTier,
+    approvedAt,
+    targetRevisionId: spec.specificationRevisionId,
+    targetSpecificationFingerprint: specFingerprint,
+    notes,
+    provenance: approvalEvent.provenance
+  };
 
-  return reviseAuthoritativeGarmentSpecification(spec, {
-    specificationRevisionId: spec.specificationRevisionId, // Retain ID on explicit approval
+  const history: SpecificationLifecycleEvent[] = spec.approvalHistory
+    ? [...spec.approvalHistory, approvalEvent]
+    : [approvalEvent];
+
+  return createAuthoritativeGarmentSpecification({
+    ...spec,
+    lengthCm: spec.targetFinishedDimensions.lengthCm,
+    specificationRevisionId: spec.specificationRevisionId,
+    parentRevisionId: spec.parentRevisionId,
     version: spec.version,
     isApproved: true,
     approvalState: 'approved',
     approvalAuthorityTier: authorityTier,
     approvalRecord,
+    approvalHistory: history,
+    revocationRecord: undefined,
     approvedBy: approvedBy.trim(),
     approvedAt,
-    approvalProvenance: provenance
+    approvalProvenance: approvalEvent.provenance
   });
 }
 
 /**
  * Revokes approval on a specification.
  * Returns a new revision explicitly marked unapproved with revocation state.
+ * Preserves the original approval event in append-only history.
  */
 export function revokeAuthoritativeGarmentSpecificationApproval(
   spec: AuthoritativeGarmentSpecification,
-  reason?: string
+  reason: string,
+  options?: {
+    revokerId?: string;
+    revokerName?: string;
+    revokedAt?: string;
+    authorityTier?: ApprovalAuthorityTier;
+  }
 ): AuthoritativeGarmentSpecification {
-  const notes = reason ? [...spec.designNotes, `Approval revoked: ${reason}`] : spec.designNotes;
+  const cleanReason = (reason ?? '').trim();
+  if (!cleanReason) {
+    throw new ProductionSnapshotValidationError('Revocation reason is mandatory and cannot be empty.');
+  }
 
-  const revokedRecord: SpecificationApprovalRecord | undefined = spec.approvalRecord ? {
+  const now = options?.revokedAt ?? new Date().toISOString();
+  if (!isValidIsoDate(now)) {
+    throw new ProductionSnapshotValidationError('Revocation timestamp must be a valid ISO 8601 date.');
+  }
+
+  const revokerId = options?.revokerId ?? 'operator-revoker';
+  const revokerName = options?.revokerName ?? 'Local Atelier Operator';
+  const authorityTier = options?.authorityTier ?? spec.approvalRecord?.authorityTier ?? 'unauthenticated_local_session';
+
+  const specFingerprint = computeSpecificationFingerprint(spec);
+  const revocationEventId = `rev-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+  const revocationEvent: SpecificationRevocationEvent = {
+    id: revocationEventId,
+    eventType: 'revocation',
+    originalApprovalEventId: spec.approvalRecord?.eventId,
+    targetRevisionId: spec.specificationRevisionId,
+    targetSpecificationFingerprint: specFingerprint,
+    revokerId,
+    revokerName,
+    authorityTier,
+    revokedAt: now,
+    reason: cleanReason
+  };
+
+  const updatedApprovalRecord: SpecificationApprovalRecord | undefined = spec.approvalRecord ? {
     ...spec.approvalRecord,
-    revocationReason: reason ?? 'Revoked by operator'
+    revocation: revocationEvent,
+    revocationReason: cleanReason
   } : undefined;
 
-  return reviseAuthoritativeGarmentSpecification(spec, {
+  const history: SpecificationLifecycleEvent[] = spec.approvalHistory
+    ? [...spec.approvalHistory, revocationEvent]
+    : [revocationEvent];
+
+  const notes = [...spec.designNotes, `Approval revoked: ${cleanReason}`];
+
+  return createAuthoritativeGarmentSpecification({
+    ...spec,
+    lengthCm: spec.targetFinishedDimensions.lengthCm,
+    specificationRevisionId: spec.specificationRevisionId,
+    parentRevisionId: spec.parentRevisionId,
+    version: spec.version,
     isApproved: false,
     approvalState: 'revoked',
     approvalAuthorityTier: undefined,
-    approvalRecord: revokedRecord,
+    approvalRecord: updatedApprovalRecord,
+    approvalHistory: history,
+    revocationRecord: revocationEvent,
     approvedBy: undefined,
     approvedAt: undefined,
     approvalProvenance: 'designer-edited',
@@ -491,7 +824,21 @@ export function convertToDesignSpecification(
     isApproved: spec.isApproved,
     approvalState: spec.approvalState,
     approvalAuthorityTier: spec.approvalAuthorityTier,
-    approvalRecord: spec.approvalRecord ? { ...spec.approvalRecord } : undefined,
+    approvalRecord: spec.approvalRecord ? {
+      eventId: spec.approvalRecord.eventId,
+      approverId: spec.approvalRecord.approverId,
+      approverName: spec.approvalRecord.approverName,
+      authorityTier: spec.approvalRecord.authorityTier,
+      approvedAt: spec.approvalRecord.approvedAt,
+      targetRevisionId: spec.approvalRecord.targetRevisionId,
+      targetSpecificationFingerprint: spec.approvalRecord.targetSpecificationFingerprint,
+      revocationReason: spec.approvalRecord.revocationReason,
+      notes: spec.approvalRecord.notes,
+      provenance: spec.approvalRecord.provenance,
+      revocation: spec.approvalRecord.revocation ? { ...spec.approvalRecord.revocation } : undefined
+    } : undefined,
+    approvalHistory: spec.approvalHistory ? spec.approvalHistory.map(evt => ({ ...evt })) : undefined,
+    revocationRecord: spec.revocationRecord ? { ...spec.revocationRecord } : undefined,
     approvedAt: spec.approvedAt,
     version: spec.version,
     aiEstimates: spec.aiEstimates ? {
@@ -501,7 +848,6 @@ export function convertToDesignSpecification(
       technicalAdvice: spec.aiEstimates.technicalAdvice,
       disclaimer: spec.aiEstimates.disclaimer
     } : undefined,
-    // Milestone 04.6.2 & 04.6.2.1 extended attributes
     specificationRevisionId: spec.specificationRevisionId,
     parentRevisionId: spec.parentRevisionId,
     projectId: spec.projectId,
@@ -524,7 +870,8 @@ export function convertToDesignSpecification(
     hemAllowanceCm: spec.allowances.hemAllowanceCm,
     waistAllowanceCm: spec.allowances.waistAllowanceCm,
     neckAllowanceCm: spec.allowances.neckAllowanceCm,
-    armholeAllowanceCm: spec.allowances.armholeAllowanceCm
+    armholeAllowanceCm: spec.allowances.armholeAllowanceCm,
+    shoulderAllowanceCm: spec.allowances.shoulderAllowanceCm
   };
 }
 
@@ -582,14 +929,17 @@ export function convertFromDesignSpecification(
       hemAllowanceCm: design.hemAllowanceCm ?? 3.0,
       waistAllowanceCm: design.waistAllowanceCm ?? 1.0,
       neckAllowanceCm: design.neckAllowanceCm ?? 1.0,
-      armholeAllowanceCm: design.armholeAllowanceCm ?? 1.0
+      armholeAllowanceCm: design.armholeAllowanceCm ?? 1.0,
+      shoulderAllowanceCm: design.shoulderAllowanceCm ?? 1.0
     },
     constructionFeatures: design.constructionFeatures,
     designNotes: design.designNotes,
     isApproved,
     approvalState,
     approvalAuthorityTier: design.approvalAuthorityTier ?? (isApproved ? 'unauthenticated_local_session' : undefined),
-    approvalRecord: design.approvalRecord,
+    approvalRecord: design.approvalRecord as SpecificationApprovalRecord | undefined,
+    approvalHistory: design.approvalHistory as SpecificationLifecycleEvent[] | undefined,
+    revocationRecord: design.revocationRecord as SpecificationRevocationEvent | undefined,
     approvedBy: isApproved ? design.approvedBy : undefined,
     approvedAt: isApproved ? design.approvedAt : undefined,
     approvalProvenance: design.approvalProvenance ?? (isApproved ? 'unauthenticated-local-approval' : 'designer-edited'),

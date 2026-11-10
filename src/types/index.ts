@@ -102,6 +102,7 @@ export interface DesignSpecification {
   approvalState?: 'draft' | 'pending_approval' | 'approved' | 'revoked' | 'superseded' | 'invalid';
   approvalAuthorityTier?: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
   approvalRecord?: {
+    eventId?: string;
     approverId: string;
     approverName: string;
     authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
@@ -109,6 +110,49 @@ export interface DesignSpecification {
     targetRevisionId: string;
     targetSpecificationFingerprint: string;
     revocationReason?: string;
+    notes?: string;
+    provenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown' | 'unauthenticated-local-approval' | 'demonstration-fixture';
+    revocation?: {
+      id: string;
+      eventType: 'revocation';
+      originalApprovalEventId?: string;
+      targetRevisionId: string;
+      targetSpecificationFingerprint: string;
+      revokerId: string;
+      revokerName: string;
+      authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+      revokedAt: string;
+      reason: string;
+      notes?: string;
+    };
+  };
+  approvalHistory?: Array<{
+    id: string;
+    eventType: 'approval' | 'revocation';
+    targetRevisionId: string;
+    targetSpecificationFingerprint: string;
+    approverId?: string;
+    approverName?: string;
+    revokerId?: string;
+    revokerName?: string;
+    authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+    approvedAt?: string;
+    revokedAt?: string;
+    reason?: string;
+    notes?: string;
+    provenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown' | 'unauthenticated-local-approval' | 'demonstration-fixture';
+  }>;
+  revocationRecord?: {
+    id: string;
+    eventType: 'revocation';
+    originalApprovalEventId?: string;
+    targetRevisionId: string;
+    targetSpecificationFingerprint: string;
+    revokerId: string;
+    revokerName: string;
+    authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+    revokedAt: string;
+    reason: string;
     notes?: string;
   };
   approvalProvenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown' | 'unauthenticated-local-approval' | 'demonstration-fixture';
@@ -135,6 +179,7 @@ export interface DesignSpecification {
   waistAllowanceCm?: number;
   neckAllowanceCm?: number;
   armholeAllowanceCm?: number;
+  shoulderAllowanceCm?: number;
   /**
    * Clearly separated AI-inferred proposals before human validation
    */

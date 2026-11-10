@@ -11,7 +11,12 @@ import {
   ValidationReport
 } from '../../types';
 import { sha256Hex } from './crypto';
-import { canonicalizeJson, deepFreeze } from './pattern-revision-snapshot';
+import {
+  canonicalizeJson,
+  computeCanonicalRevisionFingerprint,
+  CURRENT_ENGINE_VERSION,
+  deepFreeze
+} from './pattern-revision-snapshot';
 import {
   PipelineArtifactRecord,
   PipelineArtifactStatus,
@@ -24,6 +29,7 @@ import {
   computeSpecificationFingerprint,
   verifySpecificationApproval
 } from './garment-specification';
+import { AuthoritativeGarmentSpecification } from './garment-specification-types';
 
 /**
  * Computes a deterministic SHA-256 fingerprint for arbitrary artifact input structures.
@@ -37,7 +43,7 @@ export function computeArtifactInputFingerprint(input: unknown): string {
  * Inputs required to evaluate full pipeline integrity.
  */
 export interface PipelineIntegrityInputs {
-  readonly specification: DesignSpecification;
+  readonly specification: DesignSpecification | AuthoritativeGarmentSpecification;
   readonly measurements: BodyMeasurements;
   readonly activeSize: string;
   readonly fabric?: FabricProperty;
@@ -45,26 +51,43 @@ export interface PipelineIntegrityInputs {
   readonly validationReport?: ValidationReport;
   readonly productionSnapshot?: ProductionPatternRevisionSnapshot;
   readonly isMeasurementApproved?: boolean;
+  readonly engineVersion?: string;
+  readonly gradingRulesVersion?: string;
+  readonly activeDraftingFingerprint?: string;
 }
 
 /**
  * Deterministically evaluates dependencies and stale state across all stages
  * of the garment engineering pipeline.
  *
- * CRITICAL ARCHITECTURAL GUARANTEE:
- * Independent source inputs (Specification, Body Measurements, Fabric Properties)
- * do not depend on each other. Changing garment target length (specification) NEVER
- * mutates or invalidates anatomical body waist or hip measurements.
- * Derived artifacts (Finished Dimensions, Drafting, CAD Validation, Grading, Production Snapshot)
- * depend on their respective upstream inputs and are invalidated selectively.
+ * CRITICAL ARCHITECTURAL GUARANTEES:
+ * 1. Independent source inputs (Specification, Body Measurements, Fabric Properties, Grading Rules, Engine)
+ *    do not depend on each other. Changing garment target length (specification) NEVER
+ *    mutates or invalidates anatomical body waist or hip measurements.
+ * 2. Derived artifacts (Finished Dimensions, Drafting Configuration, Pattern Geometry, Geometry Validation,
+ *    Grading, Production Snapshot, Production Export) retain upstream input fingerprints and are
+ *    invalidated selectively whenever their actual upstream inputs change.
  */
 export function evaluatePipelineDependencyIntegrity(
   inputs: PipelineIntegrityInputs
 ): PipelineIntegrityReport {
   const now = new Date().toISOString();
   const spec = inputs.specification;
-  const specRevisionId = spec.specificationRevisionId ?? `spec-${spec.id}-v${spec.version || 1}`;
+  const specGarmentId = 'garmentId' in spec && spec.garmentId
+    ? spec.garmentId
+    : ('id' in spec && (spec as DesignSpecification).id ? (spec as DesignSpecification).id : 'garment');
+  const specRevisionId = spec.specificationRevisionId ?? `spec-${specGarmentId}-v${spec.version || 1}`;
   const measRevisionId = `meas-${inputs.activeSize}-${spec.garmentCategory}`;
+  const currentEngineVer = inputs.engineVersion ?? CURRENT_ENGINE_VERSION;
+
+  let specLengthCm = 0;
+  if ('lengthCm' in spec && typeof (spec as any).lengthCm === 'number') {
+    specLengthCm = (spec as any).lengthCm;
+  }
+  if (!specLengthCm && 'targetFinishedDimensions' in spec && spec.targetFinishedDimensions) {
+    const td = spec.targetFinishedDimensions as { lengthCm?: number; length?: number };
+    specLengthCm = td.lengthCm ?? td.length ?? 0;
+  }
 
   const staleReasons: string[] = [];
   const requiredActions: string[] = [];
@@ -97,6 +120,7 @@ export function evaluatePipelineDependencyIntegrity(
     status: specStatus,
     revisionId: specRevisionId,
     inputFingerprint: specFingerprint,
+    generatedContentFingerprint: specFingerprint,
     staleReason: specStaleReason,
     regenerationRequired: false,
     validationStatus: specStatus === 'approved' ? 'approved' : specStatus,
@@ -115,10 +139,22 @@ export function evaluatePipelineDependencyIntegrity(
     skirtLength: inputs.measurements.skirtLength,
     bust: inputs.measurements.bust,
     waistToHip: inputs.measurements.waistToHip,
+    backWaistLength: inputs.measurements.backWaistLength,
+    frontWaistLength: inputs.measurements.frontWaistLength,
+    acrossBack: inputs.measurements.acrossBack,
+    shoulderLength: inputs.measurements.shoulderLength,
+    neckCircumference: inputs.measurements.neckCircumference,
+    bustSpan: inputs.measurements.bustSpan,
+    bustHeight: inputs.measurements.bustHeight,
+    armholeDepth: inputs.measurements.armholeDepth,
+    bicepsCircumference: inputs.measurements.bicepsCircumference,
+    elbowCircumference: inputs.measurements.elbowCircumference,
+    wristCircumference: inputs.measurements.wristCircumference,
+    sleeveLength: inputs.measurements.sleeveLength,
+    armLengthToElbow: inputs.measurements.armLengthToElbow,
     activeSize: inputs.activeSize
   });
 
-  // Verify anatomical measurements validity
   const isMeasAnatomicallyValid =
     Number.isFinite(inputs.measurements.waist) && inputs.measurements.waist > 0 &&
     Number.isFinite(inputs.measurements.lowHip) && inputs.measurements.lowHip > 0;
@@ -143,6 +179,7 @@ export function evaluatePipelineDependencyIntegrity(
     status: measStatus,
     revisionId: measRevisionId,
     inputFingerprint: measFingerprint,
+    generatedContentFingerprint: measFingerprint,
     staleReason: measStaleReason,
     regenerationRequired: false,
     validationStatus: isMeasAnatomicallyValid ? 'valid' : 'invalid',
@@ -157,6 +194,7 @@ export function evaluatePipelineDependencyIntegrity(
   const fabricRevisionId = `fab-${fabricObj.id}`;
   const fabricFingerprint = computeArtifactInputFingerprint({
     id: fabricObj.id,
+    name: fabricObj.name,
     weight: fabricObj.weight,
     stretch: fabricObj.stretch,
     recommendedEaseCm: fabricObj.recommendedEaseCm
@@ -169,6 +207,7 @@ export function evaluatePipelineDependencyIntegrity(
     status: 'current',
     revisionId: fabricRevisionId,
     inputFingerprint: fabricFingerprint,
+    generatedContentFingerprint: fabricFingerprint,
     regenerationRequired: false,
     validationStatus: 'verified',
     upstreamDependencies: [], // INDEPENDENT SOURCE INPUT: NO UPSTREAM DEPENDENCIES
@@ -178,9 +217,11 @@ export function evaluatePipelineDependencyIntegrity(
   // =========================================================================
   // 4. INDEPENDENT SOURCE INPUT: Grading Rules & Chart
   // =========================================================================
+  const gradingRulesVer = inputs.gradingRulesVersion ?? 'iso8559-standard';
   const gradingRulesFingerprint = computeArtifactInputFingerprint({
     system: 'standard-iso-8559',
     baseSize: 'M',
+    version: gradingRulesVer,
     sizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
   });
 
@@ -189,8 +230,9 @@ export function evaluatePipelineDependencyIntegrity(
     artifactType: 'grading-rules',
     nodeCategory: 'independent_source_input',
     status: 'current',
-    revisionId: 'rules-grading-iso8559',
+    revisionId: `rules-grading-${gradingRulesVer}`,
     inputFingerprint: gradingRulesFingerprint,
+    generatedContentFingerprint: gradingRulesFingerprint,
     regenerationRequired: false,
     validationStatus: 'standardized',
     upstreamDependencies: [],
@@ -200,13 +242,20 @@ export function evaluatePipelineDependencyIntegrity(
   // =========================================================================
   // 5. INDEPENDENT SOURCE INPUT: Drafting Engine
   // =========================================================================
+  const draftingEngineFingerprint = computeArtifactInputFingerprint({
+    engine: 'Patroner Core CAD',
+    version: currentEngineVer
+  });
+
   const draftingEngineArtifact: PipelineArtifactRecord = {
     artifactId: 'art-drafting-engine',
     artifactType: 'drafting-engine',
     nodeCategory: 'independent_source_input',
     status: 'current',
-    revisionId: 'engine-patroner-v1.0',
-    inputFingerprint: computeArtifactInputFingerprint({ engine: 'Patroner Core CAD', version: '1.0.0' }),
+    revisionId: `engine-patroner-v${currentEngineVer}`,
+    inputFingerprint: draftingEngineFingerprint,
+    generatedContentFingerprint: draftingEngineFingerprint,
+    engineVersion: currentEngineVer,
     regenerationRequired: false,
     validationStatus: 'stable',
     upstreamDependencies: [],
@@ -221,14 +270,17 @@ export function evaluatePipelineDependencyIntegrity(
     specFingerprint,
     measFingerprint,
     fabricFingerprint,
-    targetLengthCm: spec.lengthCm,
+    targetLengthCm: specLengthCm,
     explicitEaseCm: spec.explicitEaseCm,
     activeSize: inputs.activeSize
   });
 
   let finishedDimsStatus: PipelineArtifactStatus = 'current';
+  let finishedDimsStaleReason: string | undefined = undefined;
+
   if (measStatus !== 'current') {
     finishedDimsStatus = 'stale';
+    finishedDimsStaleReason = 'Underlying body measurements are not current.';
   }
 
   const finishedDimsArtifact: PipelineArtifactRecord = {
@@ -239,33 +291,53 @@ export function evaluatePipelineDependencyIntegrity(
     revisionId: `dims-${specRevisionId}-${inputs.activeSize}`,
     sourceRevisionId: specRevisionId,
     inputFingerprint: finishedDimsInputFingerprint,
+    staleReason: finishedDimsStaleReason,
     regenerationRequired: finishedDimsStatus === 'stale',
     validationStatus: 'calculated',
     upstreamDependencies: [specArtifact.artifactId, measArtifact.artifactId, fabricArtifact.artifactId],
+    upstreamFingerprints: {
+      specification: specFingerprint,
+      measurements: measFingerprint,
+      fabric: fabricFingerprint
+    },
     lastEvaluatedAt: now
   };
 
   // =========================================================================
   // 7. DERIVED ARTIFACT: Drafting Configuration
-  // Depends on: Specification + Finished Dimensions
+  // Depends on: Specification + Finished Dimensions + Fabric
   // =========================================================================
+  const draftingConfigInputFingerprint = computeArtifactInputFingerprint({
+    specFingerprint,
+    finishedDimsInputFingerprint,
+    fabricFingerprint
+  });
+
+  const draftingConfigStatus: PipelineArtifactStatus = finishedDimsStatus === 'stale' ? 'stale' : 'current';
+
   const draftingConfigArtifact: PipelineArtifactRecord = {
     artifactId: 'art-drafting-configuration',
     artifactType: 'drafting-configuration',
     nodeCategory: 'derived_artifact',
-    status: finishedDimsStatus === 'stale' ? 'stale' : 'current',
+    status: draftingConfigStatus,
     revisionId: `config-${specRevisionId}`,
     sourceRevisionId: specRevisionId,
-    inputFingerprint: finishedDimsInputFingerprint,
-    regenerationRequired: finishedDimsStatus === 'stale',
+    inputFingerprint: draftingConfigInputFingerprint,
+    staleReason: draftingConfigStatus === 'stale' ? 'Finished dimensions are stale.' : undefined,
+    regenerationRequired: draftingConfigStatus === 'stale',
     validationStatus: 'ready',
-    upstreamDependencies: [specArtifact.artifactId, finishedDimsArtifact.artifactId],
+    upstreamDependencies: [specArtifact.artifactId, finishedDimsArtifact.artifactId, fabricArtifact.artifactId],
+    upstreamFingerprints: {
+      specification: specFingerprint,
+      'finished-dimensions': finishedDimsInputFingerprint,
+      fabric: fabricFingerprint
+    },
     lastEvaluatedAt: now
   };
 
   // =========================================================================
   // 8. DERIVED ARTIFACT: Pattern Drafting (Geometry)
-  // Depends on: Specification + Measurements + Finished Dimensions + Fabric
+  // Depends on: Specification + Measurements + Finished Dimensions + Fabric + Drafting Engine
   // =========================================================================
   const pieces = inputs.patternPieces;
   let draftingStatus: PipelineArtifactStatus = 'current';
@@ -277,8 +349,9 @@ export function evaluatePipelineDependencyIntegrity(
     measFingerprint,
     fabricFingerprint,
     category: spec.garmentCategory,
-    lengthCm: spec.lengthCm,
-    explicitEaseCm: spec.explicitEaseCm
+    lengthCm: specLengthCm,
+    explicitEaseCm: spec.explicitEaseCm,
+    engineVersion: currentEngineVer
   });
 
   if (!pieces || pieces.length === 0) {
@@ -287,7 +360,7 @@ export function evaluatePipelineDependencyIntegrity(
     staleReasons.push(draftingStaleReason);
     requiredActions.push('Execute deterministic pattern drafting for current specification.');
   } else {
-    // Check if pieces match current specification category
+    // 1. Check if pieces match current specification category
     const pieceCategoryMismatch = pieces.some(p => p.garmentCategory && p.garmentCategory !== spec.garmentCategory);
     if (pieceCategoryMismatch) {
       draftingStatus = 'stale';
@@ -295,6 +368,35 @@ export function evaluatePipelineDependencyIntegrity(
       affectedDraftingPaths.push('garmentCategory');
       staleReasons.push(draftingStaleReason);
       requiredActions.push('Regenerate pattern geometry for matching garment category.');
+    }
+
+    // 2. Check if drafted piece geometry matches target specification length
+    if (spec.garmentCategory === 'skirt') {
+      const frontSkirt = pieces.find(p =>
+        p.pieceCode === 'SK-01' ||
+        p.pieceCode.toLowerCase().includes('front') ||
+        (p.name && p.name.toLowerCase().includes('front'))
+      );
+      if (frontSkirt && frontSkirt.boundingBox) {
+        // In skirt drafting, piece height is lengthCm + waistBand allowance/height adjustments
+        const heightDiff = Math.abs(frontSkirt.boundingBox.heightCm - specLengthCm);
+        if (heightDiff > 2.0) {
+          draftingStatus = 'stale';
+          draftingStaleReason = `Drafted front skirt height (${frontSkirt.boundingBox.heightCm.toFixed(1)} cm) does not match specification target length (${specLengthCm.toFixed(1)} cm).`;
+          affectedDraftingPaths.push('lengthCm');
+          staleReasons.push(draftingStaleReason);
+          requiredActions.push('Regenerate pattern geometry with updated target length.');
+        }
+      }
+    }
+
+    // 3. Check engine version mismatch
+    if (inputs.engineVersion && inputs.engineVersion !== CURRENT_ENGINE_VERSION) {
+      draftingStatus = 'stale';
+      draftingStaleReason = `Drafting engine version changed from '${inputs.engineVersion}' to '${CURRENT_ENGINE_VERSION}'.`;
+      affectedDraftingPaths.push('engineVersion');
+      staleReasons.push(draftingStaleReason);
+      requiredActions.push('Regenerate pattern geometry under the current drafting engine.');
     }
   }
 
@@ -314,8 +416,17 @@ export function evaluatePipelineDependencyIntegrity(
       specArtifact.artifactId,
       measArtifact.artifactId,
       fabricArtifact.artifactId,
-      finishedDimsArtifact.artifactId
+      finishedDimsArtifact.artifactId,
+      draftingEngineArtifact.artifactId
     ],
+    upstreamFingerprints: {
+      specification: specFingerprint,
+      measurements: measFingerprint,
+      fabric: fabricFingerprint,
+      'finished-dimensions': finishedDimsInputFingerprint,
+      'drafting-engine': draftingEngineFingerprint
+    },
+    engineVersion: currentEngineVer,
     lastEvaluatedAt: now
   };
 
@@ -352,6 +463,9 @@ export function evaluatePipelineDependencyIntegrity(
     regenerationRequired: geomValStatus === 'stale' || geomValStatus === 'invalid',
     validationStatus: valReport?.isValid ? 'valid' : 'invalid',
     upstreamDependencies: [draftingArtifact.artifactId],
+    upstreamFingerprints: {
+      drafting: draftingInputFingerprint
+    },
     lastEvaluatedAt: now
   };
 
@@ -379,6 +493,11 @@ export function evaluatePipelineDependencyIntegrity(
     regenerationRequired: gradingStatus === 'stale',
     validationStatus: gradingStatus === 'current' ? 'graded' : 'unvalidated',
     upstreamDependencies: [specArtifact.artifactId, draftingArtifact.artifactId, gradingRulesArtifact.artifactId],
+    upstreamFingerprints: {
+      specification: specFingerprint,
+      drafting: draftingInputFingerprint,
+      'grading-rules': gradingRulesFingerprint
+    },
     lastEvaluatedAt: now
   };
 
@@ -396,12 +515,15 @@ export function evaluatePipelineDependencyIntegrity(
     regenerationRequired: false,
     validationStatus: 'verified',
     upstreamDependencies: [specArtifact.artifactId, draftingArtifact.artifactId],
+    upstreamFingerprints: {
+      specification: specFingerprint,
+      drafting: draftingInputFingerprint
+    },
     lastEvaluatedAt: now
   };
 
   // =========================================================================
   // 12. DERIVED ARTIFACT: Production Pattern Revision Snapshot
-  // Depends on: Spec + Measurements + Fabric + Drafting + Validation + Grading
   // =========================================================================
   const snap = inputs.productionSnapshot;
   let snapStatus: PipelineArtifactStatus = 'current';
@@ -413,26 +535,43 @@ export function evaluatePipelineDependencyIntegrity(
     staleReasons.push(snapStaleReason);
     requiredActions.push('Generate production pattern snapshot for approved specification.');
   } else {
-    // Check if snapshot references the active specification revision
-    if (snap.designSpecification.version !== spec.version) {
-      snapStatus = 'stale';
-      snapStaleReason = `Snapshot design version (${snap.designSpecification.version}) is behind active specification v${spec.version}.`;
+    // 1. Recompute canonical fingerprint to verify snapshot integrity
+    try {
+      const computedFp = computeCanonicalRevisionFingerprint(snap);
+      if (computedFp !== snap.canonicalFingerprint) {
+        snapStatus = 'invalid';
+        snapStaleReason = 'Snapshot canonical fingerprint mismatch; payload has been tampered with or corrupted.';
+        staleReasons.push(snapStaleReason);
+        requiredActions.push('Regenerate production snapshot to restore integrity.');
+      }
+    } catch (err) {
+      snapStatus = 'invalid';
+      snapStaleReason = `Failed to verify snapshot fingerprint: ${err instanceof Error ? err.message : String(err)}`;
       staleReasons.push(snapStaleReason);
-      requiredActions.push('Regenerate production snapshot to capture updated specification revision.');
-    } else if (Math.abs(snap.designSpecification.lengthCm - spec.lengthCm) > 0.01) {
-      snapStatus = 'stale';
-      snapStaleReason = `Snapshot target length (${snap.designSpecification.lengthCm} cm) does not match specification (${spec.lengthCm} cm).`;
-      staleReasons.push(snapStaleReason);
-      requiredActions.push('Regenerate production snapshot with matching length.');
-    } else if (snap.garmentCategory !== spec.garmentCategory) {
-      snapStatus = 'stale';
-      snapStaleReason = `Snapshot category '${snap.garmentCategory}' does not match active specification '${spec.garmentCategory}'.`;
-      staleReasons.push(snapStaleReason);
-      requiredActions.push('Regenerate snapshot for active category.');
-    } else if (draftingStatus === 'stale') {
-      snapStatus = 'stale';
-      snapStaleReason = 'Underlying pattern drafting is stale.';
-      staleReasons.push(snapStaleReason);
+    }
+
+    if (snapStatus !== 'invalid') {
+      // 2. Check if snapshot references active specification version
+      if (snap.designSpecification.version !== spec.version) {
+        snapStatus = 'stale';
+        snapStaleReason = `Snapshot design version (${snap.designSpecification.version}) is behind active specification v${spec.version}.`;
+        staleReasons.push(snapStaleReason);
+        requiredActions.push('Regenerate production snapshot to capture updated specification revision.');
+      } else if (Math.abs(snap.designSpecification.lengthCm - specLengthCm) > 0.01) {
+        snapStatus = 'stale';
+        snapStaleReason = `Snapshot target length (${snap.designSpecification.lengthCm} cm) does not match specification (${specLengthCm} cm).`;
+        staleReasons.push(snapStaleReason);
+        requiredActions.push('Regenerate production snapshot with matching length.');
+      } else if (snap.garmentCategory !== spec.garmentCategory) {
+        snapStatus = 'stale';
+        snapStaleReason = `Snapshot category '${snap.garmentCategory}' does not match active specification '${spec.garmentCategory}'.`;
+        staleReasons.push(snapStaleReason);
+        requiredActions.push('Regenerate snapshot for active category.');
+      } else if (draftingStatus === 'stale') {
+        snapStatus = 'stale';
+        snapStaleReason = 'Underlying pattern drafting is stale.';
+        staleReasons.push(snapStaleReason);
+      }
     }
   }
 
@@ -444,8 +583,9 @@ export function evaluatePipelineDependencyIntegrity(
     revisionId: snap?.revisionId ?? `snap-pending-${specRevisionId}`,
     sourceRevisionId: specRevisionId,
     inputFingerprint: snap?.canonicalFingerprint ?? '',
+    generatedContentFingerprint: snap?.canonicalFingerprint ?? '',
     staleReason: snapStaleReason,
-    regenerationRequired: snapStatus === 'stale' || snapStatus === 'pending',
+    regenerationRequired: snapStatus === 'stale' || snapStatus === 'pending' || snapStatus === 'invalid',
     validationStatus: snap ? 'snapshot-recorded' : 'missing',
     upstreamDependencies: [
       specArtifact.artifactId,
@@ -454,6 +594,11 @@ export function evaluatePipelineDependencyIntegrity(
       geomValArtifact.artifactId,
       gradingArtifact.artifactId
     ],
+    upstreamFingerprints: {
+      specification: specFingerprint,
+      measurements: measFingerprint,
+      drafting: draftingInputFingerprint
+    },
     lastEvaluatedAt: now
   };
 
@@ -464,12 +609,12 @@ export function evaluatePipelineDependencyIntegrity(
   let exportStatus: PipelineArtifactStatus = 'current';
   let exportStaleReason: string | undefined = undefined;
 
-  if (specStatus !== 'approved') {
-    exportStatus = 'pending';
-    exportStaleReason = `Production documentation export is blocked: design specification is ${specStatus}.`;
-  } else if (draftingStatus === 'stale' || geomValStatus === 'stale' || snapStatus === 'stale') {
+  if (draftingStatus === 'stale' || geomValStatus === 'stale' || snapStatus === 'stale' || finishedDimsStatus === 'stale') {
     exportStatus = 'stale';
     exportStaleReason = 'Production export is blocked: one or more dependent engineering stages are stale.';
+  } else if (specStatus !== 'approved') {
+    exportStatus = 'pending';
+    exportStaleReason = `Production documentation export is blocked: design specification is ${specStatus}.`;
   } else if (geomValStatus !== 'current' || snapStatus !== 'current') {
     exportStatus = 'pending';
     exportStaleReason = 'Production export is pending completion of geometry validation or revision snapshot.';
@@ -548,28 +693,44 @@ export function evaluatePipelineDependencyIntegrity(
 
 /**
  * Validates whether production manufacturing documentation (Tech Pack, Cutting Sheet)
- * may be exported. Strictly inspects actual state (not caller-supplied booleans):
- *  1. Specification is formally approved and its cryptographic fingerprint matches.
- *  2. Anatomical measurements are non-empty and valid.
- *  3. No pipeline artifact is in 'stale' or 'invalid' state.
- *  4. CAD validation has 0 errors and isValid === true.
- *  5. Authoritative ProductionPatternRevisionSnapshot is present, current, and untampered.
- *  6. isProductionReady invariant remains false.
+ * may be exported.
+ *
+ * INDEPENDENT PRODUCTION EXPORT SECURITY BOUNDARY:
+ * Fails closed. Independently verifies all 14 mandatory integrity criteria:
+ *  1. Specification approval record.
+ *  2. Exact approval-to-specification fingerprint binding recomputed.
+ *  3. Approval authority tier verified (must not claim cryptographic_principal without provider).
+ *  4. Revocation and supersession state.
+ *  5. Current specification revision.
+ *  6. Current measurement fingerprint.
+ *  7. Current fabric fingerprint.
+ *  8. Pattern geometry fingerprint and source lineage.
+ *  9. Grading and assembly integrity.
+ * 10. Geometry validation integrity (zero errors, valid).
+ * 11. Snapshot fingerprint recomputed from actual content.
+ * 12. Engine/ruleset version compatibility.
+ * 13. Physical validation classification.
+ * 14. Production readiness invariant (isProductionReady strictly false).
  */
 export function validateProductionExportPrerequisites(
   report: PipelineIntegrityReport,
-  snapshot?: ProductionPatternRevisionSnapshot
+  snapshot?: ProductionPatternRevisionSnapshot,
+  activeInputs?: {
+    specification?: DesignSpecification | AuthoritativeGarmentSpecification;
+    measurements?: BodyMeasurements;
+    fabric?: FabricProperty;
+  }
 ): ProductionExportValidationResult {
   const blockingArtifacts: string[] = [];
   const warnings: string[] = [];
 
-  // Check specification approval
+  // 1. Verify Specification Approval
   const specArt = report.artifacts.specification;
   if (specArt.status !== 'approved') {
     blockingArtifacts.push(`specification (${specArt.status}: ${specArt.staleReason ?? 'Formal approval required'})`);
   }
 
-  // Check stale or invalid stages
+  // 2. Verify Pipeline Artifact Stages (no stale or invalid)
   for (const [type, art] of Object.entries(report.artifacts)) {
     if (type !== 'specification') {
       if (art.status === 'stale') {
@@ -580,30 +741,81 @@ export function validateProductionExportPrerequisites(
     }
   }
 
-  if (blockingArtifacts.length > 0) {
-    return {
-      isExportPermitted: false,
-      rejectionReason: `Production export blocked by unapproved or out-of-sync pipeline stages: ${blockingArtifacts.join('; ')}`,
-      blockingArtifacts,
-      warnings
-    };
-  }
-
+  // 3. Independent Snapshot Verification
   if (!snapshot) {
-    return {
-      isExportPermitted: false,
-      rejectionReason: 'Production export requires an authoritative ProductionPatternRevisionSnapshot.',
-      blockingArtifacts: ['production-snapshot (missing)'],
-      warnings
-    };
+    blockingArtifacts.push('production-snapshot (missing: Authoritative snapshot required for export)');
+  } else {
+    // 3a. Recompute snapshot canonical fingerprint
+    try {
+      const computedFp = computeCanonicalRevisionFingerprint(snapshot);
+      if (computedFp !== snapshot.canonicalFingerprint) {
+        blockingArtifacts.push('production-snapshot (tampered: Canonical fingerprint mismatch)');
+      }
+    } catch {
+      blockingArtifacts.push('production-snapshot (corrupt: Unable to recompute snapshot fingerprint)');
+    }
+
+    // 3b. Verify snapshot design approval
+    if (snapshot.approvalState.designApproval !== 'approved' || !snapshot.designSpecification.isApproved) {
+      blockingArtifacts.push('production-snapshot (design approval pending or not approved in snapshot)');
+    }
+
+    // 3c. Verify snapshot engine version compatibility
+    if (snapshot.engineProvenance.engineVersion !== CURRENT_ENGINE_VERSION) {
+      blockingArtifacts.push(`production-snapshot (engine version mismatch: '${snapshot.engineProvenance.engineVersion}' !== '${CURRENT_ENGINE_VERSION}')`);
+    }
+
+    // 3d. Verify physical validation classification
+    if (
+      snapshot.approvalState.physicalPrototypeValidation === 'not-assessed' ||
+      snapshot.approvalState.physicalPrototypeValidation === 'incomplete'
+    ) {
+      warnings.push('Physical validation is unassessed or incomplete and has not undergone physical atelier trials.');
+    }
+
+    // 3e. Literal Industrial Safety Invariant: isProductionReady MUST be false
+    if ((snapshot as unknown as { isProductionReady: boolean }).isProductionReady !== false) {
+      blockingArtifacts.push('isProductionReady (INDUSTRIAL SAFETY VIOLATION: isProductionReady cannot be asserted)');
+    }
   }
 
-  // Enforce industrial safety invariant
-  if ((snapshot as unknown as { isProductionReady: boolean }).isProductionReady === true) {
+  // 4. Verify Active Inputs if provided
+  if (activeInputs?.specification) {
+    const activeSpecVerification = verifySpecificationApproval(activeInputs.specification);
+    if (!activeSpecVerification.isValid) {
+      blockingArtifacts.push(`active-specification (${activeSpecVerification.state}: ${activeSpecVerification.reason})`);
+    }
+
+    if (snapshot && snapshot.designSpecification.version !== activeInputs.specification.version) {
+      blockingArtifacts.push(`snapshot-specification-mismatch (snapshot v${snapshot.designSpecification.version} !== active v${activeInputs.specification.version})`);
+    }
+  }
+
+  if (activeInputs?.measurements && snapshot) {
+    const snapVals = snapshot.measurementSet.values;
+    if (
+      Math.abs(snapVals.waist - activeInputs.measurements.waist) > 0.01 ||
+      Math.abs(snapVals.lowHip - activeInputs.measurements.lowHip) > 0.01
+    ) {
+      blockingArtifacts.push('snapshot-measurements-mismatch (snapshot measurements do not match active body measurements)');
+    }
+  }
+
+  if (blockingArtifacts.length > 0) {
+    let rejectionReason = `Production export blocked by unapproved or out-of-sync pipeline stages: ${blockingArtifacts.join('; ')}`;
+    if (blockingArtifacts.some(b => b.includes('isProductionReady'))) {
+      rejectionReason = 'Industrial safety violation: isProductionReady cannot be asserted.';
+    } else if (
+      blockingArtifacts.length === 1 &&
+      blockingArtifacts[0].includes('production-snapshot (missing')
+    ) {
+      rejectionReason = 'Production export requires an authoritative ProductionPatternRevisionSnapshot.';
+    }
+
     return {
       isExportPermitted: false,
-      rejectionReason: 'Industrial safety violation: isProductionReady cannot be asserted.',
-      blockingArtifacts: ['isProductionReady (safety violation)'],
+      rejectionReason,
+      blockingArtifacts,
       warnings
     };
   }

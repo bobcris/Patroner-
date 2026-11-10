@@ -49,9 +49,45 @@ export type ApprovalAuthorityTier =
   | 'cryptographic_principal';
 
 /**
+ * Immutable approval event recording an authorization action.
+ */
+export interface SpecificationApprovalEvent {
+  readonly id: string;
+  readonly eventType: 'approval';
+  readonly targetRevisionId: string;
+  readonly targetSpecificationFingerprint: string;
+  readonly approverId: string;
+  readonly approverName: string;
+  readonly authorityTier: ApprovalAuthorityTier;
+  readonly approvedAt: string; // ISO 8601
+  readonly notes?: string;
+  readonly provenance: SpecificationValueProvenance;
+}
+
+/**
+ * Immutable revocation event recording an explicit revocation action.
+ */
+export interface SpecificationRevocationEvent {
+  readonly id: string;
+  readonly eventType: 'revocation';
+  readonly originalApprovalEventId?: string;
+  readonly targetRevisionId: string;
+  readonly targetSpecificationFingerprint: string;
+  readonly revokerId: string;
+  readonly revokerName: string;
+  readonly authorityTier: ApprovalAuthorityTier;
+  readonly revokedAt: string; // ISO 8601
+  readonly reason: string;
+  readonly notes?: string;
+}
+
+export type SpecificationLifecycleEvent = SpecificationApprovalEvent | SpecificationRevocationEvent;
+
+/**
  * Immutable cryptographic approval record binding an approver to an exact specification fingerprint.
  */
 export interface SpecificationApprovalRecord {
+  readonly eventId?: string;
   readonly approverId: string;
   readonly approverName: string;
   readonly authorityTier: ApprovalAuthorityTier;
@@ -60,6 +96,8 @@ export interface SpecificationApprovalRecord {
   readonly targetSpecificationFingerprint: string;
   readonly revocationReason?: string;
   readonly notes?: string;
+  readonly provenance?: SpecificationValueProvenance;
+  readonly revocation?: SpecificationRevocationEvent;
 }
 
 /**
@@ -97,6 +135,7 @@ export interface GarmentAllowancesSnapshot {
   readonly waistAllowanceCm?: number;
   readonly neckAllowanceCm?: number;
   readonly armholeAllowanceCm?: number;
+  readonly shoulderAllowanceCm?: number;
 }
 
 /**
@@ -132,6 +171,8 @@ export interface AuthoritativeGarmentSpecification {
   readonly approvalState: SpecificationApprovalState;
   readonly approvalAuthorityTier?: ApprovalAuthorityTier;
   readonly approvalRecord?: SpecificationApprovalRecord;
+  readonly approvalHistory?: readonly SpecificationLifecycleEvent[];
+  readonly revocationRecord?: SpecificationRevocationEvent;
   readonly approvedBy?: string;
   readonly approvedAt?: string; // ISO 8601 date string
   readonly approvalProvenance: SpecificationValueProvenance;
@@ -180,9 +221,19 @@ export interface CreateAuthoritativeSpecificationInput {
   readonly approvalState?: SpecificationApprovalState;
   readonly approvalAuthorityTier?: ApprovalAuthorityTier;
   readonly approvalRecord?: SpecificationApprovalRecord;
+  readonly approvalHistory?: readonly SpecificationLifecycleEvent[];
+  readonly revocationRecord?: SpecificationRevocationEvent;
   readonly approvedBy?: string;
   readonly approvedAt?: string;
   readonly approvalProvenance?: SpecificationValueProvenance;
   readonly engineProvenance?: Partial<EngineProvenanceRecord>;
-  readonly aiEstimates?: DesignSpecification['aiEstimates'];
+  readonly aiEstimates?:
+    | DesignSpecification['aiEstimates']
+    | {
+        readonly suggestedSilhouette: string;
+        readonly styleConfidenceScore: number;
+        readonly suggestedFabrics: readonly string[];
+        readonly technicalAdvice: string;
+        readonly disclaimer: string;
+      };
 }
