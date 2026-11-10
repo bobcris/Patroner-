@@ -39,14 +39,27 @@ export type SpecificationApprovalState =
   | 'superseded'
   | 'invalid';
 
+export const SPECIFICATION_CANONICAL_SCHEMA_VERSION = '1.0.0';
+
 /**
  * Authority classification for specification approval.
  * Prevents unauthenticated local or demo approval from masquerading as verified organizational sign-off.
  */
 export type ApprovalAuthorityTier =
-  | 'unauthenticated_local_session'
   | 'demonstration_fixture'
+  | 'unauthenticated_local_session'
+  | 'authenticated_designer'
   | 'cryptographic_principal';
+
+/**
+ * Provider interface required to verify higher-tier authority claims.
+ */
+export interface AuthorityProviderContext {
+  readonly hasAuthenticatedIdentityProvider?: () => boolean;
+  readonly hasCryptographicSigningProvider?: () => boolean;
+  readonly verifyIdentityToken?: (token: string, expectedApprover: string) => boolean;
+  readonly verifyCryptographicSignature?: (signature: string, payload: string) => boolean;
+}
 
 /**
  * Immutable approval event recording an authorization action.

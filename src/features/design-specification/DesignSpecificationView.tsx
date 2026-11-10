@@ -197,6 +197,10 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
                 <span className="text-[10px] text-emerald-600 border-l border-emerald-300 pl-1.5">
                   {spec.approvalAuthorityTier === 'demonstration_fixture'
                     ? 'Demonstration Fixture'
+                    : spec.approvalAuthorityTier === 'authenticated_designer'
+                    ? 'Authenticated Designer'
+                    : spec.approvalAuthorityTier === 'cryptographic_principal'
+                    ? 'Cryptographic Principal'
                     : 'Local Unauthenticated Session'}
                 </span>
               </span>

@@ -22,9 +22,11 @@ import {
   PipelineArtifactStatus,
   PipelineArtifactType,
   PipelineIntegrityReport,
+  ProductionExportRejectionCode,
   ProductionExportValidationResult
 } from './dependency-types';
 import { ProductionPatternRevisionSnapshot } from './production-types';
+import { EnhancedFabricProperty } from '../fabric/fabric-types';
 import {
   computeSpecificationFingerprint,
   verifySpecificationApproval
@@ -192,12 +194,36 @@ export function evaluatePipelineDependencyIntegrity(
   // =========================================================================
   const fabricObj = inputs.fabric ?? spec.fabric;
   const fabricRevisionId = `fab-${fabricObj.id}`;
+  const enh = fabricObj as Partial<EnhancedFabricProperty> | undefined;
   const fabricFingerprint = computeArtifactInputFingerprint({
     id: fabricObj.id,
     name: fabricObj.name,
+    composition: fabricObj.composition ?? '',
     weight: fabricObj.weight,
     stretch: fabricObj.stretch,
-    recommendedEaseCm: fabricObj.recommendedEaseCm
+    recommendedEaseCm: fabricObj.recommendedEaseCm,
+    gsm: enh?.gsm ?? null,
+    thicknessMm: enh?.thicknessMm ?? null,
+    moldingFactor: enh?.moldingFactor ?? null,
+    directional: enh?.directional ? {
+      warp: enh.directional.warp ? {
+        shrinkagePercent: enh.directional.warp.shrinkagePercent,
+        stretchPercent: enh.directional.warp.stretchPercent
+      } : null,
+      weft: enh.directional.weft ? {
+        shrinkagePercent: enh.directional.weft.shrinkagePercent,
+        stretchPercent: enh.directional.weft.stretchPercent
+      } : null,
+      bias: enh.directional.bias ? {
+        stretchPercent: enh.directional.bias.stretchPercent
+      } : null
+    } : null,
+    fabricRevision: 'fabricRevision' in spec && spec.fabricRevision
+      ? spec.fabricRevision
+      : (enh?.revision ?? null),
+    fabricProvenance: 'fabricProvenance' in spec && spec.fabricProvenance
+      ? spec.fabricProvenance
+      : (enh?.provenance ?? 'unknown')
   });
 
   const fabricArtifact: PipelineArtifactRecord = {
@@ -281,6 +307,21 @@ export function evaluatePipelineDependencyIntegrity(
   if (measStatus !== 'current') {
     finishedDimsStatus = 'stale';
     finishedDimsStaleReason = 'Underlying body measurements are not current.';
+    staleReasons.push(finishedDimsStaleReason);
+  } else if (inputs.productionSnapshot) {
+    const snapMeas = inputs.productionSnapshot.measurementSet.values;
+    const activeMeas = (inputs.measurements as unknown) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(activeMeas)) {
+      if (typeof v === 'number') {
+        const snapV = snapMeas[k];
+        if (typeof snapV !== 'number' || Math.abs(snapV - v) > 0.001) {
+          finishedDimsStatus = 'stale';
+          finishedDimsStaleReason = `Finished dimensions are stale: measurement '${k}' changed from ${snapV} to ${v}.`;
+          staleReasons.push(finishedDimsStaleReason);
+          break;
+        }
+      }
+    }
   }
 
   const finishedDimsArtifact: PipelineArtifactRecord = {
@@ -340,8 +381,8 @@ export function evaluatePipelineDependencyIntegrity(
   // Depends on: Specification + Measurements + Finished Dimensions + Fabric + Drafting Engine
   // =========================================================================
   const pieces = inputs.patternPieces;
-  let draftingStatus: PipelineArtifactStatus = 'current';
-  let draftingStaleReason: string | undefined = undefined;
+  let draftingStatus: PipelineArtifactStatus = draftingConfigStatus === 'stale' ? 'stale' : 'current';
+  let draftingStaleReason: string | undefined = draftingConfigStatus === 'stale' ? 'Finished dimensions or drafting configuration is stale.' : undefined;
   const affectedDraftingPaths: string[] = [];
 
   const draftingInputFingerprint = computeArtifactInputFingerprint({
@@ -378,11 +419,15 @@ export function evaluatePipelineDependencyIntegrity(
         (p.name && p.name.toLowerCase().includes('front'))
       );
       if (frontSkirt && frontSkirt.boundingBox) {
-        // In skirt drafting, piece height is lengthCm + waistBand allowance/height adjustments
-        const heightDiff = Math.abs(frontSkirt.boundingBox.heightCm - specLengthCm);
-        if (heightDiff > 2.0) {
+        // In skirt drafting, piece height may be net finished length (~lengthCm) or cut height (lengthCm + seam allowance + hem allowance)
+        const pieceHeight = frontSkirt.boundingBox.heightCm;
+        const specAllowances = 'allowances' in spec ? spec.allowances : undefined;
+        const allowancesHeight = (specAllowances?.hemAllowanceCm ?? 3.0) + (specAllowances?.waistAllowanceCm ?? 1.0) + 0.8;
+        const isNetLengthMatching = Math.abs(pieceHeight - specLengthCm) <= 2.5;
+        const isCutLengthMatching = Math.abs(pieceHeight - (specLengthCm + allowancesHeight)) <= 3.5;
+        if (!isNetLengthMatching && !isCutLengthMatching) {
           draftingStatus = 'stale';
-          draftingStaleReason = `Drafted front skirt height (${frontSkirt.boundingBox.heightCm.toFixed(1)} cm) does not match specification target length (${specLengthCm.toFixed(1)} cm).`;
+          draftingStaleReason = `Drafted front skirt height (${pieceHeight.toFixed(1)} cm) does not match specification target length (${specLengthCm.toFixed(1)} cm).`;
           affectedDraftingPaths.push('lengthCm');
           staleReasons.push(draftingStaleReason);
           requiredActions.push('Regenerate pattern geometry with updated target length.');
@@ -441,6 +486,15 @@ export function evaluatePipelineDependencyIntegrity(
   if (draftingStatus === 'stale') {
     geomValStatus = 'stale';
     geomStaleReason = 'Geometry validation is stale because drafted geometry is stale.';
+  } else if (inputs.productionSnapshot && pieces && pieces.length > 0) {
+    const snapPieces = inputs.productionSnapshot.patternPieces;
+    const snapPieceCodes = new Set(snapPieces.map(p => p.pieceCode));
+    const pieceMismatch = pieces.length !== snapPieces.length || pieces.some(p => !snapPieceCodes.has(p.pieceCode));
+    if (pieceMismatch) {
+      geomValStatus = 'stale';
+      geomStaleReason = 'Geometry validation is stale: pattern piece count or identities have changed.';
+      staleReasons.push(geomStaleReason);
+    }
   } else if (!valReport) {
     geomValStatus = 'pending';
     geomStaleReason = 'Geometry has not been validated against seam consistency checks.';
@@ -476,9 +530,23 @@ export function evaluatePipelineDependencyIntegrity(
   let gradingStatus: PipelineArtifactStatus = 'current';
   let gradingStaleReason: string | undefined = undefined;
 
-  if (draftingStatus === 'stale' || geomValStatus === 'invalid') {
+  if (draftingStatus === 'stale' || geomValStatus === 'invalid' || geomValStatus === 'stale') {
     gradingStatus = 'stale';
-    gradingStaleReason = 'Grading is stale because base geometry is stale or invalid.';
+    gradingStaleReason = 'Grading is stale because base geometry, dimensions, or measurements are stale or invalid.';
+  } else if (inputs.productionSnapshot) {
+    const snapMeas = inputs.productionSnapshot.measurementSet.values;
+    const activeMeas = (inputs.measurements as unknown) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(activeMeas)) {
+      if (typeof v === 'number') {
+        const snapV = snapMeas[k];
+        if (typeof snapV !== 'number' || Math.abs(snapV - v) > 0.001) {
+          gradingStatus = 'stale';
+          gradingStaleReason = `Grading is stale because base measurements (${k}) have changed.`;
+          staleReasons.push(gradingStaleReason);
+          break;
+        }
+      }
+    }
   }
 
   const gradingArtifact: PipelineArtifactRecord = {
@@ -567,7 +635,48 @@ export function evaluatePipelineDependencyIntegrity(
         snapStaleReason = `Snapshot category '${snap.garmentCategory}' does not match active specification '${spec.garmentCategory}'.`;
         staleReasons.push(snapStaleReason);
         requiredActions.push('Regenerate snapshot for active category.');
-      } else if (draftingStatus === 'stale') {
+      }
+
+      if (snapStatus === 'current' && inputs.fabric && snap.fabricSpecification) {
+        const snapFab = snap.fabricSpecification;
+        const activeFab = inputs.fabric;
+        const activeEnh = activeFab as Partial<EnhancedFabricProperty> | undefined;
+        const provDiff = activeEnh?.provenance && snapFab.provenance !== activeEnh.provenance;
+        const activeProvLot = (activeEnh?.provenance as unknown as Record<string, unknown> | undefined)?.batchLot;
+        const snapProvLot = (snapFab.provenance as unknown as Record<string, unknown> | undefined)?.batchLot;
+        const lotDiff = Boolean(activeProvLot && snapProvLot !== activeProvLot);
+        const revDiff = activeEnh?.revision && snapFab.fabricRevision !== activeEnh.revision;
+        const gsmDiff = activeEnh?.gsm !== undefined && snapFab.gsm !== undefined && activeEnh.gsm !== snapFab.gsm;
+        const thickDiff = activeEnh?.thicknessMm !== undefined && snapFab.thicknessMm !== undefined && Math.abs(activeEnh.thicknessMm - snapFab.thicknessMm) > 0.001;
+        if (snapFab.fabricId !== activeFab.id || snapFab.weight !== activeFab.weight || snapFab.stretch !== activeFab.stretch || provDiff || lotDiff || revDiff || gsmDiff || thickDiff) {
+          snapStatus = 'stale';
+          snapStaleReason = 'Production snapshot fabric properties or provenance do not match active fabric.';
+          staleReasons.push(snapStaleReason);
+        }
+      }
+
+      if (snapStatus === 'current' && inputs.measurements && snap.measurementSet) {
+        const snapMeas = snap.measurementSet.values;
+        const activeMeas = (inputs.measurements as unknown) as Record<string, unknown>;
+        let measMismatch = false;
+        for (const [k, v] of Object.entries(activeMeas)) {
+          if (typeof v === 'number') {
+            const snapV = snapMeas[k];
+            if (typeof snapV !== 'number' || Math.abs(snapV - v) > 0.001) {
+              measMismatch = true;
+              break;
+            }
+          }
+        }
+        if (measMismatch) {
+          snapStatus = 'stale';
+          snapStaleReason = 'Active body measurements have changed since production snapshot was captured.';
+          staleReasons.push(snapStaleReason);
+          requiredActions.push('Regenerate production snapshot with active measurements.');
+        }
+      }
+
+      if (snapStatus === 'current' && draftingStatus === 'stale') {
         snapStatus = 'stale';
         snapStaleReason = 'Underlying pattern drafting is stale.';
         staleReasons.push(snapStaleReason);
@@ -719,24 +828,69 @@ export function validateProductionExportPrerequisites(
     specification?: DesignSpecification | AuthoritativeGarmentSpecification;
     measurements?: BodyMeasurements;
     fabric?: FabricProperty;
+    patternPieces?: readonly PatternPiece[];
+    validationReport?: ValidationReport;
   }
 ): ProductionExportValidationResult {
-  const blockingArtifacts: string[] = [];
-  const warnings: string[] = [];
-
-  // 1. Verify Specification Approval
-  const specArt = report.artifacts.specification;
-  if (specArt.status !== 'approved') {
-    blockingArtifacts.push(`specification (${specArt.status}: ${specArt.staleReason ?? 'Formal approval required'})`);
+  // Fail-closed guard against missing or malformed report
+  if (!report || !report.artifacts || typeof report.artifacts !== 'object') {
+    return {
+      isExportPermitted: false,
+      rejectionCode: 'FORGED_REPORT_DETECTED',
+      rejectionReason: 'Invalid, malformed or forged PipelineIntegrityReport provided.',
+      blockingArtifacts: ['pipeline-integrity-report (malformed or missing artifacts record)'],
+      warnings: []
+    };
   }
 
-  // 2. Verify Pipeline Artifact Stages (no stale or invalid)
+  const requiredStages: PipelineArtifactType[] = [
+    'specification',
+    'measurements',
+    'fabric',
+    'finished-dimensions',
+    'drafting',
+    'geometry-validation',
+    'grading',
+    'production-snapshot'
+  ];
+  const missingStages = requiredStages.filter(s => !report.artifacts[s]);
+  if (missingStages.length > 0) {
+    return {
+      isExportPermitted: false,
+      rejectionCode: 'FORGED_REPORT_DETECTED',
+      rejectionReason: `Pipeline integrity report is missing required stages: ${missingStages.join(', ')}`,
+      blockingArtifacts: [`pipeline-integrity-report (missing stages: ${missingStages.join(', ')})`],
+      warnings: []
+    };
+  }
+
+
+  const blockingArtifacts: string[] = [];
+  const warnings: string[] = [];
+  let rejectionCode: ProductionExportRejectionCode | undefined = undefined;
+
+  // 1. Verify Specification Approval from report
+  const specArt = report.artifacts.specification;
+  if (!specArt || specArt.status !== 'approved') {
+    blockingArtifacts.push(`specification (${specArt?.status ?? 'missing'}: ${specArt?.staleReason ?? 'Formal approval required'})`);
+    if (specArt?.status === 'revoked') {
+      rejectionCode = 'SPECIFICATION_REVOKED';
+    } else if (specArt?.status === 'invalid') {
+      rejectionCode = 'SPECIFICATION_INVALID';
+    } else {
+      rejectionCode = 'SPECIFICATION_UNAPPROVED';
+    }
+  }
+
+  // 2. Verify Pipeline Artifact Stages from report (fail closed on stale/invalid)
   for (const [type, art] of Object.entries(report.artifacts)) {
     if (type !== 'specification') {
       if (art.status === 'stale') {
         blockingArtifacts.push(`${type} (stale: ${art.staleReason ?? 'regeneration required'})`);
+        if (!rejectionCode) rejectionCode = 'STALE_SOURCE_FINGERPRINT';
       } else if (art.status === 'invalid') {
         blockingArtifacts.push(`${type} (invalid: ${art.staleReason ?? 'critical errors must be resolved'})`);
+        if (!rejectionCode) rejectionCode = 'UPSTREAM_STAGE_INVALID';
       }
     }
   }
@@ -744,31 +898,36 @@ export function validateProductionExportPrerequisites(
   // 3. Independent Snapshot Verification
   if (!snapshot) {
     blockingArtifacts.push('production-snapshot (missing: Authoritative snapshot required for export)');
+    if (!rejectionCode) rejectionCode = 'SNAPSHOT_MISSING';
   } else {
-    // 3a. Recompute snapshot canonical fingerprint
+    // 3a. Recompute snapshot canonical fingerprint directly from payload
     try {
       const computedFp = computeCanonicalRevisionFingerprint(snapshot);
       if (computedFp !== snapshot.canonicalFingerprint) {
         blockingArtifacts.push('production-snapshot (tampered: Canonical fingerprint mismatch)');
+        rejectionCode = 'SNAPSHOT_GEOMETRY_TAMPERED';
       }
     } catch {
       blockingArtifacts.push('production-snapshot (corrupt: Unable to recompute snapshot fingerprint)');
+      if (!rejectionCode) rejectionCode = 'SNAPSHOT_CORRUPT';
     }
 
     // 3b. Verify snapshot design approval
-    if (snapshot.approvalState.designApproval !== 'approved' || !snapshot.designSpecification.isApproved) {
+    if (!snapshot.approvalState || snapshot.approvalState.designApproval !== 'approved' || !snapshot.designSpecification?.isApproved) {
       blockingArtifacts.push('production-snapshot (design approval pending or not approved in snapshot)');
+      if (!rejectionCode) rejectionCode = 'SPECIFICATION_UNAPPROVED';
     }
 
     // 3c. Verify snapshot engine version compatibility
-    if (snapshot.engineProvenance.engineVersion !== CURRENT_ENGINE_VERSION) {
-      blockingArtifacts.push(`production-snapshot (engine version mismatch: '${snapshot.engineProvenance.engineVersion}' !== '${CURRENT_ENGINE_VERSION}')`);
+    if (!snapshot.engineProvenance || snapshot.engineProvenance.engineVersion !== CURRENT_ENGINE_VERSION) {
+      blockingArtifacts.push(`production-snapshot (engine version mismatch: '${snapshot.engineProvenance?.engineVersion}' !== '${CURRENT_ENGINE_VERSION}')`);
+      if (!rejectionCode) rejectionCode = 'ENGINE_VERSION_MISMATCH';
     }
 
     // 3d. Verify physical validation classification
     if (
-      snapshot.approvalState.physicalPrototypeValidation === 'not-assessed' ||
-      snapshot.approvalState.physicalPrototypeValidation === 'incomplete'
+      snapshot.approvalState?.physicalPrototypeValidation === 'not-assessed' ||
+      snapshot.approvalState?.physicalPrototypeValidation === 'incomplete'
     ) {
       warnings.push('Physical validation is unassessed or incomplete and has not undergone physical atelier trials.');
     }
@@ -776,53 +935,175 @@ export function validateProductionExportPrerequisites(
     // 3e. Literal Industrial Safety Invariant: isProductionReady MUST be false
     if ((snapshot as unknown as { isProductionReady: boolean }).isProductionReady !== false) {
       blockingArtifacts.push('isProductionReady (INDUSTRIAL SAFETY VIOLATION: isProductionReady cannot be asserted)');
+      rejectionCode = 'INDUSTRIAL_SAFETY_VIOLATION';
     }
   }
 
-  // 4. Verify Active Inputs if provided
+  // 4. Independent Active Inputs Lineage Verification
   if (activeInputs?.specification) {
     const activeSpecVerification = verifySpecificationApproval(activeInputs.specification);
     if (!activeSpecVerification.isValid) {
       blockingArtifacts.push(`active-specification (${activeSpecVerification.state}: ${activeSpecVerification.reason})`);
+      if (activeSpecVerification.state === 'revoked') {
+        rejectionCode = 'SPECIFICATION_REVOKED';
+      } else if (activeSpecVerification.state === 'invalid') {
+        rejectionCode = 'SPECIFICATION_INVALID';
+      } else {
+        rejectionCode = 'SPECIFICATION_UNAPPROVED';
+      }
     }
 
-    if (snapshot && snapshot.designSpecification.version !== activeInputs.specification.version) {
-      blockingArtifacts.push(`snapshot-specification-mismatch (snapshot v${snapshot.designSpecification.version} !== active v${activeInputs.specification.version})`);
+    if (snapshot && snapshot.designSpecification) {
+      const snapSpec = snapshot.designSpecification;
+      const activeSpec = activeInputs.specification;
+
+      if (snapSpec.version !== activeSpec.version) {
+        blockingArtifacts.push(`snapshot-specification-mismatch (snapshot v${snapSpec.version} !== active v${activeSpec.version})`);
+        rejectionCode = 'SNAPSHOT_SPECIFICATION_REVISION_MISMATCH';
+      }
+
+      if (snapSpec.specificationRevisionId && activeSpec.specificationRevisionId && snapSpec.specificationRevisionId !== activeSpec.specificationRevisionId) {
+        blockingArtifacts.push(`snapshot-specification-mismatch (snapshot rev '${snapSpec.specificationRevisionId}' !== active rev '${activeSpec.specificationRevisionId}')`);
+        rejectionCode = 'SNAPSHOT_SPECIFICATION_REVISION_MISMATCH';
+      }
+
+      if ('fabric' in snapSpec && (snapSpec as Record<string, unknown>).fabric) {
+        const activeFp = computeSpecificationFingerprint(activeSpec);
+        const snapFp = computeSpecificationFingerprint(snapSpec as unknown as DesignSpecification);
+        if (activeFp !== snapFp) {
+          blockingArtifacts.push('snapshot-specification-mismatch (snapshot specification fingerprint does not match active specification fingerprint)');
+          if (!rejectionCode) rejectionCode = 'SPECIFICATION_FINGERPRINT_MISMATCH';
+        }
+      }
     }
   }
 
-  if (activeInputs?.measurements && snapshot) {
+  // 5. Complete Measurements Lineage Verification
+  if (activeInputs?.measurements && snapshot && snapshot.measurementSet?.values) {
     const snapVals = snapshot.measurementSet.values;
-    if (
-      Math.abs(snapVals.waist - activeInputs.measurements.waist) > 0.01 ||
-      Math.abs(snapVals.lowHip - activeInputs.measurements.lowHip) > 0.01
-    ) {
+    const activeVals = (activeInputs.measurements as unknown) as Record<string, unknown>;
+
+    let measurementMismatch = false;
+    for (const [k, v] of Object.entries(activeVals)) {
+      if (typeof v === 'number') {
+        const snapV = snapVals[k];
+        if (typeof snapV !== 'number' || Math.abs(snapV - v) > 0.001) {
+          measurementMismatch = true;
+          break;
+        }
+      }
+    }
+
+    if (measurementMismatch) {
       blockingArtifacts.push('snapshot-measurements-mismatch (snapshot measurements do not match active body measurements)');
+      if (!rejectionCode) rejectionCode = 'SNAPSHOT_MEASUREMENTS_MISMATCH';
     }
   }
 
+  // 6. Complete Fabric Lineage Verification
+  if (activeInputs?.fabric && snapshot) {
+    const snapFab = snapshot.fabricSpecification;
+    const activeFab = activeInputs.fabric;
+    const activeEnh = activeFab as Partial<EnhancedFabricProperty>;
+
+    const gsmMismatch = activeEnh.gsm !== undefined && snapFab.gsm !== undefined && activeEnh.gsm !== snapFab.gsm;
+    const thicknessMismatch = activeEnh.thicknessMm !== undefined && snapFab.thicknessMm !== undefined && Math.abs(activeEnh.thicknessMm - snapFab.thicknessMm) > 0.001;
+    const compositionMismatch = activeFab.composition !== undefined && snapFab.composition !== undefined && activeFab.composition !== snapFab.composition;
+
+    if (
+      activeFab.id !== snapFab.fabricId ||
+      activeFab.weight !== snapFab.weight ||
+      activeFab.stretch !== snapFab.stretch ||
+      gsmMismatch ||
+      thicknessMismatch ||
+      compositionMismatch
+    ) {
+      blockingArtifacts.push('snapshot-fabric-mismatch (snapshot fabric does not match active fabric properties)');
+      if (!rejectionCode) rejectionCode = 'SNAPSHOT_FABRIC_MISMATCH';
+    }
+  }
+
+  // 7. Forged Report Detection
+  if (activeInputs?.specification && activeInputs?.measurements) {
+    try {
+      const recomputedReport = evaluatePipelineDependencyIntegrity({
+        specification: activeInputs.specification,
+        measurements: activeInputs.measurements,
+        activeSize: snapshot?.targetSize ?? 'M',
+        fabric: activeInputs.fabric,
+        patternPieces: activeInputs.patternPieces ?? (snapshot?.patternPieces as readonly PatternPiece[] | undefined),
+        validationReport: activeInputs.validationReport ?? (snapshot?.validation as unknown as ValidationReport | undefined),
+        productionSnapshot: snapshot
+      });
+
+      if (
+        (recomputedReport.artifacts.drafting.status === 'stale' && report.artifacts.drafting.status === 'current') ||
+        (recomputedReport.artifacts['finished-dimensions'].status === 'stale' && report.artifacts['finished-dimensions'].status === 'current') ||
+        (recomputedReport.hasStaleArtifacts && !report.hasStaleArtifacts)
+      ) {
+        blockingArtifacts.push('pipeline-integrity-report (forged: Report artifact status contradicts recomputed active dependency evaluation)');
+        if (!rejectionCode) rejectionCode = 'FORGED_REPORT_DETECTED';
+      }
+    } catch {
+      // Recomputation errors are fail-closed
+      blockingArtifacts.push('pipeline-integrity-report (evaluation-error: Failed to verify dependency report against active inputs)');
+      if (!rejectionCode) rejectionCode = 'FORGED_REPORT_DETECTED';
+    }
+  }
+
+  // 8. Result Construction
   if (blockingArtifacts.length > 0) {
     let rejectionReason = `Production export blocked by unapproved or out-of-sync pipeline stages: ${blockingArtifacts.join('; ')}`;
     if (blockingArtifacts.some(b => b.includes('isProductionReady'))) {
       rejectionReason = 'Industrial safety violation: isProductionReady cannot be asserted.';
+      rejectionCode = 'INDUSTRIAL_SAFETY_VIOLATION';
     } else if (
       blockingArtifacts.length === 1 &&
       blockingArtifacts[0].includes('production-snapshot (missing')
     ) {
       rejectionReason = 'Production export requires an authoritative ProductionPatternRevisionSnapshot.';
+      rejectionCode = 'SNAPSHOT_MISSING';
+    } else if (blockingArtifacts.some(b => b.includes('tampered'))) {
+      rejectionReason = 'Production export blocked: ProductionPatternRevisionSnapshot payload is tampered.';
+      if (!rejectionCode) rejectionCode = 'SNAPSHOT_GEOMETRY_TAMPERED';
+    } else if (blockingArtifacts.some(b => b.includes('snapshot-specification-mismatch'))) {
+      rejectionReason = 'Production export blocked: snapshot-specification-mismatch between active specification and snapshot revision.';
+      if (!rejectionCode) rejectionCode = 'SNAPSHOT_SPECIFICATION_REVISION_MISMATCH';
     }
 
     return {
       isExportPermitted: false,
+      rejectionCode: rejectionCode ?? 'UPSTREAM_STAGE_STALE',
       rejectionReason,
       blockingArtifacts,
-      warnings
+      warnings,
+      validationDetails: {
+        snapshotRevisionId: snapshot?.revisionId,
+        activeSpecificationRevisionId: activeInputs?.specification?.specificationRevisionId,
+        blockingCount: blockingArtifacts.length
+      }
     };
   }
 
   return {
     isExportPermitted: true,
     blockingArtifacts: [],
-    warnings
+    warnings,
+    validationDetails: {
+      snapshotRevisionId: snapshot?.revisionId,
+      canonicalFingerprint: snapshot?.canonicalFingerprint
+    },
+    manufacturingDocumentation: snapshot ? {
+      isProductionReady: false,
+      specificationFingerprint: activeInputs?.specification
+        ? computeSpecificationFingerprint(activeInputs.specification)
+        : (snapshot.designSpecification && 'fabric' in snapshot.designSpecification
+            ? computeSpecificationFingerprint(snapshot.designSpecification as unknown as DesignSpecification)
+            : snapshot.canonicalFingerprint),
+      patternRevisionFingerprint: snapshot.canonicalFingerprint,
+      revisionId: snapshot.revisionId,
+      exportedAt: new Date().toISOString()
+    } : undefined
   };
 }
+

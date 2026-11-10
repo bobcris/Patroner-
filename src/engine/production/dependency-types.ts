@@ -83,11 +83,54 @@ export interface PipelineIntegrityReport {
 }
 
 /**
+ * Machine-readable rejection codes for production documentation export barriers.
+ */
+export type ProductionExportRejectionCode =
+  | 'SPECIFICATION_UNAPPROVED'
+  | 'SPECIFICATION_REVOKED'
+  | 'SPECIFICATION_INVALID'
+  | 'SPECIFICATION_FINGERPRINT_MISMATCH'
+  | 'AUTHORITY_TIER_UNAVAILABLE'
+  | 'SNAPSHOT_MISSING'
+  | 'SNAPSHOT_TAMPERED'
+  | 'SNAPSHOT_CORRUPT'
+  | 'SNAPSHOT_SPECIFICATION_MISMATCH'
+  | 'SNAPSHOT_SPECIFICATION_REVISION_MISMATCH'
+  | 'SNAPSHOT_MEASUREMENTS_MISMATCH'
+  | 'SNAPSHOT_FABRIC_MISMATCH'
+  | 'SNAPSHOT_GEOMETRY_TAMPERED'
+  | 'ENGINE_VERSION_MISMATCH'
+  | 'GRADING_RULES_MISMATCH'
+  | 'UPSTREAM_STAGE_STALE'
+  | 'UPSTREAM_STAGE_INVALID'
+  | 'FORGED_REPORT_DETECTED'
+  | 'FORGED_INTEGRITY_REPORT'
+  | 'STALE_SOURCE_FINGERPRINT'
+  | 'MISSING_REQUIRED_LINEAGE'
+  | 'INDUSTRIAL_SAFETY_VIOLATION';
+
+/**
+ * Summary of manufacturing documentation export metadata.
+ * Physical manufacturing readiness remains strictly false.
+ */
+export interface ManufacturingDocumentationSummary {
+  readonly isProductionReady: false;
+  readonly specificationFingerprint: string;
+  readonly patternRevisionFingerprint: string;
+  readonly revisionId: string;
+  readonly exportedAt: string;
+}
+
+/**
  * Validation result for production export requests.
  */
 export interface ProductionExportValidationResult {
   readonly isExportPermitted: boolean;
+  readonly rejectionCode?: ProductionExportRejectionCode;
   readonly rejectionReason?: string;
   readonly blockingArtifacts: readonly string[];
   readonly warnings: readonly string[];
+  readonly validationDetails?: Readonly<Record<string, unknown>>;
+  readonly manufacturingDocumentation?: ManufacturingDocumentationSummary;
 }
+

@@ -100,12 +100,12 @@ export interface DesignSpecification {
   fabricProvenance?: 'supplier-declared' | 'laboratory-tested' | 'user-entered' | 'project-default' | 'unknown' | 'unverified';
   approvedBy?: string;
   approvalState?: 'draft' | 'pending_approval' | 'approved' | 'revoked' | 'superseded' | 'invalid';
-  approvalAuthorityTier?: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+  approvalAuthorityTier?: 'unauthenticated_local_session' | 'demonstration_fixture' | 'authenticated_designer' | 'cryptographic_principal';
   approvalRecord?: {
     eventId?: string;
     approverId: string;
     approverName: string;
-    authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+    authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'authenticated_designer' | 'cryptographic_principal';
     approvedAt: string;
     targetRevisionId: string;
     targetSpecificationFingerprint: string;
@@ -120,7 +120,7 @@ export interface DesignSpecification {
       targetSpecificationFingerprint: string;
       revokerId: string;
       revokerName: string;
-      authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+      authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'authenticated_designer' | 'cryptographic_principal';
       revokedAt: string;
       reason: string;
       notes?: string;
@@ -135,7 +135,7 @@ export interface DesignSpecification {
     approverName?: string;
     revokerId?: string;
     revokerName?: string;
-    authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+    authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'authenticated_designer' | 'cryptographic_principal';
     approvedAt?: string;
     revokedAt?: string;
     reason?: string;
@@ -150,7 +150,7 @@ export interface DesignSpecification {
     targetSpecificationFingerprint: string;
     revokerId: string;
     revokerName: string;
-    authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'cryptographic_principal';
+    authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'authenticated_designer' | 'cryptographic_principal';
     revokedAt: string;
     reason: string;
     notes?: string;
