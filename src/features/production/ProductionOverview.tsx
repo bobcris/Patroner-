@@ -35,6 +35,8 @@ import { MOCK_CONFORMING_PROTOTYPE_BODICE_M } from '../../engine/prototype/proto
 import {
   createProductionPatternRevision,
   evaluatePipelineDependencyIntegrity,
+  MeasurementApprovalStatus,
+  MeasurementOrigin,
   validateProductionExportPrerequisites
 } from '../../engine/production';
 
@@ -42,6 +44,8 @@ interface ProductionOverviewProps {
   currentSpec: DesignSpecification;
   measurements: BodyMeasurements;
   activeSize: string;
+  measurementProvenance?: MeasurementOrigin;
+  measurementApprovalState?: MeasurementApprovalStatus;
   onNavigateToCAD: () => void;
 }
 
@@ -49,6 +53,8 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   currentSpec,
   measurements,
   activeSize,
+  measurementProvenance = 'standard-chart',
+  measurementApprovalState = 'approved',
   onNavigateToCAD
 }) => {
   let pieces: PatternPiece[] = [];
@@ -209,15 +215,16 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     try {
       return createProductionPatternRevision({
         projectId: 'project-patroner-default',
+        revisionId: `rev-${currentSpec.id}-v${currentSpec.version}-${activeSize}`,
         targetSize: activeSize,
         designSpecification: currentSpec,
         measurements: {
           values: ({ ...measurements } as unknown) as Record<string, number>,
-          defaultOrigin: 'user-entered',
+          defaultOrigin: measurementProvenance,
           approval: {
-            state: 'approved',
-            approvedBy: 'Operator Confirmed',
-            approvedAt: '2026-11-09T08:00:00.000Z'
+            state: measurementApprovalState,
+            approvedBy: measurementApprovalState === 'approved' ? 'Operator Confirmed' : undefined,
+            approvedAt: measurementApprovalState === 'approved' ? '2026-11-09T08:00:00.000Z' : undefined
           }
         },
         fabric: enhancedFabric,
@@ -228,24 +235,39 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     } catch {
       return null;
     }
-  }, [currentSpec, measurements, activeSize, enhancedFabric, pieces, validation]);
+  }, [currentSpec, measurements, activeSize, measurementProvenance, measurementApprovalState, enhancedFabric, pieces, validation]);
 
   const pipelineReport = React.useMemo(() => {
     return evaluatePipelineDependencyIntegrity({
       specification: currentSpec,
       measurements,
+      measurementApprovalState,
+      measurementProvenance,
       activeSize,
-      fabric: currentSpec.fabric,
+      fabric: enhancedFabric,
       patternPieces: pieces,
       validationReport: validation,
       productionSnapshot: liveSnapshot ?? undefined
     });
-  }, [currentSpec, measurements, activeSize, pieces, validation, liveSnapshot]);
+  }, [currentSpec, measurements, measurementApprovalState, measurementProvenance, activeSize, enhancedFabric, pieces, validation, liveSnapshot]);
+
+  const liveExportValidation = React.useMemo(() => {
+    return validateProductionExportPrerequisites(pipelineReport, liveSnapshot ?? undefined, {
+      specification: currentSpec,
+      measurements,
+      measurementApprovalState,
+      measurementProvenance,
+      fabric: enhancedFabric,
+      patternPieces: pieces,
+      validationReport: validation
+    });
+  }, [pipelineReport, liveSnapshot, currentSpec, measurements, measurementApprovalState, measurementProvenance, enhancedFabric, pieces, validation]);
 
   const handlePrint = () => {
-    const exportResult = validateProductionExportPrerequisites(pipelineReport, liveSnapshot ?? undefined);
-    if (!exportResult.isExportPermitted) {
-      setExportWarning(`Production export blocked: ${exportResult.rejectionReason}`);
+    if (!liveExportValidation.isExportPermitted) {
+      setExportWarning(
+        `[${liveExportValidation.rejectionCode ?? 'EXPORT_BLOCKED'}] ${liveExportValidation.rejectionReason}`
+      );
       return;
     }
     setExportWarning(null);
@@ -298,6 +320,26 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
           <button onClick={() => setExportWarning(null)} className="text-red-700 hover:text-red-950 font-bold ml-2">✕</button>
         </div>
       )}
+
+      {/* Independent Export Gate Status Banner */}
+      <div className={`p-3 rounded border text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+        liveExportValidation.isExportPermitted
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+          : 'bg-amber-50 border-amber-300 text-amber-950'
+      }`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-bold">
+            EXPORT GATE: {liveExportValidation.isExportPermitted ? 'PERMITTED (2D CAD DOCS)' : `BLOCKED [${liveExportValidation.rejectionCode ?? 'PENDING'}]`}
+          </span>
+          <span>•</span>
+          <span>
+            {liveExportValidation.isExportPermitted
+              ? `All 13 pipeline stages synchronized • Snapshot: ${liveSnapshot?.canonicalFingerprint.slice(0, 16)}…`
+              : liveExportValidation.rejectionReason}
+          </span>
+        </div>
+        <Badge variant="neutral" size="sm">isProductionReady: false</Badge>
+      </div>
 
       {/* Production Certification Banner */}
       <div className="bg-neutral-900 text-white rounded-sm p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

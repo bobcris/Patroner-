@@ -16,13 +16,26 @@ import {
 } from '../../engine/measurements/standards';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { Compass, CheckCircle2, AlertTriangle, ArrowRight, Scissors } from 'lucide-react';
+import { Compass, CheckCircle2, AlertTriangle, ArrowRight, Scissors, ShieldCheck } from 'lucide-react';
+import {
+  MeasurementApprovalStatus,
+  MeasurementOrigin
+} from '../../engine/production';
 
 interface MeasurementWorkspaceProps {
   currentMeasurements: BodyMeasurements;
   activeSize: StandardSize | 'custom';
   currentSpec: DesignSpecification;
-  onUpdateMeasurements: (m: BodyMeasurements, sizeLabel: StandardSize | 'custom') => void;
+  measurementProvenance?: MeasurementOrigin;
+  measurementApprovalState?: MeasurementApprovalStatus;
+  measurementRevisionId?: string;
+  onUpdateMeasurements: (
+    m: BodyMeasurements,
+    sizeLabel: StandardSize | 'custom',
+    provenance?: MeasurementOrigin
+  ) => void;
+  onUpdateMeasurementApproval?: (state: MeasurementApprovalStatus) => void;
+  onUpdateMeasurementProvenance?: (origin: MeasurementOrigin) => void;
   onNavigateToCAD: () => void;
 }
 
@@ -30,7 +43,12 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
   currentMeasurements,
   activeSize,
   currentSpec,
+  measurementProvenance = 'standard-chart',
+  measurementApprovalState = 'unverified',
+  measurementRevisionId = 'meas-rev-1',
   onUpdateMeasurements,
+  onUpdateMeasurementApproval,
+  onUpdateMeasurementProvenance,
   onNavigateToCAD
 }) => {
   const [selectedSize, setSelectedSize] = useState<StandardSize | 'custom'>(activeSize);
@@ -75,7 +93,7 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
       skirtLength: currentSpec.lengthCm || STANDARD_SIZING_SYSTEM.sizes[size].skirtLength
     };
     setMeasurements(standardValues);
-    onUpdateMeasurements(standardValues, size);
+    onUpdateMeasurements(standardValues, size, 'standard-chart');
   };
 
   const handleCustomFieldChange = (field: keyof BodyMeasurements, val: number) => {
@@ -85,8 +103,13 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
     };
     setSelectedSize('custom');
     setMeasurements(updated);
-    onUpdateMeasurements(updated, 'custom');
+    onUpdateMeasurements(updated, 'custom', 'user-entered');
   };
+
+  const canApproveMeasurements =
+    validation.isValid &&
+    measurementProvenance !== 'ai-estimated' &&
+    measurementProvenance !== 'unknown';
 
   return (
     <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-8">
@@ -117,20 +140,91 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
         </Button>
       </div>
 
-      {/* Sizing Standard Citation Banner */}
-      <div className="bg-stone-50 border border-stone-200 rounded-sm p-4 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 font-mono">
-            <span className="font-semibold text-neutral-900">REFERENCE STANDARD:</span>
-            <span className="text-neutral-700">{STANDARD_SIZING_SYSTEM.system}</span>
-            <Badge variant="neutral" size="sm">ISO 13402</Badge>
+      {/* Sizing Standard Citation & Explicit Measurement Provenance/Approval Banner */}
+      <div className="bg-stone-50 border border-stone-200 rounded-sm p-4 text-xs flex flex-col gap-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 font-mono">
+              <span className="font-semibold text-neutral-900">REFERENCE STANDARD:</span>
+              <span className="text-neutral-700">{STANDARD_SIZING_SYSTEM.system}</span>
+              <Badge variant="neutral" size="sm">ISO 13402</Badge>
+              <span className="text-neutral-400">|</span>
+              <span className="text-neutral-600">REV: {measurementRevisionId}</span>
+            </div>
+            <p className="text-neutral-600 text-[11px]">
+              {STANDARD_SIZING_SYSTEM.description}
+            </p>
           </div>
-          <p className="text-neutral-600 text-[11px]">
-            {STANDARD_SIZING_SYSTEM.description}
-          </p>
+          <div className="text-[11px] font-mono text-neutral-500">
+            MODE: {selectedSize === 'custom' ? 'CUSTOM BESPOKE PROFILE' : `STANDARD SIZE ${selectedSize}`}
+          </div>
         </div>
-        <div className="text-[11px] font-mono text-neutral-500">
-          MODE: {selectedSize === 'custom' ? 'CUSTOM BESPOKE PROFILE' : `STANDARD SIZE ${selectedSize}`}
+
+        <div className="pt-3 border-t border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-3 font-mono">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-neutral-500">PROVENANCE:</span>
+            <select
+              aria-label="Measurement Provenance"
+              value={measurementProvenance}
+              onChange={e => {
+                const nextOrigin = e.target.value as MeasurementOrigin;
+                onUpdateMeasurementProvenance?.(nextOrigin);
+                if (nextOrigin === 'ai-estimated' || nextOrigin === 'unknown') {
+                  onUpdateMeasurementApproval?.('unverified');
+                }
+              }}
+              className="text-xs px-2 py-1 border border-stone-300 rounded bg-white text-neutral-900 font-semibold"
+            >
+              <option value="standard-chart">standard-chart (ISO 13402)</option>
+              <option value="user-entered">user-entered (Bespoke Operator)</option>
+              <option value="physically-measured">physically-measured (Direct Tape)</option>
+              <option value="ai-estimated">ai-estimated (Non-Authoritative)</option>
+              <option value="unknown">unknown (Unverified Origin)</option>
+            </select>
+
+            <span className="text-neutral-400">|</span>
+            <span className="text-neutral-500">APPROVAL STATE:</span>
+            <Badge
+              variant={
+                measurementApprovalState === 'approved'
+                  ? 'success'
+                  : measurementApprovalState === 'rejected'
+                  ? 'danger'
+                  : 'warning'
+              }
+              size="sm"
+            >
+              {measurementApprovalState.toUpperCase()}
+            </Badge>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {measurementApprovalState === 'approved' ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onUpdateMeasurementApproval?.('unverified')}
+                className="text-xs font-mono"
+              >
+                Mark Unverified
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!canApproveMeasurements}
+                onClick={() => {
+                  if (canApproveMeasurements) {
+                    onUpdateMeasurementApproval?.('approved');
+                  }
+                }}
+                icon={<ShieldCheck className="w-3.5 h-3.5" />}
+                className="text-xs font-mono uppercase"
+              >
+                Approve Measurement Set (Local Operator)
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

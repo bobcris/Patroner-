@@ -9,14 +9,22 @@ import assert from 'node:assert/strict';
 import {
   createAuthoritativeGarmentSpecification,
   reviseAuthoritativeGarmentSpecification,
+  supersedeAuthoritativeGarmentSpecification,
   approveAuthoritativeGarmentSpecification,
   revokeAuthoritativeGarmentSpecificationApproval,
   computeSpecificationFingerprint,
+  canonicalizeSpecificationPayload,
   verifySpecificationApproval,
   convertToDesignSpecification,
   setAuthorityProviderContext,
-  resetAuthorityProviderContext
+  getAuthorityProviderContext,
+  resetAuthorityProviderContext,
+  issueVerifiableIdentityCredential,
+  createTrustedIdentityVerifier,
+  signSpecificationApprovalPayload,
+  createTrustedCryptographicVerifier
 } from './garment-specification';
+import { SPECIFICATION_CANONICAL_SCHEMA_VERSION } from './garment-specification-types';
 
 import {
   evaluatePipelineDependencyIntegrity,
@@ -33,9 +41,18 @@ import { draftSkirtBlock } from '../drafting/skirt-block';
 import { getEnhancedFabricById, DEFAULT_ILLUSTRATIVE_FABRIC } from '../fabric/fabric-presets';
 import { validatePatternDraft } from '../validation/seam-validator';
 import { gradePattern } from '../grading/pattern-grader';
-import { createProductionPatternRevision } from './pattern-revision-snapshot';
+import {
+  createProductionPatternRevision,
+  createAuthoritativeMeasurementSet,
+  approveAuthoritativeMeasurementSet,
+  supersedeAuthoritativeMeasurementSet,
+  verifyMeasurementSetIntegrity
+} from './pattern-revision-snapshot';
 import { ValidationReport } from '../../types';
-import { ProductionSnapshotValidationError } from './production-types';
+import {
+  ProductionSnapshotMeasurementError,
+  ProductionSnapshotValidationError
+} from './production-types';
 
 describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversarial Scenarios', () => {
   const sizeM = STANDARD_SIZING_SYSTEM.sizes.M;
@@ -837,12 +854,14 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
   // Scenario 30: Valid, complete, current documentation export permitted
   // -------------------------------------------------------------------------
   it('Scenario 30: permits manufacturing documentation export when all prerequisites are satisfied and isProductionReady remains false', () => {
-    const { spec, snapshot, report } = createFullPipelineSynchronizedFixture();
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
 
     const exportResult = validateProductionExportPrerequisites(report, snapshot, {
       specification: spec,
       measurements: sizeM,
-      fabric: standardFabric
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
     });
 
     assert.equal(exportResult.isExportPermitted, true);
@@ -853,4 +872,1120 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
     assert.ok(exportResult.manufacturingDocumentation?.specificationFingerprint.length === 64);
     assert.ok(exportResult.manufacturingDocumentation?.patternRevisionFingerprint.length === 64);
   });
+
+  // =========================================================================
+  // MILESTONE 04.6.2.3.1 — CORRECTION H: 36 TARGETED ADVERSARIAL & CONTROL TESTS
+  // =========================================================================
+
+  // -------------------------------------------------------------------------
+  // Scenario 31: Privilege elevation via global boolean flag is blocked
+  // -------------------------------------------------------------------------
+  it('Scenario 31: rejects privilege elevation attempt via setAuthorityProviderContext global boolean flags', () => {
+    setAuthorityProviderContext({
+      identityProviderConfigured: true,
+      cryptographicProviderConfigured: true
+    });
+
+    const ctx = getAuthorityProviderContext();
+    assert.equal(ctx.identityProviderConfigured, false);
+    assert.equal(ctx.cryptographicProviderConfigured, false);
+
+    const spec = createBaseApprovedSpec();
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(spec, 'Attacker', {
+        authorityTier: 'authenticated_designer'
+      });
+    }, /TrustedIdentityVerifier/);
+
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(spec, 'Attacker', {
+        authorityTier: 'cryptographic_principal'
+      });
+    }, /TrustedCryptographicVerifier/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 32: Fake authenticated approval without credential rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 32: rejects authenticated_designer approval when verifier is supplied without credential', () => {
+    const spec = createBaseApprovedSpec();
+    const verifier = createTrustedIdentityVerifier({
+      trustedIssuer: 'https://auth.patroner.internal',
+      expectedAudience: 'patroner-spec-approval',
+      sharedSecret: 'secret-key-01'
+    });
+
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(spec, 'Master Designer', {
+        authorityTier: 'authenticated_designer',
+        identityVerifier: verifier
+        // identityCredential intentionally omitted
+      });
+    }, /VerifiableIdentityCredential/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 33: Fake cryptographic approval without signature rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 33: rejects cryptographic_principal approval when verifier is supplied without signature', () => {
+    const spec = createBaseApprovedSpec();
+    const verifier = createTrustedCryptographicVerifier({
+      trustedKeys: { 'key-prod-01': 'signing-secret-01' }
+    });
+
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(spec, 'principal-tailor-01', {
+        authorityTier: 'cryptographic_principal',
+        cryptographicVerifier: verifier
+        // cryptographicSignature intentionally omitted
+      });
+    }, /VerifiableCryptographicSignature/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 34: Invalid cryptographic signature rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 34: rejects cryptographic_principal approval when signature digest is forged or invalid', () => {
+    const draftSpec = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-v2',
+      name: 'Crypto Signed Skirt',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+
+    const verifier = createTrustedCryptographicVerifier({
+      trustedKeys: { 'key-prod-01': 'signing-secret-01' }
+    });
+
+    const forgedSig = signSpecificationApprovalPayload(
+      {
+        projectId: draftSpec.projectId,
+        garmentId: draftSpec.garmentId,
+        specificationRevisionId: draftSpec.specificationRevisionId,
+        specificationVersion: draftSpec.version,
+        canonicalSpecificationFingerprint: computeSpecificationFingerprint(draftSpec),
+        approvalEventId: 'evt-crypto-1',
+        approverPrincipal: 'principal-tailor-01',
+        authorityTier: 'cryptographic_principal',
+        approvalTimestamp: '2026-11-10T10:00:00.000Z',
+        schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION
+      },
+      { keyId: 'key-prod-01', signingKeyMaterial: 'WRONG-SECRET-KEY' }
+    );
+
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(draftSpec, 'principal-tailor-01', {
+        authorityTier: 'cryptographic_principal',
+        approvalEventId: 'evt-crypto-1',
+        approvedAt: '2026-11-10T10:00:00.000Z',
+        cryptographicSignature: forgedSig,
+        cryptographicVerifier: verifier
+      });
+    }, /Cryptographic signature verification failed/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 35: Valid signature over wrong specification fingerprint rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 35: rejects valid cryptographic signature bound to a different specification fingerprint', () => {
+    const draftSpec1 = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-v2',
+      name: 'Skirt Spec A',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+    const draftSpec2 = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-v2',
+      name: 'Skirt Spec B',
+      garmentCategory: 'skirt',
+      silhouette: 'a-line',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 72.0
+    });
+
+    const verifier = createTrustedCryptographicVerifier({
+      trustedKeys: { 'key-prod-01': 'signing-secret-01' }
+    });
+
+    // Sign draftSpec1's fingerprint, but attempt to attach to draftSpec2
+    const sigOverSpec1 = signSpecificationApprovalPayload(
+      {
+        projectId: draftSpec2.projectId,
+        garmentId: draftSpec2.garmentId,
+        specificationRevisionId: draftSpec2.specificationRevisionId,
+        specificationVersion: draftSpec2.version,
+        canonicalSpecificationFingerprint: computeSpecificationFingerprint(draftSpec1),
+        approvalEventId: 'evt-crypto-replay',
+        approverPrincipal: 'principal-tailor-01',
+        authorityTier: 'cryptographic_principal',
+        approvalTimestamp: '2026-11-10T10:00:00.000Z',
+        schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION
+      },
+      { keyId: 'key-prod-01', signingKeyMaterial: 'signing-secret-01' }
+    );
+
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(draftSpec2, 'principal-tailor-01', {
+        authorityTier: 'cryptographic_principal',
+        approvalEventId: 'evt-crypto-replay',
+        approvedAt: '2026-11-10T10:00:00.000Z',
+        cryptographicSignature: sigOverSpec1,
+        cryptographicVerifier: verifier
+      });
+    }, /Cryptographic signature verification failed/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 36: Valid signature over wrong revision ID rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 36: rejects valid cryptographic signature bound to a different specificationRevisionId', () => {
+    const draftSpec = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-v2',
+      specificationRevisionId: 'rev-correct-01',
+      name: 'Skirt Spec',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+
+    const verifier = createTrustedCryptographicVerifier({
+      trustedKeys: { 'key-prod-01': 'signing-secret-01' }
+    });
+
+    const sigWrongRev = signSpecificationApprovalPayload(
+      {
+        projectId: draftSpec.projectId,
+        garmentId: draftSpec.garmentId,
+        specificationRevisionId: 'rev-wrong-99',
+        specificationVersion: draftSpec.version,
+        canonicalSpecificationFingerprint: computeSpecificationFingerprint(draftSpec),
+        approvalEventId: 'evt-crypto-rev',
+        approverPrincipal: 'principal-tailor-01',
+        authorityTier: 'cryptographic_principal',
+        approvalTimestamp: '2026-11-10T10:00:00.000Z',
+        schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION
+      },
+      { keyId: 'key-prod-01', signingKeyMaterial: 'signing-secret-01' }
+    );
+
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(draftSpec, 'principal-tailor-01', {
+        authorityTier: 'cryptographic_principal',
+        approvalEventId: 'evt-crypto-rev',
+        approvedAt: '2026-11-10T10:00:00.000Z',
+        cryptographicSignature: sigWrongRev,
+        cryptographicVerifier: verifier
+      });
+    }, /Cryptographic signature verification failed/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 37: Expired identity token rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 37: rejects authenticated_designer approval when identity token is expired', () => {
+    const draftSpec = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-v2',
+      name: 'Auth Skirt',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+
+    const verifier = createTrustedIdentityVerifier({
+      trustedIssuer: 'https://auth.patroner.internal',
+      expectedAudience: 'patroner-spec-approval',
+      sharedSecret: 'idp-secret-01',
+      referenceTimeIso: '2026-11-10T12:00:00.000Z'
+    });
+
+    const expiredCred = issueVerifiableIdentityCredential(
+      {
+        subjectId: 'usr-designer-42',
+        displayName: 'Elena Rostova',
+        issuer: 'https://auth.patroner.internal',
+        audience: 'patroner-spec-approval',
+        issuedAt: '2026-11-10T08:00:00.000Z',
+        expiresAt: '2026-11-10T09:00:00.000Z', // Expired 3 hours before referenceTimeIso
+        claims: ['specification:approve']
+      },
+      'idp-secret-01'
+    );
+
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(draftSpec, 'Elena Rostova', {
+        authorityTier: 'authenticated_designer',
+        approverId: 'usr-designer-42',
+        approvedAt: '2026-11-10T12:00:00.000Z',
+        identityCredential: expiredCred,
+        identityVerifier: verifier
+      });
+    }, /expired/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 38: Wrong identity subject rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 38: rejects authenticated_designer approval when credential subject does not match approver', () => {
+    const draftSpec = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-v2',
+      name: 'Auth Skirt',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+
+    const verifier = createTrustedIdentityVerifier({
+      trustedIssuer: 'https://auth.patroner.internal',
+      expectedAudience: 'patroner-spec-approval',
+      sharedSecret: 'idp-secret-01',
+      referenceTimeIso: '2026-11-10T10:00:00.000Z'
+    });
+
+    const aliceCred = issueVerifiableIdentityCredential(
+      {
+        subjectId: 'usr-alice-01',
+        displayName: 'Alice Designer',
+        issuer: 'https://auth.patroner.internal',
+        audience: 'patroner-spec-approval',
+        issuedAt: '2026-11-10T09:00:00.000Z',
+        expiresAt: '2026-11-10T14:00:00.000Z',
+        claims: ['specification:approve']
+      },
+      'idp-secret-01'
+    );
+
+    // Attempt to approve as Bob using Alice's credential
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(draftSpec, 'Bob Impersonator', {
+        authorityTier: 'authenticated_designer',
+        approverId: 'usr-bob-99',
+        approvedAt: '2026-11-10T10:00:00.000Z',
+        identityCredential: aliceCred,
+        identityVerifier: verifier
+      });
+    }, /does not match requested approver/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 39: Revoked approval with forced isApproved: true rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 39: rejects revoked specification even if caller forces isApproved: true and approvalState: approved', () => {
+    const approved = createBaseApprovedSpec();
+    const revoked = revokeAuthoritativeGarmentSpecificationApproval(approved, 'Pattern defect discovered');
+
+    // Attacker forces boolean flags back to approved without clearing append-only lifecycleHistory
+    const manipulated = {
+      ...revoked,
+      isApproved: true,
+      approvalState: 'approved' as const,
+      approvalRecord: {
+        ...approved.approvalRecord!,
+        revocationReason: undefined
+      }
+    };
+
+    const verification = verifySpecificationApproval(manipulated);
+    assert.equal(verification.isValid, false);
+    assert.equal(verification.state, 'revoked');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 40: Superseded revision with forced isApproved: true rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 40: rejects superseded specification revision even if isApproved: true is preserved or forced', () => {
+    const approvedV1 = createBaseApprovedSpec();
+    const { supersededSpec, nextRevision } = supersedeAuthoritativeGarmentSpecification(approvedV1, {
+      lengthCm: 74.0
+    });
+
+    assert.equal(supersededSpec.approvalState, 'superseded');
+    assert.equal(supersededSpec.supersededByRevisionId, nextRevision.specificationRevisionId);
+
+    // Attacker forces isApproved: true and approvalState: 'approved' on supersededSpec
+    const manipulatedV1 = {
+      ...supersededSpec,
+      isApproved: true,
+      approvalState: 'approved' as const
+    };
+
+    const verification = verifySpecificationApproval(manipulatedV1);
+    assert.equal(verification.isValid, false);
+    assert.equal(verification.state, 'superseded');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 41: Omitted activeInputs in export verification rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 41: rejects export when activeInputs is omitted even if report and snapshot appear valid', () => {
+    const { snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const exportResult = validateProductionExportPrerequisites(report, snapshot);
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'MISSING_ACTIVE_INPUTS');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 42: Partial activeInputs in export verification rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 42: rejects export when activeInputs omits patternPieces or validationReport', () => {
+    const { spec, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const exportResult = validateProductionExportPrerequisites(report, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      fabric: standardFabric
+      // patternPieces and validationReport omitted
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'MISSING_ACTIVE_INPUTS');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 43: Forged PipelineIntegrityReport revisionId rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 43: rejects export when PipelineIntegrityReport contains a forged artifact revisionId', () => {
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const forgedReport = {
+      ...report,
+      artifacts: {
+        ...report.artifacts,
+        drafting: {
+          ...report.artifacts.drafting,
+          revisionId: 'draft-forged-rev-999'
+        }
+      }
+    };
+
+    const exportResult = validateProductionExportPrerequisites(forgedReport, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'FORGED_REPORT_DETECTED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 44: Forged generatedContentFingerprint rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 44: rejects export when PipelineIntegrityReport contains a forged generatedContentFingerprint', () => {
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const forgedReport = {
+      ...report,
+      artifacts: {
+        ...report.artifacts,
+        'geometry-validation': {
+          ...report.artifacts['geometry-validation'],
+          generatedContentFingerprint: '0'.repeat(64)
+        }
+      }
+    };
+
+    const exportResult = validateProductionExportPrerequisites(forgedReport, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'FORGED_REPORT_DETECTED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 45: Forged upstreamDependencies rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 45: rejects export when PipelineIntegrityReport contains forged upstreamDependencies', () => {
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const forgedReport = {
+      ...report,
+      artifacts: {
+        ...report.artifacts,
+        grading: {
+          ...report.artifacts.grading,
+          upstreamDependencies: [] // Forged empty dependencies
+        }
+      }
+    };
+
+    const exportResult = validateProductionExportPrerequisites(forgedReport, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'FORGED_REPORT_DETECTED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 46: Forged engineVersion in PipelineIntegrityReport rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 46: rejects export when PipelineIntegrityReport contains a forged engineVersion on an artifact', () => {
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const forgedReport = {
+      ...report,
+      artifacts: {
+        ...report.artifacts,
+        drafting: {
+          ...report.artifacts.drafting,
+          engineVersion: '9.9.9-spoofed'
+        }
+      }
+    };
+
+    const exportResult = validateProductionExportPrerequisites(forgedReport, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'FORGED_REPORT_DETECTED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 47: Missing isMeasurementApproved never defaults to approved
+  // -------------------------------------------------------------------------
+  it('Scenario 47: missing measurement approval defaults to unverified and blocks export', () => {
+    const spec = createBaseApprovedSpec();
+    const pieces = draftSkirtBlock(sizeM, convertToDesignSpecification(spec));
+
+    // Evaluate without productionSnapshot, measurementSet, or isMeasurementApproved
+    const report = evaluatePipelineDependencyIntegrity({
+      specification: spec,
+      measurements: sizeM,
+      activeSize: 'M',
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(report.artifacts.measurements.validationStatus, 'unverified');
+    assert.equal(report.canExportProductionDocumentation, false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 48: Unapproved measurement set blocks export
+  // -------------------------------------------------------------------------
+  it('Scenario 48: rejects export when authoritative measurement set is unverified or pending', () => {
+    const { spec, pieces, snapshot } = createFullPipelineSynchronizedFixture();
+
+    const unapprovedMeasSet = createAuthoritativeMeasurementSet({
+      measurementSetId: 'ms-01',
+      revisionId: 'ms-01-rev-1',
+      values: ({ ...sizeM } as unknown) as Record<string, number>,
+      source: 'user-entered',
+      provenance: 'user-entered',
+      approvalState: 'unverified'
+    });
+
+    const report = evaluatePipelineDependencyIntegrity({
+      specification: spec,
+      measurements: sizeM,
+      measurementSet: unapprovedMeasSet,
+      activeSize: 'M',
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport,
+      productionSnapshot: snapshot
+    });
+
+    const exportResult = validateProductionExportPrerequisites(report, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      measurementSet: unapprovedMeasSet,
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'MEASUREMENT_UNAPPROVED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 49: AI-estimated measurement marked approved rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 49: rejects marking AI-estimated measurements as approved physical or authoritative measurements', () => {
+    assert.throws(() => {
+      createAuthoritativeMeasurementSet({
+        measurementSetId: 'ms-ai-01',
+        revisionId: 'ms-ai-rev-1',
+        values: ({ ...sizeM } as unknown) as Record<string, number>,
+        source: 'ai-estimated',
+        provenance: 'ai-estimated',
+        approvalState: 'approved',
+        approvingAuthority: 'Operator',
+        approvedAt: '2026-11-10T10:00:00.000Z'
+      });
+    }, ProductionSnapshotMeasurementError);
+
+    // Even if passed via measurementProvenance in export check, it is rejected
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+    const exportResult = validateProductionExportPrerequisites(report, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      measurementProvenance: 'ai-estimated',
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'AI_MEASUREMENT_NOT_PERMITTED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 50: Missing measurement provenance rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 50: rejects measurement approval and production export when measurement provenance is unknown', () => {
+    const measUnknown = createAuthoritativeMeasurementSet({
+      measurementSetId: 'ms-unk-01',
+      revisionId: 'ms-unk-rev-1',
+      values: ({ ...sizeM } as unknown) as Record<string, number>
+      // provenance omitted -> defaults to 'unknown'
+    });
+
+    assert.equal(measUnknown.provenance, 'unknown');
+    assert.equal(measUnknown.approvalState, 'unverified');
+
+    assert.throws(() => {
+      approveAuthoritativeMeasurementSet(measUnknown, {
+        approvingAuthority: 'Master Tailor',
+        approvedAt: '2026-11-10T10:00:00.000Z'
+      });
+    }, ProductionSnapshotMeasurementError);
+
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+    const exportResult = validateProductionExportPrerequisites(report, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      measurementSet: measUnknown,
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'MISSING_MEASUREMENT_PROVENANCE');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 51: Missing fabric provenance rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 51: rejects production export when fabric provenance is unknown or unverified', () => {
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const unknownProvFabric = {
+      ...standardFabric,
+      provenance: 'unknown' as const
+    };
+
+    const exportResult = validateProductionExportPrerequisites(report, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      fabric: unknownProvFabric as any,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.ok(
+      exportResult.rejectionCode === 'MISSING_FABRIC_PROVENANCE' ||
+      exportResult.rejectionCode === 'SNAPSHOT_FABRIC_MISMATCH'
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 52: Silent default substitution attempt rejected in canonicalization
+  // -------------------------------------------------------------------------
+  it('Scenario 52: rejects specification canonicalization when mandatory engineering fields are missing instead of substituting defaults', () => {
+    const base = createBaseApprovedSpec();
+
+    assert.throws(() => {
+      canonicalizeSpecificationPayload({
+        ...base,
+        name: '' // Empty name must not default to 'Untitled Specification'
+      });
+    }, ProductionSnapshotValidationError);
+
+    assert.throws(() => {
+      canonicalizeSpecificationPayload({
+        ...base,
+        garmentCategory: undefined as any // Missing category must not default to 'skirt'
+      });
+    }, ProductionSnapshotValidationError);
+
+    assert.throws(() => {
+      canonicalizeSpecificationPayload({
+        ...base,
+        fabric: undefined as any // Missing fabric must not default to 'unknown-fabric'
+      });
+    }, ProductionSnapshotValidationError);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 53: Missing vs null vs explicit value distinction in canonicalization
+  // -------------------------------------------------------------------------
+  it('Scenario 53: distinguishes missing (undefined), explicit null, and explicit value in canonical specification fingerprint', () => {
+    const base = createBaseApprovedSpec();
+
+    const specMissingPrompt = { ...base };
+    delete (specMissingPrompt as any).prompt;
+
+    const specNullPrompt = { ...base, prompt: null as any };
+    const specValuePrompt = { ...base, prompt: 'Structured Couture Skirt' };
+
+    const fpMissing = computeSpecificationFingerprint(specMissingPrompt);
+    const fpNull = computeSpecificationFingerprint(specNullPrompt);
+    const fpValue = computeSpecificationFingerprint(specValuePrompt);
+
+    assert.notEqual(fpMissing, fpNull, 'Missing field (__MISSING__) must not hash identically to explicit null');
+    assert.notEqual(fpNull, fpValue, 'Explicit null must not hash identically to explicit string value');
+    assert.notEqual(fpMissing, fpValue, 'Missing field must not hash identically to explicit string value');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 54: Unknown specification field preservation in canonicalization
+  // -------------------------------------------------------------------------
+  it('Scenario 54: includes unknown additional engineering fields in canonical specification fingerprint without silently discarding them', () => {
+    const base = createBaseApprovedSpec();
+    const withCustomFieldA = {
+      ...base,
+      interliningSpecification: 'horsehair-canvas-180gsm'
+    } as any;
+    const withCustomFieldB = {
+      ...base,
+      interliningSpecification: 'fusible-tricotine-90gsm'
+    } as any;
+
+    const fpBase = computeSpecificationFingerprint(base);
+    const fpA = computeSpecificationFingerprint(withCustomFieldA);
+    const fpB = computeSpecificationFingerprint(withCustomFieldB);
+
+    assert.notEqual(fpBase, fpA, 'Additional engineering field must not be silently discarded');
+    assert.notEqual(fpA, fpB, 'Mutation of additional engineering field must change canonical fingerprint');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 55: Stale geometry with current specification rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 55: rejects export when active patternPieces geometry is stale relative to snapshot and specification', () => {
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const stalePieces = pieces.map(p => ({
+      ...p,
+      cutPathData: `${p.cutPathData} L 999 999`
+    }));
+
+    const exportResult = validateProductionExportPrerequisites(report, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      fabric: standardFabric,
+      patternPieces: stalePieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.ok(
+      exportResult.rejectionCode === 'STALE_PATTERN_GEOMETRY' ||
+      exportResult.rejectionCode === 'FORGED_REPORT_DETECTED'
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 56: Stale grading with current geometry rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 56: rejects export when active gradingResult is invalid or stale', () => {
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const exportResult = validateProductionExportPrerequisites(report, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport,
+      gradingResult: {
+        baseSize: 'M',
+        isOverallGradingValid: false,
+        failedSizeCount: 2
+      }
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'STALE_GRADING_RESULT');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 57: Stale validation report with current geometry rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 57: rejects export when active validationReport fails or disagrees with snapshot validation', () => {
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    const failingValidation: ValidationReport = {
+      ...validReport,
+      status: 'invalid',
+      isValid: false,
+      failureCount: 2
+    };
+
+    const exportResult = validateProductionExportPrerequisites(report, snapshot, {
+      specification: spec,
+      measurements: sizeM,
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: failingValidation
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'STALE_VALIDATION_REPORT');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 58: Snapshot with isApproved: true and unapproved specification record rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 58: never trusts snapshot isApproved boolean when active specification approval record is missing or unapproved', () => {
+    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+
+    // Snapshot has designSpecification.isApproved === true, but active specification is unapproved
+    const unapprovedActiveSpec = {
+      ...spec,
+      isApproved: false,
+      approvalState: 'draft' as const,
+      approvalRecord: undefined
+    };
+
+    const exportResult = validateProductionExportPrerequisites(report, snapshot, {
+      specification: unapprovedActiveSpec,
+      measurements: sizeM,
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(exportResult.isExportPermitted, false);
+    assert.equal(exportResult.rejectionCode, 'SPECIFICATION_UNAPPROVED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 59: Parameter-level fieldProvenance mutation changes canonical fingerprint
+  // -------------------------------------------------------------------------
+  it('Scenario 59: detects mutation of parameter-level fieldProvenance in canonical specification fingerprint', () => {
+    const base = createBaseApprovedSpec();
+    const withAiProvenance = {
+      ...base,
+      fieldProvenance: {
+        ...base.fieldProvenance,
+        lengthCm: 'ai-proposed' as const
+      }
+    };
+
+    const fpBase = computeSpecificationFingerprint(base);
+    const fpAi = computeSpecificationFingerprint(withAiProvenance);
+    assert.notEqual(fpBase, fpAi, 'Changing parameter provenance from explicit-value to ai-proposed must alter canonical fingerprint');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 60: Changing waist or hip measurement without snapshot still invalidates drafting & grading
+  // -------------------------------------------------------------------------
+  it('Scenario 60: changing waist or lowHip measurement invalidates finished-dimensions, drafting, validation, and grading even without snapshot', () => {
+    const spec = createBaseApprovedSpec();
+    const pieces = draftSkirtBlock(sizeM, convertToDesignSpecification(spec));
+
+    const alteredWaistReport = evaluatePipelineDependencyIntegrity({
+      specification: spec,
+      measurements: { ...sizeM, waist: sizeM.waist + 4.0 },
+      activeSize: 'M',
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(alteredWaistReport.artifacts['finished-dimensions'].status, 'stale');
+    assert.equal(alteredWaistReport.artifacts.drafting.status, 'stale');
+    assert.equal(alteredWaistReport.artifacts['geometry-validation'].status, 'stale');
+    assert.equal(alteredWaistReport.artifacts.grading.status, 'stale');
+
+    const alteredHipReport = evaluatePipelineDependencyIntegrity({
+      specification: spec,
+      measurements: { ...sizeM, lowHip: sizeM.lowHip + 4.0 },
+      activeSize: 'M',
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport
+    });
+
+    assert.equal(alteredHipReport.artifacts['finished-dimensions'].status, 'stale');
+    assert.equal(alteredHipReport.artifacts.drafting.status, 'stale');
+    assert.equal(alteredHipReport.artifacts['geometry-validation'].status, 'stale');
+    assert.equal(alteredHipReport.artifacts.grading.status, 'stale');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 61: Superseded measurement set revision is rejected
+  // -------------------------------------------------------------------------
+  it('Scenario 61: superseding a measurement set marks previous revision superseded and blocks its approval or export', () => {
+    const rev1 = approveAuthoritativeMeasurementSet(
+      createAuthoritativeMeasurementSet({
+        measurementSetId: 'ms-bespoke-01',
+        revisionId: 'ms-bespoke-01-rev-1',
+        values: ({ ...sizeM } as unknown) as Record<string, number>,
+        source: 'physically-measured',
+        provenance: 'physically-measured'
+      }),
+      {
+        approvingAuthority: 'Lead Patternmaker',
+        approvedAt: '2026-11-10T09:00:00.000Z'
+      }
+    );
+
+    const { supersededRecord, nextRecord } = supersedeAuthoritativeMeasurementSet(rev1, {
+      revisionId: 'ms-bespoke-01-rev-2',
+      values: ({ ...sizeM, waist: sizeM.waist + 2.0 } as unknown) as Record<string, number>
+    });
+
+    assert.equal(supersededRecord.approvalState, 'superseded');
+    assert.equal(supersededRecord.supersededByRevisionId, 'ms-bespoke-01-rev-2');
+    assert.equal(verifyMeasurementSetIntegrity(supersededRecord).isApproved, false);
+    assert.equal(nextRecord.approvalState, 'unverified');
+    assert.equal(verifyMeasurementSetIntegrity(nextRecord).isApproved, false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 62: Valid control case — Tier 1 (demonstration_fixture)
+  // -------------------------------------------------------------------------
+  it('Scenario 62: valid control case for Tier 1 (demonstration_fixture) approval path', () => {
+    const draft = createAuthoritativeGarmentSpecification({
+      projectId: 'proj-demo',
+      garmentId: 'demo-skirt',
+      name: 'Demo Fixture Skirt',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+
+    const approvedDemo = approveAuthoritativeGarmentSpecification(draft, 'Curated Demo Fixture', {
+      authorityTier: 'demonstration_fixture',
+      approvedAt: '2026-11-10T08:00:00.000Z'
+    });
+
+    const verification = verifySpecificationApproval(approvedDemo);
+    assert.equal(verification.isValid, true);
+    assert.equal(verification.authorityTier, 'demonstration_fixture');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 63: Valid control case — Tier 2 (unauthenticated_local_session)
+  // -------------------------------------------------------------------------
+  it('Scenario 63: valid control case for Tier 2 (unauthenticated_local_session) approval path', () => {
+    const approvedLocal = createBaseApprovedSpec();
+    const verification = verifySpecificationApproval(approvedLocal);
+    assert.equal(verification.isValid, true);
+    assert.equal(verification.authorityTier, 'unauthenticated_local_session');
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 64: Valid control case — Tier 3 (authenticated_designer) with real verifier
+  // -------------------------------------------------------------------------
+  it('Scenario 64: valid control case for Tier 3 (authenticated_designer) with verified identity credential and verifier', () => {
+    const draft = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-tier3',
+      name: 'Authenticated Designer Skirt',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+
+    const verifier = createTrustedIdentityVerifier({
+      trustedIssuer: 'https://auth.patroner.internal',
+      expectedAudience: 'patroner-spec-approval',
+      sharedSecret: 'idp-secret-tier3',
+      referenceTimeIso: '2026-11-10T10:00:00.000Z'
+    });
+
+    const credential = issueVerifiableIdentityCredential(
+      {
+        subjectId: 'usr-designer-elena',
+        displayName: 'Elena Rostova',
+        issuer: 'https://auth.patroner.internal',
+        audience: 'patroner-spec-approval',
+        issuedAt: '2026-11-10T09:30:00.000Z',
+        expiresAt: '2026-11-10T18:00:00.000Z',
+        claims: ['specification:approve']
+      },
+      'idp-secret-tier3'
+    );
+
+    const approvedTier3 = approveAuthoritativeGarmentSpecification(draft, 'Elena Rostova', {
+      authorityTier: 'authenticated_designer',
+      approverId: 'usr-designer-elena',
+      approvedAt: '2026-11-10T10:00:00.000Z',
+      identityCredential: credential,
+      identityVerifier: verifier
+    });
+
+    assert.equal(approvedTier3.isApproved, true);
+    assert.equal(approvedTier3.approvalAuthorityTier, 'authenticated_designer');
+    assert.equal(approvedTier3.verifiedIdentity?.subjectId, 'usr-designer-elena');
+
+    // Verify with verifier context succeeds
+    const verifiedWithCtx = verifySpecificationApproval(approvedTier3, {
+      identityVerifier: verifier,
+      identityCredential: credential
+    });
+    assert.equal(verifiedWithCtx.isValid, true);
+    assert.equal(verifiedWithCtx.authorityTier, 'authenticated_designer');
+
+    // Verify without verifier context fails closed!
+    const verifiedWithoutCtx = verifySpecificationApproval(approvedTier3);
+    assert.equal(verifiedWithoutCtx.isValid, false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 65: Valid control case — Tier 4 (cryptographic_principal) with real signature verifier
+  // -------------------------------------------------------------------------
+  it('Scenario 65: valid control case for Tier 4 (cryptographic_principal) with verified signature over 10-field canonical payload', () => {
+    const draft = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-tier4',
+      specificationRevisionId: 'spec-adv-skirt-tier4-v1',
+      name: 'Cryptographically Signed Skirt',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+
+    const verifier = createTrustedCryptographicVerifier({
+      trustedKeys: { 'key-hsm-prod-01': 'hsm-private-key-material-01' }
+    });
+
+    const approvalTimestamp = '2026-11-10T10:30:00.000Z';
+    const approvalEventId = 'evt-approve-tier4-001';
+    const approverPrincipal = 'principal:lead-pattern-engineer-01';
+
+    const signature = signSpecificationApprovalPayload(
+      {
+        projectId: draft.projectId,
+        garmentId: draft.garmentId,
+        specificationRevisionId: draft.specificationRevisionId,
+        specificationVersion: draft.version,
+        canonicalSpecificationFingerprint: computeSpecificationFingerprint(draft),
+        approvalEventId,
+        approverPrincipal,
+        authorityTier: 'cryptographic_principal',
+        approvalTimestamp,
+        schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION
+      },
+      { keyId: 'key-hsm-prod-01', signingKeyMaterial: 'hsm-private-key-material-01' }
+    );
+
+    const approvedTier4 = approveAuthoritativeGarmentSpecification(draft, approverPrincipal, {
+      authorityTier: 'cryptographic_principal',
+      approverId: approverPrincipal,
+      approvalEventId,
+      approvedAt: approvalTimestamp,
+      cryptographicSignature: signature,
+      cryptographicVerifier: verifier
+    });
+
+    assert.equal(approvedTier4.isApproved, true);
+    assert.equal(approvedTier4.approvalAuthorityTier, 'cryptographic_principal');
+    assert.equal(approvedTier4.cryptographicSignature?.keyId, 'key-hsm-prod-01');
+
+    // Verify with cryptographic verifier context succeeds
+    const verifiedWithCtx = verifySpecificationApproval(approvedTier4, {
+      cryptographicVerifier: verifier
+    });
+    assert.equal(verifiedWithCtx.isValid, true);
+    assert.equal(verifiedWithCtx.authorityTier, 'cryptographic_principal');
+
+    // Verify without cryptographic verifier context fails closed!
+    const verifiedWithoutCtx = verifySpecificationApproval(approvedTier4);
+    assert.equal(verifiedWithoutCtx.isValid, false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Scenario 66: Throwing identity or cryptographic verifier fails closed
+  // -------------------------------------------------------------------------
+  it('Scenario 66: fails closed when injected identityVerifier or cryptographicVerifier throws an exception', () => {
+    const draft = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-throw',
+      name: 'Throwing Verifier Skirt',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+
+    const throwingIdentityVerifier = {
+      verifyCredential(): any {
+        throw new Error('Identity provider connection timeout');
+      }
+    };
+
+    const dummyCred = issueVerifiableIdentityCredential(
+      {
+        subjectId: 'usr-1',
+        displayName: 'User 1',
+        issuer: 'issuer',
+        audience: 'aud',
+        issuedAt: '2026-11-10T09:00:00.000Z',
+        expiresAt: '2026-11-10T19:00:00.000Z',
+        claims: ['specification:approve']
+      },
+      'secret'
+    );
+
+    assert.throws(() => {
+      approveAuthoritativeGarmentSpecification(draft, 'User 1', {
+        authorityTier: 'authenticated_designer',
+        approverId: 'usr-1',
+        identityCredential: dummyCred,
+        identityVerifier: throwingIdentityVerifier
+      });
+    }, /exception/);
+  });
 });
+

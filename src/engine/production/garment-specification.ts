@@ -4,24 +4,41 @@
  */
 
 import { DesignSpecification } from '../../types';
-import { CURRENT_ENGINE_VERSION, CURRENT_SNAPSHOT_ENGINE } from './pattern-revision-snapshot';
+import { CURRENT_ENGINE_VERSION } from './pattern-revision-snapshot';
 import { canonicalizeJson, deepFreeze } from './pattern-revision-snapshot';
 import { sha256Hex } from './crypto';
 import {
   ApprovalAuthorityTier,
+  ApprovalVerificationContext,
   AuthorityProviderContext,
   AuthoritativeGarmentSpecification,
   CreateAuthoritativeSpecificationInput,
+  CryptographicApprovalBindingPayload,
+  ParameterValueProvenance,
   SPECIFICATION_CANONICAL_SCHEMA_VERSION,
   SpecificationApprovalEvent,
   SpecificationApprovalRecord,
   SpecificationApprovalState,
   SpecificationLifecycleEvent,
   SpecificationRevocationEvent,
-  SpecificationValueProvenance
+  SpecificationSupersessionEvent,
+  SpecificationValueProvenance,
+  TrustedCryptographicVerificationResult,
+  TrustedCryptographicVerifier,
+  TrustedIdentityVerificationResult,
+  TrustedIdentityVerifier,
+  VerifiableCryptographicSignature,
+  VerifiableIdentityCredential,
+  VerifiedIdentityProvenance
 } from './garment-specification-types';
 import { EnhancedFabricProperty } from '../fabric/fabric-types';
 import { ProductionSnapshotValidationError } from './production-types';
+
+const CANONICAL_MISSING_SENTINEL = '__MISSING__' as const;
+
+const VALID_GARMENT_CATEGORIES = new Set(['skirt', 'bodice', 'trouser', 'dress']);
+const VALID_SILHOUETTES = new Set(['a-line', 'straight', 'pencil', 'flared', 'tailored', 'relaxed', 'wrap']);
+const VALID_EASE_PROFILES = new Set(['ultra-fitted', 'fitted', 'classic', 'relaxed', 'oversized']);
 
 /**
  * Validates whether an ISO date string is syntactically well-formed and parseable.
@@ -33,52 +50,492 @@ function isValidIsoDate(dateStr: unknown): boolean {
 }
 
 /**
- * Global authority provider context for runtime identity and cryptographic signing checks.
- * Enforces that higher authority tiers (authenticated_designer, cryptographic_principal)
- * cannot be claimed or verified unless an active provider is configured.
+ * Locked global authority provider context.
+ * CORRECTION B: Global mutable boolean state is NEVER trusted as proof of identity or cryptographic signing.
+ * Callers cannot elevate their own approval authority by configuring global boolean flags.
  */
-let activeAuthorityProviderContext: AuthorityProviderContext = {
+const LOCKED_UNTRUSTED_GLOBAL_PROVIDER_CONTEXT: AuthorityProviderContext = Object.freeze({
+  identityProviderConfigured: false,
+  cryptographicProviderConfigured: false,
   hasAuthenticatedIdentityProvider: () => false,
   hasCryptographicSigningProvider: () => false
-};
+});
 
-export function setAuthorityProviderContext(ctx: AuthorityProviderContext): void {
-  activeAuthorityProviderContext = { ...ctx };
+export function setAuthorityProviderContext(_ctx: AuthorityProviderContext): void {
+  // Security boundary (Correction B): Global mutable authority configuration is disabled.
+  // Authority verification requires dependency-injected TrustedIdentityVerifier / TrustedCryptographicVerifier
+  // and verifiable credentials/signatures per operation.
 }
 
 export function resetAuthorityProviderContext(): void {
-  activeAuthorityProviderContext = {
-    hasAuthenticatedIdentityProvider: () => false,
-    hasCryptographicSigningProvider: () => false
-  };
+  // No-op: global authority context remains permanently locked.
 }
 
 export function getAuthorityProviderContext(): AuthorityProviderContext {
-  return activeAuthorityProviderContext;
+  return LOCKED_UNTRUSTED_GLOBAL_PROVIDER_CONTEXT;
+}
+
+/**
+ * Canonicalizes the 10-field cryptographic approval binding payload for signing and signature verification.
+ */
+export function canonicalizeApprovalSignaturePayload(
+  payload: CryptographicApprovalBindingPayload
+): string {
+  if (!payload || typeof payload !== 'object') {
+    throw new ProductionSnapshotValidationError('Cryptographic approval binding payload must be a non-null object.');
+  }
+  return canonicalizeJson({
+    approvalEventId: payload.approvalEventId,
+    approvalTimestamp: payload.approvalTimestamp,
+    approverPrincipal: payload.approverPrincipal,
+    authorityTier: payload.authorityTier,
+    canonicalSpecificationFingerprint: payload.canonicalSpecificationFingerprint,
+    garmentId: payload.garmentId,
+    projectId: payload.projectId,
+    schemaVersion: payload.schemaVersion,
+    specificationRevisionId: payload.specificationRevisionId,
+    specificationVersion: payload.specificationVersion
+  });
+}
+
+/**
+ * Computes the deterministic SHA-256 digest of the canonical 10-field approval binding payload.
+ */
+export function computeApprovalSignaturePayloadDigest(
+  payload: CryptographicApprovalBindingPayload
+): string {
+  return sha256Hex(canonicalizeApprovalSignaturePayload(payload));
+}
+
+/**
+ * Signs a 10-field CryptographicApprovalBindingPayload using key material to produce a VerifiableCryptographicSignature.
+ */
+export function signSpecificationApprovalPayload(
+  payload: CryptographicApprovalBindingPayload,
+  keyMaterial: {
+    readonly keyId: string;
+    readonly privateKeySecret?: string;
+    readonly signingKeyMaterial?: string;
+    readonly algorithm?: string;
+  }
+): VerifiableCryptographicSignature {
+  const secret = keyMaterial.privateKeySecret ?? keyMaterial.signingKeyMaterial ?? '';
+  if (!keyMaterial.keyId || !secret) {
+    throw new ProductionSnapshotValidationError('Key ID and signing key material are required for cryptographic signing.');
+  }
+  const publicKeyFingerprint = sha256Hex(`pubkey:${keyMaterial.keyId}:${secret}`);
+  const canonicalPayload = canonicalizeApprovalSignaturePayload(payload);
+  const signatureHex = sha256Hex(`sig:${publicKeyFingerprint}:${secret}:${canonicalPayload}`);
+
+  return deepFreeze({
+    keyId: keyMaterial.keyId,
+    publicKeyFingerprint,
+    algorithm: keyMaterial.algorithm ?? 'SHA256-KEYED-BINDING',
+    signatureHex,
+    signedPayload: { ...payload }
+  });
+}
+
+/**
+ * Creates a trusted cryptographic signature verifier bound to specific public key fingerprints and key secrets.
+ */
+export function createTrustedCryptographicVerifier(config: {
+  readonly verifierId?: string;
+  readonly trustedKeys:
+    | ReadonlyArray<{
+        readonly keyId: string;
+        readonly publicKeyFingerprint?: string;
+        readonly privateKeySecret?: string;
+        readonly signingKeyMaterial?: string;
+        readonly allowedPrincipals?: readonly string[];
+      }>
+    | Readonly<Record<string, string>>;
+}): TrustedCryptographicVerifier {
+  const normalizedKeys: Array<{
+    readonly keyId: string;
+    readonly publicKeyFingerprint: string;
+    readonly privateKeySecret: string;
+    readonly allowedPrincipals?: readonly string[];
+  }> = Array.isArray(config.trustedKeys)
+    ? config.trustedKeys.map(k => {
+        const secret = k.privateKeySecret ?? k.signingKeyMaterial ?? '';
+        const pubFp = k.publicKeyFingerprint ?? sha256Hex(`pubkey:${k.keyId}:${secret}`);
+        return {
+          keyId: k.keyId,
+          publicKeyFingerprint: pubFp,
+          privateKeySecret: secret,
+          allowedPrincipals: k.allowedPrincipals
+        };
+      })
+    : Object.entries(config.trustedKeys as Record<string, string>).map(([keyId, secret]) => ({
+        keyId,
+        publicKeyFingerprint: sha256Hex(`pubkey:${keyId}:${secret}`),
+        privateKeySecret: secret
+      }));
+
+  const keyByFp = new Map(normalizedKeys.map(k => [k.publicKeyFingerprint, k]));
+  const keyById = new Map(normalizedKeys.map(k => [k.keyId, k]));
+  const trustedPublicKeyFingerprints = normalizedKeys.map(k => k.publicKeyFingerprint);
+
+  return Object.freeze({
+    verifierId: config.verifierId ?? 'crypto-verifier-default',
+    trustedPublicKeyFingerprints: Object.freeze([...trustedPublicKeyFingerprints]),
+    verifyApprovalSignature(
+      signature: VerifiableCryptographicSignature,
+      expectedPayload: CryptographicApprovalBindingPayload
+    ): TrustedCryptographicVerificationResult {
+      try {
+        if (!signature || typeof signature !== 'object' || !signature.signedPayload) {
+          return { verified: false, reason: 'Missing or malformed cryptographic signature object.' };
+        }
+        const trustedKey = keyByFp.get(signature.publicKeyFingerprint) ?? keyById.get(signature.keyId);
+        if (!trustedKey || trustedKey.keyId !== signature.keyId) {
+          return {
+            verified: false,
+            reason: `Untrusted public key fingerprint '${signature.publicKeyFingerprint}' or keyId '${signature.keyId}'.`
+          };
+        }
+
+        const derivedPubFp = sha256Hex(`pubkey:${trustedKey.keyId}:${trustedKey.privateKeySecret}`);
+        if (derivedPubFp !== signature.publicKeyFingerprint) {
+          return {
+            verified: false,
+            reason: 'Cryptographic signature verification failed: public key fingerprint does not match registered key material.'
+          };
+        }
+
+        if (
+          trustedKey.allowedPrincipals &&
+          trustedKey.allowedPrincipals.length > 0 &&
+          !trustedKey.allowedPrincipals.includes(expectedPayload.approverPrincipal)
+        ) {
+          return {
+            verified: false,
+            reason: `Principal '${expectedPayload.approverPrincipal}' is not authorized for key '${signature.keyId}'.`
+          };
+        }
+
+        // Verify exact match of all 10 required binding fields
+        const sp = signature.signedPayload;
+        if (
+          sp.projectId !== expectedPayload.projectId ||
+          sp.garmentId !== expectedPayload.garmentId ||
+          sp.specificationRevisionId !== expectedPayload.specificationRevisionId ||
+          sp.specificationVersion !== expectedPayload.specificationVersion ||
+          sp.canonicalSpecificationFingerprint !== expectedPayload.canonicalSpecificationFingerprint ||
+          sp.approvalEventId !== expectedPayload.approvalEventId ||
+          sp.approverPrincipal !== expectedPayload.approverPrincipal ||
+          sp.authorityTier !== 'cryptographic_principal' ||
+          sp.approvalTimestamp !== expectedPayload.approvalTimestamp ||
+          sp.schemaVersion !== expectedPayload.schemaVersion
+        ) {
+          return {
+            verified: false,
+            reason: 'Cryptographic signature verification failed: signed approval payload does not match expected specification revision, fingerprint, timestamp, or principal.'
+          };
+        }
+
+        const expectedCanonical = canonicalizeApprovalSignaturePayload(expectedPayload);
+        const expectedSig = sha256Hex(
+          `sig:${signature.publicKeyFingerprint}:${trustedKey.privateKeySecret}:${expectedCanonical}`
+        );
+        if (signature.signatureHex !== expectedSig) {
+          return {
+            verified: false,
+            reason: 'Cryptographic signature verification failed: signature digest mismatch.'
+          };
+        }
+
+        return {
+          verified: true,
+          keyId: signature.keyId,
+          publicKeyFingerprint: signature.publicKeyFingerprint,
+          verifiedPayloadDigest: sha256Hex(expectedCanonical)
+        };
+      } catch (err) {
+        return {
+          verified: false,
+          reason: `Cryptographic verifier exception: ${err instanceof Error ? err.message : String(err)}`
+        };
+      }
+    }
+  });
+}
+
+/**
+ * Issues a verifiable identity credential signed by an identity provider secret for testing or server-side auth boundaries.
+ */
+export function issueVerifiableIdentityCredential(
+  params: {
+    readonly credentialId?: string;
+    readonly subject?: string;
+    readonly subjectId?: string;
+    readonly expectedApprover?: string;
+    readonly displayName?: string;
+    readonly issuer: string;
+    readonly audience: string;
+    readonly issuedAt: string;
+    readonly expiresAt: string;
+    readonly authorizationClaims?: readonly string[];
+    readonly claims?: readonly string[];
+    readonly providerId?: string;
+  },
+  providerSecret: string
+): VerifiableIdentityCredential {
+  const subject = params.subject ?? params.subjectId ?? '';
+  const expectedApprover = params.expectedApprover ?? params.displayName ?? '';
+  const authorizationClaims = [...(params.authorizationClaims ?? params.claims ?? [])];
+  const credentialId = params.credentialId ?? `cred-${subject || 'anon'}`;
+  const providerId = params.providerId ?? 'patroner-idp';
+
+  const canonicalClaims = canonicalizeJson({
+    audience: params.audience,
+    authorizationClaims,
+    credentialId,
+    expectedApprover,
+    expiresAt: params.expiresAt,
+    issuedAt: params.issuedAt,
+    issuer: params.issuer,
+    providerId,
+    subject
+  });
+  const token = `pat-id-v1.${sha256Hex(`${providerSecret}:${canonicalClaims}`)}`;
+  return deepFreeze({
+    credentialId,
+    subject,
+    subjectId: subject,
+    expectedApprover,
+    displayName: expectedApprover,
+    issuer: params.issuer,
+    audience: params.audience,
+    issuedAt: params.issuedAt,
+    expiresAt: params.expiresAt,
+    authorizationClaims,
+    providerId,
+    token
+  });
+}
+
+/**
+ * Creates a trusted identity verifier that validates identity tokens, issuer, audience, subject,
+ * expiration, and authorization claims.
+ */
+export function createTrustedIdentityVerifier(config: {
+  readonly verifierId?: string;
+  readonly trustedIssuers?: readonly string[];
+  readonly trustedIssuer?: string;
+  readonly expectedAudience: string;
+  readonly providerSecret?: string;
+  readonly sharedSecret?: string;
+  readonly requiredClaim?: string;
+  readonly referenceTimeIso?: string;
+}): TrustedIdentityVerifier {
+  const requiredClaim = config.requiredClaim ?? 'specification:approve';
+  const trustedIssuers = config.trustedIssuers ?? (config.trustedIssuer ? [config.trustedIssuer] : []);
+  const providerSecret = config.providerSecret ?? config.sharedSecret ?? '';
+  const verifierId = config.verifierId ?? 'identity-verifier-default';
+
+  return Object.freeze({
+    verifierId,
+    trustedIssuers: Object.freeze([...trustedIssuers]),
+    expectedAudience: config.expectedAudience,
+    verifyIdentityCredential(
+      credential: VerifiableIdentityCredential,
+      context: {
+        readonly targetRevisionId: string;
+        readonly targetSpecificationFingerprint: string;
+        readonly expectedApprover: string;
+        readonly approvalTimestamp: string;
+      }
+    ): TrustedIdentityVerificationResult {
+      try {
+        if (!credential || typeof credential !== 'object') {
+          return { verified: false, reason: 'Identity credential is missing or malformed.' };
+        }
+        if (!credential.token || typeof credential.token !== 'string' || !credential.token.startsWith('pat-id-v1.')) {
+          return { verified: false, reason: 'Identity token is missing or has invalid format.' };
+        }
+        const subject = credential.subject || credential.subjectId || '';
+        if (!subject || subject.trim() === '') {
+          return { verified: false, reason: 'Identity credential missing subject.' };
+        }
+        // Do not infer identity from display name: subject must be a distinct principal identifier
+        if (subject.trim() === context.expectedApprover.trim()) {
+          return {
+            verified: false,
+            reason: 'Identity subject cannot be inferred solely from display name.'
+          };
+        }
+        const expectedApproverInCred = credential.expectedApprover || credential.displayName || '';
+        if (
+          expectedApproverInCred !== context.expectedApprover.trim() &&
+          subject !== context.expectedApprover.trim()
+        ) {
+          return {
+            verified: false,
+            reason: `Identity credential subject/expectedApprover '${expectedApproverInCred}' does not match requested approver '${context.expectedApprover}'.`
+          };
+        }
+        if (!trustedIssuers.includes(credential.issuer)) {
+          return {
+            verified: false,
+            reason: `Untrusted identity issuer '${credential.issuer}'.`
+          };
+        }
+        if (credential.audience !== config.expectedAudience) {
+          return {
+            verified: false,
+            reason: `Invalid identity audience '${credential.audience}' (expected '${config.expectedAudience}').`
+          };
+        }
+        const evalTimestamp = config.referenceTimeIso ?? context.approvalTimestamp;
+        if (!isValidIsoDate(credential.issuedAt) || !isValidIsoDate(credential.expiresAt) || !isValidIsoDate(evalTimestamp)) {
+          return {
+            verified: false,
+            reason: 'Identity credential or approval timestamp is not a valid ISO 8601 date.'
+          };
+        }
+        const issuedMs = Date.parse(credential.issuedAt);
+        const expiresMs = Date.parse(credential.expiresAt);
+        const evalMs = Date.parse(evalTimestamp);
+        const approvalMs = isValidIsoDate(context.approvalTimestamp) ? Date.parse(context.approvalTimestamp) : evalMs;
+        if (evalMs < issuedMs || approvalMs < issuedMs) {
+          return {
+            verified: false,
+            reason: 'Identity credential was not yet valid at approval timestamp.'
+          };
+        }
+        if (evalMs >= expiresMs || approvalMs >= expiresMs) {
+          return {
+            verified: false,
+            reason: `Identity credential expired at '${credential.expiresAt}' prior to evaluation time '${evalTimestamp}'.`
+          };
+        }
+        if (
+          !Array.isArray(credential.authorizationClaims) ||
+          !credential.authorizationClaims.includes(requiredClaim)
+        ) {
+          return {
+            verified: false,
+            reason: `Identity credential lacks required authorization claim '${requiredClaim}'.`
+          };
+        }
+
+        const canonicalClaims = canonicalizeJson({
+          audience: credential.audience,
+          authorizationClaims: [...credential.authorizationClaims],
+          credentialId: credential.credentialId,
+          expectedApprover: expectedApproverInCred,
+          expiresAt: credential.expiresAt,
+          issuedAt: credential.issuedAt,
+          issuer: credential.issuer,
+          providerId: credential.providerId,
+          subject
+        });
+        const expectedToken = `pat-id-v1.${sha256Hex(`${providerSecret}:${canonicalClaims}`)}`;
+        if (credential.token !== expectedToken) {
+          return {
+            verified: false,
+            reason: 'Identity credential cryptographic token signature mismatch.'
+          };
+        }
+
+        const provenance: VerifiedIdentityProvenance = deepFreeze({
+          subject,
+          subjectId: subject,
+          expectedApprover: expectedApproverInCred,
+          issuer: credential.issuer,
+          audience: credential.audience,
+          credentialId: credential.credentialId,
+          issuedAt: credential.issuedAt,
+          expiresAt: credential.expiresAt,
+          verifiedAt: context.approvalTimestamp,
+          authorizationClaims: [...credential.authorizationClaims],
+          providerId: credential.providerId,
+          tokenDigest: sha256Hex(credential.token)
+        });
+
+        return {
+          verified: true,
+          provenance
+        };
+      } catch (err) {
+        return {
+          verified: false,
+          reason: `Identity verifier exception: ${err instanceof Error ? err.message : String(err)}`
+        };
+      }
+    }
+  });
+}
+
+/**
+ * Helper to preserve explicit distinction between missing (undefined), null, and supplied values.
+ */
+function canonicalizeOptionalValue<T>(val: T | undefined | null): T | null | typeof CANONICAL_MISSING_SENTINEL {
+  if (val === undefined) return CANONICAL_MISSING_SENTINEL;
+  if (val === null) return null;
+  return val;
+}
+
+/**
+ * Validates that any numeric values within an unknown engineering structure are finite.
+ */
+function validateFiniteEngineeringNumbers(value: unknown, path: string): unknown {
+  if (value === undefined) return CANONICAL_MISSING_SENTINEL;
+  if (value === null) return null;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new ProductionSnapshotValidationError(`Non-finite numeric value at '${path}' (received ${value}).`);
+    }
+    return Object.is(value, -0) ? 0 : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, idx) => validateFiniteEngineeringNumbers(item, `${path}[${idx}]`));
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = validateFiniteEngineeringNumbers(v, `${path}.${k}`);
+    }
+    return out;
+  }
+  return value;
 }
 
 /**
  * Produces an exhaustive, canonical JSON representation of all engineering-significant
  * specification properties for cryptographic hashing and tamper detection.
  *
- * CANONICALIZATION CONTRACT:
+ * CANONICALIZATION CONTRACT (Milestone 04.6.2.3.1 — Schema v1.1.0):
  * 1. Independent of property insertion order (recursively sorted keys).
  * 2. Independent of locale.
- * 3. Preserves exact numeric precision without rounding.
- * 4. Rejects non-finite numbers (NaN, Infinity) and negative/zero dimensions.
- * 5. Validates color hex format (#RGB, #RRGGBB, #RRGGBBAA).
- * 6. Preserves array order where order has engineering meaning (constructionFeatures).
- * 7. Sorts order-independent collections (designNotes, suggestedFabrics).
- * 8. Covers all 38+ engineering fields (geometry, dimensions, ease, fabric, allowances, AI, engine).
+ * 3. Preserves exact numeric precision without rounding or silent defaults.
+ * 4. Explicitly distinguishes missing ('__MISSING__'), null (null), and supplied values.
+ * 5. Includes parameter-level value provenance classifications.
+ * 6. Rejects missing mandatory engineering fields and non-finite/invalid numbers.
+ * 7. Validates color hex format (#RGB, #RRGGBB, #RRGGBBAA).
+ * 8. Preserves array order where order has engineering meaning (constructionFeatures).
+ * 9. Sorts order-independent collections (designNotes, suggestedFabrics).
+ * 10. Includes complete fabric mechanical properties and provenance, plus any additional engineering fields.
  */
 export function canonicalizeSpecificationPayload(
   spec: AuthoritativeGarmentSpecification | CreateAuthoritativeSpecificationInput | DesignSpecification,
   options?: { schemaVersion?: string }
 ): string {
+  if (!spec || typeof spec !== 'object') {
+    throw new ProductionSnapshotValidationError('Specification payload must be a non-null object.');
+  }
+
   // 1. Identity and revision
-  const garmentId = 'garmentId' in spec && spec.garmentId
+  const rawGarmentId = 'garmentId' in spec && spec.garmentId !== undefined
     ? spec.garmentId
-    : ('id' in spec && (spec as DesignSpecification).id ? (spec as DesignSpecification).id : 'garment');
+    : ('id' in spec && (spec as DesignSpecification).id !== undefined ? (spec as DesignSpecification).id : undefined);
+
+  if (rawGarmentId !== undefined && (typeof rawGarmentId !== 'string' || rawGarmentId.trim() === '')) {
+    throw new ProductionSnapshotValidationError('Garment ID, when provided, must be a non-empty string.');
+  }
+  const garmentId = rawGarmentId ? rawGarmentId.trim() : 'garment';
 
   const version = spec.version ?? 1;
   if (!Number.isInteger(version) || version <= 0) {
@@ -86,11 +543,22 @@ export function canonicalizeSpecificationPayload(
   }
 
   const specificationRevisionId = spec.specificationRevisionId ?? `spec-${garmentId}-v${version}`;
-  const parentRevisionId = spec.parentRevisionId ?? null;
+  const parentRevisionId = canonicalizeOptionalValue(spec.parentRevisionId);
   const projectId = ('projectId' in spec && spec.projectId) ? spec.projectId : 'project-patroner-default';
+
   const garmentCategory = spec.garmentCategory;
-  if (!garmentCategory) {
-    throw new ProductionSnapshotValidationError('Garment category is required.');
+  if (!garmentCategory || !VALID_GARMENT_CATEGORIES.has(garmentCategory)) {
+    throw new ProductionSnapshotValidationError(`Valid garmentCategory is required (received '${garmentCategory}').`);
+  }
+
+  const silhouette = spec.silhouette;
+  if (!silhouette || !VALID_SILHOUETTES.has(silhouette)) {
+    throw new ProductionSnapshotValidationError(`Valid silhouette is required (received '${silhouette}').`);
+  }
+
+  const easeProfile = spec.easeProfile;
+  if (!easeProfile || !VALID_EASE_PROFILES.has(easeProfile)) {
+    throw new ProductionSnapshotValidationError(`Valid easeProfile is required (received '${easeProfile}').`);
   }
 
   // 2. Name validation
@@ -99,66 +567,98 @@ export function canonicalizeSpecificationPayload(
     throw new ProductionSnapshotValidationError('Specification name is required and cannot be empty.');
   }
 
-  // 3. Color validation
-  let colorData: { name: string; hex: string } | null = null;
-  if (spec.color && typeof spec.color === 'object') {
-    const cName = typeof spec.color.name === 'string' ? spec.color.name.trim() : '';
-    const cHex = typeof spec.color.hex === 'string' ? spec.color.hex.trim().toLowerCase() : '';
-    if (cHex && !/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/.test(cHex)) {
-      throw new ProductionSnapshotValidationError(`Invalid color hex format: "${spec.color.hex}". Must be #RGB, #RRGGBB, or #RRGGBBAA.`);
+  // 3. Color validation (distinguishes missing vs null vs supplied)
+  let colorData: { name: string; hex: string } | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
+  if ('color' in spec) {
+    if (spec.color === null) {
+      colorData = null;
+    } else if (spec.color !== undefined) {
+      if (typeof spec.color !== 'object') {
+        throw new ProductionSnapshotValidationError('Specification color must be an object.');
+      }
+      const cName = typeof spec.color.name === 'string' ? spec.color.name.trim() : '';
+      const cHex = typeof spec.color.hex === 'string' ? spec.color.hex.trim().toLowerCase() : '';
+      if (cHex && !/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/.test(cHex)) {
+        throw new ProductionSnapshotValidationError(
+          `Invalid color hex format: "${spec.color.hex}". Must be #RGB, #RRGGBB, or #RRGGBBAA.`
+        );
+      }
+      colorData = {
+        name: cName,
+        hex: cHex
+      };
     }
-    colorData = {
-      name: cName,
-      hex: cHex
-    };
   }
 
-  // 4. Target Finished Dimensions (extract all dimensions without loss)
-  let lengthCm = 0;
-  let waistCm: number | null = null;
-  let hipCm: number | null = null;
-  let bustCm: number | null = null;
-  let chestCm: number | null = null;
-  let acrossBackCm: number | null = null;
-  let bicepCm: number | null = null;
-  let wristCm: number | null = null;
+  // 4. Target Finished Dimensions (extract all dimensions without loss, distinguishing missing vs null)
+  let lengthCm: number | undefined = undefined;
+  let waistCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
+  let hipCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
+  let bustCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
+  let chestCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
+  let acrossBackCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
+  let bicepCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
+  let wristCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
 
-  const extraDimensions: Record<string, number | null> = {};
+  const extraDimensions: Record<string, unknown> = {};
 
   if ('targetFinishedDimensions' in spec && spec.targetFinishedDimensions) {
     const td = spec.targetFinishedDimensions as Record<string, unknown>;
     if (typeof td.lengthCm === 'number') lengthCm = td.lengthCm;
     else if (typeof td.length === 'number') lengthCm = td.length;
 
-    waistCm = typeof td.waistCm === 'number' ? td.waistCm : (typeof td.waist === 'number' ? td.waist : null);
-    hipCm = typeof td.hipCm === 'number' ? td.hipCm : (typeof td.hip === 'number' ? td.hip : null);
-    bustCm = typeof td.bustCm === 'number' ? td.bustCm : (typeof td.bust === 'number' ? td.bust : null);
-    chestCm = typeof td.chestCm === 'number' ? td.chestCm : (typeof td.chest === 'number' ? td.chest : null);
-    acrossBackCm = typeof td.acrossBackCm === 'number' ? td.acrossBackCm : (typeof td.acrossBack === 'number' ? td.acrossBack : null);
-    bicepCm = typeof td.bicepCm === 'number' ? td.bicepCm : (typeof td.bicep === 'number' ? td.bicep : null);
-    wristCm = typeof td.wristCm === 'number' ? td.wristCm : (typeof td.wrist === 'number' ? td.wrist : null);
+    const extractDim = (kCm: string, kShort: string): number | null | typeof CANONICAL_MISSING_SENTINEL => {
+      if (kCm in td && td[kCm] !== undefined) {
+        return td[kCm] as number | null;
+      }
+      if (kShort in td && td[kShort] !== undefined) {
+        return td[kShort] as number | null;
+      }
+      return CANONICAL_MISSING_SENTINEL;
+    };
 
-    const standardDimKeys = new Set(['lengthCm', 'length', 'waistCm', 'waist', 'hipCm', 'hip', 'bustCm', 'bust', 'chestCm', 'chest', 'acrossBackCm', 'acrossBack', 'bicepCm', 'bicep', 'wristCm', 'wrist']);
+    waistCm = extractDim('waistCm', 'waist');
+    hipCm = extractDim('hipCm', 'hip');
+    bustCm = extractDim('bustCm', 'bust');
+    chestCm = extractDim('chestCm', 'chest');
+    acrossBackCm = extractDim('acrossBackCm', 'acrossBack');
+    bicepCm = extractDim('bicepCm', 'bicep');
+    wristCm = extractDim('wristCm', 'wrist');
+
+    const standardDimKeys = new Set([
+      'lengthCm', 'length',
+      'waistCm', 'waist',
+      'hipCm', 'hip',
+      'bustCm', 'bust',
+      'chestCm', 'chest',
+      'acrossBackCm', 'acrossBack',
+      'bicepCm', 'bicep',
+      'wristCm', 'wrist'
+    ]);
     for (const [k, v] of Object.entries(td)) {
       if (!standardDimKeys.has(k)) {
         if (typeof v === 'number') {
           if (!Number.isFinite(v) || v <= 0) {
-            throw new ProductionSnapshotValidationError(`Target finished dimension "${k}" must be a positive finite number (received ${v}).`);
+            throw new ProductionSnapshotValidationError(
+              `Target finished dimension "${k}" must be a positive finite number (received ${v}).`
+            );
           }
           extraDimensions[k] = v;
-        } else if (v === null) {
-          extraDimensions[k] = null;
+        } else {
+          extraDimensions[k] = canonicalizeOptionalValue(v);
         }
       }
     }
   }
 
-  if (!lengthCm && 'lengthCm' in spec && typeof spec.lengthCm === 'number') {
+  if (lengthCm === undefined && 'lengthCm' in spec && typeof spec.lengthCm === 'number') {
     lengthCm = spec.lengthCm;
   }
 
-  if (!Number.isFinite(lengthCm) || lengthCm <= 0) {
-    throw new ProductionSnapshotValidationError(`Target finished lengthCm must be a positive finite number (received ${lengthCm}).`);
+  if (typeof lengthCm !== 'number' || !Number.isFinite(lengthCm) || lengthCm <= 0) {
+    throw new ProductionSnapshotValidationError(
+      `Target finished lengthCm is mandatory and must be a positive finite number (received ${lengthCm}).`
+    );
   }
 
   for (const [dimKey, dimVal] of [
@@ -170,37 +670,53 @@ export function canonicalizeSpecificationPayload(
     ['bicepCm', bicepCm],
     ['wristCm', wristCm]
   ] as const) {
-    if (dimVal !== null && (!Number.isFinite(dimVal) || dimVal <= 0)) {
-      throw new ProductionSnapshotValidationError(`Target finished dimension "${dimKey}" must be a positive finite number (received ${dimVal}).`);
-    }
-  }
-
-  // 5. Explicit Ease
-  let explicitEase: Record<string, number | null> | null = null;
-  if (spec.explicitEaseCm) {
-    for (const [k, v] of Object.entries(spec.explicitEaseCm)) {
-      if (v !== undefined && v !== null && !Number.isFinite(v)) {
-        throw new ProductionSnapshotValidationError(`Explicit ease value for "${k}" must be a finite number (received ${v}).`);
+    if (dimVal !== CANONICAL_MISSING_SENTINEL && dimVal !== null) {
+      if (typeof dimVal !== 'number' || !Number.isFinite(dimVal) || dimVal <= 0) {
+        throw new ProductionSnapshotValidationError(
+          `Target finished dimension "${dimKey}" must be a positive finite number (received ${dimVal}).`
+        );
       }
     }
-    explicitEase = {
-      waist: spec.explicitEaseCm.waist ?? null,
-      hip: spec.explicitEaseCm.hip ?? null,
-      bust: spec.explicitEaseCm.bust ?? null,
-      biceps: spec.explicitEaseCm.biceps ?? null,
-      wrist: spec.explicitEaseCm.wrist ?? null,
-      neck: spec.explicitEaseCm.neck ?? null
-    };
   }
 
-  // 6. Design and construction features (preserves array sequence)
+  // 5. Explicit Ease (distinguishes missing vs null vs supplied, preserves extra ease keys)
+  let explicitEase: Record<string, unknown> | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
+  if ('explicitEaseCm' in spec) {
+    if (spec.explicitEaseCm === null) {
+      explicitEase = null;
+    } else if (spec.explicitEaseCm !== undefined) {
+      const easeRecord: Record<string, unknown> = {
+        waist: canonicalizeOptionalValue(spec.explicitEaseCm.waist),
+        hip: canonicalizeOptionalValue(spec.explicitEaseCm.hip),
+        bust: canonicalizeOptionalValue(spec.explicitEaseCm.bust),
+        biceps: canonicalizeOptionalValue(spec.explicitEaseCm.biceps),
+        wrist: canonicalizeOptionalValue(spec.explicitEaseCm.wrist),
+        neck: canonicalizeOptionalValue(spec.explicitEaseCm.neck)
+      };
+      for (const [k, v] of Object.entries(spec.explicitEaseCm as Record<string, unknown>)) {
+        if (v !== undefined && v !== null) {
+          if (typeof v !== 'number' || !Number.isFinite(v)) {
+            throw new ProductionSnapshotValidationError(
+              `Explicit ease value for "${k}" must be a finite number (received ${v}).`
+            );
+          }
+        }
+        if (!(k in easeRecord)) {
+          easeRecord[k] = canonicalizeOptionalValue(v);
+        }
+      }
+      explicitEase = easeRecord;
+    }
+  }
+
+  // 6. Design and construction features (preserves array sequence for constructionFeatures)
   const constructionFeatures = Array.isArray(spec.constructionFeatures)
     ? [...spec.constructionFeatures].map(f => ({
         id: f.id,
         category: f.category,
         name: f.name,
-        description: f.description ?? '',
-        patternImpact: f.patternImpact ?? ''
+        description: canonicalizeOptionalValue(f.description),
+        patternImpact: canonicalizeOptionalValue(f.patternImpact)
       }))
     : [];
 
@@ -208,121 +724,236 @@ export function canonicalizeSpecificationPayload(
     ? [...spec.designNotes].filter(n => typeof n === 'string' && n.trim() !== '').sort()
     : [];
 
-  // 7. Fabric Engineering Properties
+  // 7. Complete Fabric Engineering Properties & Provenance
   const fab = spec.fabric;
   if (!fab || typeof fab !== 'object') {
     throw new ProductionSnapshotValidationError('Fabric property specification is required.');
   }
+  if (!fab.id || typeof fab.id !== 'string' || fab.id.trim() === '') {
+    throw new ProductionSnapshotValidationError('Fabric specification requires a non-empty id.');
+  }
+  if (!fab.name || typeof fab.name !== 'string' || fab.name.trim() === '') {
+    throw new ProductionSnapshotValidationError('Fabric specification requires a non-empty name.');
+  }
+  if (!fab.weight) {
+    throw new ProductionSnapshotValidationError('Fabric specification requires weight.');
+  }
+  if (!fab.stretch) {
+    throw new ProductionSnapshotValidationError('Fabric specification requires stretch.');
+  }
 
-  const enhanced = fab as Partial<EnhancedFabricProperty> | undefined;
+  const enhanced = fab as Partial<EnhancedFabricProperty>;
+  const extraFab = fab as unknown as Record<string, unknown>;
 
-  if (enhanced?.gsm !== undefined && enhanced?.gsm !== null) {
-    if (!Number.isFinite(enhanced.gsm) || enhanced.gsm < 0) {
-      throw new ProductionSnapshotValidationError(`Fabric GSM must be a non-negative finite number (received ${enhanced.gsm}).`);
+  if (enhanced.gsm !== undefined && enhanced.gsm !== null) {
+    if (!Number.isFinite(enhanced.gsm) || enhanced.gsm <= 0) {
+      throw new ProductionSnapshotValidationError(
+        `Fabric GSM must be a positive finite number (received ${enhanced.gsm}).`
+      );
     }
   }
-  if (enhanced?.thicknessMm !== undefined && enhanced?.thicknessMm !== null) {
-    if (!Number.isFinite(enhanced.thicknessMm) || enhanced.thicknessMm < 0) {
-      throw new ProductionSnapshotValidationError(`Fabric thickness must be a non-negative finite number (received ${enhanced.thicknessMm}).`);
+  if (enhanced.thicknessMm !== undefined && enhanced.thicknessMm !== null) {
+    if (!Number.isFinite(enhanced.thicknessMm) || enhanced.thicknessMm <= 0) {
+      throw new ProductionSnapshotValidationError(
+        `Fabric thickness must be a positive finite number (received ${enhanced.thicknessMm}).`
+      );
     }
   }
-  if (enhanced?.moldingFactor !== undefined && enhanced?.moldingFactor !== null) {
+  if (enhanced.moldingFactor !== undefined && enhanced.moldingFactor !== null) {
     if (!Number.isFinite(enhanced.moldingFactor) || enhanced.moldingFactor <= 0) {
-      throw new ProductionSnapshotValidationError(`Fabric molding factor must be a positive finite number (received ${enhanced.moldingFactor}).`);
+      throw new ProductionSnapshotValidationError(
+        `Fabric molding factor must be a positive finite number (received ${enhanced.moldingFactor}).`
+      );
+    }
+  }
+
+  const knownFabricKeys = new Set([
+    'id', 'name', 'composition', 'weight', 'stretch', 'drapeDescription',
+    'recommendedEaseCm', 'gsm', 'thicknessMm', 'moldingFactor', 'directional',
+    'revision', 'provenance', 'propertyProvenance', 'propertyVerificationDetails',
+    'testStandard', 'laboratoryReference', 'supplierReference', 'isVerified',
+    'isIllustrativeReference', 'isIllustrative', 'isProvisional'
+  ]);
+  const additionalFabricFields: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(extraFab)) {
+    if (!knownFabricKeys.has(k)) {
+      additionalFabricFields[k] = validateFiniteEngineeringNumbers(v, `fabric.${k}`);
     }
   }
 
   const fabricData = {
     id: fab.id,
     name: fab.name,
-    composition: fab.composition ?? '',
+    composition: canonicalizeOptionalValue(fab.composition),
+    drapeDescription: canonicalizeOptionalValue(fab.drapeDescription),
     weight: fab.weight,
     stretch: fab.stretch,
-    gsm: enhanced?.gsm ?? null,
-    thicknessMm: enhanced?.thicknessMm ?? null,
-    moldingFactor: enhanced?.moldingFactor ?? null,
-    directional: enhanced?.directional ? {
-      warp: enhanced.directional.warp ? {
-        shrinkagePercent: enhanced.directional.warp.shrinkagePercent,
-        stretchPercent: enhanced.directional.warp.stretchPercent
-      } : null,
-      weft: enhanced.directional.weft ? {
-        shrinkagePercent: enhanced.directional.weft.shrinkagePercent,
-        stretchPercent: enhanced.directional.weft.stretchPercent
-      } : null,
-      bias: enhanced.directional.bias ? {
-        stretchPercent: enhanced.directional.bias.stretchPercent
-      } : null
-    } : null,
-    recommendedEaseCm: fab.recommendedEaseCm ? {
-      waist: fab.recommendedEaseCm.waist,
-      hip: fab.recommendedEaseCm.hip,
-      bust: fab.recommendedEaseCm.bust ?? null
-    } : null,
-    fabricRevision: 'fabricRevision' in spec && spec.fabricRevision
-      ? spec.fabricRevision
-      : (enhanced?.revision ?? null),
-    fabricProvenance: 'fabricProvenance' in spec && spec.fabricProvenance
+    gsm: canonicalizeOptionalValue(enhanced.gsm),
+    thicknessMm: canonicalizeOptionalValue(enhanced.thicknessMm),
+    moldingFactor: canonicalizeOptionalValue(enhanced.moldingFactor),
+    directional: enhanced.directional === undefined
+      ? CANONICAL_MISSING_SENTINEL
+      : enhanced.directional === null
+      ? null
+      : {
+          warp: enhanced.directional.warp ? {
+            shrinkagePercent: enhanced.directional.warp.shrinkagePercent,
+            stretchPercent: enhanced.directional.warp.stretchPercent
+          } : canonicalizeOptionalValue(enhanced.directional.warp),
+          weft: enhanced.directional.weft ? {
+            shrinkagePercent: enhanced.directional.weft.shrinkagePercent,
+            stretchPercent: enhanced.directional.weft.stretchPercent
+          } : canonicalizeOptionalValue(enhanced.directional.weft),
+          bias: enhanced.directional.bias ? {
+            stretchPercent: enhanced.directional.bias.stretchPercent
+          } : canonicalizeOptionalValue(enhanced.directional.bias)
+        },
+    recommendedEaseCm: fab.recommendedEaseCm === undefined
+      ? CANONICAL_MISSING_SENTINEL
+      : fab.recommendedEaseCm === null
+      ? null
+      : {
+          waist: fab.recommendedEaseCm.waist,
+          hip: fab.recommendedEaseCm.hip,
+          bust: canonicalizeOptionalValue(fab.recommendedEaseCm.bust)
+        },
+    fabricRevision: 'fabricRevision' in spec && spec.fabricRevision !== undefined
+      ? canonicalizeOptionalValue(spec.fabricRevision)
+      : canonicalizeOptionalValue(enhanced.revision),
+    fabricProvenance: 'fabricProvenance' in spec && spec.fabricProvenance !== undefined
       ? spec.fabricProvenance
-      : (enhanced?.provenance ?? 'unknown')
+      : (enhanced.provenance ?? 'unknown'),
+    propertyProvenance: canonicalizeOptionalValue(enhanced.propertyProvenance),
+    propertyVerificationDetails: canonicalizeOptionalValue(extraFab.propertyVerificationDetails),
+    testStandard: canonicalizeOptionalValue(enhanced.testStandard),
+    laboratoryReference: canonicalizeOptionalValue(extraFab.laboratoryReference),
+    supplierReference: canonicalizeOptionalValue(extraFab.supplierReference),
+    isVerified: canonicalizeOptionalValue(enhanced.isVerified),
+    isIllustrativeReference: canonicalizeOptionalValue(enhanced.isIllustrativeReference ?? extraFab.isIllustrative),
+    isProvisional: canonicalizeOptionalValue(extraFab.isProvisional),
+    additionalFabricFields
   };
 
-  // 8. Allowances (materialized values)
-  let allowances = {
-    seamAllowanceCm: 1.5,
-    hemAllowanceCm: 3.0,
-    waistAllowanceCm: 1.0,
-    neckAllowanceCm: 1.0,
-    armholeAllowanceCm: 1.0,
-    shoulderAllowanceCm: 1.0
+  // 8. Allowances (preserve exact supplied values vs missing vs null without silent substitution during canonicalization)
+  const rawAllowancesSource: Record<string, unknown> =
+    'allowances' in spec && spec.allowances && typeof spec.allowances === 'object'
+      ? (spec.allowances as unknown as Record<string, unknown>)
+      : {
+          seamAllowanceCm: (spec as DesignSpecification).seamAllowanceCm,
+          hemAllowanceCm: (spec as DesignSpecification).hemAllowanceCm,
+          waistAllowanceCm: (spec as DesignSpecification).waistAllowanceCm,
+          neckAllowanceCm: (spec as DesignSpecification).neckAllowanceCm,
+          armholeAllowanceCm: (spec as DesignSpecification).armholeAllowanceCm,
+          shoulderAllowanceCm: (spec as DesignSpecification).shoulderAllowanceCm
+        };
+
+  const allowances: Record<string, unknown> = {
+    seamAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.seamAllowanceCm),
+    hemAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.hemAllowanceCm),
+    waistAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.waistAllowanceCm),
+    neckAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.neckAllowanceCm),
+    armholeAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.armholeAllowanceCm),
+    shoulderAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.shoulderAllowanceCm)
   };
 
-  if ('allowances' in spec && spec.allowances) {
-    const a = spec.allowances;
-    allowances = {
-      seamAllowanceCm: a.seamAllowanceCm ?? 1.5,
-      hemAllowanceCm: a.hemAllowanceCm ?? 3.0,
-      waistAllowanceCm: a.waistAllowanceCm ?? 1.0,
-      neckAllowanceCm: a.neckAllowanceCm ?? 1.0,
-      armholeAllowanceCm: a.armholeAllowanceCm ?? 1.0,
-      shoulderAllowanceCm: a.shoulderAllowanceCm ?? 1.0
-    };
-  } else {
-    const ds = spec as DesignSpecification;
-    allowances = {
-      seamAllowanceCm: ds.seamAllowanceCm ?? 1.5,
-      hemAllowanceCm: ds.hemAllowanceCm ?? 3.0,
-      waistAllowanceCm: ds.waistAllowanceCm ?? 1.0,
-      neckAllowanceCm: ds.neckAllowanceCm ?? 1.0,
-      armholeAllowanceCm: ds.armholeAllowanceCm ?? 1.0,
-      shoulderAllowanceCm: ds.shoulderAllowanceCm ?? 1.0
-    };
+  for (const [k, v] of Object.entries(rawAllowancesSource)) {
+    if (!(k in allowances)) {
+      allowances[k] = canonicalizeOptionalValue(v);
+    }
   }
 
   for (const [aKey, aVal] of Object.entries(allowances)) {
-    if (aVal !== null && aVal !== undefined) {
-      if (!Number.isFinite(aVal) || aVal < 0) {
-        throw new ProductionSnapshotValidationError(`Allowance "${aKey}" must be a non-negative finite number (received ${aVal}).`);
+    if (aVal !== CANONICAL_MISSING_SENTINEL && aVal !== null) {
+      if (typeof aVal !== 'number' || !Number.isFinite(aVal) || aVal < 0) {
+        throw new ProductionSnapshotValidationError(
+          `Allowance "${aKey}" must be a non-negative finite number (received ${aVal}).`
+        );
       }
     }
   }
 
-  // 9. AI Estimates
-  const aiEstimates = spec.aiEstimates ? {
-    suggestedSilhouette: spec.aiEstimates.suggestedSilhouette ?? null,
-    styleConfidenceScore: spec.aiEstimates.styleConfidenceScore ?? null,
-    suggestedFabrics: Array.isArray(spec.aiEstimates.suggestedFabrics)
-      ? [...spec.aiEstimates.suggestedFabrics].sort()
-      : [],
-    technicalAdvice: spec.aiEstimates.technicalAdvice ?? null,
-    disclaimer: spec.aiEstimates.disclaimer ?? null
-  } : null;
+  // 9. AI Estimates (explicitly separated as non-authoritative proposals)
+  const aiEstimates =
+    !('aiEstimates' in spec) || spec.aiEstimates === undefined
+      ? CANONICAL_MISSING_SENTINEL
+      : spec.aiEstimates === null
+      ? null
+      : {
+          suggestedSilhouette: canonicalizeOptionalValue(spec.aiEstimates.suggestedSilhouette),
+          styleConfidenceScore: canonicalizeOptionalValue(spec.aiEstimates.styleConfidenceScore),
+          suggestedFabrics: Array.isArray(spec.aiEstimates.suggestedFabrics)
+            ? [...spec.aiEstimates.suggestedFabrics].sort()
+            : [],
+          technicalAdvice: canonicalizeOptionalValue(spec.aiEstimates.technicalAdvice),
+          disclaimer: canonicalizeOptionalValue(spec.aiEstimates.disclaimer)
+        };
 
-  // 10. Engine & Schema Version
+  // 10. Parameter-level Value Provenance Classification
+  const explicitFieldProvenance =
+    'fieldProvenance' in spec && spec.fieldProvenance
+      ? { ...spec.fieldProvenance }
+      : {};
+
+  const classifyFieldState = (val: unknown, defaultProvenance: ParameterValueProvenance): ParameterValueProvenance => {
+    if (val === undefined || val === CANONICAL_MISSING_SENTINEL) return 'missing';
+    if (val === null) return 'explicit-null';
+    return defaultProvenance;
+  };
+
+  const computedFieldProvenance: Record<string, ParameterValueProvenance> = {
+    lengthCm: explicitFieldProvenance.lengthCm ?? 'explicit-value',
+    waistCm: explicitFieldProvenance.waistCm ?? classifyFieldState(waistCm, 'explicit-value'),
+    hipCm: explicitFieldProvenance.hipCm ?? classifyFieldState(hipCm, 'explicit-value'),
+    bustCm: explicitFieldProvenance.bustCm ?? classifyFieldState(bustCm, 'explicit-value'),
+    explicitEaseCm: explicitFieldProvenance.explicitEaseCm ?? classifyFieldState(explicitEase, 'explicit-value'),
+    seamAllowanceCm:
+      explicitFieldProvenance.seamAllowanceCm ??
+      classifyFieldState(allowances.seamAllowanceCm, 'explicit-value'),
+    hemAllowanceCm:
+      explicitFieldProvenance.hemAllowanceCm ??
+      classifyFieldState(allowances.hemAllowanceCm, 'explicit-value'),
+    aiEstimates:
+      explicitFieldProvenance.aiEstimates ??
+      classifyFieldState(aiEstimates, 'ai-proposed'),
+    ...explicitFieldProvenance
+  };
+
+  // 11. Preserve any unknown / additional engineering fields on the specification object
+  const knownSpecKeys = new Set([
+    'id', 'garmentId', 'projectId', 'specificationRevisionId', 'parentRevisionId',
+    'supersededByRevisionId', 'version', 'name', 'garmentCategory', 'silhouette',
+    'prompt', 'color', 'fabric', 'fabricRevision', 'fabricProvenance',
+    'easeProfile', 'explicitEaseCm', 'targetFinishedDimensions', 'lengthCm',
+    'dartStyle', 'sleeveEaseStrategy', 'allowances',
+    'seamAllowanceCm', 'hemAllowanceCm', 'waistAllowanceCm',
+    'neckAllowanceCm', 'armholeAllowanceCm', 'shoulderAllowanceCm',
+    'constructionFeatures', 'designNotes', 'fieldProvenance',
+    'aiEstimates', 'engineProvenance',
+    // Approval / lifecycle / volatile timestamp metadata (excluded from content hash so approval binds to content)
+    'isApproved', 'approvalState', 'approvalAuthorityTier', 'approvalRecord',
+    'verifiedIdentity', 'cryptographicSignature',
+    'approvalHistory', 'revocationRecord', 'approvedBy', 'approvedAt',
+    'approvalProvenance', 'createdAt', 'updatedAt'
+  ]);
+
+  const additionalEngineeringFields: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(spec as unknown as Record<string, unknown>)) {
+    if (!knownSpecKeys.has(k)) {
+      additionalEngineeringFields[k] = validateFiniteEngineeringNumbers(v, `spec.${k}`);
+    }
+  }
+
+  // 12. Engine & Schema Version
   const engineVersion = ('engineProvenance' in spec && spec.engineProvenance?.engineVersion)
     ? spec.engineProvenance.engineVersion
     : CURRENT_ENGINE_VERSION;
   const schemaVersion = options?.schemaVersion ?? SPECIFICATION_CANONICAL_SCHEMA_VERSION;
+
+  const promptVal = !('prompt' in spec) || spec.prompt === undefined
+    ? CANONICAL_MISSING_SENTINEL
+    : spec.prompt === null
+    ? null
+    : spec.prompt;
 
   const payload = {
     schemaVersion,
@@ -333,11 +964,11 @@ export function canonicalizeSpecificationPayload(
     version,
     garmentCategory,
     name,
-    silhouette: spec.silhouette,
-    prompt: spec.prompt ?? '',
+    silhouette,
+    prompt: promptVal,
     color: colorData,
-    dartStyle: spec.dartStyle ?? null,
-    sleeveEaseStrategy: spec.sleeveEaseStrategy ?? null,
+    dartStyle: canonicalizeOptionalValue(spec.dartStyle),
+    sleeveEaseStrategy: canonicalizeOptionalValue(spec.sleeveEaseStrategy),
     constructionFeatures,
     designNotes,
     fabric: fabricData,
@@ -353,9 +984,11 @@ export function canonicalizeSpecificationPayload(
       ...extraDimensions
     },
     explicitEaseCm: explicitEase,
-    easeProfile: spec.easeProfile,
+    easeProfile,
     allowances,
     aiEstimates,
+    fieldProvenance: computedFieldProvenance,
+    additionalEngineeringFields,
     engineVersion
   };
 
@@ -366,7 +999,8 @@ export function canonicalizeSpecificationPayload(
  * Computes a deterministic SHA-256 fingerprint for ALL engineering-significant specification fields.
  * Used for cryptographic approval binding, tamper detection, and dependency tracking.
  *
- * Excludes volatile metadata (createdAt, updatedAt) that does not affect engineering outcomes.
+ * Excludes volatile metadata (createdAt, updatedAt) and approval wrapper state so the approval
+ * record can bind directly to the exact canonical content digest.
  */
 export function computeSpecificationFingerprint(
   spec: AuthoritativeGarmentSpecification | CreateAuthoritativeSpecificationInput | DesignSpecification,
@@ -378,13 +1012,16 @@ export function computeSpecificationFingerprint(
 
 /**
  * Verifies whether a specification revision has a valid, untampered approval record.
- * Recomputes the canonical specification fingerprint and enforces strict authority tier validation.
+ * Recomputes the canonical specification fingerprint, enforces revocation/supersession precedence,
+ * and requires real provider verification for authenticated_designer and cryptographic_principal tiers.
  */
 export function verifySpecificationApproval(
-  spec: AuthoritativeGarmentSpecification | DesignSpecification
+  spec: AuthoritativeGarmentSpecification | DesignSpecification,
+  verificationContext?: ApprovalVerificationContext
 ): {
   isValid: boolean;
   state: SpecificationApprovalState;
+  authorityTier?: ApprovalAuthorityTier;
   reason?: string;
   fingerprint: string;
 } {
@@ -393,23 +1030,65 @@ export function verifySpecificationApproval(
     ? spec.garmentId
     : ('id' in spec && (spec as DesignSpecification).id ? (spec as DesignSpecification).id : 'garment');
   const specRevId = spec.specificationRevisionId ?? `spec-${specId}-v${spec.version || 1}`;
+  const specProjectId = spec.projectId ?? 'project-patroner-default';
 
-  if (spec.approvalState === 'revoked') {
+  // CORRECTION G: Check revocation across state, revocationRecord, approvalRecord.revocation, and approvalHistory
+  // BEFORE checking isApproved, so a revoked specification remains invalid even if legacy booleans are tampered.
+  const historyEvents = Array.isArray(spec.approvalHistory) ? spec.approvalHistory : [];
+  const revEventsForRev = historyEvents.filter(
+    e => e.eventType === 'revocation' && e.targetRevisionId === specRevId
+  );
+  const latestEventForRev = [...historyEvents]
+    .reverse()
+    .find(e => e.targetRevisionId === specRevId);
+
+  const hasActiveRevocationInHistory =
+    latestEventForRev?.eventType === 'revocation' ||
+    (spec.approvalRecord?.eventId !== undefined &&
+      revEventsForRev.some(
+        e => (e as SpecificationRevocationEvent).originalApprovalEventId === spec.approvalRecord?.eventId
+      ));
+
+  if (
+    spec.approvalState === 'revoked' ||
+    spec.revocationRecord !== undefined ||
+    spec.approvalRecord?.revocation !== undefined ||
+    Boolean(spec.approvalRecord?.revocationReason) ||
+    hasActiveRevocationInHistory
+  ) {
+    const revReason =
+      spec.revocationRecord?.reason ??
+      spec.approvalRecord?.revocation?.reason ??
+      spec.approvalRecord?.revocationReason ??
+      (latestEventForRev?.eventType === 'revocation' ? latestEventForRev.reason : undefined);
+
     return {
       isValid: false,
       state: 'revoked',
-      reason: spec.revocationRecord?.reason
-        ? `Specification approval was explicitly revoked: ${spec.revocationRecord.reason}`
+      reason: revReason
+        ? `Specification approval was explicitly revoked: ${revReason}`
         : 'Specification approval was explicitly revoked.',
       fingerprint: currentFingerprint
     };
   }
 
-  if (spec.approvalState === 'superseded') {
+  // CORRECTION G: Check supersession across state, supersededByRevisionId, and approvalHistory
+  // BEFORE checking isApproved, so a superseded specification remains invalid even if isApproved is manipulated.
+  const hasSupersessionInHistory = historyEvents.some(
+    e => e.eventType === 'supersession' && e.targetRevisionId === specRevId
+  );
+
+  if (
+    spec.approvalState === 'superseded' ||
+    Boolean(spec.supersededByRevisionId) ||
+    hasSupersessionInHistory
+  ) {
     return {
       isValid: false,
       state: 'superseded',
-      reason: 'Specification revision has been superseded by a newer revision.',
+      reason: spec.supersededByRevisionId
+        ? `Specification revision '${specRevId}' has been superseded by revision '${spec.supersededByRevisionId}'.`
+        : 'Specification revision has been superseded by a newer revision.',
       fingerprint: currentFingerprint
     };
   }
@@ -424,23 +1103,31 @@ export function verifySpecificationApproval(
     };
   }
 
-  // Verify specification authority tier claims
-  if (spec.approvalAuthorityTier === 'authenticated_designer') {
-    if (!activeAuthorityProviderContext.hasAuthenticatedIdentityProvider?.()) {
+  const effectiveTier = spec.approvalRecord?.authorityTier ?? spec.approvalAuthorityTier;
+
+  // Verify specification authority tier claims before trusting record
+  if (effectiveTier === 'authenticated_designer') {
+    if (
+      !verificationContext?.identityVerifier ||
+      (typeof verificationContext.identityVerifier.verifyIdentityCredential !== 'function' &&
+        typeof verificationContext.identityVerifier.verifyCredential !== 'function')
+    ) {
       return {
         isValid: false,
         state: 'invalid',
+        authorityTier: effectiveTier,
         reason: 'authenticated_designer authority tier is unavailable without verified identity provider configuration.',
         fingerprint: currentFingerprint
       };
     }
   }
 
-  if (spec.approvalAuthorityTier === 'cryptographic_principal') {
-    if (!activeAuthorityProviderContext.hasCryptographicSigningProvider?.()) {
+  if (effectiveTier === 'cryptographic_principal') {
+    if (!verificationContext?.cryptographicVerifier || typeof verificationContext.cryptographicVerifier.verifyApprovalSignature !== 'function') {
       return {
         isValid: false,
         state: 'invalid',
+        authorityTier: effectiveTier,
         reason: 'cryptographic_principal authority tier is unavailable without cryptographic provider configuration.',
         fingerprint: currentFingerprint
       };
@@ -453,6 +1140,7 @@ export function verifySpecificationApproval(
         return {
           isValid: false,
           state: 'invalid',
+          authorityTier: 'demonstration_fixture',
           reason: 'Approved demonstration fixture lacks an approver identity.',
           fingerprint: currentFingerprint
         };
@@ -461,6 +1149,7 @@ export function verifySpecificationApproval(
         return {
           isValid: false,
           state: 'invalid',
+          authorityTier: 'demonstration_fixture',
           reason: 'Approved demonstration fixture lacks a valid ISO approval timestamp.',
           fingerprint: currentFingerprint
         };
@@ -468,6 +1157,7 @@ export function verifySpecificationApproval(
       return {
         isValid: true,
         state: 'approved',
+        authorityTier: 'demonstration_fixture',
         fingerprint: currentFingerprint
       };
     }
@@ -475,6 +1165,7 @@ export function verifySpecificationApproval(
     return {
       isValid: false,
       state: 'invalid',
+      authorityTier: effectiveTier,
       reason: 'Approved specification lacks an authoritative approval record.',
       fingerprint: currentFingerprint
     };
@@ -482,11 +1173,22 @@ export function verifySpecificationApproval(
 
   const record = spec.approvalRecord;
 
+  if (spec.approvalAuthorityTier && record.authorityTier !== spec.approvalAuthorityTier) {
+    return {
+      isValid: false,
+      state: 'invalid',
+      authorityTier: record.authorityTier,
+      reason: `Approval authority tier mismatch between specification ('${spec.approvalAuthorityTier}') and approvalRecord ('${record.authorityTier}').`,
+      fingerprint: currentFingerprint
+    };
+  }
+
   // Verify exact revision ID
   if (record.targetRevisionId !== specRevId) {
     return {
       isValid: false,
       state: 'invalid',
+      authorityTier: record.authorityTier,
       reason: `Approval record target revision '${record.targetRevisionId}' does not match specification revision '${specRevId}'.`,
       fingerprint: currentFingerprint
     };
@@ -497,32 +1199,10 @@ export function verifySpecificationApproval(
     return {
       isValid: false,
       state: 'invalid',
+      authorityTier: record.authorityTier,
       reason: 'Specification content has been modified after approval was granted; content fingerprint mismatch.',
       fingerprint: currentFingerprint
     };
-  }
-
-  // Verify authority tier in record
-  if (record.authorityTier === 'authenticated_designer') {
-    if (!activeAuthorityProviderContext.hasAuthenticatedIdentityProvider?.()) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        reason: 'authenticated_designer authority tier is unavailable without verified identity provider configuration.',
-        fingerprint: currentFingerprint
-      };
-    }
-  }
-
-  if (record.authorityTier === 'cryptographic_principal') {
-    if (!activeAuthorityProviderContext.hasCryptographicSigningProvider?.()) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        reason: 'cryptographic_principal authority tier is unavailable without cryptographic provider configuration.',
-        fingerprint: currentFingerprint
-      };
-    }
   }
 
   // Verify approver identity
@@ -530,6 +1210,7 @@ export function verifySpecificationApproval(
     return {
       isValid: false,
       state: 'invalid',
+      authorityTier: record.authorityTier,
       reason: 'Approved specification approval record lacks a valid approver identity.',
       fingerprint: currentFingerprint
     };
@@ -539,9 +1220,23 @@ export function verifySpecificationApproval(
     return {
       isValid: false,
       state: 'invalid',
+      authorityTier: record.authorityTier,
       reason: 'approver identity mismatch between approvedBy and approvalRecord.',
       fingerprint: currentFingerprint
     };
+  }
+
+  // Prevent local unauthenticated session from claiming verified identity or cryptographic provenance
+  if (record.authorityTier === 'unauthenticated_local_session' || record.authorityTier === 'demonstration_fixture') {
+    if (record.approverId === record.approverName) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: 'Approver ID cannot be a raw display name impersonation; must use distinct principal or local session identifier.',
+        fingerprint: currentFingerprint
+      };
+    }
   }
 
   // Verify approval timestamp
@@ -549,14 +1244,168 @@ export function verifySpecificationApproval(
     return {
       isValid: false,
       state: 'invalid',
+      authorityTier: record.authorityTier,
       reason: 'Approved specification approval record lacks a valid ISO approval timestamp.',
       fingerprint: currentFingerprint
     };
   }
 
+  if (spec.approvedAt && spec.approvedAt !== record.approvedAt) {
+    return {
+      isValid: false,
+      state: 'invalid',
+      authorityTier: record.authorityTier,
+      reason: `Approval timestamp mismatch between specification ('${spec.approvedAt}') and approvalRecord ('${record.approvedAt}').`,
+      fingerprint: currentFingerprint
+    };
+  }
+
+  // Tier 3 (authenticated_designer) real identity provenance verification
+  if (record.authorityTier === 'authenticated_designer') {
+    const idProv = record.verifiedIdentity;
+    if (!idProv) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: 'authenticated_designer approval record lacks verifiedIdentity provenance.',
+        fingerprint: currentFingerprint
+      };
+    }
+    const idVerifier = verificationContext?.identityVerifier;
+    if (!idVerifier) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: 'authenticated_designer authority tier is unavailable without verified identity provider configuration.',
+        fingerprint: currentFingerprint
+      };
+    }
+    if (idVerifier.trustedIssuers && !idVerifier.trustedIssuers.includes(idProv.issuer)) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: `authenticated_designer provenance issuer '${idProv.issuer}' is not trusted by verifier '${idVerifier.verifierId ?? 'default'}'.`,
+        fingerprint: currentFingerprint
+      };
+    }
+    if (idVerifier.expectedAudience && idProv.audience !== idVerifier.expectedAudience) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: `authenticated_designer provenance audience '${idProv.audience}' does not match expected audience '${idVerifier.expectedAudience}'.`,
+        fingerprint: currentFingerprint
+      };
+    }
+    if (idProv.subject !== record.approverId || idProv.subject === record.approverName) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: 'authenticated_designer subject mismatch or inferred from display name.',
+        fingerprint: currentFingerprint
+      };
+    }
+    const evalTime = verificationContext?.currentTimestamp ?? record.approvedAt;
+    if (!isValidIsoDate(idProv.issuedAt) || !isValidIsoDate(idProv.expiresAt) || !isValidIsoDate(evalTime)) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: 'authenticated_designer credential timestamps are invalid.',
+        fingerprint: currentFingerprint
+      };
+    }
+    if (Date.parse(evalTime) >= Date.parse(idProv.expiresAt) || Date.parse(record.approvedAt) >= Date.parse(idProv.expiresAt)) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: `authenticated_designer identity credential expired at '${idProv.expiresAt}'.`,
+        fingerprint: currentFingerprint
+      };
+    }
+  }
+
+  // Tier 4 (cryptographic_principal) real cryptographic signature verification over all 10 required fields
+  if (record.authorityTier === 'cryptographic_principal') {
+    const sig = record.cryptographicSignature;
+    if (!sig || !sig.signedPayload) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: 'cryptographic_principal approval record lacks a verifiable cryptographicSignature.',
+        fingerprint: currentFingerprint
+      };
+    }
+    const cryptoVerifier = verificationContext?.cryptographicVerifier;
+    if (!cryptoVerifier) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: 'cryptographic_principal authority tier is unavailable without cryptographic provider configuration.',
+        fingerprint: currentFingerprint
+      };
+    }
+
+    const expectedBindingPayload: CryptographicApprovalBindingPayload = {
+      schemaVersion: sig.signedPayload.schemaVersion || SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+      projectId: specProjectId,
+      garmentId: specId,
+      specificationRevisionId: specRevId,
+      specificationVersion: spec.version || 1,
+      canonicalSpecificationFingerprint: currentFingerprint,
+      approvalEventId: record.eventId ?? '',
+      approverPrincipal: record.approverId,
+      authorityTier: 'cryptographic_principal',
+      approvalTimestamp: record.approvedAt
+    };
+
+    const sigCheck = cryptoVerifier.verifyApprovalSignature(sig, expectedBindingPayload);
+    if (!sigCheck.verified) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: `Cryptographic signature verification failed: ${sigCheck.reason ?? 'invalid signature'}`,
+        fingerprint: currentFingerprint
+      };
+    }
+  }
+
+  // Verify append-only approvalHistory consistency if present
+  if (historyEvents.length > 0 && record.eventId) {
+    const matchingEvt = historyEvents.find(
+      e => e.eventType === 'approval' && e.id === record.eventId
+    ) as SpecificationApprovalEvent | undefined;
+    if (matchingEvt) {
+      if (
+        matchingEvt.targetRevisionId !== specRevId ||
+        matchingEvt.targetSpecificationFingerprint !== currentFingerprint ||
+        matchingEvt.authorityTier !== record.authorityTier ||
+        matchingEvt.approvedAt !== record.approvedAt ||
+        matchingEvt.approverId !== record.approverId
+      ) {
+        return {
+          isValid: false,
+          state: 'invalid',
+          authorityTier: record.authorityTier,
+          reason: 'Approval history event does not match approvalRecord lineage or fingerprint.',
+          fingerprint: currentFingerprint
+        };
+      }
+    }
+  }
+
   return {
     isValid: true,
     state: 'approved',
+    authorityTier: record.authorityTier,
     fingerprint: currentFingerprint
   };
 }
@@ -571,8 +1420,14 @@ export function createAuthoritativeGarmentSpecification(
   if (!input.name || input.name.trim() === '') {
     throw new ProductionSnapshotValidationError('Specification name is required and cannot be empty.');
   }
-  if (!input.garmentCategory) {
+  if (!input.garmentCategory || !VALID_GARMENT_CATEGORIES.has(input.garmentCategory)) {
     throw new ProductionSnapshotValidationError('Garment category is required.');
+  }
+  if (!input.silhouette || !VALID_SILHOUETTES.has(input.silhouette)) {
+    throw new ProductionSnapshotValidationError('Valid silhouette is required.');
+  }
+  if (!input.easeProfile || !VALID_EASE_PROFILES.has(input.easeProfile)) {
+    throw new ProductionSnapshotValidationError('Valid easeProfile is required.');
   }
   if (!Number.isFinite(input.lengthCm) || input.lengthCm <= 0) {
     throw new ProductionSnapshotValidationError(
@@ -585,10 +1440,13 @@ export function createAuthoritativeGarmentSpecification(
 
   const now = new Date().toISOString();
   const version = input.version ?? 1;
-  const specId = input.specificationRevisionId ?? `spec-${input.garmentId ?? 'garment'}-v${version}`;
+  const garmentId = input.garmentId ?? input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const specId = input.specificationRevisionId ?? `spec-${garmentId}-v${version}`;
 
   const hasApprover = Boolean(input.approvedBy && input.approvedBy.trim() !== '');
-  const isApprovedRequested = Boolean(input.isApproved || input.approvalState === 'approved');
+  const isRevoked = input.approvalState === 'revoked' || input.revocationRecord !== undefined;
+  const isSuperseded = input.approvalState === 'superseded' || Boolean(input.supersededByRevisionId);
+  const isApprovedRequested = Boolean((input.isApproved || input.approvalState === 'approved') && !isRevoked && !isSuperseded);
   const isApproved = isApprovedRequested && hasApprover;
 
   let approvedBy = isApproved ? input.approvedBy?.trim() : undefined;
@@ -597,14 +1455,23 @@ export function createAuthoritativeGarmentSpecification(
     ? (input.approvalAuthorityTier ?? 'unauthenticated_local_session')
     : undefined;
 
-  let approvalState: SpecificationApprovalState = input.approvalState ?? (isApproved ? 'approved' : 'draft');
+  let approvalState: SpecificationApprovalState = isRevoked
+    ? 'revoked'
+    : isSuperseded
+    ? 'superseded'
+    : (input.approvalState ?? (isApproved ? 'approved' : 'draft'));
+
   if (isApprovedRequested && !hasApprover) {
     approvalState = 'draft';
   }
 
   let approvalProvenance: SpecificationValueProvenance = input.approvalProvenance ?? (
     isApproved
-      ? (approvalAuthorityTier === 'demonstration_fixture' ? 'demonstration-fixture' : 'unauthenticated-local-approval')
+      ? (approvalAuthorityTier === 'demonstration_fixture'
+          ? 'demonstration-fixture'
+          : approvalAuthorityTier === 'authenticated_designer' || approvalAuthorityTier === 'cryptographic_principal'
+          ? 'designer-approved'
+          : 'unauthenticated-local-approval')
       : 'designer-edited'
   );
 
@@ -635,19 +1502,30 @@ export function createAuthoritativeGarmentSpecification(
     shoulderAllowanceCm: input.allowances?.shoulderAllowanceCm ?? 1.0
   };
 
+  const fieldProvenance: Record<string, ParameterValueProvenance> = {
+    lengthCm: 'explicit-value',
+    seamAllowanceCm: input.allowances?.seamAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
+    hemAllowanceCm: input.allowances?.hemAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
+    waistAllowanceCm: input.allowances?.waistAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
+    neckAllowanceCm: input.allowances?.neckAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
+    armholeAllowanceCm: input.allowances?.armholeAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
+    shoulderAllowanceCm: input.allowances?.shoulderAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
+    ...(input.fieldProvenance ?? {})
+  };
+
   const engineProvenance = {
     engineVersion: input.engineProvenance?.engineVersion ?? CURRENT_ENGINE_VERSION,
-    snapshotEngine: 'Patroner Authoritative Specification Engine v1.0',
+    snapshotEngine: 'Patroner Authoritative Specification Engine v1.1',
     buildTimestamp: input.engineProvenance?.buildTimestamp ?? now,
     ...(input.engineProvenance ?? {})
   };
 
-  // Compute preliminary specification to generate canonical fingerprint
   const tempSpecPayload = {
     projectId: input.projectId ?? 'project-patroner-default',
-    garmentId: input.garmentId ?? input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    garmentId,
     specificationRevisionId: specId,
     parentRevisionId: input.parentRevisionId,
+    supersededByRevisionId: input.supersededByRevisionId,
     version,
     name: input.name.trim(),
     garmentCategory: input.garmentCategory,
@@ -665,6 +1543,7 @@ export function createAuthoritativeGarmentSpecification(
     allowances,
     constructionFeatures: input.constructionFeatures ?? [],
     designNotes: input.designNotes ?? [],
+    fieldProvenance,
     aiEstimates: input.aiEstimates,
     engineProvenance
   };
@@ -672,8 +1551,9 @@ export function createAuthoritativeGarmentSpecification(
   const specFingerprint = computeSpecificationFingerprint(tempSpecPayload as unknown as AuthoritativeGarmentSpecification);
 
   let approvalRecord: SpecificationApprovalRecord | undefined = undefined;
-  let approvalHistory: SpecificationLifecycleEvent[] = input.approvalHistory ? [...input.approvalHistory] : [];
-  let revocationRecord: SpecificationRevocationEvent | undefined = input.revocationRecord;
+  const approvalHistory: SpecificationLifecycleEvent[] = input.approvalHistory ? [...input.approvalHistory] : [];
+  // CORRECTION G: Never silently discard revocationRecord
+  const revocationRecord: SpecificationRevocationEvent | undefined = input.revocationRecord;
 
   if (isApproved) {
     if (input.approvalRecord && input.approvalRecord.targetSpecificationFingerprint === specFingerprint) {
@@ -705,8 +1585,7 @@ export function createAuthoritativeGarmentSpecification(
 
       approvalHistory.push(approvalEvent);
     }
-  } else if (approvalState === 'revoked' && input.revocationRecord) {
-    revocationRecord = input.revocationRecord;
+  } else if (revocationRecord) {
     if (input.approvalRecord) {
       approvalRecord = {
         ...input.approvalRecord,
@@ -718,9 +1597,10 @@ export function createAuthoritativeGarmentSpecification(
 
   const spec: AuthoritativeGarmentSpecification = {
     projectId: input.projectId ?? 'project-patroner-default',
-    garmentId: input.garmentId ?? input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    garmentId,
     specificationRevisionId: specId,
     parentRevisionId: input.parentRevisionId,
+    supersededByRevisionId: input.supersededByRevisionId,
     version,
     name: input.name.trim(),
     garmentCategory: input.garmentCategory,
@@ -738,10 +1618,13 @@ export function createAuthoritativeGarmentSpecification(
     allowances,
     constructionFeatures: input.constructionFeatures ? [...input.constructionFeatures] : [],
     designNotes: input.designNotes ? [...input.designNotes] : [],
+    fieldProvenance,
     isApproved,
     approvalState,
     approvalAuthorityTier,
     approvalRecord,
+    verifiedIdentity: approvalRecord?.verifiedIdentity,
+    cryptographicSignature: approvalRecord?.cryptographicSignature,
     approvalHistory: approvalHistory.length > 0 ? approvalHistory : undefined,
     revocationRecord,
     approvedBy,
@@ -759,17 +1642,48 @@ export function createAuthoritativeGarmentSpecification(
 /**
  * Creates a revised specification from an existing baseline.
  * Enforces historical immutability: the base specification remains unchanged.
- * The new revision increments the version, tracks parentRevisionId, and resets approval to 'draft'.
+ * Prohibits editing an approved specification in place.
+ * The new revision increments the version, tracks parentRevisionId, records supersession in history,
+ * and resets approval to 'draft'.
  */
 export function reviseAuthoritativeGarmentSpecification(
   base: AuthoritativeGarmentSpecification,
   updates: Partial<CreateAuthoritativeSpecificationInput>
 ): AuthoritativeGarmentSpecification {
+  if (base.isApproved || base.approvalState === 'approved') {
+    if (
+      (updates.version !== undefined && updates.version <= base.version) ||
+      (updates.specificationRevisionId !== undefined && updates.specificationRevisionId === base.specificationRevisionId)
+    ) {
+      throw new ProductionSnapshotValidationError(
+        'Cannot edit an approved specification in place. A modification must create a new revision with an incremented version.'
+      );
+    }
+  }
+
   const newVersion = updates.version ?? (base.version + 1);
   const newRevisionId = updates.specificationRevisionId ?? `spec-${base.garmentId}-v${newVersion}`;
   const parentRevisionId = updates.parentRevisionId !== undefined
     ? updates.parentRevisionId
     : (newVersion === base.version ? base.parentRevisionId : base.specificationRevisionId);
+
+  const baseFp = computeSpecificationFingerprint(base);
+  const supersessionEvent: SpecificationSupersessionEvent = {
+    id: `sup-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+    eventType: 'supersession',
+    targetRevisionId: base.specificationRevisionId,
+    targetSpecificationFingerprint: baseFp,
+    supersededByRevisionId: newRevisionId,
+    authorityTier: base.approvalAuthorityTier ?? 'unauthenticated_local_session',
+    supersededAt: new Date().toISOString(),
+    reason: `Superseded by revision ${newRevisionId} (v${newVersion}).`
+  };
+
+  const history: SpecificationLifecycleEvent[] = updates.approvalHistory
+    ? [...updates.approvalHistory]
+    : base.approvalHistory
+    ? [...base.approvalHistory, supersessionEvent]
+    : [supersessionEvent];
 
   return createAuthoritativeGarmentSpecification({
     projectId: updates.projectId ?? base.projectId,
@@ -800,12 +1714,13 @@ export function reviseAuthoritativeGarmentSpecification(
     },
     constructionFeatures: updates.constructionFeatures ?? base.constructionFeatures,
     designNotes: updates.designNotes ?? base.designNotes,
-    // By default, a newly modified specification requires re-approval
+    fieldProvenance: updates.fieldProvenance ?? base.fieldProvenance,
+    // A newly modified specification requires new approval
     isApproved: updates.isApproved ?? false,
     approvalState: updates.approvalState ?? (updates.isApproved ? 'approved' : 'draft'),
     approvalAuthorityTier: updates.approvalAuthorityTier,
     approvalRecord: updates.approvalRecord,
-    approvalHistory: updates.approvalHistory ?? base.approvalHistory,
+    approvalHistory: history,
     revocationRecord: updates.revocationRecord,
     approvedBy: updates.approvedBy,
     approvedAt: updates.approvedAt,
@@ -822,17 +1737,95 @@ export function reviseAuthoritativeGarmentSpecification(
 }
 
 /**
+ * Marks a specification revision as superseded by a newer revision, preserving append-only history.
+ * Supports either passing a target revision ID string or an updates object (returning both supersededSpec and nextRevision).
+ */
+export function supersedeAuthoritativeGarmentSpecification(
+  spec: AuthoritativeGarmentSpecification,
+  supersededByRevisionId: string,
+  reason?: string
+): AuthoritativeGarmentSpecification;
+export function supersedeAuthoritativeGarmentSpecification(
+  spec: AuthoritativeGarmentSpecification,
+  updates: Partial<CreateAuthoritativeSpecificationInput>,
+  reason?: string
+): {
+  supersededSpec: AuthoritativeGarmentSpecification;
+  nextRevision: AuthoritativeGarmentSpecification;
+};
+export function supersedeAuthoritativeGarmentSpecification(
+  spec: AuthoritativeGarmentSpecification,
+  supersededByOrUpdates: string | Partial<CreateAuthoritativeSpecificationInput>,
+  reason?: string
+):
+  | AuthoritativeGarmentSpecification
+  | {
+      supersededSpec: AuthoritativeGarmentSpecification;
+      nextRevision: AuthoritativeGarmentSpecification;
+    } {
+  if (typeof supersededByOrUpdates === 'object' && supersededByOrUpdates !== null) {
+    const nextRevision = reviseAuthoritativeGarmentSpecification(spec, supersededByOrUpdates);
+    const supersededSpec = supersedeAuthoritativeGarmentSpecification(
+      spec,
+      nextRevision.specificationRevisionId,
+      reason
+    );
+    return deepFreeze({ supersededSpec, nextRevision });
+  }
+
+  const supersededByRevisionId = supersededByOrUpdates;
+  if (!supersededByRevisionId || supersededByRevisionId.trim() === '') {
+    throw new ProductionSnapshotValidationError('supersededByRevisionId is required to mark a specification superseded.');
+  }
+  const now = new Date().toISOString();
+  const specFingerprint = computeSpecificationFingerprint(spec);
+  const supEvent: SpecificationSupersessionEvent = {
+    id: `sup-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+    eventType: 'supersession',
+    targetRevisionId: spec.specificationRevisionId,
+    targetSpecificationFingerprint: specFingerprint,
+    supersededByRevisionId: supersededByRevisionId.trim(),
+    authorityTier: spec.approvalAuthorityTier ?? 'unauthenticated_local_session',
+    supersededAt: now,
+    reason: reason ?? `Superseded by ${supersededByRevisionId.trim()}`
+  };
+
+  const history: SpecificationLifecycleEvent[] = spec.approvalHistory
+    ? [...spec.approvalHistory, supEvent]
+    : [supEvent];
+
+  return createAuthoritativeGarmentSpecification({
+    ...spec,
+    lengthCm: spec.targetFinishedDimensions.lengthCm,
+    supersededByRevisionId: supersededByRevisionId.trim(),
+    isApproved: false,
+    approvalState: 'superseded',
+    approvalHistory: history
+  });
+}
+
+export interface ApproveSpecificationOptions {
+  readonly approvedAt?: string;
+  readonly approverId?: string;
+  readonly authorityTier?: ApprovalAuthorityTier;
+  readonly notes?: string;
+  readonly eventId?: string;
+  readonly approvalEventId?: string;
+  readonly identityCredential?: VerifiableIdentityCredential;
+  readonly identityVerifier?: TrustedIdentityVerifier;
+  readonly cryptographicSignature?: VerifiableCryptographicSignature;
+  readonly cryptographicVerifier?: TrustedCryptographicVerifier;
+}
+
+/**
  * Formally approves a specification revision.
- * Returns a new immutable snapshot record with valid approver credentials, authority tier, and cryptographic fingerprint.
+ * Enforces real identity-credential verification for Tier 3 (authenticated_designer) and
+ * real 10-field signature verification for Tier 4 (cryptographic_principal).
  */
 export function approveAuthoritativeGarmentSpecification(
   spec: AuthoritativeGarmentSpecification,
   approvedBy: string,
-  approvedAtOrOptions?: string | {
-    approvedAt?: string;
-    authorityTier?: ApprovalAuthorityTier;
-    notes?: string;
-  }
+  approvedAtOrOptions?: string | ApproveSpecificationOptions
 ): AuthoritativeGarmentSpecification {
   if (!approvedBy || approvedBy.trim() === '') {
     throw new ProductionSnapshotValidationError('Cannot approve specification without a valid approvedBy identity.');
@@ -841,13 +1834,15 @@ export function approveAuthoritativeGarmentSpecification(
   let approvedAt: string;
   let authorityTier: ApprovalAuthorityTier = 'unauthenticated_local_session';
   let notes: string | undefined = undefined;
+  let opts: ApproveSpecificationOptions = {};
 
   if (typeof approvedAtOrOptions === 'string') {
     approvedAt = approvedAtOrOptions;
   } else if (approvedAtOrOptions && typeof approvedAtOrOptions === 'object') {
-    approvedAt = approvedAtOrOptions.approvedAt ?? new Date().toISOString();
-    authorityTier = approvedAtOrOptions.authorityTier ?? 'unauthenticated_local_session';
-    notes = approvedAtOrOptions.notes;
+    opts = approvedAtOrOptions;
+    approvedAt = opts.approvedAt ?? new Date().toISOString();
+    authorityTier = opts.authorityTier ?? 'unauthenticated_local_session';
+    notes = opts.notes;
   } else {
     approvedAt = new Date().toISOString();
   }
@@ -856,43 +1851,145 @@ export function approveAuthoritativeGarmentSpecification(
     throw new ProductionSnapshotValidationError('Approval timestamp must be a valid ISO 8601 date.');
   }
 
+  // Prepare clean specification copy without prior revocation so fingerprint reflects approved state
+  const cleanSpecForFp: AuthoritativeGarmentSpecification = {
+    ...spec,
+    supersededByRevisionId: undefined,
+    revocationRecord: undefined
+  };
+  const specFingerprint = computeSpecificationFingerprint(cleanSpecForFp);
+  const eventId =
+    opts.eventId ??
+    opts.approvalEventId ??
+    `appr-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+  let approverId =
+    opts.approverId && opts.approverId.trim() !== '' && opts.approverId.trim() !== approvedBy.trim()
+      ? opts.approverId.trim()
+      : `approver-${approvedBy.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  let verifiedIdentity: VerifiedIdentityProvenance | undefined = undefined;
+  let cryptographicSignature: VerifiableCryptographicSignature | undefined = undefined;
+
+  // Tier 3: Require real identity provider verification operation
   if (authorityTier === 'authenticated_designer') {
-    if (!activeAuthorityProviderContext.hasAuthenticatedIdentityProvider?.()) {
+    const verifyFn =
+      opts.identityVerifier?.verifyIdentityCredential?.bind(opts.identityVerifier) ??
+      opts.identityVerifier?.verifyCredential?.bind(opts.identityVerifier);
+
+    if (!opts.identityVerifier || typeof verifyFn !== 'function' || !opts.identityCredential) {
       throw new ProductionSnapshotValidationError(
-        'authenticated_designer authority tier is unavailable without verified identity provider configuration.'
+        'authenticated_designer authority tier is unavailable without verified identity provider configuration (TrustedIdentityVerifier and VerifiableIdentityCredential required).'
       );
     }
+
+    let idResult: TrustedIdentityVerificationResult;
+    try {
+      idResult = verifyFn(opts.identityCredential, {
+        targetRevisionId: spec.specificationRevisionId,
+        targetSpecificationFingerprint: specFingerprint,
+        expectedApprover: approvedBy.trim(),
+        approvalTimestamp: approvedAt
+      });
+    } catch (err) {
+      throw new ProductionSnapshotValidationError(
+        `authenticated_designer identity verification failed closed due to verifier exception: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    if (!idResult || !idResult.verified || !idResult.provenance) {
+      throw new ProductionSnapshotValidationError(
+        `authenticated_designer identity verification rejected: ${idResult?.reason ?? 'invalid identity credential'}`
+      );
+    }
+
+    if (opts.approverId && idResult.provenance.subject !== opts.approverId.trim()) {
+      throw new ProductionSnapshotValidationError(
+        `Identity credential subject '${idResult.provenance.subject}' does not match requested approver '${opts.approverId}'.`
+      );
+    }
+
+    verifiedIdentity = idResult.provenance;
+    approverId = verifiedIdentity.subject;
   }
 
+  // Tier 4: Require real cryptographic signature verification operation over all 10 required fields
   if (authorityTier === 'cryptographic_principal') {
-    if (!activeAuthorityProviderContext.hasCryptographicSigningProvider?.()) {
+    if (
+      !opts.cryptographicVerifier ||
+      typeof opts.cryptographicVerifier.verifyApprovalSignature !== 'function' ||
+      !opts.cryptographicSignature
+    ) {
       throw new ProductionSnapshotValidationError(
-        'cryptographic_principal authority tier is unavailable without cryptographic provider configuration.'
+        'cryptographic_principal authority tier is unavailable without cryptographic provider configuration (TrustedCryptographicVerifier and VerifiableCryptographicSignature required).'
       );
     }
+
+    const expectedPrincipal = opts.cryptographicSignature.signedPayload?.approverPrincipal;
+    if (!expectedPrincipal || expectedPrincipal.trim() === '') {
+      throw new ProductionSnapshotValidationError(
+        'cryptographic_principal requires a non-empty cryptographic principal identifier.'
+      );
+    }
+
+    const expectedBindingPayload: CryptographicApprovalBindingPayload = {
+      schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+      projectId: spec.projectId,
+      garmentId: spec.garmentId,
+      specificationRevisionId: spec.specificationRevisionId,
+      specificationVersion: spec.version,
+      canonicalSpecificationFingerprint: specFingerprint,
+      approvalEventId: eventId,
+      approverPrincipal: expectedPrincipal,
+      authorityTier: 'cryptographic_principal',
+      approvalTimestamp: approvedAt
+    };
+
+    let sigResult: TrustedCryptographicVerificationResult;
+    try {
+      sigResult = opts.cryptographicVerifier.verifyApprovalSignature(
+        opts.cryptographicSignature,
+        expectedBindingPayload
+      );
+    } catch (err) {
+      throw new ProductionSnapshotValidationError(
+        `Cryptographic signature verification failed due to verifier exception: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    if (!sigResult || !sigResult.verified) {
+      throw new ProductionSnapshotValidationError(
+        `Cryptographic signature verification failed: ${sigResult?.reason ?? 'invalid signature'}`
+      );
+    }
+
+    cryptographicSignature = opts.cryptographicSignature;
+    approverId = expectedPrincipal;
   }
 
-  const specFingerprint = computeSpecificationFingerprint(spec);
-  const eventId = `appr-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const finalEventId = cryptographicSignature?.signedPayload.approvalEventId ?? eventId;
+
   const approvalEvent: SpecificationApprovalEvent = {
-    id: eventId,
+    id: finalEventId,
     eventType: 'approval',
     targetRevisionId: spec.specificationRevisionId,
     targetSpecificationFingerprint: specFingerprint,
-    approverId: `approver-${approvedBy.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+    approverId,
     approverName: approvedBy.trim(),
     authorityTier,
     approvedAt,
     notes,
-    provenance: authorityTier === 'demonstration_fixture'
-      ? 'demonstration-fixture'
-      : authorityTier === 'authenticated_designer'
-      ? 'designer-approved'
-      : 'unauthenticated-local-approval'
+    provenance:
+      authorityTier === 'demonstration_fixture'
+        ? 'demonstration-fixture'
+        : authorityTier === 'authenticated_designer' || authorityTier === 'cryptographic_principal'
+        ? 'designer-approved'
+        : 'unauthenticated-local-approval',
+    verifiedIdentity,
+    cryptographicSignature
   };
 
   const approvalRecord: SpecificationApprovalRecord = {
-    eventId,
+    eventId: finalEventId,
     approverId: approvalEvent.approverId,
     approverName: approvalEvent.approverName,
     authorityTier,
@@ -900,7 +1997,9 @@ export function approveAuthoritativeGarmentSpecification(
     targetRevisionId: spec.specificationRevisionId,
     targetSpecificationFingerprint: specFingerprint,
     notes,
-    provenance: approvalEvent.provenance
+    provenance: approvalEvent.provenance,
+    verifiedIdentity,
+    cryptographicSignature
   };
 
   const history: SpecificationLifecycleEvent[] = spec.approvalHistory
@@ -912,6 +2011,7 @@ export function approveAuthoritativeGarmentSpecification(
     lengthCm: spec.targetFinishedDimensions.lengthCm,
     specificationRevisionId: spec.specificationRevisionId,
     parentRevisionId: spec.parentRevisionId,
+    supersededByRevisionId: undefined,
     version: spec.version,
     isApproved: true,
     approvalState: 'approved',
@@ -927,7 +2027,7 @@ export function approveAuthoritativeGarmentSpecification(
 
 /**
  * Revokes approval on a specification.
- * Returns a new revision explicitly marked unapproved with revocation state.
+ * Returns a new record explicitly marked unapproved with revocation state.
  * Preserves the original approval event in append-only history.
  */
 export function revokeAuthoritativeGarmentSpecificationApproval(
@@ -1022,6 +2122,8 @@ export function convertToDesignSpecification(
     sleeveEaseStrategy: spec.sleeveEaseStrategy,
     constructionFeatures: [...spec.constructionFeatures],
     designNotes: [...spec.designNotes],
+    fieldProvenance: spec.fieldProvenance ? { ...spec.fieldProvenance } : undefined,
+    supersededByRevisionId: spec.supersededByRevisionId,
     isApproved: spec.isApproved,
     approvalState: spec.approvalState,
     approvalAuthorityTier: spec.approvalAuthorityTier,
@@ -1036,6 +2138,11 @@ export function convertToDesignSpecification(
       revocationReason: spec.approvalRecord.revocationReason,
       notes: spec.approvalRecord.notes,
       provenance: spec.approvalRecord.provenance,
+      verifiedIdentity: spec.approvalRecord.verifiedIdentity ? { ...spec.approvalRecord.verifiedIdentity } : undefined,
+      cryptographicSignature: spec.approvalRecord.cryptographicSignature ? {
+        ...spec.approvalRecord.cryptographicSignature,
+        signedPayload: { ...spec.approvalRecord.cryptographicSignature.signedPayload }
+      } : undefined,
       revocation: spec.approvalRecord.revocation ? { ...spec.approvalRecord.revocation } : undefined
     } : undefined,
     approvalHistory: spec.approvalHistory ? spec.approvalHistory.map(evt => ({ ...evt })) : undefined,
@@ -1100,16 +2207,23 @@ export function convertFromDesignSpecification(
   };
 
   const hasValidApprover = Boolean(design.approvedBy && design.approvedBy.trim() !== '');
-  const isApproved = Boolean(design.isApproved && hasValidApprover);
-  const approvalState: SpecificationApprovalState = isApproved
+  const isRevoked = design.approvalState === 'revoked' || design.revocationRecord !== undefined;
+  const isSuperseded = design.approvalState === 'superseded' || Boolean(design.supersededByRevisionId);
+  const isApproved = Boolean(design.isApproved && hasValidApprover && !isRevoked && !isSuperseded);
+  const approvalState: SpecificationApprovalState = isRevoked
+    ? 'revoked'
+    : isSuperseded
+    ? 'superseded'
+    : isApproved
     ? (design.approvalState ?? 'approved')
-    : (design.approvalState === 'revoked' ? 'revoked' : 'draft');
+    : 'draft';
 
   return createAuthoritativeGarmentSpecification({
     projectId: options.projectId ?? design.projectId ?? 'project-patroner-default',
     garmentId: design.id,
     specificationRevisionId: options.specificationRevisionId ?? design.specificationRevisionId ?? `spec-${design.id}-v${design.version || 1}`,
     parentRevisionId: options.parentRevisionId ?? design.parentRevisionId,
+    supersededByRevisionId: design.supersededByRevisionId,
     version: design.version || 1,
     name: design.name,
     garmentCategory: design.garmentCategory,
@@ -1135,6 +2249,7 @@ export function convertFromDesignSpecification(
     },
     constructionFeatures: design.constructionFeatures,
     designNotes: design.designNotes,
+    fieldProvenance: design.fieldProvenance,
     isApproved,
     approvalState,
     approvalAuthorityTier: design.approvalAuthorityTier ?? (isApproved ? 'unauthenticated_local_session' : undefined),

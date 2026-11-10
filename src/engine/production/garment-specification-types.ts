@@ -13,8 +13,7 @@ import {
   Silhouette,
   SleeveEaseStrategy
 } from '../../types';
-import { EngineProvenanceRecord } from './production-types';
-import { FabricSnapshotProvenance } from './production-types';
+import { EngineProvenanceRecord, FabricSnapshotProvenance } from './production-types';
 
 /**
  * Origin and trust classification of a specification parameter or entire specification.
@@ -29,6 +28,21 @@ export type SpecificationValueProvenance =
   | 'unknown';
 
 /**
+ * Parameter-level value provenance classification for canonicalization and lineage auditing.
+ * Distinguishes missing, explicit null, explicit value, project default, system derived, AI proposed,
+ * user measured, and user approved values.
+ */
+export type ParameterValueProvenance =
+  | 'missing'
+  | 'explicit-null'
+  | 'explicit-value'
+  | 'approved-project-default'
+  | 'system-derived'
+  | 'ai-proposed'
+  | 'user-measured'
+  | 'user-approved';
+
+/**
  * Formal approval lifecycle state of an engineering specification revision.
  */
 export type SpecificationApprovalState =
@@ -39,7 +53,7 @@ export type SpecificationApprovalState =
   | 'superseded'
   | 'invalid';
 
-export const SPECIFICATION_CANONICAL_SCHEMA_VERSION = '1.0.0';
+export const SPECIFICATION_CANONICAL_SCHEMA_VERSION = '1.1.0';
 
 /**
  * Authority classification for specification approval.
@@ -52,9 +66,141 @@ export type ApprovalAuthorityTier =
   | 'cryptographic_principal';
 
 /**
- * Provider interface required to verify higher-tier authority claims.
+ * Verifiable identity credential required for Tier 3 (authenticated_designer) approval.
+ */
+export interface VerifiableIdentityCredential {
+  readonly token: string;
+  readonly credentialId: string;
+  readonly subject: string;
+  readonly subjectId?: string;
+  readonly expectedApprover: string;
+  readonly displayName?: string;
+  readonly issuer: string;
+  readonly audience: string;
+  readonly issuedAt: string; // ISO 8601
+  readonly expiresAt: string; // ISO 8601
+  readonly authorizationClaims: readonly string[];
+  readonly providerId: string;
+}
+
+/**
+ * Verified identity provenance retained on the immutable approval event and record.
+ */
+export interface VerifiedIdentityProvenance {
+  readonly subject: string;
+  readonly subjectId: string;
+  readonly expectedApprover: string;
+  readonly issuer: string;
+  readonly audience: string;
+  readonly credentialId: string;
+  readonly issuedAt: string;
+  readonly expiresAt: string;
+  readonly verifiedAt: string;
+  readonly authorizationClaims: readonly string[];
+  readonly providerId: string;
+  readonly tokenDigest: string;
+}
+
+/**
+ * Result of a real identity-provider verification operation.
+ */
+export interface TrustedIdentityVerificationResult {
+  readonly verified: boolean;
+  readonly reason?: string;
+  readonly provenance?: VerifiedIdentityProvenance;
+}
+
+/**
+ * Trusted identity verifier interface injected into approval and verification operations.
+ * Cannot be satisfied by a boolean availability flag.
+ */
+export interface TrustedIdentityVerifier {
+  readonly verifierId?: string;
+  readonly trustedIssuers?: readonly string[];
+  readonly expectedAudience?: string;
+  verifyIdentityCredential?(
+    credential: VerifiableIdentityCredential,
+    context: {
+      readonly targetRevisionId: string;
+      readonly targetSpecificationFingerprint: string;
+      readonly expectedApprover: string;
+      readonly approvalTimestamp: string;
+    }
+  ): TrustedIdentityVerificationResult;
+  verifyCredential?(
+    credential: VerifiableIdentityCredential,
+    context?: unknown
+  ): TrustedIdentityVerificationResult;
+}
+
+/**
+ * Mandatory 10-field canonical payload bound by a Tier 4 (cryptographic_principal) signature.
+ */
+export interface CryptographicApprovalBindingPayload {
+  readonly schemaVersion: string;
+  readonly projectId: string;
+  readonly garmentId: string;
+  readonly specificationRevisionId: string;
+  readonly specificationVersion: number;
+  readonly canonicalSpecificationFingerprint: string;
+  readonly approvalEventId: string;
+  readonly approverPrincipal: string;
+  readonly authorityTier: 'cryptographic_principal';
+  readonly approvalTimestamp: string;
+}
+
+/**
+ * Verifiable cryptographic signature binding all 10 mandatory specification approval parameters.
+ */
+export interface VerifiableCryptographicSignature {
+  readonly keyId: string;
+  readonly publicKeyFingerprint: string;
+  readonly algorithm: string;
+  readonly signatureHex: string;
+  readonly signedPayload: CryptographicApprovalBindingPayload;
+}
+
+/**
+ * Result of a real cryptographic signature verification operation.
+ */
+export interface TrustedCryptographicVerificationResult {
+  readonly verified: boolean;
+  readonly reason?: string;
+  readonly keyId?: string;
+  readonly publicKeyFingerprint?: string;
+  readonly verifiedPayloadDigest?: string;
+}
+
+/**
+ * Trusted cryptographic verifier interface injected into approval and verification operations.
+ */
+export interface TrustedCryptographicVerifier {
+  readonly verifierId: string;
+  readonly trustedPublicKeyFingerprints: readonly string[];
+  verifyApprovalSignature(
+    signature: VerifiableCryptographicSignature,
+    expectedPayload: CryptographicApprovalBindingPayload
+  ): TrustedCryptographicVerificationResult;
+}
+
+/**
+ * Dependency-injected authorization verification context.
+ * Replaces untrusted global boolean authority flags.
+ */
+export interface ApprovalVerificationContext {
+  readonly identityVerifier?: TrustedIdentityVerifier;
+  readonly identityCredential?: VerifiableIdentityCredential;
+  readonly cryptographicVerifier?: TrustedCryptographicVerifier;
+  readonly currentTimestamp?: string;
+}
+
+/**
+ * Legacy provider interface retained for compatibility checks.
+ * Boolean availability flags in this interface are never trusted as proof of authentication or signature.
  */
 export interface AuthorityProviderContext {
+  readonly identityProviderConfigured?: boolean;
+  readonly cryptographicProviderConfigured?: boolean;
   readonly hasAuthenticatedIdentityProvider?: () => boolean;
   readonly hasCryptographicSigningProvider?: () => boolean;
   readonly verifyIdentityToken?: (token: string, expectedApprover: string) => boolean;
@@ -75,6 +221,8 @@ export interface SpecificationApprovalEvent {
   readonly approvedAt: string; // ISO 8601
   readonly notes?: string;
   readonly provenance: SpecificationValueProvenance;
+  readonly verifiedIdentity?: VerifiedIdentityProvenance;
+  readonly cryptographicSignature?: VerifiableCryptographicSignature;
 }
 
 /**
@@ -94,7 +242,24 @@ export interface SpecificationRevocationEvent {
   readonly notes?: string;
 }
 
-export type SpecificationLifecycleEvent = SpecificationApprovalEvent | SpecificationRevocationEvent;
+/**
+ * Immutable supersession event recording that a revision was superseded by a newer revision.
+ */
+export interface SpecificationSupersessionEvent {
+  readonly id: string;
+  readonly eventType: 'supersession';
+  readonly targetRevisionId: string;
+  readonly targetSpecificationFingerprint: string;
+  readonly supersededByRevisionId: string;
+  readonly authorityTier: ApprovalAuthorityTier;
+  readonly supersededAt: string; // ISO 8601
+  readonly reason?: string;
+}
+
+export type SpecificationLifecycleEvent =
+  | SpecificationApprovalEvent
+  | SpecificationRevocationEvent
+  | SpecificationSupersessionEvent;
 
 /**
  * Immutable cryptographic approval record binding an approver to an exact specification fingerprint.
@@ -110,6 +275,8 @@ export interface SpecificationApprovalRecord {
   readonly revocationReason?: string;
   readonly notes?: string;
   readonly provenance?: SpecificationValueProvenance;
+  readonly verifiedIdentity?: VerifiedIdentityProvenance;
+  readonly cryptographicSignature?: VerifiableCryptographicSignature;
   readonly revocation?: SpecificationRevocationEvent;
 }
 
@@ -160,6 +327,7 @@ export interface AuthoritativeGarmentSpecification {
   readonly garmentId: string;
   readonly specificationRevisionId: string;
   readonly parentRevisionId?: string;
+  readonly supersededByRevisionId?: string;
   readonly version: number;
   readonly name: string;
   readonly garmentCategory: GarmentCategory;
@@ -180,10 +348,13 @@ export interface AuthoritativeGarmentSpecification {
   readonly allowances: GarmentAllowancesSnapshot;
   readonly constructionFeatures: readonly GarmentConstructionFeature[];
   readonly designNotes: readonly string[];
+  readonly fieldProvenance?: Readonly<Record<string, ParameterValueProvenance>>;
   readonly isApproved: boolean;
   readonly approvalState: SpecificationApprovalState;
   readonly approvalAuthorityTier?: ApprovalAuthorityTier;
   readonly approvalRecord?: SpecificationApprovalRecord;
+  readonly verifiedIdentity?: VerifiedIdentityProvenance;
+  readonly cryptographicSignature?: VerifiableCryptographicSignature;
   readonly approvalHistory?: readonly SpecificationLifecycleEvent[];
   readonly revocationRecord?: SpecificationRevocationEvent;
   readonly approvedBy?: string;
@@ -209,6 +380,7 @@ export interface CreateAuthoritativeSpecificationInput {
   readonly garmentId?: string;
   readonly specificationRevisionId?: string;
   readonly parentRevisionId?: string;
+  readonly supersededByRevisionId?: string;
   readonly version?: number;
   readonly name: string;
   readonly garmentCategory: GarmentCategory;
@@ -230,6 +402,7 @@ export interface CreateAuthoritativeSpecificationInput {
   readonly allowances?: Partial<GarmentAllowancesSnapshot>;
   readonly constructionFeatures?: readonly GarmentConstructionFeature[];
   readonly designNotes?: readonly string[];
+  readonly fieldProvenance?: Readonly<Record<string, ParameterValueProvenance>>;
   readonly isApproved?: boolean;
   readonly approvalState?: SpecificationApprovalState;
   readonly approvalAuthorityTier?: ApprovalAuthorityTier;

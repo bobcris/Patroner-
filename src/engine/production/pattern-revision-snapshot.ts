@@ -25,7 +25,9 @@ import { EnhancedFabricProperty } from '../fabric/fabric-types';
 import { sha256Hex } from './crypto';
 import {
   ApprovalStateSummary,
+  AuthoritativeMeasurementSetRecord,
   ContourBoundingBoxSnapshot,
+  CreateAuthoritativeMeasurementSetInput,
   CreateProductionPatternRevisionInput,
   CurrentRevisionInputs,
   DesignSpecificationSnapshot,
@@ -36,6 +38,7 @@ import {
   GeometricContourSnapshot,
   GeometricSegmentSnapshot,
   MeasurementApprovalRecord,
+  MeasurementApprovalStatus,
   MeasurementOrigin,
   MeasurementSetSnapshot,
   PatternPieceSnapshot,
@@ -55,9 +58,18 @@ export const CURRENT_SNAPSHOT_ENGINE = 'Patroner Production Revision Engine';
 export const VALID_MEASUREMENT_ORIGINS: readonly MeasurementOrigin[] = [
   'user-entered',
   'standard-chart',
+  'physically-measured',
   'imported',
   'ai-estimated',
   'unknown'
+] as const;
+
+export const VALID_MEASUREMENT_APPROVAL_STATES: readonly MeasurementApprovalStatus[] = [
+  'unverified',
+  'pending',
+  'approved',
+  'rejected',
+  'superseded'
 ] as const;
 
 function isValidIsoDate(dateStr: unknown): boolean {
@@ -448,6 +460,305 @@ export function createMeasurementSetSnapshot(
     approval,
     notes: options.notes ? [...options.notes] : undefined
   };
+}
+
+/**
+ * Creates an AuthoritativeMeasurementSetRecord with explicit provenance, separated AI estimates,
+ * and strict default-unverified approval state.
+ */
+export function createAuthoritativeMeasurementSet(
+  input: CreateAuthoritativeMeasurementSetInput
+): AuthoritativeMeasurementSetRecord {
+  if (!input || typeof input !== 'object') {
+    throw new ProductionSnapshotMeasurementError('Measurement set input must be a non-null object.');
+  }
+  if (input.unit !== undefined && input.unit !== 'cm') {
+    throw new ProductionSnapshotMeasurementError(`Measurement unit must be 'cm' (received '${input.unit}').`);
+  }
+  if (!input.values || typeof input.values !== 'object' || Object.keys(input.values).length === 0) {
+    throw new ProductionSnapshotMeasurementError('Measurement values must be a non-empty object.');
+  }
+
+  const source: MeasurementOrigin = input.source ?? input.provenance ?? 'unknown';
+  const provenance: MeasurementOrigin = input.provenance ?? input.source ?? 'unknown';
+  if (!VALID_MEASUREMENT_ORIGINS.includes(source)) {
+    throw new ProductionSnapshotMeasurementError(`Invalid measurement source '${source}'.`);
+  }
+  if (!VALID_MEASUREMENT_ORIGINS.includes(provenance)) {
+    throw new ProductionSnapshotMeasurementError(`Invalid measurement provenance '${provenance}'.`);
+  }
+
+  const clonedValues: Record<string, number> = {};
+  for (const [k, v] of Object.entries(input.values)) {
+    if (k === 'unit') continue;
+    if (typeof k !== 'string' || k.trim() === '') {
+      throw new ProductionSnapshotMeasurementError('Measurement key name cannot be empty.');
+    }
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
+      throw new ProductionSnapshotMeasurementError(
+        `Measurement '${k}' must be a finite positive number in centimeters (received ${v}).`
+      );
+    }
+    clonedValues[k] = v;
+  }
+
+  let clonedAiValues: Record<string, number> | undefined = undefined;
+  if (input.aiEstimatedValues) {
+    clonedAiValues = {};
+    for (const [k, v] of Object.entries(input.aiEstimatedValues)) {
+      if (k === 'unit') continue;
+      if (typeof k !== 'string' || k.trim() === '') {
+        throw new ProductionSnapshotMeasurementError('AI-estimated measurement key name cannot be empty.');
+      }
+      if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
+        throw new ProductionSnapshotMeasurementError(
+          `AI-estimated measurement '${k}' must be a finite positive number in centimeters (received ${v}).`
+        );
+      }
+      clonedAiValues[k] = v;
+    }
+  }
+
+  const perMeasurementOrigin: Record<string, MeasurementOrigin> = {};
+  if (input.perMeasurementOrigin) {
+    for (const [k, orig] of Object.entries(input.perMeasurementOrigin)) {
+      if (!VALID_MEASUREMENT_ORIGINS.includes(orig)) {
+        throw new ProductionSnapshotMeasurementError(`Invalid perMeasurementOrigin '${orig}' for '${k}'.`);
+      }
+      perMeasurementOrigin[k] = orig;
+    }
+  }
+
+  // Missing approval defaults to 'unverified', NEVER 'approved'
+  const approvalState: MeasurementApprovalStatus = input.approvalState ?? 'unverified';
+  if (!VALID_MEASUREMENT_APPROVAL_STATES.includes(approvalState)) {
+    throw new ProductionSnapshotMeasurementError(`Invalid measurement approvalState '${approvalState}'.`);
+  }
+
+  const hasAiInActiveValues =
+    source === 'ai-estimated' ||
+    provenance === 'ai-estimated' ||
+    Object.values(perMeasurementOrigin).includes('ai-estimated');
+
+  if (
+    hasAiInActiveValues &&
+    (source === 'physically-measured' || provenance === 'physically-measured')
+  ) {
+    throw new ProductionSnapshotMeasurementError(
+      'AI-estimated measurements cannot be classified as physically-measured.'
+    );
+  }
+
+  if (approvalState === 'approved') {
+    if (hasAiInActiveValues) {
+      throw new ProductionSnapshotMeasurementError(
+        'AI-estimated measurements must be stored separately and cannot be marked as approved physical or authoritative measurements.'
+      );
+    }
+    if (source === 'unknown' || provenance === 'unknown') {
+      throw new ProductionSnapshotMeasurementError(
+        'Measurements with unknown provenance cannot be marked as approved.'
+      );
+    }
+    if (!input.approvingAuthority || typeof input.approvingAuthority !== 'string' || input.approvingAuthority.trim() === '') {
+      throw new ProductionSnapshotMeasurementError(
+        'Approved measurement set requires a non-empty approvingAuthority.'
+      );
+    }
+    if (!input.approvedAt || !isValidIsoDate(input.approvedAt)) {
+      throw new ProductionSnapshotMeasurementError(
+        'Approved measurement set requires a valid ISO 8601 approvedAt timestamp.'
+      );
+    }
+  }
+
+  const recordedAt = input.recordedAt ?? new Date().toISOString();
+  if (!isValidIsoDate(recordedAt)) {
+    throw new ProductionSnapshotMeasurementError(`Invalid recordedAt timestamp '${recordedAt}'.`);
+  }
+
+  const measurementSetId = (input.measurementSetId ?? '').trim() || 'meas-set-default';
+  const revisionId = (input.revisionId ?? '').trim() || `${measurementSetId}-rev-1`;
+
+  const canonicalPayload = {
+    measurementSetId,
+    revisionId,
+    parentRevisionId: input.parentRevisionId ?? null,
+    unit: 'cm' as const,
+    values: clonedValues,
+    aiEstimatedValues: clonedAiValues ?? null,
+    source,
+    provenance,
+    perMeasurementOrigin: Object.keys(perMeasurementOrigin).length > 0 ? perMeasurementOrigin : null,
+    approvalState
+  };
+
+  const canonicalFingerprint = sha256Hex(canonicalizeJson(canonicalPayload));
+
+  return deepFreeze({
+    measurementSetId,
+    revisionId,
+    parentRevisionId: input.parentRevisionId,
+    unit: 'cm',
+    values: clonedValues,
+    aiEstimatedValues: clonedAiValues,
+    source,
+    provenance,
+    perMeasurementOrigin: Object.keys(perMeasurementOrigin).length > 0 ? perMeasurementOrigin : undefined,
+    recordedAt,
+    approvalState,
+    approvingAuthority: input.approvingAuthority?.trim(),
+    approvedAt: input.approvedAt,
+    notes: input.notes ? [...input.notes] : undefined,
+    canonicalFingerprint
+  });
+}
+
+/**
+ * Approves an AuthoritativeMeasurementSetRecord after verifying provenance and authority.
+ */
+export function approveAuthoritativeMeasurementSet(
+  record: AuthoritativeMeasurementSetRecord,
+  options: {
+    readonly approvingAuthority: string;
+    readonly approvedAt?: string;
+    readonly notes?: string[];
+  }
+): AuthoritativeMeasurementSetRecord {
+  if (record.approvalState === 'superseded' || record.supersededByRevisionId) {
+    throw new ProductionSnapshotMeasurementError('Cannot approve a superseded measurement set revision.');
+  }
+  const approvedAt = options.approvedAt ?? new Date().toISOString();
+  return createAuthoritativeMeasurementSet({
+    measurementSetId: record.measurementSetId,
+    revisionId: record.revisionId,
+    parentRevisionId: record.parentRevisionId,
+    unit: record.unit,
+    values: { ...record.values },
+    aiEstimatedValues: record.aiEstimatedValues ? { ...record.aiEstimatedValues } : undefined,
+    source: record.source,
+    provenance: record.provenance,
+    perMeasurementOrigin: record.perMeasurementOrigin ? { ...record.perMeasurementOrigin } : undefined,
+    recordedAt: record.recordedAt,
+    approvalState: 'approved',
+    approvingAuthority: options.approvingAuthority,
+    approvedAt,
+    notes: options.notes ?? (record.notes ? [...record.notes] : undefined)
+  });
+}
+
+/**
+ * Supersedes an AuthoritativeMeasurementSetRecord when any measurement changes,
+ * returning both the superseded record and the new unverified revision.
+ */
+export function supersedeAuthoritativeMeasurementSet(
+  previous: AuthoritativeMeasurementSetRecord,
+  updates: {
+    readonly values: Record<string, number>;
+    readonly revisionId: string;
+    readonly source?: MeasurementOrigin;
+    readonly provenance?: MeasurementOrigin;
+    readonly recordedAt?: string;
+  }
+): {
+  readonly supersededRecord: AuthoritativeMeasurementSetRecord;
+  readonly nextRecord: AuthoritativeMeasurementSetRecord;
+} {
+  const newRevId = updates.revisionId.trim();
+  if (!newRevId || newRevId === previous.revisionId) {
+    throw new ProductionSnapshotMeasurementError(
+      'Superseding a measurement set requires a distinct non-empty revisionId.'
+    );
+  }
+
+  const supersededRecord: AuthoritativeMeasurementSetRecord = deepFreeze({
+    ...previous,
+    approvalState: 'superseded',
+    supersededByRevisionId: newRevId
+  });
+
+  const nextRecord = createAuthoritativeMeasurementSet({
+    measurementSetId: previous.measurementSetId,
+    revisionId: newRevId,
+    parentRevisionId: previous.revisionId,
+    unit: 'cm',
+    values: updates.values,
+    aiEstimatedValues: previous.aiEstimatedValues ? { ...previous.aiEstimatedValues } : undefined,
+    source: updates.source ?? previous.source,
+    provenance: updates.provenance ?? previous.provenance,
+    recordedAt: updates.recordedAt ?? new Date().toISOString(),
+    approvalState: 'unverified'
+  });
+
+  return { supersededRecord, nextRecord };
+}
+
+/**
+ * Verifies the integrity, provenance, and approval state of an AuthoritativeMeasurementSetRecord.
+ */
+export function verifyMeasurementSetIntegrity(
+  record: AuthoritativeMeasurementSetRecord | undefined
+): {
+  readonly isValid: boolean;
+  readonly isApproved: boolean;
+  readonly reason?: string;
+} {
+  if (!record || typeof record !== 'object') {
+    return { isValid: false, isApproved: false, reason: 'Measurement set record is missing.' };
+  }
+  if (record.supersededByRevisionId || record.approvalState === 'superseded') {
+    return {
+      isValid: false,
+      isApproved: false,
+      reason: `Measurement set revision '${record.revisionId}' has been superseded.`
+    };
+  }
+  if (record.source === 'ai-estimated' || record.provenance === 'ai-estimated') {
+    return {
+      isValid: false,
+      isApproved: false,
+      reason: 'AI-estimated measurements are not permitted as authoritative physical measurements.'
+    };
+  }
+  if (
+    record.perMeasurementOrigin &&
+    Object.values(record.perMeasurementOrigin).includes('ai-estimated')
+  ) {
+    return {
+      isValid: false,
+      isApproved: false,
+      reason: 'Per-measurement origin contains AI-estimated values.'
+    };
+  }
+  if (record.source === 'unknown' || record.provenance === 'unknown') {
+    return {
+      isValid: false,
+      isApproved: false,
+      reason: 'Measurement set is missing explicit provenance (origin is unknown).'
+    };
+  }
+  if (record.approvalState !== 'approved') {
+    return {
+      isValid: true,
+      isApproved: false,
+      reason: `Measurement set approval state is '${record.approvalState}' (not approved).`
+    };
+  }
+  if (!record.approvingAuthority || record.approvingAuthority.trim() === '') {
+    return {
+      isValid: false,
+      isApproved: false,
+      reason: 'Measurement set is marked approved but missing approvingAuthority.'
+    };
+  }
+  if (!record.approvedAt || !isValidIsoDate(record.approvedAt)) {
+    return {
+      isValid: false,
+      isApproved: false,
+      reason: 'Measurement set is marked approved but missing valid approvedAt timestamp.'
+    };
+  }
+  return { isValid: true, isApproved: true };
 }
 
 /**

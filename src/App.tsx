@@ -17,7 +17,11 @@ import { MeasurementWorkspace } from './features/measurements/MeasurementWorkspa
 import { PatternWorkspace } from './features/pattern-workspace/PatternWorkspace';
 import { ProductionOverview } from './features/production/ProductionOverview';
 
-import { evaluatePipelineDependencyIntegrity } from './engine/production';
+import {
+  evaluatePipelineDependencyIntegrity,
+  MeasurementApprovalStatus,
+  MeasurementOrigin
+} from './engine/production';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('studio');
@@ -27,6 +31,9 @@ export default function App() {
     ...STANDARD_SIZING_SYSTEM.sizes.M,
     skirtLength: INITIAL_CONCEPTS[0].lengthCm
   });
+  const [measurementProvenance, setMeasurementProvenance] = useState<MeasurementOrigin>('standard-chart');
+  const [measurementApprovalState, setMeasurementApprovalState] = useState<MeasurementApprovalStatus>('approved');
+  const [measurementRevisionCount, setMeasurementRevisionCount] = useState<number>(1);
 
   // Compute live validation status for current draft
   const pieces = currentSpec.garmentCategory === 'bodice'
@@ -37,15 +44,25 @@ export default function App() {
   const pipelineReport = evaluatePipelineDependencyIntegrity({
     specification: currentSpec,
     measurements,
+    measurementApprovalState,
+    measurementProvenance,
     activeSize: String(activeSize),
     fabric: currentSpec.fabric,
     patternPieces: pieces,
     validationReport: validation
   });
 
-  const handleUpdateMeasurements = (m: BodyMeasurements, sizeLabel: StandardSize | 'custom') => {
+  const handleUpdateMeasurements = (
+    m: BodyMeasurements,
+    sizeLabel: StandardSize | 'custom',
+    provenance?: MeasurementOrigin
+  ) => {
     setMeasurements(m);
     setActiveSize(sizeLabel);
+    setMeasurementProvenance(provenance ?? (sizeLabel === 'custom' ? 'user-entered' : 'standard-chart'));
+    // Changing any measurement invalidates prior measurement approval and requires explicit re-approval
+    setMeasurementApprovalState('unverified');
+    setMeasurementRevisionCount(prev => prev + 1);
   };
 
   return (
@@ -85,7 +102,12 @@ export default function App() {
             currentMeasurements={measurements}
             activeSize={activeSize}
             currentSpec={currentSpec}
+            measurementProvenance={measurementProvenance}
+            measurementApprovalState={measurementApprovalState}
+            measurementRevisionId={`meas-rev-${measurementRevisionCount}`}
             onUpdateMeasurements={handleUpdateMeasurements}
+            onUpdateMeasurementApproval={setMeasurementApprovalState}
+            onUpdateMeasurementProvenance={setMeasurementProvenance}
             onNavigateToCAD={() => setActiveTab('pattern-cad')}
           />
         )}
@@ -105,6 +127,8 @@ export default function App() {
             currentSpec={currentSpec}
             measurements={measurements}
             activeSize={activeSize}
+            measurementProvenance={measurementProvenance}
+            measurementApprovalState={measurementApprovalState}
             onNavigateToCAD={() => setActiveTab('pattern-cad')}
           />
         )}

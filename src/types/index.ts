@@ -101,6 +101,18 @@ export interface DesignSpecification {
   approvedBy?: string;
   approvalState?: 'draft' | 'pending_approval' | 'approved' | 'revoked' | 'superseded' | 'invalid';
   approvalAuthorityTier?: 'unauthenticated_local_session' | 'demonstration_fixture' | 'authenticated_designer' | 'cryptographic_principal';
+  supersededByRevisionId?: string;
+  fieldProvenance?: Record<
+    string,
+    | 'missing'
+    | 'explicit-null'
+    | 'explicit-value'
+    | 'approved-project-default'
+    | 'system-derived'
+    | 'ai-proposed'
+    | 'user-measured'
+    | 'user-approved'
+  >;
   approvalRecord?: {
     eventId?: string;
     approverId: string;
@@ -112,6 +124,37 @@ export interface DesignSpecification {
     revocationReason?: string;
     notes?: string;
     provenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown' | 'unauthenticated-local-approval' | 'demonstration-fixture';
+    verifiedIdentity?: {
+      subject: string;
+      expectedApprover: string;
+      issuer: string;
+      audience: string;
+      credentialId: string;
+      issuedAt: string;
+      expiresAt: string;
+      verifiedAt: string;
+      authorizationClaims: readonly string[];
+      providerId: string;
+      tokenDigest: string;
+    };
+    cryptographicSignature?: {
+      keyId: string;
+      publicKeyFingerprint: string;
+      algorithm: string;
+      signatureHex: string;
+      signedPayload: {
+        schemaVersion: string;
+        projectId: string;
+        garmentId: string;
+        specificationRevisionId: string;
+        specificationVersion: number;
+        canonicalSpecificationFingerprint: string;
+        approvalEventId: string;
+        approverPrincipal: string;
+        authorityTier: 'cryptographic_principal';
+        approvalTimestamp: string;
+      };
+    };
     revocation?: {
       id: string;
       eventType: 'revocation';
@@ -128,19 +171,52 @@ export interface DesignSpecification {
   };
   approvalHistory?: Array<{
     id: string;
-    eventType: 'approval' | 'revocation';
+    eventType: 'approval' | 'revocation' | 'supersession';
     targetRevisionId: string;
     targetSpecificationFingerprint: string;
     approverId?: string;
     approverName?: string;
     revokerId?: string;
     revokerName?: string;
+    supersededByRevisionId?: string;
     authorityTier: 'unauthenticated_local_session' | 'demonstration_fixture' | 'authenticated_designer' | 'cryptographic_principal';
     approvedAt?: string;
     revokedAt?: string;
+    supersededAt?: string;
     reason?: string;
     notes?: string;
     provenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown' | 'unauthenticated-local-approval' | 'demonstration-fixture';
+    verifiedIdentity?: {
+      subject: string;
+      expectedApprover: string;
+      issuer: string;
+      audience: string;
+      credentialId: string;
+      issuedAt: string;
+      expiresAt: string;
+      verifiedAt: string;
+      authorizationClaims: readonly string[];
+      providerId: string;
+      tokenDigest: string;
+    };
+    cryptographicSignature?: {
+      keyId: string;
+      publicKeyFingerprint: string;
+      algorithm: string;
+      signatureHex: string;
+      signedPayload: {
+        schemaVersion: string;
+        projectId: string;
+        garmentId: string;
+        specificationRevisionId: string;
+        specificationVersion: number;
+        canonicalSpecificationFingerprint: string;
+        approvalEventId: string;
+        approverPrincipal: string;
+        authorityTier: 'cryptographic_principal';
+        approvalTimestamp: string;
+      };
+    };
   }>;
   revocationRecord?: {
     id: string;

@@ -17,7 +17,7 @@ import {
 } from './pattern-revision-snapshot';
 
 const VALID_GARMENT_CATEGORIES = ['skirt', 'bodice', 'trouser', 'dress', 'sleeve'] as const;
-const VALID_MEASUREMENT_APPROVAL_STATES = ['pending', 'approved', 'rejected'] as const;
+const VALID_MEASUREMENT_APPROVAL_STATES = ['unverified', 'pending', 'approved', 'rejected', 'superseded'] as const;
 const VALID_FABRIC_PROVENANCES = [
   'supplier-declared',
   'laboratory-tested',

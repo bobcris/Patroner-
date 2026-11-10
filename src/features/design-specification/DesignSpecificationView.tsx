@@ -10,7 +10,11 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { CheckCircle2, ShieldCheck, ArrowRight, Plus, Trash2, Edit3, Compass, Scissors } from 'lucide-react';
 
-import { computeSpecificationFingerprint } from '../../engine/production';
+import {
+  computeSpecificationFingerprint,
+  SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+  verifySpecificationApproval
+} from '../../engine/production';
 
 interface DesignSpecificationViewProps {
   spec: DesignSpecification;
@@ -30,8 +34,14 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
   const [newFeatureImpact, setNewFeatureImpact] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
+  const canonicalFingerprint = computeSpecificationFingerprint(spec);
+  const approvalVerification = verifySpecificationApproval(spec);
+  const effectiveAuthorityTier = approvalVerification.isValid
+    ? (approvalVerification.authorityTier ?? 'unauthenticated_local_session')
+    : undefined;
+
   const toggleApproval = () => {
-    const willBeApproved = !spec.isApproved;
+    const willBeApproved = !approvalVerification.isValid;
     const now = new Date().toISOString();
     const specRevId = willBeApproved
       ? (spec.specificationRevisionId ?? `spec-${spec.id}-v${spec.version}`)
@@ -46,20 +56,50 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
         approvedAt: now,
         approvedBy: 'Local Atelier Operator',
         approvalProvenance: 'unauthenticated-local-approval',
-        specificationRevisionId: specRevId
+        specificationRevisionId: specRevId,
+        supersededByRevisionId: undefined
       };
       const fp = computeSpecificationFingerprint(updatedSpec);
-      updatedSpec.approvalRecord = {
+      const eventId = `evt-approve-${specRevId}`;
+      const approvalRecord = {
+        eventId,
         approverId: 'approver-local-session',
         approverName: 'Local Atelier Operator',
-        authorityTier: 'unauthenticated_local_session',
+        authorityTier: 'unauthenticated_local_session' as const,
         approvedAt: now,
         targetRevisionId: specRevId,
         targetSpecificationFingerprint: fp,
-        notes: 'Unauthenticated local session approval for CAD simulation'
+        notes: 'Unauthenticated local session approval for CAD simulation',
+        provenance: 'unauthenticated-local-approval' as const
       };
+      const approvalEvent = {
+        id: eventId,
+        eventType: 'approval' as const,
+        targetRevisionId: specRevId,
+        targetSpecificationFingerprint: fp,
+        approverId: 'approver-local-session',
+        approverName: 'Local Atelier Operator',
+        authorityTier: 'unauthenticated_local_session' as const,
+        approvedAt: now,
+        notes: 'Unauthenticated local session approval for CAD simulation',
+        provenance: 'unauthenticated-local-approval' as const
+      };
+      updatedSpec.approvalRecord = approvalRecord;
+      updatedSpec.approvalHistory = [...(spec.approvalHistory ?? []), approvalEvent];
       onUpdateSpec(updatedSpec);
     } else {
+      const revocationEvent = {
+        id: `evt-revoke-${specRevId}`,
+        eventType: 'revocation' as const,
+        originalApprovalEventId: spec.approvalRecord?.eventId,
+        targetRevisionId: spec.specificationRevisionId ?? specRevId,
+        targetSpecificationFingerprint: canonicalFingerprint,
+        revokerId: 'operator-local-revoker',
+        revokerName: 'Local Atelier Operator',
+        authorityTier: 'unauthenticated_local_session' as const,
+        revokedAt: now,
+        reason: 'Revoked by user in Design Specification'
+      };
       onUpdateSpec({
         ...spec,
         isApproved: false,
@@ -71,6 +111,8 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
           ...spec.approvalRecord,
           revocationReason: 'Revoked by user in Design Specification'
         } : undefined,
+        revocationRecord: revocationEvent,
+        approvalHistory: [...(spec.approvalHistory ?? []), revocationEvent],
         approvalProvenance: 'designer-edited',
         version: spec.version + 1,
         parentRevisionId: spec.specificationRevisionId,
@@ -142,6 +184,9 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
       parentRevisionId: spec.specificationRevisionId,
       specificationRevisionId: `spec-${spec.id}-v${nextVersion}`,
       isApproved: false,
+      approvalState: 'draft',
+      approvalAuthorityTier: undefined,
+      approvalRecord: undefined,
       approvedBy: undefined,
       approvedAt: undefined,
       approvalProvenance: 'designer-edited'
@@ -162,6 +207,9 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
       parentRevisionId: spec.specificationRevisionId,
       specificationRevisionId: `spec-${spec.id}-v${nextVersion}`,
       isApproved: false,
+      approvalState: 'draft',
+      approvalAuthorityTier: undefined,
+      approvalRecord: undefined,
       approvedBy: undefined,
       approvedAt: undefined,
       approvalProvenance: 'designer-edited'
@@ -189,26 +237,26 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
 
         {/* Approval Toggle */}
         <div className="flex flex-col md:flex-row md:items-center gap-3">
-          {spec.isApproved ? (
+          {approvalVerification.isValid ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-mono text-emerald-800 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 <span>APPROVED FOR PATTERN DRAFTING</span>
-                <span className="text-[10px] text-emerald-600 border-l border-emerald-300 pl-1.5">
-                  {spec.approvalAuthorityTier === 'demonstration_fixture'
-                    ? 'Demonstration Fixture'
-                    : spec.approvalAuthorityTier === 'authenticated_designer'
-                    ? 'Authenticated Designer'
-                    : spec.approvalAuthorityTier === 'cryptographic_principal'
-                    ? 'Cryptographic Principal'
-                    : 'Local Unauthenticated Session'}
+                <span className="text-[10px] text-emerald-700 border-l border-emerald-300 pl-1.5">
+                  {effectiveAuthorityTier === 'demonstration_fixture'
+                    ? 'Tier 1: Demonstration Fixture (Non-Authoritative)'
+                    : effectiveAuthorityTier === 'authenticated_designer' && spec.approvalRecord?.verifiedIdentity
+                    ? `Tier 3: Authenticated Designer (${spec.approvalRecord.verifiedIdentity.subject})`
+                    : effectiveAuthorityTier === 'cryptographic_principal' && spec.approvalRecord?.cryptographicSignature
+                    ? `Tier 4: Cryptographic Principal (${spec.approvalRecord.cryptographicSignature.keyId})`
+                    : 'Tier 2: Local Unauthenticated Session'}
                 </span>
               </span>
               <Button variant="outline" size="sm" onClick={toggleApproval}>
                 Revoke Approval
               </Button>
             </div>
-          ) : spec.approvalState === 'revoked' ? (
+          ) : approvalVerification.state === 'revoked' ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-mono text-rose-800 bg-rose-50 border border-rose-300 px-3 py-1.5 rounded flex items-center gap-1.5">
                 <span>APPROVAL REVOKED</span>
@@ -226,7 +274,7 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-mono text-amber-800 bg-amber-50 border border-amber-300 px-3 py-1.5 rounded flex items-center gap-1.5">
-                <span>DRAFT SPECIFICATION</span>
+                <span>DRAFT SPECIFICATION ({approvalVerification.state.toUpperCase()})</span>
               </span>
               <Button
                 variant="primary"
@@ -239,6 +287,35 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
               </Button>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Authority Tier & Canonical Fingerprint Provenance Banner */}
+      <div className="bg-stone-50 border border-stone-200 rounded-sm p-4 text-xs font-mono space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold text-neutral-900">CANONICAL LINEAGE (SCHEMA {SPECIFICATION_CANONICAL_SCHEMA_VERSION}):</span>
+            <span className="text-neutral-600">
+              REV: {spec.specificationRevisionId ?? `spec-${spec.id}-v${spec.version}`}
+            </span>
+            {spec.parentRevisionId && (
+              <span className="text-neutral-500">← PARENT: {spec.parentRevisionId}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="neutral" size="sm">isProductionReady: false</Badge>
+            <Badge variant={approvalVerification.isValid ? 'success' : 'warning'} size="sm">
+              VERIFICATION: {approvalVerification.state.toUpperCase()}
+            </Badge>
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-neutral-600 pt-1 border-t border-stone-200">
+          <span className="truncate">
+            SHA-256 FINGERPRINT: <span className="text-neutral-900 font-semibold">{canonicalFingerprint}</span>
+          </span>
+          <span className="text-neutral-500 shrink-0">
+            Note: SHA-256 is an integrity digest; local session approval does not constitute an external identity or PKI signature.
+          </span>
         </div>
       </div>
 

@@ -37,15 +37,23 @@ export type ProductionPatternSnapshotSchemaVersion = typeof PRODUCTION_PATTERN_S
 export type MeasurementOrigin =
   | 'user-entered'
   | 'standard-chart'
+  | 'physically-measured'
   | 'imported'
   | 'ai-estimated'
   | 'unknown';
 
 /**
  * Separate approval lifecycle state for body measurements.
- * An engineer or client may approve/reject measurements independently of design approval.
+ * Missing approval defaults to 'unverified', never 'approved'.
  */
-export type MeasurementApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type MeasurementApprovalStatus =
+  | 'unverified'
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'superseded';
+
+export type MeasurementApprovalState = MeasurementApprovalStatus;
 
 /**
  * Auditable approval declaration for a measurement dataset.
@@ -59,11 +67,54 @@ export interface MeasurementApprovalRecord {
 }
 
 /**
+ * Authoritative measurement set record with explicit provenance, lifecycle revisioning,
+ * separated AI-estimated values, and approval authority.
+ */
+export interface AuthoritativeMeasurementSetRecord {
+  readonly measurementSetId: string;
+  readonly revisionId: string;
+  readonly parentRevisionId?: string;
+  readonly supersededByRevisionId?: string;
+  readonly unit: 'cm';
+  readonly values: Readonly<Record<string, number>>;
+  readonly aiEstimatedValues?: Readonly<Record<string, number>>;
+  readonly source: MeasurementOrigin;
+  readonly provenance: MeasurementOrigin;
+  readonly perMeasurementOrigin?: Readonly<Record<string, MeasurementOrigin>>;
+  readonly recordedAt: string;
+  readonly approvalState: MeasurementApprovalStatus;
+  readonly approvingAuthority?: string;
+  readonly approvedAt?: string;
+  readonly notes?: readonly string[];
+  readonly canonicalFingerprint: string;
+}
+
+export interface CreateAuthoritativeMeasurementSetInput {
+  readonly measurementSetId?: string;
+  readonly revisionId?: string;
+  readonly parentRevisionId?: string;
+  readonly unit?: 'cm';
+  readonly values: Record<string, number>;
+  readonly aiEstimatedValues?: Record<string, number>;
+  readonly source?: MeasurementOrigin;
+  readonly provenance?: MeasurementOrigin;
+  readonly perMeasurementOrigin?: Record<string, MeasurementOrigin>;
+  readonly recordedAt?: string;
+  readonly approvalState?: MeasurementApprovalStatus;
+  readonly approvingAuthority?: string;
+  readonly approvedAt?: string;
+  readonly notes?: string[];
+}
+
+/**
  * Immutable snapshot of a measurement set binding values to origin provenance and approval.
  */
 export interface MeasurementSetSnapshot {
+  readonly measurementSetId?: string;
+  readonly revisionId?: string;
   readonly unit: 'cm';
   readonly values: Readonly<Record<string, number>>;
+  readonly aiEstimatedValues?: Readonly<Record<string, number>>;
   readonly defaultOrigin: MeasurementOrigin;
   readonly perMeasurementOrigin?: Readonly<Record<string, MeasurementOrigin>>;
   readonly approval: MeasurementApprovalRecord;
@@ -235,7 +286,7 @@ export interface DraftingConfigurationSnapshot {
  */
 export interface ApprovalStateSummary {
   readonly designApproval: 'approved' | 'pending' | 'rejected';
-  readonly measurementApproval: 'approved' | 'pending' | 'rejected';
+  readonly measurementApproval: MeasurementApprovalStatus;
   readonly patternGeometryValidation: 'validated' | 'invalid' | 'incomplete' | 'not_assessed';
   readonly assemblyValidation: 'verified-valid' | 'invalid' | 'unassessed-missing-data' | 'not-applicable';
   readonly gradingValidation: 'valid' | 'invalid' | 'unassessed' | 'not-applicable';
