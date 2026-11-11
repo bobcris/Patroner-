@@ -66,21 +66,91 @@ export type ApprovalAuthorityTier =
   | 'cryptographic_principal';
 
 /**
- * Verifiable identity credential required for Tier 3 (authenticated_designer) approval.
+ * Allowed asymmetric signature algorithms in the controlled PKI / key registry.
+ * Shared-secret and symmetric MAC algorithms are strictly prohibited.
+ */
+export type AsymmetricSignatureAlgorithm = 'Ed25519';
+
+/**
+ * Trust status of a registered public key in the controlled key registry or JWKS.
+ */
+export type KeyTrustStatus =
+  | 'trusted'
+  | 'untrusted'
+  | 'revoked'
+  | 'expired'
+  | 'controlled_local_public_key'
+  | 'enterprise_pki_verified'
+  | 'revoked_key'
+  | 'expired_key';
+
+/**
+ * Controlled public-key registration entry (PUBLIC KEY MATERIAL ONLY).
+ * Private key material is strictly prohibited in verifier key registrations.
+ */
+export interface ControlledPublicKeyRegistration {
+  readonly keyId: string;
+  readonly publicKeyHex: string;
+  readonly publicKeyFingerprint?: string;
+  readonly algorithm?: AsymmetricSignatureAlgorithm | string;
+  readonly principalId?: string;
+  readonly issuer?: string;
+  readonly providerId?: string;
+  readonly tenantId?: string;
+  readonly organizationScope?: string;
+  readonly activatedAt?: string; // ISO 8601
+  readonly expiresAt?: string;   // ISO 8601
+  readonly revoked?: boolean;
+  readonly revokedAt?: string;
+  readonly revocationReason?: string;
+  readonly trustStatus?: KeyTrustStatus;
+  readonly registrationProvenance?: string;
+  readonly allowedPrincipals?: readonly string[];
+}
+
+/**
+ * Trusted OIDC / JWKS public key entry for asymmetric JWT signature verification.
+ */
+export interface OidcJwkPublicKey {
+  readonly kty: 'OKP';
+  readonly crv: 'Ed25519';
+  readonly kid: string;
+  readonly alg: 'EdDSA' | string;
+  readonly use?: 'sig' | string;
+  readonly x?: string;            // Base64URL-encoded 32-byte Ed25519 public key
+  readonly publicKeyHex?: string; // 64-char hex Ed25519 public key
+  readonly issuer?: string;
+  readonly tenantId?: string;
+  readonly activatedAt?: string;  // ISO 8601
+  readonly expiresAt?: string;    // ISO 8601
+  readonly revoked?: boolean;
+  readonly trustStatus?: KeyTrustStatus;
+}
+
+/**
+ * Verifiable OIDC/JWT identity credential required for Tier 3 (authenticated_designer) approval.
  */
 export interface VerifiableIdentityCredential {
-  readonly token: string;
-  readonly credentialId: string;
-  readonly subject: string;
+  readonly token?: string;          // Compact RFC 7515 / OIDC JWT (header.payload.signature) signed with asymmetric EdDSA
+  readonly credentialToken?: string; // Alias for token
+  readonly credentialId?: string;
+  readonly subject?: string;
   readonly subjectId?: string;
-  readonly expectedApprover: string;
+  readonly expectedApprover?: string;
   readonly displayName?: string;
   readonly issuer: string;
   readonly audience: string;
-  readonly issuedAt: string; // ISO 8601
-  readonly expiresAt: string; // ISO 8601
-  readonly authorizationClaims: readonly string[];
-  readonly providerId: string;
+  readonly tenantId?: string;
+  readonly keyId?: string;
+  readonly algorithm?: string;
+  readonly tokenType?: string;
+  readonly intendedUse?: string;
+  readonly notBefore?: string; // ISO 8601
+  readonly issuedAt: string;   // ISO 8601
+  readonly expiresAt: string;  // ISO 8601
+  readonly authorizationClaims?: readonly string[];
+  readonly claims?: readonly string[];
+  readonly providerId?: string;
 }
 
 /**
@@ -92,32 +162,40 @@ export interface VerifiedIdentityProvenance {
   readonly expectedApprover: string;
   readonly issuer: string;
   readonly audience: string;
+  readonly tenantId?: string;
+  readonly keyId?: string;
+  readonly tokenId?: string;
   readonly credentialId: string;
+  readonly notBefore?: string;
   readonly issuedAt: string;
   readonly expiresAt: string;
   readonly verifiedAt: string;
   readonly authorizationClaims: readonly string[];
   readonly providerId: string;
+  readonly verificationMethod: 'OIDC-JWT-EdDSA';
   readonly tokenDigest: string;
 }
 
 /**
- * Result of a real identity-provider verification operation.
+ * Result of a real OIDC/JWT identity-provider verification operation.
  */
 export interface TrustedIdentityVerificationResult {
   readonly verified: boolean;
+  readonly isValid?: boolean;
   readonly reason?: string;
   readonly provenance?: VerifiedIdentityProvenance;
 }
 
 /**
- * Trusted identity verifier interface injected into approval and verification operations.
- * Cannot be satisfied by a boolean availability flag.
+ * Trusted OIDC/JWT identity verifier interface injected into approval and verification operations.
+ * Cannot be satisfied by a boolean availability flag or shared-secret hash.
  */
 export interface TrustedIdentityVerifier {
   readonly verifierId?: string;
   readonly trustedIssuers?: readonly string[];
   readonly expectedAudience?: string;
+  readonly expectedTenantId?: string;
+  readonly publicJwks?: readonly OidcJwkPublicKey[];
   verifyIdentityCredential?(
     credential: VerifiableIdentityCredential,
     context: {
@@ -125,20 +203,22 @@ export interface TrustedIdentityVerifier {
       readonly targetSpecificationFingerprint: string;
       readonly expectedApprover: string;
       readonly approvalTimestamp: string;
+      readonly expectedTenantId?: string;
     }
   ): TrustedIdentityVerificationResult;
   verifyCredential?(
     credential: VerifiableIdentityCredential,
     context?: unknown
-  ): TrustedIdentityVerificationResult;
+  ): TrustedIdentityVerificationResult & { readonly isValid: boolean };
 }
 
 /**
- * Mandatory 10-field canonical payload bound by a Tier 4 (cryptographic_principal) signature.
+ * Complete canonical payload bound by a Tier 4 (cryptographic_principal) asymmetric signature.
  */
 export interface CryptographicApprovalBindingPayload {
   readonly schemaVersion: string;
   readonly projectId: string;
+  readonly tenantId?: string;
   readonly garmentId: string;
   readonly specificationRevisionId: string;
   readonly specificationVersion: number;
@@ -146,41 +226,54 @@ export interface CryptographicApprovalBindingPayload {
   readonly approvalEventId: string;
   readonly approverPrincipal: string;
   readonly authorityTier: 'cryptographic_principal';
+  readonly approvalScope?: string;
   readonly approvalTimestamp: string;
+  readonly keyId?: string;
+  readonly algorithm?: string;
 }
 
 /**
- * Verifiable cryptographic signature binding all 10 mandatory specification approval parameters.
+ * Verifiable asymmetric cryptographic signature binding all mandatory specification approval parameters.
  */
 export interface VerifiableCryptographicSignature {
   readonly keyId: string;
+  readonly publicKeyHex?: string;
   readonly publicKeyFingerprint: string;
   readonly algorithm: string;
   readonly signatureHex: string;
+  readonly signatureDigest?: string;
   readonly signedPayload: CryptographicApprovalBindingPayload;
 }
 
 /**
- * Result of a real cryptographic signature verification operation.
+ * Result of a real asymmetric cryptographic signature verification operation.
  */
 export interface TrustedCryptographicVerificationResult {
   readonly verified: boolean;
+  readonly isValid?: boolean;
   readonly reason?: string;
   readonly keyId?: string;
+  readonly algorithm?: string;
   readonly publicKeyFingerprint?: string;
   readonly verifiedPayloadDigest?: string;
 }
 
 /**
- * Trusted cryptographic verifier interface injected into approval and verification operations.
+ * Trusted asymmetric cryptographic verifier interface injected into approval and verification operations.
+ * Holds ONLY public key registrations; private keys are never accessible to the verifier.
  */
 export interface TrustedCryptographicVerifier {
   readonly verifierId: string;
   readonly trustedPublicKeyFingerprints: readonly string[];
+  readonly publicKeyRegistry?: readonly ControlledPublicKeyRegistration[];
   verifyApprovalSignature(
     signature: VerifiableCryptographicSignature,
     expectedPayload: CryptographicApprovalBindingPayload
   ): TrustedCryptographicVerificationResult;
+  verifySignature?(
+    expectedPayload: CryptographicApprovalBindingPayload,
+    signature: VerifiableCryptographicSignature
+  ): TrustedCryptographicVerificationResult & { readonly isValid: boolean };
 }
 
 /**

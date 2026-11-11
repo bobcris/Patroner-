@@ -16,6 +16,7 @@ import {
   computeCanonicalRevisionFingerprint,
   CURRENT_ENGINE_VERSION,
   deepFreeze,
+  verifyGradingArtifactIntegrity,
   verifyMeasurementSetIntegrity
 } from './pattern-revision-snapshot';
 import {
@@ -27,7 +28,9 @@ import {
   ProductionExportValidationResult
 } from './dependency-types';
 import {
+  AuthoritativeGradingArtifact,
   AuthoritativeMeasurementSetRecord,
+  ExportGradingPolicy,
   GradingSummarySnapshot,
   MeasurementApprovalStatus,
   MeasurementOrigin,
@@ -73,6 +76,8 @@ export interface PipelineIntegrityInputs {
   readonly activeDraftingFingerprint?: string;
   readonly verificationContext?: ApprovalVerificationContext;
   readonly gradingSummary?: Partial<GradingSummarySnapshot>;
+  readonly gradingArtifact?: AuthoritativeGradingArtifact;
+  readonly exportGradingPolicy?: ExportGradingPolicy;
 }
 
 /**
@@ -89,6 +94,8 @@ export interface ProductionExportActiveInputs {
   readonly patternPieces?: readonly PatternPiece[];
   readonly validationReport?: ValidationReport;
   readonly gradingResult?: Partial<GradingSummarySnapshot>;
+  readonly gradingArtifact?: AuthoritativeGradingArtifact;
+  readonly exportGradingPolicy?: ExportGradingPolicy;
   readonly engineVersion?: string;
   readonly gradingRulesVersion?: string;
   readonly verificationContext?: ApprovalVerificationContext;
@@ -778,9 +785,11 @@ export function evaluatePipelineDependencyIntegrity(
   // =========================================================================
   let gradingStatus: PipelineArtifactStatus = 'current';
   let gradingStaleReason: string | undefined = undefined;
+  let gradingValidationStatus = 'graded';
 
   if (draftingStatus === 'stale' || geomValStatus === 'invalid' || geomValStatus === 'stale') {
     gradingStatus = 'stale';
+    gradingValidationStatus = 'unvalidated';
     gradingStaleReason = 'Grading is stale because base geometry, dimensions, or measurements are stale or invalid.';
   } else if (inputs.productionSnapshot) {
     const snapMeas = inputs.productionSnapshot.measurementSet.values;
@@ -790,6 +799,7 @@ export function evaluatePipelineDependencyIntegrity(
         const snapV = snapMeas[k];
         if (typeof snapV !== 'number' || Math.abs(snapV - v) > 0.001) {
           gradingStatus = 'stale';
+          gradingValidationStatus = 'unvalidated';
           gradingStaleReason = `Grading is stale because base measurements (${k}) have changed.`;
           staleReasons.push(gradingStaleReason);
           break;
@@ -798,26 +808,118 @@ export function evaluatePipelineDependencyIntegrity(
     }
   }
 
-  const gradingContentFingerprint = computeArtifactInputFingerprint({
-    specFingerprint,
-    draftingContentFingerprint,
-    gradingRulesFingerprint,
-    gradingSummary: inputs.gradingSummary ?? null
-  });
+  if (inputs.gradingArtifact && gradingStatus === 'current') {
+    const ga = inputs.gradingArtifact;
+    const gaCheck = verifyGradingArtifactIntegrity(ga);
+    const expectedScope = ('projectId' in spec ? spec.projectId : undefined) ?? inputs.productionSnapshot?.projectId ?? '';
+    const expectedMeasFp =
+      inputs.measurementSet && 'canonicalFingerprint' in inputs.measurementSet
+        ? inputs.measurementSet.canonicalFingerprint
+        : measFingerprint;
+
+    if (gaCheck.isTampered) {
+      gradingStatus = 'invalid';
+      gradingValidationStatus = 'tampered';
+      gradingStaleReason = gaCheck.reason ?? 'Grading artifact canonical fingerprint mismatch.';
+      staleReasons.push(gradingStaleReason);
+    } else if (ga.lifecycleState === 'revoked' || Boolean(ga.revocationReason)) {
+      gradingStatus = 'revoked';
+      gradingValidationStatus = 'revoked';
+      gradingStaleReason = gaCheck.reason ?? 'Grading artifact has been revoked.';
+      staleReasons.push(gradingStaleReason);
+    } else if (ga.lifecycleState === 'superseded' || Boolean(ga.supersededByRevisionId)) {
+      gradingStatus = 'stale';
+      gradingValidationStatus = 'superseded';
+      gradingStaleReason = gaCheck.reason ?? 'Grading artifact has been superseded.';
+      staleReasons.push(gradingStaleReason);
+    } else if (gaCheck.isSizeRangeIncomplete) {
+      gradingStatus = 'invalid';
+      gradingValidationStatus = 'size-range-incomplete';
+      gradingStaleReason = gaCheck.reason ?? 'Grading artifact size range is incomplete.';
+      staleReasons.push(gradingStaleReason);
+    } else if (gaCheck.isValidationFailed) {
+      gradingStatus = 'invalid';
+      gradingValidationStatus = 'validation-failed';
+      gradingStaleReason = gaCheck.reason ?? 'Grading artifact geometry or cross-size validation failed.';
+      staleReasons.push(gradingStaleReason);
+    } else if (expectedScope && (ga.projectId !== expectedScope || ga.tenantId !== expectedScope)) {
+      gradingStatus = 'invalid';
+      gradingValidationStatus = 'scope-mismatch';
+      gradingStaleReason = `Grading artifact project/tenant ('${ga.projectId}'/'${ga.tenantId}') does not match active project ('${expectedScope}').`;
+      staleReasons.push(gradingStaleReason);
+    } else if (
+      ga.sourceSpecificationId !== specGarmentId ||
+      ga.sourceSpecificationRevisionId !== specRevisionId ||
+      ga.sourceSpecificationFingerprint !== specFingerprint
+    ) {
+      gradingStatus = 'stale';
+      gradingValidationStatus = 'stale-specification';
+      gradingStaleReason = 'Grading artifact source specification lineage does not match active specification.';
+      staleReasons.push(gradingStaleReason);
+    } else if (inputs.productionSnapshot && ga.sourcePatternRevisionId !== inputs.productionSnapshot.revisionId) {
+      gradingStatus = 'stale';
+      gradingValidationStatus = 'stale-pattern-revision';
+      gradingStaleReason = `Grading artifact sourcePatternRevisionId ('${ga.sourcePatternRevisionId}') does not match active snapshot ('${inputs.productionSnapshot.revisionId}').`;
+      staleReasons.push(gradingStaleReason);
+    } else if (
+      ga.sourceMeasurementSetFingerprint !== measFingerprint &&
+      ga.sourceMeasurementSetFingerprint !== expectedMeasFp
+    ) {
+      gradingStatus = 'stale';
+      gradingValidationStatus = 'stale-measurements';
+      gradingStaleReason = 'Grading artifact sourceMeasurementSetFingerprint does not match active measurement set fingerprint.';
+      staleReasons.push(gradingStaleReason);
+    } else if (
+      ga.gradingRuleSetRevision !== `rules-grading-${gradingRulesVer}` &&
+      ga.gradingRuleSetRevision !== gradingRulesVer
+    ) {
+      gradingStatus = 'stale';
+      gradingValidationStatus = 'stale-grading-rules';
+      gradingStaleReason = `Grading artifact gradingRuleSetRevision ('${ga.gradingRuleSetRevision}') does not match active grading rules ('${gradingRulesVer}').`;
+      staleReasons.push(gradingStaleReason);
+    } else if (ga.gradingRuleSetFingerprint !== gradingRulesFingerprint) {
+      gradingStatus = 'stale';
+      gradingValidationStatus = 'stale-grading-rules';
+      gradingStaleReason = 'Grading artifact gradingRuleSetFingerprint does not match active grading rules fingerprint.';
+      staleReasons.push(gradingStaleReason);
+    } else if (ga.baseSize !== inputs.activeSize) {
+      gradingStatus = 'stale';
+      gradingValidationStatus = 'base-size-mismatch';
+      gradingStaleReason = `Grading artifact baseSize ('${ga.baseSize}') does not match active size ('${inputs.activeSize}').`;
+      staleReasons.push(gradingStaleReason);
+    }
+  }
+
+  const gradingContentFingerprint = computeArtifactInputFingerprint(
+    inputs.gradingArtifact
+      ? {
+          specFingerprint,
+          draftingContentFingerprint,
+          gradingRulesFingerprint,
+          gradingSummary: inputs.gradingSummary ?? null,
+          gradingArtifactFingerprint: inputs.gradingArtifact.canonicalFingerprint
+        }
+      : {
+          specFingerprint,
+          draftingContentFingerprint,
+          gradingRulesFingerprint,
+          gradingSummary: inputs.gradingSummary ?? null
+        }
+  );
 
   const gradingArtifact: PipelineArtifactRecord = {
     artifactId: 'art-grading',
     artifactType: 'grading',
     nodeCategory: 'derived_artifact',
     status: gradingStatus,
-    revisionId: `grade-${specRevisionId}`,
+    revisionId: inputs.gradingArtifact ? inputs.gradingArtifact.gradingRevisionId : `grade-${specRevisionId}`,
     sourceRevisionId: specRevisionId,
     inputFingerprint: specFingerprint,
     generatedContentFingerprint: gradingContentFingerprint,
     engineVersion: currentEngineVer,
     staleReason: gradingStaleReason,
-    regenerationRequired: gradingStatus === 'stale',
-    validationStatus: gradingStatus === 'current' ? 'graded' : 'unvalidated',
+    regenerationRequired: gradingStatus === 'stale' || gradingStatus === 'invalid' || gradingStatus === 'revoked',
+    validationStatus: gradingValidationStatus,
     upstreamDependencies: [specArtifact.artifactId, draftingArtifact.artifactId, gradingRulesArtifact.artifactId],
     upstreamFingerprints: {
       specification: specFingerprint,
@@ -1580,7 +1682,7 @@ export function validateProductionExportPrerequisites(
     (missingActiveInputNames.length === 0 || (activeInputs.patternPieces && activeInputs.validationReport))
   ) {
     try {
-      const recomputedReport = evaluatePipelineDependencyIntegrity({
+      const baselineRecomputedReport = evaluatePipelineDependencyIntegrity({
         specification: activeInputs.specification,
         measurements: activeInputs.measurements,
         measurementSet: activeInputs.measurementSet,
@@ -1598,6 +1700,32 @@ export function validateProductionExportPrerequisites(
         gradingSummary: activeInputs.gradingResult
       });
 
+      const reportUsedGradingArtifact =
+        Boolean(activeInputs.gradingArtifact) &&
+        report.artifacts.grading?.generatedContentFingerprint !==
+          baselineRecomputedReport.artifacts.grading?.generatedContentFingerprint;
+
+      const recomputedReport = reportUsedGradingArtifact
+        ? evaluatePipelineDependencyIntegrity({
+            specification: activeInputs.specification,
+            measurements: activeInputs.measurements,
+            measurementSet: activeInputs.measurementSet,
+            measurementApprovalState: activeInputs.measurementApprovalState,
+            measurementProvenance: activeInputs.measurementProvenance,
+            isMeasurementApproved: activeInputs.isMeasurementApproved,
+            activeSize: snapshot?.targetSize ?? 'M',
+            fabric: activeInputs.fabric,
+            patternPieces: activeInputs.patternPieces,
+            validationReport: activeInputs.validationReport,
+            productionSnapshot: snapshot,
+            engineVersion: activeInputs.engineVersion,
+            gradingRulesVersion: activeInputs.gradingRulesVersion,
+            verificationContext: activeInputs.verificationContext,
+            gradingSummary: activeInputs.gradingResult,
+            gradingArtifact: activeInputs.gradingArtifact
+          })
+        : baselineRecomputedReport;
+
       const reportMismatches: string[] = [];
 
       if (Boolean(report.hasStaleArtifacts) !== Boolean(recomputedReport.hasStaleArtifacts)) {
@@ -1608,6 +1736,10 @@ export function validateProductionExportPrerequisites(
       }
 
       for (const stage of requiredStages) {
+        if (stage === 'grading' && reportUsedGradingArtifact && activeInputs.gradingArtifact) {
+          // Grading artifact lineage/tampering is verified with specific error codes in Step 9b
+          continue;
+        }
         const suppliedArt = report.artifacts[stage];
         const recomputedArt = recomputedReport.artifacts[stage];
         if (!suppliedArt) {
@@ -1634,6 +1766,242 @@ export function validateProductionExportPrerequisites(
     }
   }
 
+  // 9b. Complete Grading Export Lineage Verification (Milestone 04.6.2.3.2 Phase 3 & Phase 4)
+  // Grading applicability must NEVER be inferred from the omission of a grading input.
+  if (missingActiveInputNames.length === 0) {
+    const policy = activeInputs?.exportGradingPolicy;
+    const policyMode = policy?.mode;
+
+    if (policy !== undefined && policyMode !== 'graded-multi-size' && policyMode !== 'single-size-ungraded') {
+      blockingArtifacts.push(
+        `grading-policy (undeclared: Invalid or undeclared exportGradingPolicy.mode '${String(policyMode)}')`
+      );
+      if (!rejectionCode) {
+        rejectionCode = 'GRADING_APPLICABILITY_UNDECLARED';
+      }
+    } else if (policyMode === 'single-size-ungraded') {
+      // Single-size ungraded export requires an explicit non-empty nonGradingReason
+      const reason = typeof policy?.nonGradingReason === 'string' ? policy.nonGradingReason.trim() : '';
+      if (!reason) {
+        blockingArtifacts.push(
+          'grading-policy (undeclared: Single-size ungraded export requires an explicit non-empty nonGradingReason)'
+        );
+        if (!rejectionCode) {
+          rejectionCode = 'GRADING_APPLICABILITY_UNDECLARED';
+        }
+      }
+
+      // Single-size ungraded claim must not contradict attached graded pattern data or multi-size requirements
+      const hasGradedArtifacts =
+        Boolean(activeInputs?.gradingArtifact) ||
+        Boolean(activeInputs?.gradingResult) ||
+        Boolean(snapshot?.gradingSummary) ||
+        Boolean(policy?.requiredSizes && policy.requiredSizes.length > 1);
+      if (hasGradedArtifacts) {
+        blockingArtifacts.push(
+          'grading-scope-mismatch (contradictory: Single-size ungraded export policy declared, but graded pattern artifact or multi-size requirements are present)'
+        );
+        if (!rejectionCode) {
+          rejectionCode = 'GRADING_SCOPE_MISMATCH';
+        }
+      }
+    } else {
+      // Default and explicit 'graded-multi-size' mode: AuthoritativeGradingArtifact is mandatory
+      const ga = activeInputs?.gradingArtifact;
+      if (!ga) {
+        blockingArtifacts.push(
+          'grading-artifact (missing: AuthoritativeGradingArtifact is mandatory for graded production export; grading applicability is never inferred from omission)'
+        );
+        if (!rejectionCode) {
+          rejectionCode = 'GRADING_ARTIFACT_MISSING';
+        }
+      } else {
+        // 1. Industrial safety invariant on grading artifact
+        if ((ga as unknown as { isProductionReady?: boolean }).isProductionReady !== false) {
+          blockingArtifacts.push(
+            'isProductionReady (INDUSTRIAL SAFETY VIOLATION: gradingArtifact.isProductionReady cannot be asserted)'
+          );
+          rejectionCode = 'INDUSTRIAL_SAFETY_VIOLATION';
+        }
+
+        // 2. Cryptographic fingerprint, lifecycle state, per-size geometry, and cross-size validation integrity
+        const gaIntegrity = verifyGradingArtifactIntegrity(ga);
+        if (gaIntegrity.isTampered) {
+          blockingArtifacts.push(
+            `grading-artifact (tampered: ${gaIntegrity.reason ?? 'Grading artifact canonical fingerprint mismatch'})`
+          );
+          if (!rejectionCode) rejectionCode = 'GRADING_ARTIFACT_TAMPERED';
+        } else if (ga.lifecycleState === 'revoked' || Boolean(ga.revocationReason)) {
+          blockingArtifacts.push(
+            `grading-artifact (revoked: ${gaIntegrity.reason ?? 'Grading artifact has been revoked'})`
+          );
+          if (!rejectionCode) rejectionCode = 'GRADING_ARTIFACT_REVOKED';
+        } else if (ga.lifecycleState === 'superseded' || Boolean(ga.supersededByRevisionId)) {
+          blockingArtifacts.push(
+            `grading-artifact (superseded: ${gaIntegrity.reason ?? 'Grading artifact has been superseded'})`
+          );
+          if (!rejectionCode) rejectionCode = 'GRADING_ARTIFACT_SUPERSEDED';
+        } else if (gaIntegrity.isSizeRangeIncomplete) {
+          blockingArtifacts.push(
+            `grading-artifact (size-range-incomplete: ${gaIntegrity.reason ?? 'Grading artifact size range is incomplete'})`
+          );
+          if (!rejectionCode) rejectionCode = 'GRADING_SIZE_RANGE_INCOMPLETE';
+        } else if (gaIntegrity.isValidationFailed) {
+          blockingArtifacts.push(
+            `grading-artifact (validation-failed: ${gaIntegrity.reason ?? 'Grading artifact validation failed'})`
+          );
+          if (!rejectionCode) rejectionCode = 'GRADING_VALIDATION_FAILED';
+        }
+
+        // 3. Required sizes completeness check when exportGradingPolicy.requiredSizes is specified
+        if (policy?.requiredSizes && policy.requiredSizes.length > 0) {
+          const missingReqSizes = policy.requiredSizes.filter(
+            sz =>
+              !ga.sizeRange.includes(sz) ||
+              !ga.perSizePatternGeometry?.[sz] ||
+              ga.perSizePatternGeometry[sz].length === 0 ||
+              !ga.perSizeGeometryValidation?.[sz]?.isValid
+          );
+          if (missingReqSizes.length > 0) {
+            blockingArtifacts.push(
+              `grading-artifact (size-range-incomplete: Grading artifact is missing required export sizes [${missingReqSizes.join(', ')}])`
+            );
+            if (!rejectionCode) rejectionCode = 'GRADING_SIZE_RANGE_INCOMPLETE';
+          }
+        }
+
+        // 4. Project and Tenant scope binding
+        const expectedScope =
+          (activeInputs?.specification && 'projectId' in activeInputs.specification
+            ? activeInputs.specification.projectId
+            : undefined) ?? snapshot?.projectId;
+        if (expectedScope && (ga.projectId !== expectedScope || ga.tenantId !== expectedScope)) {
+          blockingArtifacts.push(
+            `grading-artifact (scope-mismatch: Grading artifact projectId/tenantId '${ga.projectId}'/'${ga.tenantId}' does not match active scope '${expectedScope}')`
+          );
+          if (!rejectionCode) rejectionCode = 'GRADING_SCOPE_MISMATCH';
+        }
+
+        // 5. Specification lineage verification
+        if (activeInputs?.specification) {
+          const activeSpec = activeInputs.specification;
+          const activeSpecGarmentId =
+            'garmentId' in activeSpec && activeSpec.garmentId
+              ? activeSpec.garmentId
+              : 'id' in activeSpec && (activeSpec as DesignSpecification).id
+                ? (activeSpec as DesignSpecification).id
+                : 'garment';
+          const activeSpecRevId =
+            activeSpec.specificationRevisionId ?? `spec-${activeSpecGarmentId}-v${activeSpec.version || 1}`;
+          const activeSpecFp = computeSpecificationFingerprint(activeSpec);
+
+          if (
+            ga.sourceSpecificationId !== activeSpecGarmentId ||
+            ga.sourceSpecificationRevisionId !== activeSpecRevId ||
+            ga.sourceSpecificationFingerprint !== activeSpecFp
+          ) {
+            blockingArtifacts.push(
+              `grading-artifact (stale-specification: Grading artifact specification lineage '${ga.sourceSpecificationRevisionId}' / '${ga.sourceSpecificationFingerprint.slice(0, 12)}' does not match active specification '${activeSpecRevId}' / '${activeSpecFp.slice(0, 12)}')`
+            );
+            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+          }
+        }
+
+        // 6. Pattern revision lineage & base-size geometry verification
+        if (snapshot) {
+          if (ga.sourcePatternRevisionId !== snapshot.revisionId) {
+            blockingArtifacts.push(
+              `grading-artifact (stale-pattern-revision: Grading artifact sourcePatternRevisionId '${ga.sourcePatternRevisionId}' does not match snapshot revisionId '${snapshot.revisionId}')`
+            );
+            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+          }
+          if (ga.baseSize !== snapshot.targetSize) {
+            blockingArtifacts.push(
+              `grading-artifact (base-size-mismatch: Grading artifact baseSize '${ga.baseSize}' does not match snapshot targetSize '${snapshot.targetSize}')`
+            );
+            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+          }
+          const basePieces = ga.perSizePatternGeometry?.[ga.baseSize];
+          if (!basePieces || basePieces.length !== snapshot.patternPieces.length) {
+            blockingArtifacts.push(
+              'grading-artifact (stale-geometry: Base-size graded pattern piece count does not match snapshot pattern pieces)'
+            );
+            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+          } else {
+            const snapPieceCodes = new Set(snapshot.patternPieces.map(p => p.pieceCode));
+            if (basePieces.some(bp => !snapPieceCodes.has(bp.pieceCode))) {
+              blockingArtifacts.push(
+                'grading-artifact (stale-geometry: Base-size graded pattern piece codes do not match snapshot pattern pieces)'
+              );
+              if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+            }
+          }
+        }
+
+        // 7. Measurement set fingerprint lineage verification
+        if (activeInputs?.measurements) {
+          const activeMeasFp = computeArtifactInputFingerprint({
+            unit: activeInputs.measurements.unit,
+            waist: activeInputs.measurements.waist,
+            lowHip: activeInputs.measurements.lowHip,
+            highHip: activeInputs.measurements.highHip,
+            skirtLength: activeInputs.measurements.skirtLength,
+            bust: activeInputs.measurements.bust,
+            waistToHip: activeInputs.measurements.waistToHip,
+            backWaistLength: activeInputs.measurements.backWaistLength,
+            frontWaistLength: activeInputs.measurements.frontWaistLength,
+            acrossBack: activeInputs.measurements.acrossBack,
+            shoulderLength: activeInputs.measurements.shoulderLength,
+            neckCircumference: activeInputs.measurements.neckCircumference,
+            bustSpan: activeInputs.measurements.bustSpan,
+            bustHeight: activeInputs.measurements.bustHeight,
+            armholeDepth: activeInputs.measurements.armholeDepth,
+            bicepsCircumference: activeInputs.measurements.bicepsCircumference,
+            elbowCircumference: activeInputs.measurements.elbowCircumference,
+            wristCircumference: activeInputs.measurements.wristCircumference,
+            sleeveLength: activeInputs.measurements.sleeveLength,
+            armLengthToElbow: activeInputs.measurements.armLengthToElbow,
+            activeSize: snapshot?.targetSize ?? ga.baseSize ?? 'M'
+          });
+          const msCanonFp =
+            activeInputs.measurementSet && 'canonicalFingerprint' in activeInputs.measurementSet
+              ? activeInputs.measurementSet.canonicalFingerprint
+              : undefined;
+
+          if (
+            ga.sourceMeasurementSetFingerprint !== activeMeasFp &&
+            (!msCanonFp || ga.sourceMeasurementSetFingerprint !== msCanonFp)
+          ) {
+            blockingArtifacts.push(
+              'grading-artifact (stale-measurements: Grading artifact sourceMeasurementSetFingerprint does not match active measurements)'
+            );
+            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+          }
+        }
+
+        // 8. Grading rule set lineage verification
+        const expectedRulesVer = activeInputs?.gradingRulesVersion ?? 'iso8559-standard';
+        const expectedRulesFp = computeArtifactInputFingerprint({
+          system: 'standard-iso-8559',
+          baseSize: 'M',
+          version: expectedRulesVer,
+          sizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+        });
+
+        if (
+          (ga.gradingRuleSetRevision !== expectedRulesVer &&
+            ga.gradingRuleSetRevision !== `rules-grading-${expectedRulesVer}`) ||
+          ga.gradingRuleSetFingerprint !== expectedRulesFp
+        ) {
+          blockingArtifacts.push(
+            `grading-artifact (rules-mismatch: Grading artifact rule set '${ga.gradingRuleSetRevision}' or fingerprint does not match active grading rules '${expectedRulesVer}')`
+          );
+          if (!rejectionCode) rejectionCode = 'GRADING_RULES_MISMATCH';
+        }
+      }
+    }
+  }
+
   // 10. Result Construction
   if (blockingArtifacts.length > 0) {
     let rejectionReason = `Production export blocked by unapproved or out-of-sync pipeline stages: ${blockingArtifacts.join('; ')}`;
@@ -1645,7 +2013,7 @@ export function validateProductionExportPrerequisites(
       blockingArtifacts.some(b => b.includes('production-snapshot (missing'))
     ) {
       rejectionReason = 'Production export requires an authoritative ProductionPatternRevisionSnapshot.';
-    } else if (blockingArtifacts.some(b => b.includes('tampered'))) {
+    } else if (blockingArtifacts.some(b => b.includes('production-snapshot (tampered'))) {
       rejectionReason = 'Production export blocked: ProductionPatternRevisionSnapshot payload is tampered.';
       if (!rejectionCode) rejectionCode = 'SNAPSHOT_GEOMETRY_TAMPERED';
     } else if (blockingArtifacts.some(b => b.includes('snapshot-specification-mismatch'))) {
@@ -1662,10 +2030,13 @@ export function validateProductionExportPrerequisites(
       validationDetails: {
         snapshotRevisionId: snapshot?.revisionId,
         activeSpecificationRevisionId: activeInputs?.specification?.specificationRevisionId,
+        gradingArtifactId: activeInputs?.gradingArtifact?.gradingArtifactId,
         blockingCount: blockingArtifacts.length
       }
     };
   }
+
+  const effectiveMode = activeInputs?.exportGradingPolicy?.mode ?? 'graded-multi-size';
 
   return {
     isExportPermitted: true,
@@ -1673,7 +2044,10 @@ export function validateProductionExportPrerequisites(
     warnings,
     validationDetails: {
       snapshotRevisionId: snapshot?.revisionId,
-      canonicalFingerprint: snapshot?.canonicalFingerprint
+      canonicalFingerprint: snapshot?.canonicalFingerprint,
+      gradingMode: effectiveMode,
+      gradingArtifactId: activeInputs?.gradingArtifact?.gradingArtifactId,
+      gradingArtifactFingerprint: activeInputs?.gradingArtifact?.canonicalFingerprint
     },
     manufacturingDocumentation: snapshot ? {
       isProductionReady: false,
@@ -1684,7 +2058,15 @@ export function validateProductionExportPrerequisites(
             : snapshot.canonicalFingerprint),
       patternRevisionFingerprint: snapshot.canonicalFingerprint,
       revisionId: snapshot.revisionId,
-      exportedAt: new Date().toISOString()
+      exportedAt: new Date().toISOString(),
+      gradingMode: effectiveMode,
+      gradingArtifactId: activeInputs?.gradingArtifact?.gradingArtifactId,
+      gradingRevisionId: activeInputs?.gradingArtifact?.gradingRevisionId,
+      gradingArtifactFingerprint: activeInputs?.gradingArtifact?.canonicalFingerprint,
+      nonGradingReason:
+        effectiveMode === 'single-size-ungraded'
+          ? activeInputs?.exportGradingPolicy?.nonGradingReason?.trim()
+          : undefined
     } : undefined
   };
 }

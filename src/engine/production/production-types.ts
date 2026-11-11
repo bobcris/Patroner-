@@ -27,6 +27,7 @@ import {
 import { SegmentRole } from '../geometry/primitives';
 import { AssemblyValidationStatus } from '../assembly/assembly-types';
 import { DirectionalProperties, FabricProvenance, FabricPropertyProvenanceRecord } from '../fabric/fabric-types';
+import { CrossSizeIntegrityReport, GradedPatternSet } from '../grading/grading-types';
 
 export const PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION = '1.0.0' as const;
 export type ProductionPatternSnapshotSchemaVersion = typeof PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION;
@@ -343,6 +344,110 @@ export interface GradingSummarySnapshot {
   readonly gradeTableName: string;
   readonly summaryMessage: string;
   readonly unassessedConditions: readonly string[];
+}
+
+/**
+ * Lifecycle state of an AuthoritativeGradingArtifact.
+ */
+export type GradingLifecycleState = 'active' | 'superseded' | 'revoked';
+
+/**
+ * Explicit grading applicability mode for a production export.
+ */
+export type ExportGradingMode = 'graded-multi-size' | 'single-size-ungraded';
+
+/**
+ * Explicit policy declaring whether an export requires multi-size grading or is a single-size ungraded export.
+ * Never inferred from the absence of a grading artifact.
+ */
+export interface ExportGradingPolicy {
+  readonly mode: ExportGradingMode;
+  readonly nonGradingReason?: string;
+  readonly requiredSizes?: readonly string[];
+}
+
+/**
+ * Per-size geometry and assembly validation record stored on an AuthoritativeGradingArtifact.
+ */
+export interface PerSizeGeometryValidationRecord {
+  readonly sizeId: string;
+  readonly size?: string;
+  readonly status: AssemblyValidationStatus | 'validated' | 'invalid' | 'unassessed-missing-data';
+  readonly isValid: boolean;
+  readonly pieceCount: number;
+  readonly passedCount?: number;
+  readonly warningCount?: number;
+  readonly failureCount?: number;
+  readonly errors: readonly string[];
+  readonly warnings: readonly string[];
+}
+
+/**
+ * Complete, immutable, verifiable grading artifact required for graded production exports.
+ * Binds multi-size graded geometry and validation results to exact upstream specification,
+ * pattern revision, measurement set, and grading ruleset fingerprints.
+ */
+export interface AuthoritativeGradingArtifact {
+  readonly gradingArtifactId: string;
+  readonly gradingRevisionId: string;
+  readonly tenantId: string;
+  readonly projectId: string;
+  readonly sourcePatternRevisionId: string;
+  readonly sourceSpecificationId: string;
+  readonly sourceSpecificationRevisionId: string;
+  readonly sourceSpecificationFingerprint: string;
+  readonly sourceMeasurementSetId: string;
+  readonly sourceMeasurementSetFingerprint: string;
+  readonly sizeRange: readonly string[];
+  readonly baseSize: string;
+  readonly gradingRuleSetId: string;
+  readonly gradingRuleSetRevision: string;
+  readonly gradingRuleSetFingerprint: string;
+  readonly perSizePatternGeometry: Readonly<Record<string, readonly PatternPieceSnapshot[]>>;
+  readonly geometryValidationResult: Readonly<Record<string, PerSizeGeometryValidationRecord>>;
+  readonly perSizeGeometryValidation?: Readonly<Record<string, PerSizeGeometryValidationRecord>>;
+  readonly gradingValidationResult: Readonly<CrossSizeIntegrityReport>;
+  readonly crossSizeIntegrityReport?: Readonly<CrossSizeIntegrityReport>;
+  readonly canonicalFingerprint: string;
+  readonly createdAt: string;
+  readonly lifecycleState: GradingLifecycleState;
+  readonly supersededByRevisionId?: string;
+  readonly revocationReason?: string;
+  readonly revokedAt?: string;
+  readonly isProductionReady: false;
+}
+
+/**
+ * Input for constructing an AuthoritativeGradingArtifact.
+ */
+export interface CreateAuthoritativeGradingArtifactInput {
+  readonly gradingArtifactId?: string;
+  readonly gradingRevisionId?: string;
+  readonly tenantId?: string;
+  readonly projectId?: string;
+  readonly sourcePatternRevisionId: string;
+  readonly sourceSpecificationId: string;
+  readonly sourceSpecificationRevisionId: string;
+  readonly sourceSpecificationFingerprint: string;
+  readonly sourceMeasurementSetId?: string;
+  readonly sourceMeasurementSetFingerprint: string;
+  readonly sizeRange?: readonly string[];
+  readonly baseSize?: string;
+  readonly gradingRuleSetId?: string;
+  readonly gradingRuleSetRevision?: string;
+  readonly gradingRuleSetFingerprint?: string;
+  readonly gradedPatternSet?: GradedPatternSet;
+  readonly basePatternPieces?: readonly (PatternPiece | PatternPieceSnapshot)[];
+  readonly perSizePatternGeometry?: Readonly<Record<string, readonly (PatternPiece | PatternPieceSnapshot)[]>>;
+  readonly geometryValidationResult?: Readonly<Record<string, Partial<PerSizeGeometryValidationRecord>>>;
+  readonly perSizeGeometryValidation?: Readonly<Record<string, Partial<PerSizeGeometryValidationRecord>>>;
+  readonly gradingValidationResult?: CrossSizeIntegrityReport;
+  readonly crossSizeIntegrityReport?: CrossSizeIntegrityReport;
+  readonly createdAt?: string;
+  readonly lifecycleState?: GradingLifecycleState;
+  readonly supersededByRevisionId?: string;
+  readonly revocationReason?: string;
+  readonly revokedAt?: string;
 }
 
 /**

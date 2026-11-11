@@ -6,14 +6,31 @@
 import { DesignSpecification } from '../../types';
 import { CURRENT_ENGINE_VERSION } from './pattern-revision-snapshot';
 import { canonicalizeJson, deepFreeze } from './pattern-revision-snapshot';
-import { sha256Hex } from './crypto';
+import {
+  base64UrlDecodeBytes,
+  base64UrlDecodeUtf8,
+  base64UrlEncodeBytes,
+  bytesToHex,
+  computeEd25519PublicKeyFingerprint,
+  Ed25519KeyPair,
+  generateEd25519KeyPairFromSeed,
+  hexToBytes,
+  OidcJwtHeader,
+  OidcJwtPayload,
+  sha256Hex,
+  signEd25519Message,
+  signOidcJwtEdDsa,
+  verifyEd25519Signature
+} from './crypto';
 import {
   ApprovalAuthorityTier,
   ApprovalVerificationContext,
   AuthorityProviderContext,
   AuthoritativeGarmentSpecification,
+  ControlledPublicKeyRegistration,
   CreateAuthoritativeSpecificationInput,
   CryptographicApprovalBindingPayload,
+  OidcJwkPublicKey,
   ParameterValueProvenance,
   SPECIFICATION_CANONICAL_SCHEMA_VERSION,
   SpecificationApprovalEvent,
@@ -76,7 +93,131 @@ export function getAuthorityProviderContext(): AuthorityProviderContext {
 }
 
 /**
- * Canonicalizes the 10-field cryptographic approval binding payload for signing and signature verification.
+ * Generates an RFC 8032 Ed25519 asymmetric keypair and controlled public-key registration entry
+ * from a seed string or 64-character hex seed.
+ */
+export function deriveEd25519SigningKeyPair(
+  keyIdOrSeed: string,
+  privateKeySeed?: string,
+  metadata?: {
+    readonly issuer?: string;
+    readonly providerId?: string;
+    readonly tenantId?: string;
+    readonly activatedAt?: string;
+    readonly expiresAt?: string;
+    readonly revoked?: boolean;
+    readonly trustStatus?: 'trusted' | 'untrusted' | 'revoked' | 'expired' | 'controlled_local_public_key';
+    readonly registrationProvenance?: string;
+    readonly allowedPrincipals?: readonly string[];
+  }
+): Ed25519KeyPair & {
+  readonly keyId: string;
+  readonly keyPair: Ed25519KeyPair;
+  readonly publicKeyRegistration: ControlledPublicKeyRegistration;
+} {
+  const effectiveKeyId = privateKeySeed !== undefined ? keyIdOrSeed : 'ed25519-key-default';
+  const effectiveSeed = privateKeySeed !== undefined ? privateKeySeed : keyIdOrSeed;
+  const keyPair = generateEd25519KeyPairFromSeed(effectiveSeed);
+  const publicKeyRegistration: ControlledPublicKeyRegistration = Object.freeze({
+    keyId: effectiveKeyId,
+    publicKeyHex: keyPair.publicKeyHex,
+    publicKeyFingerprint: keyPair.publicKeyFingerprint,
+    algorithm: 'Ed25519',
+    issuer: metadata?.issuer ?? 'patroner-enterprise-kms',
+    providerId: metadata?.providerId ?? 'patroner-kms-ed25519',
+    tenantId: metadata?.tenantId,
+    organizationScope: metadata?.tenantId,
+    activatedAt: metadata?.activatedAt,
+    expiresAt: metadata?.expiresAt,
+    revoked: metadata?.revoked ?? false,
+    trustStatus: metadata?.trustStatus ?? (metadata?.revoked ? 'revoked' : 'trusted'),
+    registrationProvenance: metadata?.registrationProvenance ?? 'controlled-key-registry',
+    allowedPrincipals: metadata?.allowedPrincipals ? [...metadata.allowedPrincipals] : undefined
+  });
+  return Object.freeze({
+    ...keyPair,
+    keyId: effectiveKeyId,
+    keyPair,
+    publicKeyRegistration
+  });
+}
+
+/**
+ * Creates a public-key-only OIDC JWK entry (`kty: 'OKP'`, `crv: 'Ed25519'`, `alg: 'EdDSA'`) from a seed or public key hex.
+ */
+export function createOidcPublicJwk(
+  kidOrOptions:
+    | string
+    | {
+        readonly kid?: string;
+        readonly keyId?: string;
+        readonly signingSecretOrPrivateKeyHex?: string;
+        readonly privateKeySeed?: string;
+        readonly publicKeyHex?: string;
+        readonly issuer?: string;
+        readonly tenantId?: string;
+        readonly activatedAt?: string;
+        readonly expiresAt?: string;
+        readonly revoked?: boolean;
+        readonly trustStatus?: 'trusted' | 'untrusted' | 'revoked' | 'expired';
+      },
+  seedOrPublicKey?: { readonly privateKeySeed?: string; readonly publicKeyHex?: string },
+  metadata?: {
+    readonly issuer?: string;
+    readonly tenantId?: string;
+    readonly activatedAt?: string;
+    readonly expiresAt?: string;
+    readonly revoked?: boolean;
+    readonly trustStatus?: 'trusted' | 'untrusted' | 'revoked' | 'expired';
+  }
+): OidcJwkPublicKey {
+  if (typeof kidOrOptions === 'object' && kidOrOptions !== null) {
+    const kid = (kidOrOptions.kid ?? kidOrOptions.keyId ?? '').trim();
+    const seed = kidOrOptions.signingSecretOrPrivateKeyHex ?? kidOrOptions.privateKeySeed ?? '';
+    const pubHex = kidOrOptions.publicKeyHex
+      ? kidOrOptions.publicKeyHex.toLowerCase()
+      : generateEd25519KeyPairFromSeed(seed).publicKeyHex;
+    const pubBytes = hexToBytes(pubHex);
+    return Object.freeze({
+      kty: 'OKP',
+      crv: 'Ed25519',
+      kid,
+      alg: 'EdDSA',
+      use: 'sig',
+      x: base64UrlEncodeBytes(pubBytes),
+      publicKeyHex: pubHex,
+      issuer: kidOrOptions.issuer,
+      tenantId: kidOrOptions.tenantId,
+      activatedAt: kidOrOptions.activatedAt,
+      expiresAt: kidOrOptions.expiresAt,
+      revoked: kidOrOptions.revoked ?? false,
+      trustStatus: kidOrOptions.trustStatus ?? (kidOrOptions.revoked ? 'revoked' : 'trusted')
+    });
+  }
+
+  const pubHex = seedOrPublicKey?.publicKeyHex
+    ? seedOrPublicKey.publicKeyHex.toLowerCase()
+    : generateEd25519KeyPairFromSeed(seedOrPublicKey?.privateKeySeed ?? '').publicKeyHex;
+  const pubBytes = hexToBytes(pubHex);
+  return Object.freeze({
+    kty: 'OKP',
+    crv: 'Ed25519',
+    kid: kidOrOptions,
+    alg: 'EdDSA',
+    use: 'sig',
+    x: base64UrlEncodeBytes(pubBytes),
+    publicKeyHex: pubHex,
+    issuer: metadata?.issuer,
+    tenantId: metadata?.tenantId,
+    activatedAt: metadata?.activatedAt,
+    expiresAt: metadata?.expiresAt,
+    revoked: metadata?.revoked ?? false,
+    trustStatus: metadata?.trustStatus ?? (metadata?.revoked ? 'revoked' : 'trusted')
+  });
+}
+
+/**
+ * Canonicalizes the complete cryptographic approval binding payload for asymmetric signing and verification.
  */
 export function canonicalizeApprovalSignaturePayload(
   payload: CryptographicApprovalBindingPayload
@@ -85,21 +226,25 @@ export function canonicalizeApprovalSignaturePayload(
     throw new ProductionSnapshotValidationError('Cryptographic approval binding payload must be a non-null object.');
   }
   return canonicalizeJson({
+    algorithm: payload.algorithm ?? 'Ed25519',
     approvalEventId: payload.approvalEventId,
+    approvalScope: payload.approvalScope ?? 'specification_approval',
     approvalTimestamp: payload.approvalTimestamp,
     approverPrincipal: payload.approverPrincipal,
     authorityTier: payload.authorityTier,
     canonicalSpecificationFingerprint: payload.canonicalSpecificationFingerprint,
     garmentId: payload.garmentId,
+    keyId: payload.keyId ?? '',
     projectId: payload.projectId,
     schemaVersion: payload.schemaVersion,
     specificationRevisionId: payload.specificationRevisionId,
-    specificationVersion: payload.specificationVersion
+    specificationVersion: payload.specificationVersion,
+    tenantId: payload.tenantId ?? payload.projectId
   });
 }
 
 /**
- * Computes the deterministic SHA-256 digest of the canonical 10-field approval binding payload.
+ * Computes the deterministic SHA-256 digest of the canonical approval binding payload.
  */
 export function computeApprovalSignaturePayloadDigest(
   payload: CryptographicApprovalBindingPayload
@@ -108,162 +253,461 @@ export function computeApprovalSignaturePayloadDigest(
 }
 
 /**
- * Signs a 10-field CryptographicApprovalBindingPayload using key material to produce a VerifiableCryptographicSignature.
+ * Signs a CryptographicApprovalBindingPayload using an asymmetric Ed25519 private key
+ * to produce a VerifiableCryptographicSignature.
+ *
+ * Legacy shared-secret SHA-256 constructions are strictly prohibited.
  */
 export function signSpecificationApprovalPayload(
   payload: CryptographicApprovalBindingPayload,
   keyMaterial: {
     readonly keyId: string;
+    readonly privateKeyHex?: string;
     readonly privateKeySecret?: string;
     readonly signingKeyMaterial?: string;
     readonly algorithm?: string;
+    readonly issuer?: string;
+    readonly tenantId?: string;
   }
 ): VerifiableCryptographicSignature {
-  const secret = keyMaterial.privateKeySecret ?? keyMaterial.signingKeyMaterial ?? '';
-  if (!keyMaterial.keyId || !secret) {
-    throw new ProductionSnapshotValidationError('Key ID and signing key material are required for cryptographic signing.');
+  const secretOrSeed = keyMaterial.privateKeyHex ?? keyMaterial.privateKeySecret ?? keyMaterial.signingKeyMaterial ?? '';
+  if (!keyMaterial.keyId || !secretOrSeed) {
+    throw new ProductionSnapshotValidationError('Key ID and asymmetric private key seed are required for cryptographic signing.');
   }
-  const publicKeyFingerprint = sha256Hex(`pubkey:${keyMaterial.keyId}:${secret}`);
-  const canonicalPayload = canonicalizeApprovalSignaturePayload(payload);
-  const signatureHex = sha256Hex(`sig:${publicKeyFingerprint}:${secret}:${canonicalPayload}`);
+  const requestedAlgorithm = keyMaterial.algorithm ?? payload.algorithm ?? 'Ed25519';
+  if (requestedAlgorithm !== 'Ed25519') {
+    throw new ProductionSnapshotValidationError(
+      `Unsupported cryptographic signing algorithm '${requestedAlgorithm}'. Only asymmetric 'Ed25519' is permitted.`
+    );
+  }
+
+  const boundPayload: CryptographicApprovalBindingPayload = {
+    schemaVersion: payload.schemaVersion,
+    projectId: payload.projectId,
+    tenantId: payload.tenantId ?? keyMaterial.tenantId ?? payload.projectId,
+    garmentId: payload.garmentId,
+    specificationRevisionId: payload.specificationRevisionId,
+    specificationVersion: payload.specificationVersion,
+    canonicalSpecificationFingerprint: payload.canonicalSpecificationFingerprint,
+    approvalEventId: payload.approvalEventId,
+    approverPrincipal: payload.approverPrincipal,
+    authorityTier: 'cryptographic_principal',
+    approvalScope: payload.approvalScope ?? 'specification_approval',
+    approvalTimestamp: payload.approvalTimestamp,
+    keyId: payload.keyId ?? keyMaterial.keyId,
+    algorithm: 'Ed25519'
+  };
+
+  const canonicalPayload = canonicalizeApprovalSignaturePayload(boundPayload);
+  const sigResult = signEd25519Message(canonicalPayload, secretOrSeed);
 
   return deepFreeze({
     keyId: keyMaterial.keyId,
-    publicKeyFingerprint,
-    algorithm: keyMaterial.algorithm ?? 'SHA256-KEYED-BINDING',
-    signatureHex,
-    signedPayload: { ...payload }
+    publicKeyHex: sigResult.publicKeyHex,
+    publicKeyFingerprint: sigResult.publicKeyFingerprint,
+    algorithm: 'Ed25519',
+    signatureHex: sigResult.signatureHex,
+    signatureDigest: sigResult.signatureHex,
+    signedPayload: boundPayload
   });
 }
 
 /**
- * Creates a trusted cryptographic signature verifier bound to specific public key fingerprints and key secrets.
+ * Creates a trusted asymmetric cryptographic signature verifier backed by a controlled public-key registry.
+ *
+ * SECURITY INVARIANTS (Milestone 04.6.2.3.2):
+ * 1. Signature verification uses ONLY public-key material (`publicKeyHex`).
+ * 2. Any ControlledPublicKeyRegistration entry containing private key fields is rejected.
+ * 3. Legacy shared-secret `SHA256-KEYED-BINDING` signatures are strictly rejected.
+ * 4. Validates key trustStatus, revocation, activation/expiration window, algorithm, tenant scope, and all bound payload fields.
  */
 export function createTrustedCryptographicVerifier(config: {
   readonly verifierId?: string;
-  readonly trustedKeys:
-    | ReadonlyArray<{
-        readonly keyId: string;
-        readonly publicKeyFingerprint?: string;
-        readonly privateKeySecret?: string;
-        readonly signingKeyMaterial?: string;
-        readonly allowedPrincipals?: readonly string[];
-      }>
+  readonly trustedIssuers?: readonly string[];
+  readonly expectedTenantId?: string;
+  readonly referenceTimeIso?: string;
+  readonly trustedKeys?:
+    | ReadonlyArray<ControlledPublicKeyRegistration>
     | Readonly<Record<string, string>>;
-}): TrustedCryptographicVerifier {
-  const normalizedKeys: Array<{
-    readonly keyId: string;
-    readonly publicKeyFingerprint: string;
-    readonly privateKeySecret: string;
-    readonly allowedPrincipals?: readonly string[];
-  }> = Array.isArray(config.trustedKeys)
-    ? config.trustedKeys.map(k => {
-        const secret = k.privateKeySecret ?? k.signingKeyMaterial ?? '';
-        const pubFp = k.publicKeyFingerprint ?? sha256Hex(`pubkey:${k.keyId}:${secret}`);
-        return {
-          keyId: k.keyId,
-          publicKeyFingerprint: pubFp,
-          privateKeySecret: secret,
-          allowedPrincipals: k.allowedPrincipals
-        };
-      })
-    : Object.entries(config.trustedKeys as Record<string, string>).map(([keyId, secret]) => ({
-        keyId,
-        publicKeyFingerprint: sha256Hex(`pubkey:${keyId}:${secret}`),
-        privateKeySecret: secret
-      }));
+  readonly publicKeyRegistry?: ReadonlyArray<ControlledPublicKeyRegistration>;
+}): TrustedCryptographicVerifier & {
+  verifySignature(
+    expectedPayload: CryptographicApprovalBindingPayload,
+    signature: VerifiableCryptographicSignature
+  ): TrustedCryptographicVerificationResult & { readonly isValid: boolean };
+} {
+  const registryEntries: ControlledPublicKeyRegistration[] = [];
+  const rawKeysInput = config.trustedKeys ?? config.publicKeyRegistry;
 
-  const keyByFp = new Map(normalizedKeys.map(k => [k.publicKeyFingerprint, k]));
-  const keyById = new Map(normalizedKeys.map(k => [k.keyId, k]));
-  const trustedPublicKeyFingerprints = normalizedKeys.map(k => k.publicKeyFingerprint);
+  if (Array.isArray(rawKeysInput)) {
+    for (const k of rawKeysInput) {
+      const raw = k as unknown as Record<string, unknown>;
+      if (
+        raw.privateKeyHex !== undefined ||
+        raw.privateKeySecret !== undefined ||
+        raw.signingKeyMaterial !== undefined ||
+        raw.privateKeyPem !== undefined ||
+        raw.sharedSecret !== undefined
+      ) {
+        throw new ProductionSnapshotValidationError(
+          `Security boundary violation: ControlledPublicKeyRegistration must contain public-key material only (key '${k.keyId}').`
+        );
+      }
+      if (!k.keyId || !k.publicKeyHex || !/^[0-9a-fA-F]{64}$/.test(k.publicKeyHex)) {
+        throw new ProductionSnapshotValidationError(
+          `ControlledPublicKeyRegistration for key '${k?.keyId ?? 'unknown'}' requires a valid 64-character hex Ed25519 publicKeyHex.`
+        );
+      }
+      const pubHex = k.publicKeyHex.toLowerCase();
+      const computedFp = computeEd25519PublicKeyFingerprint(pubHex);
+      if (k.publicKeyFingerprint && k.publicKeyFingerprint !== computedFp) {
+        throw new ProductionSnapshotValidationError(
+          `Public key fingerprint mismatch for key '${k.keyId}'.`
+        );
+      }
+      const normalizedAllowedPrincipals = k.allowedPrincipals
+        ? Object.freeze([...k.allowedPrincipals])
+        : k.principalId
+          ? Object.freeze([k.principalId])
+          : undefined;
+      registryEntries.push(
+        Object.freeze({
+          keyId: k.keyId,
+          publicKeyHex: pubHex,
+          publicKeyFingerprint: computedFp,
+          algorithm: k.algorithm ?? 'Ed25519',
+          principalId: k.principalId,
+          issuer: k.issuer ?? 'patroner-enterprise-kms',
+          providerId: k.providerId ?? 'patroner-kms-ed25519',
+          tenantId: k.tenantId ?? k.organizationScope,
+          organizationScope: k.organizationScope ?? k.tenantId,
+          activatedAt: k.activatedAt,
+          expiresAt: k.expiresAt,
+          revoked: Boolean(k.revoked),
+          revokedAt: k.revokedAt,
+          revocationReason: k.revocationReason,
+          trustStatus: k.trustStatus ?? (k.revoked ? 'revoked' : 'trusted'),
+          registrationProvenance: k.registrationProvenance ?? 'controlled-key-registry',
+          allowedPrincipals: normalizedAllowedPrincipals
+        })
+      );
+    }
+  } else if (rawKeysInput && typeof rawKeysInput === 'object') {
+    for (const [keyId, pubOrSeed] of Object.entries(rawKeysInput as Record<string, string>)) {
+      const pubHex =
+        pubOrSeed.startsWith('ed25519-pub:') && /^[0-9a-fA-F]{64}$/.test(pubOrSeed.slice(12))
+          ? pubOrSeed.slice(12).toLowerCase()
+          : generateEd25519KeyPairFromSeed(pubOrSeed).publicKeyHex;
+      const pubFp = computeEd25519PublicKeyFingerprint(pubHex);
+      registryEntries.push(
+        Object.freeze({
+          keyId,
+          publicKeyHex: pubHex,
+          publicKeyFingerprint: pubFp,
+          algorithm: 'Ed25519',
+          issuer: 'patroner-enterprise-kms',
+          providerId: 'patroner-kms-ed25519',
+          revoked: false,
+          trustStatus: 'trusted',
+          registrationProvenance: 'controlled-key-registry'
+        })
+      );
+    }
+  }
+
+  const isTrustedStatus = (st?: string) =>
+    st === undefined ||
+    st === 'trusted' ||
+    st === 'controlled_local_public_key' ||
+    st === 'enterprise_pki_verified';
+
+  const keyById = new Map(registryEntries.map(k => [k.keyId, k]));
+  const trustedPublicKeyFingerprints = registryEntries
+    .filter(k => isTrustedStatus(k.trustStatus) && !k.revoked)
+    .map(k => k.publicKeyFingerprint!);
+
+  const observedEvents = new Map<string, string>();
+
+  function performVerification(
+    signature: VerifiableCryptographicSignature,
+    expectedPayload: CryptographicApprovalBindingPayload
+  ): TrustedCryptographicVerificationResult & { readonly isValid: boolean } {
+    try {
+      if (!signature || typeof signature !== 'object' || !signature.signedPayload) {
+        return { verified: false, isValid: false, reason: 'Missing or malformed cryptographic signature object.' };
+      }
+
+      // Reject legacy shared-secret or non-Ed25519 algorithms immediately
+      if (signature.algorithm === 'SHA256-KEYED-BINDING' || signature.algorithm !== 'Ed25519') {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Unsupported or downgraded signature algorithm '${signature.algorithm}'. Asymmetric 'Ed25519' signature is required.`
+        };
+      }
+
+      const trustedKey = keyById.get(signature.keyId);
+      if (!trustedKey) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Unregistered or untrusted public keyId '${signature.keyId}' not found in controlled public-key registry.`
+        };
+      }
+
+      if (trustedKey.revoked || trustedKey.trustStatus === 'revoked' || trustedKey.trustStatus === 'revoked_key') {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Signing key '${signature.keyId}' has been revoked${trustedKey.revocationReason ? `: ${trustedKey.revocationReason}` : ''}.`
+        };
+      }
+
+      if (!isTrustedStatus(trustedKey.trustStatus)) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Signing key '${signature.keyId}' is not trusted (status: '${trustedKey.trustStatus}').`
+        };
+      }
+
+      if (trustedKey.algorithm !== 'Ed25519' || trustedKey.algorithm !== signature.algorithm) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Signing key '${signature.keyId}' algorithm '${trustedKey.algorithm}' does not match signature algorithm '${signature.algorithm}'.`
+        };
+      }
+
+      if (signature.publicKeyFingerprint !== trustedKey.publicKeyFingerprint) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Public key fingerprint '${signature.publicKeyFingerprint}' does not match registered public key for '${signature.keyId}'.`
+        };
+      }
+
+      if (signature.publicKeyHex && signature.publicKeyHex.toLowerCase() !== trustedKey.publicKeyHex) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Public key material on signature does not match registered public key for '${signature.keyId}'.`
+        };
+      }
+
+      if (
+        config.trustedIssuers &&
+        config.trustedIssuers.length > 0 &&
+        (!trustedKey.issuer || !config.trustedIssuers.includes(trustedKey.issuer))
+      ) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Signing key issuer '${trustedKey.issuer ?? 'unknown'}' is not in the trusted issuers allowlist.`
+        };
+      }
+
+      // Validate key activation and expiration window
+      const evalTimeIso = config.referenceTimeIso ?? expectedPayload.approvalTimestamp;
+      if (!isValidIsoDate(expectedPayload.approvalTimestamp) || !isValidIsoDate(evalTimeIso)) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Approval or verification timestamp is not a valid ISO 8601 date.'
+        };
+      }
+      const approvalMs = Date.parse(expectedPayload.approvalTimestamp);
+      const evalMs = Date.parse(evalTimeIso);
+
+      if (trustedKey.activatedAt) {
+        if (!isValidIsoDate(trustedKey.activatedAt)) {
+          return { verified: false, isValid: false, reason: `Signing key '${signature.keyId}' has an invalid activatedAt timestamp.` };
+        }
+        const activatedMs = Date.parse(trustedKey.activatedAt);
+        if (approvalMs < activatedMs || evalMs < activatedMs) {
+          return {
+            verified: false,
+            isValid: false,
+            reason: `Signing key '${signature.keyId}' was not yet active at approval timestamp '${expectedPayload.approvalTimestamp}' (activatedAt: '${trustedKey.activatedAt}').`
+          };
+        }
+      }
+
+      if (trustedKey.expiresAt) {
+        if (!isValidIsoDate(trustedKey.expiresAt)) {
+          return { verified: false, isValid: false, reason: `Signing key '${signature.keyId}' has an invalid expiresAt timestamp.` };
+        }
+        const expiresMs = Date.parse(trustedKey.expiresAt);
+        if (approvalMs >= expiresMs || evalMs >= expiresMs) {
+          return {
+            verified: false,
+            isValid: false,
+            reason: `Signing key '${signature.keyId}' expired at '${trustedKey.expiresAt}' prior to approval or verification.`
+          };
+        }
+      }
+
+      // Validate tenant / organization scope binding
+      const expectedTenant = config.expectedTenantId ?? expectedPayload.tenantId ?? expectedPayload.projectId;
+      const signedTenant = signature.signedPayload.tenantId ?? signature.signedPayload.projectId;
+      if (trustedKey.tenantId && trustedKey.tenantId !== expectedTenant) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Signing key '${signature.keyId}' tenant scope '${trustedKey.tenantId}' does not match specification tenant/project '${expectedTenant}'.`
+        };
+      }
+      if (signedTenant !== expectedTenant) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Cryptographic signature verification failed: signed payload tenant '${signedTenant}' does not match expected tenant/project '${expectedTenant}'.`
+        };
+      }
+
+      if (
+        trustedKey.allowedPrincipals &&
+        trustedKey.allowedPrincipals.length > 0 &&
+        !trustedKey.allowedPrincipals.includes(expectedPayload.approverPrincipal)
+      ) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Cryptographic signature verification failed: Principal '${expectedPayload.approverPrincipal}' is not authorized to sign with key '${signature.keyId}'.`
+        };
+      }
+
+      // Verify exact match of all bound payload fields
+      const sp = signature.signedPayload;
+      const signedScope = sp.approvalScope ?? 'specification_approval';
+      const expectedScope = expectedPayload.approvalScope ?? signedScope;
+      const isStandardSpecScope = (s: string) =>
+        s === 'specification_approval' || s === 'specification:approve';
+      const isValidApprovalScope = isStandardSpecScope(signedScope);
+      const scopesMatch =
+        signedScope === expectedScope ||
+        (isStandardSpecScope(signedScope) && isStandardSpecScope(expectedScope));
+      const signedKeyId = sp.keyId ?? signature.keyId;
+      const signedAlg = sp.algorithm ?? signature.algorithm;
+
+      if (
+        sp.projectId !== expectedPayload.projectId ||
+        signedTenant !== expectedTenant ||
+        sp.garmentId !== expectedPayload.garmentId ||
+        sp.specificationRevisionId !== expectedPayload.specificationRevisionId ||
+        sp.specificationVersion !== expectedPayload.specificationVersion ||
+        sp.canonicalSpecificationFingerprint !== expectedPayload.canonicalSpecificationFingerprint ||
+        sp.approvalEventId !== expectedPayload.approvalEventId ||
+        sp.approverPrincipal !== expectedPayload.approverPrincipal ||
+        sp.authorityTier !== 'cryptographic_principal' ||
+        !isValidApprovalScope ||
+        !scopesMatch ||
+        sp.approvalTimestamp !== expectedPayload.approvalTimestamp ||
+        sp.schemaVersion !== expectedPayload.schemaVersion ||
+        signedKeyId !== signature.keyId ||
+        signedAlg !== 'Ed25519'
+      ) {
+        const isReplayMismatch = observedEvents.has(expectedPayload.approvalEventId);
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Cryptographic signature verification failed: signed approval payload mismatch${isReplayMismatch ? ' (Replay detected for approvalEventId)' : ''} — does not match expected specification revision, fingerprint, event ID, tenant scope, timestamp, keyId, or principal.`
+        };
+      }
+
+      const normalizedExpectedPayload: CryptographicApprovalBindingPayload = {
+        schemaVersion: expectedPayload.schemaVersion,
+        projectId: expectedPayload.projectId,
+        tenantId: expectedTenant,
+        garmentId: expectedPayload.garmentId,
+        specificationRevisionId: expectedPayload.specificationRevisionId,
+        specificationVersion: expectedPayload.specificationVersion,
+        canonicalSpecificationFingerprint: expectedPayload.canonicalSpecificationFingerprint,
+        approvalEventId: expectedPayload.approvalEventId,
+        approverPrincipal: expectedPayload.approverPrincipal,
+        authorityTier: 'cryptographic_principal',
+        approvalScope: signedScope,
+        approvalTimestamp: expectedPayload.approvalTimestamp,
+        keyId: signature.keyId,
+        algorithm: 'Ed25519'
+      };
+
+      const expectedCanonical = canonicalizeApprovalSignaturePayload(normalizedExpectedPayload);
+      const expectedDigest = sha256Hex(expectedCanonical);
+
+      // Replay check on approvalEventId across distinct payloads
+      const existingDigestForEvent = observedEvents.get(expectedPayload.approvalEventId);
+      if (existingDigestForEvent && existingDigestForEvent !== expectedDigest) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Cryptographic signature verification failed: Replay detected for approvalEventId '${expectedPayload.approvalEventId}'.`
+        };
+      }
+
+      const rawSigHex =
+        signature.signatureDigest && signature.signatureDigest !== signature.signatureHex
+          ? signature.signatureDigest
+          : (signature.signatureHex ?? signature.signatureDigest ?? '');
+
+      // Perform genuine RFC 8032 Ed25519 public-key verification using ONLY trustedKey.publicKeyHex
+      const isSignatureValid = verifyEd25519Signature(
+        trustedKey.publicKeyHex,
+        expectedCanonical,
+        rawSigHex
+      );
+
+      if (!isSignatureValid) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Cryptographic signature verification failed: Ed25519 asymmetric digital signature verification failed.'
+        };
+      }
+
+      observedEvents.set(expectedPayload.approvalEventId, expectedDigest);
+
+      return {
+        verified: true,
+        isValid: true,
+        keyId: signature.keyId,
+        algorithm: 'Ed25519',
+        publicKeyFingerprint: trustedKey.publicKeyFingerprint,
+        verifiedPayloadDigest: expectedDigest
+      };
+    } catch (err) {
+      return {
+        verified: false,
+        isValid: false,
+        reason: `Cryptographic verifier exception: ${err instanceof Error ? err.message : String(err)}`
+      };
+    }
+  }
 
   return Object.freeze({
-    verifierId: config.verifierId ?? 'crypto-verifier-default',
+    verifierId: config.verifierId ?? 'crypto-verifier-ed25519',
     trustedPublicKeyFingerprints: Object.freeze([...trustedPublicKeyFingerprints]),
+    publicKeyRegistry: Object.freeze([...registryEntries]),
     verifyApprovalSignature(
       signature: VerifiableCryptographicSignature,
       expectedPayload: CryptographicApprovalBindingPayload
     ): TrustedCryptographicVerificationResult {
-      try {
-        if (!signature || typeof signature !== 'object' || !signature.signedPayload) {
-          return { verified: false, reason: 'Missing or malformed cryptographic signature object.' };
-        }
-        const trustedKey = keyByFp.get(signature.publicKeyFingerprint) ?? keyById.get(signature.keyId);
-        if (!trustedKey || trustedKey.keyId !== signature.keyId) {
-          return {
-            verified: false,
-            reason: `Untrusted public key fingerprint '${signature.publicKeyFingerprint}' or keyId '${signature.keyId}'.`
-          };
-        }
-
-        const derivedPubFp = sha256Hex(`pubkey:${trustedKey.keyId}:${trustedKey.privateKeySecret}`);
-        if (derivedPubFp !== signature.publicKeyFingerprint) {
-          return {
-            verified: false,
-            reason: 'Cryptographic signature verification failed: public key fingerprint does not match registered key material.'
-          };
-        }
-
-        if (
-          trustedKey.allowedPrincipals &&
-          trustedKey.allowedPrincipals.length > 0 &&
-          !trustedKey.allowedPrincipals.includes(expectedPayload.approverPrincipal)
-        ) {
-          return {
-            verified: false,
-            reason: `Principal '${expectedPayload.approverPrincipal}' is not authorized for key '${signature.keyId}'.`
-          };
-        }
-
-        // Verify exact match of all 10 required binding fields
-        const sp = signature.signedPayload;
-        if (
-          sp.projectId !== expectedPayload.projectId ||
-          sp.garmentId !== expectedPayload.garmentId ||
-          sp.specificationRevisionId !== expectedPayload.specificationRevisionId ||
-          sp.specificationVersion !== expectedPayload.specificationVersion ||
-          sp.canonicalSpecificationFingerprint !== expectedPayload.canonicalSpecificationFingerprint ||
-          sp.approvalEventId !== expectedPayload.approvalEventId ||
-          sp.approverPrincipal !== expectedPayload.approverPrincipal ||
-          sp.authorityTier !== 'cryptographic_principal' ||
-          sp.approvalTimestamp !== expectedPayload.approvalTimestamp ||
-          sp.schemaVersion !== expectedPayload.schemaVersion
-        ) {
-          return {
-            verified: false,
-            reason: 'Cryptographic signature verification failed: signed approval payload does not match expected specification revision, fingerprint, timestamp, or principal.'
-          };
-        }
-
-        const expectedCanonical = canonicalizeApprovalSignaturePayload(expectedPayload);
-        const expectedSig = sha256Hex(
-          `sig:${signature.publicKeyFingerprint}:${trustedKey.privateKeySecret}:${expectedCanonical}`
-        );
-        if (signature.signatureHex !== expectedSig) {
-          return {
-            verified: false,
-            reason: 'Cryptographic signature verification failed: signature digest mismatch.'
-          };
-        }
-
-        return {
-          verified: true,
-          keyId: signature.keyId,
-          publicKeyFingerprint: signature.publicKeyFingerprint,
-          verifiedPayloadDigest: sha256Hex(expectedCanonical)
-        };
-      } catch (err) {
-        return {
-          verified: false,
-          reason: `Cryptographic verifier exception: ${err instanceof Error ? err.message : String(err)}`
-        };
-      }
+      return performVerification(signature, expectedPayload);
+    },
+    verifySignature(
+      expectedPayload: CryptographicApprovalBindingPayload,
+      signature: VerifiableCryptographicSignature
+    ): TrustedCryptographicVerificationResult & { readonly isValid: boolean } {
+      return performVerification(signature, expectedPayload);
     }
   });
 }
 
 /**
- * Issues a verifiable identity credential signed by an identity provider secret for testing or server-side auth boundaries.
+ * Issues a verifiable OIDC/JWT identity credential (`header.payload.signature`) signed with
+ * an asymmetric EdDSA (Ed25519) identity-provider private key.
+ *
+ * Legacy `pat-id-v1.*` shared-secret hashes are strictly prohibited.
  */
 export function issueVerifiableIdentityCredential(
   params: {
@@ -274,32 +718,63 @@ export function issueVerifiableIdentityCredential(
     readonly displayName?: string;
     readonly issuer: string;
     readonly audience: string;
+    readonly tenantId?: string;
+    readonly keyId?: string;
+    readonly algorithm?: string;
+    readonly tokenType?: string;
+    readonly intendedUse?: string;
+    readonly notBefore?: string;
     readonly issuedAt: string;
     readonly expiresAt: string;
     readonly authorizationClaims?: readonly string[];
     readonly claims?: readonly string[];
     readonly providerId?: string;
   },
-  providerSecret: string
-): VerifiableIdentityCredential {
-  const subject = params.subject ?? params.subjectId ?? '';
-  const expectedApprover = params.expectedApprover ?? params.displayName ?? '';
+  idpPrivateKeySeed: string
+): VerifiableIdentityCredential & { readonly token: string; readonly credentialToken: string } {
+  const subject = (params.subject ?? params.subjectId ?? '').trim();
+  const expectedApprover = (params.expectedApprover ?? params.displayName ?? '').trim();
+  if (!subject || (expectedApprover && subject === expectedApprover)) {
+    throw new ProductionSnapshotValidationError(
+      'Identity credential subjectId must be a non-empty opaque identifier distinct from displayName.'
+    );
+  }
   const authorizationClaims = [...(params.authorizationClaims ?? params.claims ?? [])];
-  const credentialId = params.credentialId ?? `cred-${subject || 'anon'}`;
-  const providerId = params.providerId ?? 'patroner-idp';
+  const credentialId = params.credentialId ?? `jti-${subject || 'anon'}`;
+  const providerId = params.providerId ?? 'patroner-oidc-idp';
+  const keyId = params.keyId ?? 'idp-eddsa-key-01';
+  const algorithm = params.algorithm ?? 'EdDSA';
+  const tokenType = params.tokenType ?? 'at+jwt';
+  const intendedUse = params.intendedUse ?? 'specification_approval';
+  const notBeforeIso = params.notBefore ?? params.issuedAt;
 
-  const canonicalClaims = canonicalizeJson({
-    audience: params.audience,
-    authorizationClaims,
-    credentialId,
-    expectedApprover,
-    expiresAt: params.expiresAt,
-    issuedAt: params.issuedAt,
-    issuer: params.issuer,
-    providerId,
-    subject
-  });
-  const token = `pat-id-v1.${sha256Hex(`${providerSecret}:${canonicalClaims}`)}`;
+  const iatSec = Math.floor(Date.parse(params.issuedAt) / 1000);
+  const nbfSec = Math.floor(Date.parse(notBeforeIso) / 1000);
+  const expSec = Math.floor(Date.parse(params.expiresAt) / 1000);
+
+  const header: OidcJwtHeader = {
+    alg: algorithm,
+    typ: tokenType,
+    kid: keyId
+  };
+
+  const payload: OidcJwtPayload = {
+    iss: params.issuer,
+    sub: subject,
+    aud: params.audience,
+    jti: credentialId,
+    iat: iatSec,
+    nbf: nbfSec,
+    exp: expSec,
+    name: expectedApprover,
+    roles: authorizationClaims,
+    use: intendedUse,
+    provider_id: providerId,
+    ...(params.tenantId ? { tid: params.tenantId } : {})
+  };
+
+  const { jwt } = signOidcJwtEdDsa(header, payload, idpPrivateKeySeed);
+
   return deepFreeze({
     credentialId,
     subject,
@@ -308,37 +783,500 @@ export function issueVerifiableIdentityCredential(
     displayName: expectedApprover,
     issuer: params.issuer,
     audience: params.audience,
+    tenantId: params.tenantId,
+    keyId,
+    algorithm,
+    tokenType,
+    intendedUse,
+    notBefore: notBeforeIso,
     issuedAt: params.issuedAt,
     expiresAt: params.expiresAt,
     authorizationClaims,
+    claims: authorizationClaims,
     providerId,
-    token
+    token: jwt,
+    credentialToken: jwt
   });
 }
 
 /**
- * Creates a trusted identity verifier that validates identity tokens, issuer, audience, subject,
- * expiration, and authorization claims.
+ * Creates a trusted OIDC/JWT identity verifier that validates asymmetric EdDSA JWT signatures
+ * against a trusted JWKS public-key registry along with issuer, audience, subject, tenant,
+ * expiration (`exp`), not-before (`nbf`), issued-at (`iat`), token type (`typ`), intended use (`use`),
+ * and authorization claims (`specification:approve`).
  */
 export function createTrustedIdentityVerifier(config: {
   readonly verifierId?: string;
   readonly trustedIssuers?: readonly string[];
   readonly trustedIssuer?: string;
   readonly expectedAudience: string;
+  readonly expectedTenantId?: string;
+  readonly jwks?: readonly OidcJwkPublicKey[];
+  readonly publicJwks?: readonly OidcJwkPublicKey[];
   readonly providerSecret?: string;
   readonly sharedSecret?: string;
   readonly requiredClaim?: string;
   readonly referenceTimeIso?: string;
-}): TrustedIdentityVerifier {
+  readonly maxClockSkewSeconds?: number;
+}): TrustedIdentityVerifier & {
+  verifyIdentityCredential(
+    credential: VerifiableIdentityCredential,
+    context: {
+      readonly targetRevisionId: string;
+      readonly targetSpecificationFingerprint: string;
+      readonly expectedApprover: string;
+      readonly approvalTimestamp: string;
+      readonly expectedTenantId?: string;
+    }
+  ): TrustedIdentityVerificationResult;
+  verifyCredential(
+    credential: VerifiableIdentityCredential,
+    context?: unknown
+  ): TrustedIdentityVerificationResult & { readonly isValid: boolean };
+} {
   const requiredClaim = config.requiredClaim ?? 'specification:approve';
   const trustedIssuers = config.trustedIssuers ?? (config.trustedIssuer ? [config.trustedIssuer] : []);
-  const providerSecret = config.providerSecret ?? config.sharedSecret ?? '';
-  const verifierId = config.verifierId ?? 'identity-verifier-default';
+  const verifierId = config.verifierId ?? 'oidc-jwt-verifier-eddsa';
+  const clockSkewSec = config.maxClockSkewSeconds ?? 0;
+
+  const publicJwks: OidcJwkPublicKey[] = [];
+  const rawJwksInput = config.jwks ?? config.publicJwks;
+  if (Array.isArray(rawJwksInput)) {
+    for (const jwk of rawJwksInput) {
+      const raw = jwk as unknown as Record<string, unknown>;
+      if (raw.d !== undefined || raw.privateKeyHex !== undefined || raw.privateKeySecret !== undefined) {
+        throw new ProductionSnapshotValidationError(
+          `Security boundary violation: JWK in publicJwks must not contain private key parameter "d" (kid '${jwk.kid}').`
+        );
+      }
+      let pubHex = jwk.publicKeyHex ? jwk.publicKeyHex.toLowerCase() : undefined;
+      if (!pubHex && jwk.x) {
+        pubHex = bytesToHex(base64UrlDecodeBytes(jwk.x));
+      }
+      if (!jwk.kid || !pubHex || pubHex.length !== 64) {
+        throw new ProductionSnapshotValidationError(
+          `OIDC JWK '${jwk?.kid ?? 'unknown'}' requires a valid 32-byte Ed25519 public key ('x' or 'publicKeyHex').`
+        );
+      }
+      publicJwks.push(
+        Object.freeze({
+          kty: 'OKP',
+          crv: 'Ed25519',
+          kid: jwk.kid,
+          alg: jwk.alg ?? 'EdDSA',
+          use: jwk.use ?? 'sig',
+          x: jwk.x ?? base64UrlEncodeBytes(hexToBytes(pubHex)),
+          publicKeyHex: pubHex,
+          issuer: jwk.issuer,
+          tenantId: jwk.tenantId,
+          activatedAt: jwk.activatedAt,
+          expiresAt: jwk.expiresAt,
+          revoked: Boolean(jwk.revoked),
+          trustStatus: jwk.trustStatus ?? (jwk.revoked ? 'revoked' : 'trusted')
+        })
+      );
+    }
+  } else {
+    const seed = config.providerSecret ?? config.sharedSecret ?? '';
+    if (seed) {
+      publicJwks.push(
+        createOidcPublicJwk('idp-eddsa-key-01', { privateKeySeed: seed }, {
+          issuer: trustedIssuers[0],
+          tenantId: config.expectedTenantId
+        })
+      );
+    }
+  }
+
+  const jwkByKid = new Map(publicJwks.map(k => [k.kid, k]));
+
+  function performIdentityVerification(
+    credential: VerifiableIdentityCredential,
+    context?: {
+      readonly targetRevisionId?: string;
+      readonly targetSpecificationFingerprint?: string;
+      readonly expectedApprover?: string;
+      readonly approvalTimestamp?: string;
+      readonly expectedTenantId?: string;
+    }
+  ): TrustedIdentityVerificationResult & { readonly isValid: boolean } {
+    try {
+      if (!credential || typeof credential !== 'object') {
+        return { verified: false, isValid: false, reason: 'Identity credential is missing or malformed.' };
+      }
+      const rawToken = credential.token ?? credential.credentialToken;
+      if (!rawToken || typeof rawToken !== 'string') {
+        return { verified: false, isValid: false, reason: 'OIDC JWT token is missing.' };
+      }
+
+      // Reject legacy custom pat-id-v1 shared-secret tokens immediately
+      if (rawToken.startsWith('pat-id-v1.')) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Legacy pat-id-v1.* custom shared-secret tokens are rejected; a signed OIDC/JWT token is required.'
+        };
+      }
+
+      const parts = rawToken.split('.');
+      if (parts.length !== 3 || !parts[0] || !parts[1]) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Malformed OIDC JWT: token must be a compact 3-part Base64URL string (header.payload.signature).'
+        };
+      }
+
+      const [encodedHeader, encodedPayload, encodedSignature] = parts;
+      let header: OidcJwtHeader;
+      let payload: OidcJwtPayload;
+      try {
+        header = JSON.parse(base64UrlDecodeUtf8(encodedHeader)) as OidcJwtHeader;
+        payload = JSON.parse(base64UrlDecodeUtf8(encodedPayload)) as OidcJwtPayload;
+      } catch {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Malformed OIDC JWT: unable to decode Base64URL JSON header or payload.'
+        };
+      }
+
+      if (!header || typeof header !== 'object' || !payload || typeof payload !== 'object') {
+        return { verified: false, isValid: false, reason: 'Malformed OIDC JWT header or payload structure.' };
+      }
+
+      // Strictly reject alg: "none" and any non-EdDSA / symmetric HMAC algorithm
+      if (!header.alg || header.alg.toLowerCase() === 'none') {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'OIDC JWT verification rejected: unsigned JWT (alg: "none") is strictly prohibited.'
+        };
+      }
+      if (header.alg !== 'EdDSA') {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT verification rejected: Symmetric JWT algorithm or unsupported algorithm '${header.alg}' is prohibited; asymmetric 'EdDSA' required.`
+        };
+      }
+      if (credential.algorithm && credential.algorithm !== header.alg) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT algorithm mismatch between credential metadata ('${credential.algorithm}') and JWT header ('${header.alg}').`
+        };
+      }
+
+      // Validate JWT token type (typ)
+      if (!header.typ || (header.typ !== 'at+jwt' && header.typ !== 'JWT')) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT verification rejected: invalid token type '${header.typ ?? 'missing'}' (expected 'at+jwt' or 'JWT').`
+        };
+      }
+
+      // Validate key ID (kid) against trusted JWKS registry
+      if (!header.kid || typeof header.kid !== 'string' || header.kid.trim() === '') {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'OIDC JWT verification rejected: missing key ID (kid) in JWT header.'
+        };
+      }
+      const jwk = jwkByKid.get(header.kid);
+      if (!jwk) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT verification rejected: Unknown or untrusted OIDC JWK kid '${header.kid}' not found in trusted JWKS.`
+        };
+      }
+      if (jwk.revoked || jwk.trustStatus === 'revoked' || jwk.trustStatus === 'revoked_key') {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT verification rejected: JWKS public key '${jwk.kid}' has been revoked.`
+        };
+      }
+      if (
+        jwk.trustStatus !== undefined &&
+        jwk.trustStatus !== 'trusted' &&
+        jwk.trustStatus !== 'controlled_local_public_key' &&
+        jwk.trustStatus !== 'enterprise_pki_verified'
+      ) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT verification rejected: JWKS public key '${jwk.kid}' is not trusted (status: '${jwk.trustStatus}').`
+        };
+      }
+      if (jwk.alg !== 'EdDSA' || jwk.alg !== header.alg) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT verification rejected: JWKS key '${jwk.kid}' algorithm '${jwk.alg}' does not match JWT header '${header.alg}'.`
+        };
+      }
+
+      const approvalTimestamp = context?.approvalTimestamp ?? config.referenceTimeIso ?? credential.issuedAt;
+      const evalTimestamp = config.referenceTimeIso ?? approvalTimestamp;
+      if (!isValidIsoDate(evalTimestamp) || !isValidIsoDate(approvalTimestamp)) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Approval or verification timestamp is not a valid ISO 8601 date.'
+        };
+      }
+      const evalMs = Date.parse(evalTimestamp);
+      const approvalMs = Date.parse(approvalTimestamp);
+
+      if (jwk.activatedAt && (evalMs < Date.parse(jwk.activatedAt) || approvalMs < Date.parse(jwk.activatedAt))) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT verification rejected: JWKS key '${jwk.kid}' was not yet active.`
+        };
+      }
+      if (jwk.expiresAt && (evalMs >= Date.parse(jwk.expiresAt) || approvalMs >= Date.parse(jwk.expiresAt))) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT verification rejected: JWKS key '${jwk.kid}' has expired.`
+        };
+      }
+
+      // Verify cryptographic Ed25519 signature over header.payload using ONLY the JWK public key
+      if (!encodedSignature) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'OIDC JWT verification rejected: missing cryptographic signature segment.'
+        };
+      }
+      let sigBytes: Uint8Array;
+      try {
+        sigBytes = base64UrlDecodeBytes(encodedSignature);
+      } catch {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'OIDC JWT verification rejected: malformed Base64URL signature.'
+        };
+      }
+      if (sigBytes.length !== 64) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'OIDC JWT verification rejected: invalid Ed25519 signature length.'
+        };
+      }
+      const signingInput = `${encodedHeader}.${encodedPayload}`;
+      const isJwtSigValid = verifyEd25519Signature(jwk.publicKeyHex!, signingInput, bytesToHex(sigBytes));
+      if (!isJwtSigValid) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'OIDC/JWT asymmetric Ed25519 signature verification failed.'
+        };
+      }
+
+      // Validate signed JWT payload claims and cross-check against outer credential wrapper
+      const jwtSub = typeof payload.sub === 'string' ? payload.sub.trim() : '';
+      const credSub = (credential.subject ?? credential.subjectId ?? '').trim();
+      if (!jwtSub || !credSub || jwtSub !== credSub) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Identity credential missing subject (sub) or outer credential subject does not match signed JWT sub claim.'
+        };
+      }
+
+      const expectedApproverInCred = (credential.expectedApprover ?? credential.displayName ?? '').trim();
+      const targetApprover = (context?.expectedApprover ?? expectedApproverInCred).trim();
+
+      // Do not infer identity from display name: subject must be a distinct principal identifier
+      if (jwtSub === targetApprover || (expectedApproverInCred && jwtSub === expectedApproverInCred)) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Identity subject cannot be inferred solely from display name (must be distinct from displayName).'
+        };
+      }
+
+      const jwtName = typeof payload.name === 'string' ? payload.name.trim() : '';
+      if (jwtName !== expectedApproverInCred) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Outer credential expectedApprover/displayName does not match signed JWT name claim.'
+        };
+      }
+      if (
+        targetApprover &&
+        expectedApproverInCred !== targetApprover &&
+        jwtSub !== targetApprover
+      ) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Identity credential subject/expectedApprover '${expectedApproverInCred}' does not match requested approver '${targetApprover}'.`
+        };
+      }
+
+      // Validate issuer (iss)
+      if (typeof payload.iss !== 'string' || payload.iss !== credential.issuer || !trustedIssuers.includes(payload.iss)) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Untrusted OIDC issuer '${payload.iss ?? credential.issuer}'.`
+        };
+      }
+      if (jwk.issuer && jwk.issuer !== payload.iss) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `JWKS key '${jwk.kid}' issuer '${jwk.issuer}' does not match JWT iss '${payload.iss}'.`
+        };
+      }
+
+      // Validate audience (aud)
+      const audList = Array.isArray(payload.aud) ? payload.aud : (typeof payload.aud === 'string' ? [payload.aud] : []);
+      if (!audList.includes(config.expectedAudience) || credential.audience !== config.expectedAudience) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Invalid identity audience '${String(payload.aud)}' (expected '${config.expectedAudience}').`
+        };
+      }
+
+      // Validate intended use (use)
+      if (payload.use !== 'specification_approval') {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Invalid OIDC token intended use '${String(payload.use)}' (expected 'specification_approval').`
+        };
+      }
+
+      // Validate tenant / organization claim (tid / tenantId)
+      const jwtTenant = typeof payload.tid === 'string'
+        ? payload.tid
+        : (typeof payload.tenantId === 'string' ? payload.tenantId : undefined);
+      const requiredTenant = config.expectedTenantId ?? context?.expectedTenantId ?? jwk.tenantId;
+      if (requiredTenant && jwtTenant !== requiredTenant) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `OIDC JWT tenantId claim '${jwtTenant ?? 'missing'}' does not match expected tenantId '${requiredTenant}'.`
+        };
+      }
+      if (credential.tenantId && credential.tenantId !== jwtTenant) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Credential tenantId '${credential.tenantId}' does not match signed JWT tenant claim '${jwtTenant ?? 'missing'}'.`
+        };
+      }
+
+      // Validate iat, nbf, exp timestamps & clock skew
+      if (
+        typeof payload.iat !== 'number' || !Number.isFinite(payload.iat) ||
+        typeof payload.nbf !== 'number' || !Number.isFinite(payload.nbf) ||
+        typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) ||
+        !isValidIsoDate(credential.issuedAt) || !isValidIsoDate(credential.expiresAt)
+      ) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'OIDC JWT missing or invalid numeric iat, nbf, or exp claim.'
+        };
+      }
+
+      const evalSec = Math.floor(evalMs / 1000);
+      const approvalSec = Math.floor(approvalMs / 1000);
+
+      if (evalSec + clockSkewSec < payload.nbf || approvalSec + clockSkewSec < payload.nbf) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Identity credential is not valid before (nbf) the approval or evaluation timestamp (issued in the future).'
+        };
+      }
+      if (evalSec + clockSkewSec < payload.iat || approvalSec + clockSkewSec < payload.iat) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'Identity credential issued-at (iat) is in the future (not valid before evaluation or approval timestamp).'
+        };
+      }
+      if (evalSec - clockSkewSec >= payload.exp || approvalSec - clockSkewSec >= payload.exp) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Identity credential expired at '${credential.expiresAt}' prior to evaluation time '${evalTimestamp}'.`
+        };
+      }
+
+      // Validate authorization claims / roles
+      const jwtRoles = Array.isArray(payload.roles)
+        ? payload.roles
+        : (Array.isArray(payload.authorizationClaims) ? payload.authorizationClaims : []);
+      const credClaims = credential.authorizationClaims ?? credential.claims ?? [];
+      if (
+        !jwtRoles.includes(requiredClaim) ||
+        !Array.isArray(credClaims) ||
+        !credClaims.includes(requiredClaim)
+      ) {
+        return {
+          verified: false,
+          isValid: false,
+          reason: `Identity credential lacks required authorization claim '${requiredClaim}'.`
+        };
+      }
+
+      const jti = typeof payload.jti === 'string' && payload.jti.trim() !== '' ? payload.jti : (credential.credentialId ?? `jti-${jwtSub}`);
+      const provenance: VerifiedIdentityProvenance = deepFreeze({
+        subject: jwtSub,
+        subjectId: jwtSub,
+        expectedApprover: expectedApproverInCred,
+        issuer: payload.iss,
+        audience: config.expectedAudience,
+        tenantId: jwtTenant,
+        keyId: header.kid,
+        tokenId: jti,
+        credentialId: jti,
+        notBefore: new Date(payload.nbf * 1000).toISOString(),
+        issuedAt: credential.issuedAt,
+        expiresAt: credential.expiresAt,
+        verifiedAt: approvalTimestamp,
+        authorizationClaims: [...jwtRoles],
+        providerId: typeof payload.provider_id === 'string' ? payload.provider_id : (credential.providerId ?? 'patroner-oidc-idp'),
+        verificationMethod: 'OIDC-JWT-EdDSA',
+        tokenDigest: sha256Hex(rawToken)
+      });
+
+      return {
+        verified: true,
+        isValid: true,
+        provenance
+      };
+    } catch (err) {
+      return {
+        verified: false,
+        isValid: false,
+        reason: `Identity verifier exception: ${err instanceof Error ? err.message : String(err)}`
+      };
+    }
+  }
 
   return Object.freeze({
     verifierId,
     trustedIssuers: Object.freeze([...trustedIssuers]),
     expectedAudience: config.expectedAudience,
+    expectedTenantId: config.expectedTenantId,
+    publicJwks: Object.freeze([...publicJwks]),
     verifyIdentityCredential(
       credential: VerifiableIdentityCredential,
       context: {
@@ -346,125 +1284,19 @@ export function createTrustedIdentityVerifier(config: {
         readonly targetSpecificationFingerprint: string;
         readonly expectedApprover: string;
         readonly approvalTimestamp: string;
+        readonly expectedTenantId?: string;
       }
     ): TrustedIdentityVerificationResult {
-      try {
-        if (!credential || typeof credential !== 'object') {
-          return { verified: false, reason: 'Identity credential is missing or malformed.' };
-        }
-        if (!credential.token || typeof credential.token !== 'string' || !credential.token.startsWith('pat-id-v1.')) {
-          return { verified: false, reason: 'Identity token is missing or has invalid format.' };
-        }
-        const subject = credential.subject || credential.subjectId || '';
-        if (!subject || subject.trim() === '') {
-          return { verified: false, reason: 'Identity credential missing subject.' };
-        }
-        // Do not infer identity from display name: subject must be a distinct principal identifier
-        if (subject.trim() === context.expectedApprover.trim()) {
-          return {
-            verified: false,
-            reason: 'Identity subject cannot be inferred solely from display name.'
-          };
-        }
-        const expectedApproverInCred = credential.expectedApprover || credential.displayName || '';
-        if (
-          expectedApproverInCred !== context.expectedApprover.trim() &&
-          subject !== context.expectedApprover.trim()
-        ) {
-          return {
-            verified: false,
-            reason: `Identity credential subject/expectedApprover '${expectedApproverInCred}' does not match requested approver '${context.expectedApprover}'.`
-          };
-        }
-        if (!trustedIssuers.includes(credential.issuer)) {
-          return {
-            verified: false,
-            reason: `Untrusted identity issuer '${credential.issuer}'.`
-          };
-        }
-        if (credential.audience !== config.expectedAudience) {
-          return {
-            verified: false,
-            reason: `Invalid identity audience '${credential.audience}' (expected '${config.expectedAudience}').`
-          };
-        }
-        const evalTimestamp = config.referenceTimeIso ?? context.approvalTimestamp;
-        if (!isValidIsoDate(credential.issuedAt) || !isValidIsoDate(credential.expiresAt) || !isValidIsoDate(evalTimestamp)) {
-          return {
-            verified: false,
-            reason: 'Identity credential or approval timestamp is not a valid ISO 8601 date.'
-          };
-        }
-        const issuedMs = Date.parse(credential.issuedAt);
-        const expiresMs = Date.parse(credential.expiresAt);
-        const evalMs = Date.parse(evalTimestamp);
-        const approvalMs = isValidIsoDate(context.approvalTimestamp) ? Date.parse(context.approvalTimestamp) : evalMs;
-        if (evalMs < issuedMs || approvalMs < issuedMs) {
-          return {
-            verified: false,
-            reason: 'Identity credential was not yet valid at approval timestamp.'
-          };
-        }
-        if (evalMs >= expiresMs || approvalMs >= expiresMs) {
-          return {
-            verified: false,
-            reason: `Identity credential expired at '${credential.expiresAt}' prior to evaluation time '${evalTimestamp}'.`
-          };
-        }
-        if (
-          !Array.isArray(credential.authorizationClaims) ||
-          !credential.authorizationClaims.includes(requiredClaim)
-        ) {
-          return {
-            verified: false,
-            reason: `Identity credential lacks required authorization claim '${requiredClaim}'.`
-          };
-        }
-
-        const canonicalClaims = canonicalizeJson({
-          audience: credential.audience,
-          authorizationClaims: [...credential.authorizationClaims],
-          credentialId: credential.credentialId,
-          expectedApprover: expectedApproverInCred,
-          expiresAt: credential.expiresAt,
-          issuedAt: credential.issuedAt,
-          issuer: credential.issuer,
-          providerId: credential.providerId,
-          subject
-        });
-        const expectedToken = `pat-id-v1.${sha256Hex(`${providerSecret}:${canonicalClaims}`)}`;
-        if (credential.token !== expectedToken) {
-          return {
-            verified: false,
-            reason: 'Identity credential cryptographic token signature mismatch.'
-          };
-        }
-
-        const provenance: VerifiedIdentityProvenance = deepFreeze({
-          subject,
-          subjectId: subject,
-          expectedApprover: expectedApproverInCred,
-          issuer: credential.issuer,
-          audience: credential.audience,
-          credentialId: credential.credentialId,
-          issuedAt: credential.issuedAt,
-          expiresAt: credential.expiresAt,
-          verifiedAt: context.approvalTimestamp,
-          authorizationClaims: [...credential.authorizationClaims],
-          providerId: credential.providerId,
-          tokenDigest: sha256Hex(credential.token)
-        });
-
-        return {
-          verified: true,
-          provenance
-        };
-      } catch (err) {
-        return {
-          verified: false,
-          reason: `Identity verifier exception: ${err instanceof Error ? err.message : String(err)}`
-        };
-      }
+      return performIdentityVerification(credential, context);
+    },
+    verifyCredential(
+      credential: VerifiableIdentityCredential,
+      context?: unknown
+    ): TrustedIdentityVerificationResult & { readonly isValid: boolean } {
+      return performIdentityVerification(
+        credential,
+        context && typeof context === 'object' ? (context as Record<string, string>) : undefined
+      );
     }
   });
 }
@@ -1260,7 +2092,7 @@ export function verifySpecificationApproval(
     };
   }
 
-  // Tier 3 (authenticated_designer) real identity provenance verification
+  // Tier 3 (authenticated_designer) real OIDC/JWT identity provenance verification
   if (record.authorityTier === 'authenticated_designer') {
     const idProv = record.verifiedIdentity;
     if (!idProv) {
@@ -1269,6 +2101,15 @@ export function verifySpecificationApproval(
         state: 'invalid',
         authorityTier: record.authorityTier,
         reason: 'authenticated_designer approval record lacks verifiedIdentity provenance.',
+        fingerprint: currentFingerprint
+      };
+    }
+    if (idProv.verificationMethod !== 'OIDC-JWT-EdDSA') {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: `authenticated_designer provenance verificationMethod '${idProv.verificationMethod ?? 'missing'}' is invalid; 'OIDC-JWT-EdDSA' required.`,
         fingerprint: currentFingerprint
       };
     }
@@ -1281,6 +2122,38 @@ export function verifySpecificationApproval(
         reason: 'authenticated_designer authority tier is unavailable without verified identity provider configuration.',
         fingerprint: currentFingerprint
       };
+    }
+    if (verificationContext?.identityCredential) {
+      const verifyFn =
+        idVerifier.verifyIdentityCredential?.bind(idVerifier) ??
+        idVerifier.verifyCredential?.bind(idVerifier);
+      if (typeof verifyFn === 'function') {
+        const liveCheck = verifyFn(verificationContext.identityCredential, {
+          targetRevisionId: specRevId,
+          targetSpecificationFingerprint: currentFingerprint,
+          expectedApprover: record.approverName,
+          approvalTimestamp: verificationContext.currentTimestamp ?? record.approvedAt,
+          expectedTenantId: idVerifier.expectedTenantId
+        });
+        if (!liveCheck.verified || !liveCheck.provenance) {
+          return {
+            isValid: false,
+            state: 'invalid',
+            authorityTier: record.authorityTier,
+            reason: `authenticated_designer OIDC credential re-verification failed: ${liveCheck.reason ?? 'invalid credential'}`,
+            fingerprint: currentFingerprint
+          };
+        }
+        if (liveCheck.provenance.tokenDigest !== idProv.tokenDigest) {
+          return {
+            isValid: false,
+            state: 'invalid',
+            authorityTier: record.authorityTier,
+            reason: 'authenticated_designer credential token digest does not match recorded approval provenance.',
+            fingerprint: currentFingerprint
+          };
+        }
+      }
     }
     if (idVerifier.trustedIssuers && !idVerifier.trustedIssuers.includes(idProv.issuer)) {
       return {
@@ -1299,6 +2172,27 @@ export function verifySpecificationApproval(
         reason: `authenticated_designer provenance audience '${idProv.audience}' does not match expected audience '${idVerifier.expectedAudience}'.`,
         fingerprint: currentFingerprint
       };
+    }
+    if (idVerifier.expectedTenantId && idProv.tenantId !== idVerifier.expectedTenantId) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: record.authorityTier,
+        reason: `authenticated_designer provenance tenantId '${idProv.tenantId ?? 'missing'}' does not match expected tenant '${idVerifier.expectedTenantId}'.`,
+        fingerprint: currentFingerprint
+      };
+    }
+    if (idVerifier.publicJwks && idVerifier.publicJwks.length > 0) {
+      const matchedJwk = idVerifier.publicJwks.find(k => k.kid === idProv.keyId);
+      if (!matchedJwk || matchedJwk.revoked || matchedJwk.trustStatus !== 'trusted') {
+        return {
+          isValid: false,
+          state: 'invalid',
+          authorityTier: record.authorityTier,
+          reason: `authenticated_designer provenance JWKS key '${idProv.keyId ?? 'missing'}' is unknown, untrusted, or revoked.`,
+          fingerprint: currentFingerprint
+        };
+      }
     }
     if (idProv.subject !== record.approverId || idProv.subject === record.approverName) {
       return {
@@ -1319,6 +2213,17 @@ export function verifySpecificationApproval(
         fingerprint: currentFingerprint
       };
     }
+    if (idProv.notBefore && isValidIsoDate(idProv.notBefore)) {
+      if (Date.parse(evalTime) < Date.parse(idProv.notBefore) || Date.parse(record.approvedAt) < Date.parse(idProv.notBefore)) {
+        return {
+          isValid: false,
+          state: 'invalid',
+          authorityTier: record.authorityTier,
+          reason: `authenticated_designer identity credential is not yet valid before '${idProv.notBefore}'.`,
+          fingerprint: currentFingerprint
+        };
+      }
+    }
     if (Date.parse(evalTime) >= Date.parse(idProv.expiresAt) || Date.parse(record.approvedAt) >= Date.parse(idProv.expiresAt)) {
       return {
         isValid: false,
@@ -1330,7 +2235,7 @@ export function verifySpecificationApproval(
     }
   }
 
-  // Tier 4 (cryptographic_principal) real cryptographic signature verification over all 10 required fields
+  // Tier 4 (cryptographic_principal) real asymmetric Ed25519 signature verification over all bound fields
   if (record.authorityTier === 'cryptographic_principal') {
     const sig = record.cryptographicSignature;
     if (!sig || !sig.signedPayload) {
@@ -1356,6 +2261,7 @@ export function verifySpecificationApproval(
     const expectedBindingPayload: CryptographicApprovalBindingPayload = {
       schemaVersion: sig.signedPayload.schemaVersion || SPECIFICATION_CANONICAL_SCHEMA_VERSION,
       projectId: specProjectId,
+      tenantId: specProjectId,
       garmentId: specId,
       specificationRevisionId: specRevId,
       specificationVersion: spec.version || 1,
@@ -1363,7 +2269,10 @@ export function verifySpecificationApproval(
       approvalEventId: record.eventId ?? '',
       approverPrincipal: record.approverId,
       authorityTier: 'cryptographic_principal',
-      approvalTimestamp: record.approvedAt
+      approvalScope: 'specification_approval',
+      approvalTimestamp: record.approvedAt,
+      keyId: sig.keyId,
+      algorithm: sig.algorithm
     };
 
     const sigCheck = cryptoVerifier.verifyApprovalSignature(sig, expectedBindingPayload);
@@ -1924,7 +2833,10 @@ export function approveAuthoritativeGarmentSpecification(
       );
     }
 
-    const expectedPrincipal = opts.cryptographicSignature.signedPayload?.approverPrincipal;
+    const expectedPrincipal =
+      opts.approverId && opts.approverId.trim() !== ''
+        ? opts.approverId.trim()
+        : opts.cryptographicSignature.signedPayload?.approverPrincipal;
     if (!expectedPrincipal || expectedPrincipal.trim() === '') {
       throw new ProductionSnapshotValidationError(
         'cryptographic_principal requires a non-empty cryptographic principal identifier.'
@@ -1934,6 +2846,7 @@ export function approveAuthoritativeGarmentSpecification(
     const expectedBindingPayload: CryptographicApprovalBindingPayload = {
       schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION,
       projectId: spec.projectId,
+      tenantId: spec.projectId,
       garmentId: spec.garmentId,
       specificationRevisionId: spec.specificationRevisionId,
       specificationVersion: spec.version,
@@ -1941,7 +2854,10 @@ export function approveAuthoritativeGarmentSpecification(
       approvalEventId: eventId,
       approverPrincipal: expectedPrincipal,
       authorityTier: 'cryptographic_principal',
-      approvalTimestamp: approvedAt
+      approvalScope: 'specification_approval',
+      approvalTimestamp: approvedAt,
+      keyId: opts.cryptographicSignature.keyId,
+      algorithm: opts.cryptographicSignature.algorithm
     };
 
     let sigResult: TrustedCryptographicVerificationResult;

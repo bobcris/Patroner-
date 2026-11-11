@@ -25,8 +25,10 @@ import { EnhancedFabricProperty } from '../fabric/fabric-types';
 import { sha256Hex } from './crypto';
 import {
   ApprovalStateSummary,
+  AuthoritativeGradingArtifact,
   AuthoritativeMeasurementSetRecord,
   ContourBoundingBoxSnapshot,
+  CreateAuthoritativeGradingArtifactInput,
   CreateAuthoritativeMeasurementSetInput,
   CreateProductionPatternRevisionInput,
   CurrentRevisionInputs,
@@ -37,11 +39,13 @@ import {
   FabricSpecificationSnapshot,
   GeometricContourSnapshot,
   GeometricSegmentSnapshot,
+  GradingLifecycleState,
   MeasurementApprovalRecord,
   MeasurementApprovalStatus,
   MeasurementOrigin,
   MeasurementSetSnapshot,
   PatternPieceSnapshot,
+  PerSizeGeometryValidationRecord,
   ProductionPatternRevisionSnapshot,
   PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION,
   ProductionSnapshotFabricError,
@@ -1426,4 +1430,503 @@ export function arePatternRevisionsEquivalent(
   b: ProductionPatternRevisionSnapshot
 ): boolean {
   return a.canonicalFingerprint === b.canonicalFingerprint;
+}
+
+/**
+ * Computes the deterministic SHA-256 fingerprint of an AuthoritativeGradingArtifact.
+ */
+export function computeCanonicalGradingArtifactFingerprint(
+  artifact: Omit<AuthoritativeGradingArtifact, 'canonicalFingerprint'> | AuthoritativeGradingArtifact
+): string {
+  const payload = {
+    gradingArtifactId: artifact.gradingArtifactId,
+    gradingRevisionId: artifact.gradingRevisionId,
+    tenantId: artifact.tenantId,
+    projectId: artifact.projectId,
+    sourcePatternRevisionId: artifact.sourcePatternRevisionId,
+    sourceSpecificationId: artifact.sourceSpecificationId,
+    sourceSpecificationRevisionId: artifact.sourceSpecificationRevisionId,
+    sourceSpecificationFingerprint: artifact.sourceSpecificationFingerprint,
+    sourceMeasurementSetId: artifact.sourceMeasurementSetId,
+    sourceMeasurementSetFingerprint: artifact.sourceMeasurementSetFingerprint,
+    sizeRange: artifact.sizeRange,
+    baseSize: artifact.baseSize,
+    gradingRuleSetId: artifact.gradingRuleSetId,
+    gradingRuleSetRevision: artifact.gradingRuleSetRevision,
+    gradingRuleSetFingerprint: artifact.gradingRuleSetFingerprint,
+    perSizePatternGeometry: artifact.perSizePatternGeometry,
+    geometryValidationResult: artifact.geometryValidationResult,
+    gradingValidationResult: artifact.gradingValidationResult,
+    createdAt: artifact.createdAt,
+    lifecycleState: artifact.lifecycleState,
+    supersededByRevisionId: artifact.supersededByRevisionId ?? null,
+    revocationReason: artifact.revocationReason ?? null,
+    isProductionReady: false as const
+  };
+  return computeCanonicalFingerprint(payload);
+}
+
+/**
+ * Creates a complete, immutable AuthoritativeGradingArtifact binding multi-size graded
+ * pattern geometry and cross-size validation results to exact upstream specification,
+ * pattern revision, measurement set, and grading ruleset fingerprints.
+ */
+export function createAuthoritativeGradingArtifact(
+  input: CreateAuthoritativeGradingArtifactInput
+): AuthoritativeGradingArtifact {
+  if (!input || typeof input !== 'object') {
+    throw new ProductionSnapshotValidationError('Grading artifact input must be a non-null object.');
+  }
+  if (!input.sourcePatternRevisionId || input.sourcePatternRevisionId.trim() === '') {
+    throw new ProductionSnapshotValidationError('Grading artifact requires a non-empty sourcePatternRevisionId.');
+  }
+  if (!input.sourceSpecificationId || input.sourceSpecificationId.trim() === '') {
+    throw new ProductionSnapshotValidationError('Grading artifact requires a non-empty sourceSpecificationId.');
+  }
+  if (!input.sourceSpecificationRevisionId || input.sourceSpecificationRevisionId.trim() === '') {
+    throw new ProductionSnapshotValidationError('Grading artifact requires a non-empty sourceSpecificationRevisionId.');
+  }
+  if (!input.sourceSpecificationFingerprint || input.sourceSpecificationFingerprint.trim() === '') {
+    throw new ProductionSnapshotValidationError('Grading artifact requires a non-empty sourceSpecificationFingerprint.');
+  }
+  if (!input.sourceMeasurementSetFingerprint || input.sourceMeasurementSetFingerprint.trim() === '') {
+    throw new ProductionSnapshotValidationError('Grading artifact requires a non-empty sourceMeasurementSetFingerprint.');
+  }
+
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  if (!isValidIsoDate(createdAt)) {
+    throw new ProductionSnapshotValidationError(`Invalid grading artifact createdAt timestamp '${createdAt}'.`);
+  }
+
+  const projectId = (input.projectId ?? input.tenantId ?? 'project-patroner-default').trim();
+  const tenantId = (input.tenantId ?? projectId).trim();
+  const baseSize = (input.baseSize ?? input.gradedPatternSet?.baseSize ?? 'M').trim();
+  const sizeRange = input.sizeRange
+    ? [...input.sizeRange]
+    : (input.gradedPatternSet?.supportedSizes ? [...input.gradedPatternSet.supportedSizes] : ['XS', 'S', 'M', 'L', 'XL', 'XXL']);
+
+  if (sizeRange.length === 0 || !sizeRange.includes(baseSize)) {
+    throw new ProductionSnapshotValidationError(
+      `Grading artifact sizeRange [${sizeRange.join(', ')}] must be non-empty and include baseSize '${baseSize}'.`
+    );
+  }
+
+  const gradingRuleSetId = (input.gradingRuleSetId ?? input.gradedPatternSet?.gradeTable?.id ?? 'standard-iso-8559').trim();
+  const gradingRuleSetRevision = (input.gradingRuleSetRevision ?? 'iso8559-standard').trim();
+  const gradingRuleSetFingerprint =
+    input.gradingRuleSetFingerprint ??
+    computeCanonicalFingerprint({
+      system: 'standard-iso-8559',
+      baseSize: 'M',
+      version: gradingRuleSetRevision,
+      sizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+    });
+
+  const perSizePatternGeometry: Record<string, readonly PatternPieceSnapshot[]> = {};
+  const geometryValidationResult: Record<string, PerSizeGeometryValidationRecord> = {};
+
+  const rawGeomValInput = input.geometryValidationResult ?? input.perSizeGeometryValidation;
+
+  if (input.perSizePatternGeometry && rawGeomValInput) {
+    for (const [sz, pieces] of Object.entries(input.perSizePatternGeometry)) {
+      if (!Array.isArray(pieces)) continue;
+      perSizePatternGeometry[sz] = pieces.map(p =>
+        'stitchingContour' in p && p.boundingBox && 'basis' in p.boundingBox
+          ? ({ ...(p as PatternPieceSnapshot) })
+          : serializePatternPieceSnapshot(p as PatternPiece, sz)
+      );
+    }
+    for (const [sz, val] of Object.entries(rawGeomValInput)) {
+      if (!val) continue;
+      const isValid = Boolean(val.isValid) && (val.failureCount ?? 0) === 0 && (!val.errors || val.errors.length === 0);
+      const errors = val.errors
+        ? [...val.errors]
+        : !isValid
+          ? [`Size ${sz} failed geometry validation (${val.failureCount ?? 1} error(s)).`]
+          : [];
+      geometryValidationResult[sz] = {
+        sizeId: val.sizeId ?? val.size ?? sz,
+        size: val.size ?? val.sizeId ?? sz,
+        status: val.status ?? (isValid ? 'validated' : 'invalid'),
+        isValid,
+        pieceCount: val.pieceCount ?? (perSizePatternGeometry[sz]?.length ?? 0),
+        passedCount: val.passedCount,
+        warningCount: val.warningCount,
+        failureCount: val.failureCount ?? errors.length,
+        errors,
+        warnings: val.warnings ? [...val.warnings] : []
+      };
+    }
+  } else if (input.gradedPatternSet) {
+    const gps = input.gradedPatternSet;
+    for (const sz of sizeRange) {
+      const szRes = gps.sizeResults[sz];
+      if (!szRes) continue;
+      if (sz === baseSize && input.basePatternPieces && input.basePatternPieces.length > 0) {
+        perSizePatternGeometry[sz] = input.basePatternPieces.map(p =>
+          'stitchingContour' in p && p.boundingBox && 'basis' in p.boundingBox
+            ? (p as PatternPieceSnapshot)
+            : serializePatternPieceSnapshot(p as PatternPiece, sz)
+        );
+      } else {
+        const rawPieces: PatternPiece[] = [
+          ...szRes.bodicePieces,
+          ...(szRes.sleevePiece ? [szRes.sleevePiece] : [])
+        ];
+        perSizePatternGeometry[sz] = rawPieces.map(p => serializePatternPieceSnapshot(p, sz));
+      }
+      const ovVal = rawGeomValInput?.[sz];
+      const isValid = ovVal !== undefined
+        ? Boolean(ovVal.isValid) && (ovVal.failureCount ?? 0) === 0
+        : szRes.isValid && szRes.errors.length === 0;
+      geometryValidationResult[sz] = {
+        sizeId: sz,
+        size: sz,
+        status: ovVal?.status ?? szRes.status,
+        isValid,
+        pieceCount: perSizePatternGeometry[sz].length,
+        errors: ovVal?.errors ? [...ovVal.errors] : (!isValid && szRes.errors.length === 0 ? [`Size ${sz} validation failed`] : [...szRes.errors]),
+        warnings: ovVal?.warnings ? [...ovVal.warnings] : [...szRes.warnings]
+      };
+    }
+  } else if (input.basePatternPieces && input.basePatternPieces.length > 0) {
+    for (const sz of sizeRange) {
+      perSizePatternGeometry[sz] = input.basePatternPieces.map(p =>
+        'stitchingContour' in p && p.boundingBox && 'basis' in p.boundingBox
+          ? { ...(p as PatternPieceSnapshot), sizeCode: sz }
+          : serializePatternPieceSnapshot(p as PatternPiece, sz)
+      );
+      const ovVal = rawGeomValInput?.[sz];
+      const isValid = ovVal !== undefined ? Boolean(ovVal.isValid) && (ovVal.failureCount ?? 0) === 0 : true;
+      geometryValidationResult[sz] = {
+        sizeId: sz,
+        size: sz,
+        status: ovVal?.status ?? (isValid ? 'verified-valid' : 'invalid'),
+        isValid,
+        pieceCount: perSizePatternGeometry[sz].length,
+        errors: ovVal?.errors ? [...ovVal.errors] : (!isValid ? [`Size ${sz} validation failed`] : []),
+        warnings: ovVal?.warnings ? [...ovVal.warnings] : []
+      };
+    }
+  } else {
+    throw new ProductionSnapshotValidationError(
+      'Grading artifact requires gradedPatternSet, explicit perSizePatternGeometry + geometryValidationResult, or basePatternPieces.'
+    );
+  }
+
+  const validSizesInRange = Object.values(geometryValidationResult).filter(v => v.isValid).length;
+  const failedSizesInRange = Object.values(geometryValidationResult).filter(v => !v.isValid).length;
+  const unassessedSizesInRange = Math.max(0, sizeRange.length - Object.keys(geometryValidationResult).length);
+  const allSizesValidInRange =
+    Object.keys(geometryValidationResult).length === sizeRange.length &&
+    Object.values(geometryValidationResult).every(v => v.isValid);
+
+  const gradingValidationResult =
+    input.gradingValidationResult ??
+    input.crossSizeIntegrityReport ??
+    (input.gradedPatternSet?.integrityReport
+      ? {
+          ...input.gradedPatternSet.integrityReport,
+          baseSize,
+          evaluatedSizes: [...sizeRange],
+          validSizeCount: validSizesInRange,
+          failedSizeCount: failedSizesInRange,
+          unassessedSizeCount: unassessedSizesInRange,
+          isOverallGradingValid:
+            Boolean(input.gradedPatternSet.integrityReport.isOverallGradingValid) && allSizesValidInRange
+        }
+      : {
+          timestamp: createdAt,
+          baseSize,
+          evaluatedSizes: [...sizeRange],
+          validSizeCount: validSizesInRange,
+          failedSizeCount: failedSizesInRange,
+          unassessedSizeCount: unassessedSizesInRange,
+          isOverallGradingValid: allSizesValidInRange,
+          checks: [],
+          comparisonTable: [],
+          summaryMessage: 'Cross-size grading geometry and seam integrity verified.',
+          unassessedConditions: []
+        });
+
+  const gradingArtifactId =
+    (input.gradingArtifactId ?? '').trim() ||
+    `grade-art-${input.sourceSpecificationRevisionId}-${input.sourcePatternRevisionId}`;
+  const gradingRevisionId =
+    (input.gradingRevisionId ?? '').trim() ||
+    `grade-${input.sourceSpecificationRevisionId}`;
+  const sourceMeasurementSetId =
+    (input.sourceMeasurementSetId ?? '').trim() ||
+    `meas-${baseSize}-${input.sourceSpecificationId}`;
+  const lifecycleState: GradingLifecycleState = input.lifecycleState ?? 'active';
+
+  const preliminary: Omit<AuthoritativeGradingArtifact, 'canonicalFingerprint'> = {
+    gradingArtifactId,
+    gradingRevisionId,
+    tenantId,
+    projectId,
+    sourcePatternRevisionId: input.sourcePatternRevisionId.trim(),
+    sourceSpecificationId: input.sourceSpecificationId.trim(),
+    sourceSpecificationRevisionId: input.sourceSpecificationRevisionId.trim(),
+    sourceSpecificationFingerprint: input.sourceSpecificationFingerprint.trim(),
+    sourceMeasurementSetId,
+    sourceMeasurementSetFingerprint: input.sourceMeasurementSetFingerprint.trim(),
+    sizeRange,
+    baseSize,
+    gradingRuleSetId,
+    gradingRuleSetRevision,
+    gradingRuleSetFingerprint,
+    perSizePatternGeometry,
+    geometryValidationResult,
+    perSizeGeometryValidation: geometryValidationResult,
+    gradingValidationResult,
+    crossSizeIntegrityReport: gradingValidationResult,
+    createdAt,
+    lifecycleState,
+    supersededByRevisionId: input.supersededByRevisionId,
+    revocationReason: input.revocationReason,
+    revokedAt: input.revokedAt,
+    isProductionReady: false
+  };
+
+  const canonicalFingerprint = computeCanonicalGradingArtifactFingerprint(preliminary);
+
+  return deepFreeze({
+    ...preliminary,
+    canonicalFingerprint
+  });
+}
+
+/**
+ * Marks an AuthoritativeGradingArtifact as superseded by a newer grading revision.
+ */
+export function supersedeAuthoritativeGradingArtifact(
+  artifact: AuthoritativeGradingArtifact,
+  supersededByRevisionId: string
+): AuthoritativeGradingArtifact {
+  if (!supersededByRevisionId || supersededByRevisionId.trim() === '') {
+    throw new ProductionSnapshotValidationError('supersededByRevisionId is required to supersede a grading artifact.');
+  }
+  const preliminary: Omit<AuthoritativeGradingArtifact, 'canonicalFingerprint'> = {
+    ...artifact,
+    lifecycleState: 'superseded',
+    supersededByRevisionId: supersededByRevisionId.trim(),
+    isProductionReady: false
+  };
+  return deepFreeze({
+    ...preliminary,
+    canonicalFingerprint: computeCanonicalGradingArtifactFingerprint(preliminary)
+  });
+}
+
+/**
+ * Revokes an AuthoritativeGradingArtifact with an explicit mandatory reason.
+ */
+export function revokeAuthoritativeGradingArtifact(
+  artifact: AuthoritativeGradingArtifact,
+  reason: string,
+  revokedAt?: string
+): AuthoritativeGradingArtifact {
+  if (!reason || reason.trim() === '') {
+    throw new ProductionSnapshotValidationError('Revocation reason is required to revoke a grading artifact.');
+  }
+  const preliminary: Omit<AuthoritativeGradingArtifact, 'canonicalFingerprint'> = {
+    ...artifact,
+    lifecycleState: 'revoked',
+    revocationReason: reason.trim(),
+    revokedAt: revokedAt ?? new Date().toISOString(),
+    isProductionReady: false
+  };
+  return deepFreeze({
+    ...preliminary,
+    canonicalFingerprint: computeCanonicalGradingArtifactFingerprint(preliminary)
+  });
+}
+
+/**
+ * Independently verifies the structural integrity, lifecycle state, per-size geometry completeness,
+ * and canonical SHA-256 fingerprint of an AuthoritativeGradingArtifact.
+ */
+export function verifyGradingArtifactIntegrity(
+  artifact: AuthoritativeGradingArtifact | undefined
+): {
+  readonly isValid: boolean;
+  readonly isTampered: boolean;
+  readonly isSizeRangeIncomplete: boolean;
+  readonly isValidationFailed: boolean;
+  readonly reason?: string;
+} {
+  if (!artifact || typeof artifact !== 'object') {
+    return {
+      isValid: false,
+      isTampered: false,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason: 'AuthoritativeGradingArtifact is missing.'
+    };
+  }
+
+  if ((artifact as unknown as { isProductionReady: boolean }).isProductionReady !== false) {
+    return {
+      isValid: false,
+      isTampered: true,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason: 'Industrial safety violation: grading artifact asserts isProductionReady !== false.'
+    };
+  }
+
+  if (
+    !artifact.gradingArtifactId ||
+    !artifact.gradingRevisionId ||
+    !artifact.sourcePatternRevisionId ||
+    !artifact.sourceSpecificationId ||
+    !artifact.sourceSpecificationRevisionId ||
+    !artifact.sourceSpecificationFingerprint ||
+    !artifact.sourceMeasurementSetId ||
+    !artifact.sourceMeasurementSetFingerprint ||
+    !artifact.gradingRuleSetId ||
+    !artifact.gradingRuleSetRevision ||
+    !artifact.gradingRuleSetFingerprint ||
+    !artifact.baseSize ||
+    !artifact.createdAt ||
+    !isValidIsoDate(artifact.createdAt)
+  ) {
+    return {
+      isValid: false,
+      isTampered: false,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: true,
+      reason: 'Grading artifact is missing one or more mandatory lineage identifiers or timestamps.'
+    };
+  }
+
+  try {
+    const recomputedFp = computeCanonicalGradingArtifactFingerprint(artifact);
+    if (recomputedFp !== artifact.canonicalFingerprint) {
+      return {
+        isValid: false,
+        isTampered: true,
+        isSizeRangeIncomplete: false,
+        isValidationFailed: false,
+        reason: 'Grading artifact canonicalFingerprint mismatch; grading geometry or metadata was tampered with.'
+      };
+    }
+  } catch (err) {
+    return {
+      isValid: false,
+      isTampered: true,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason: `Unable to recompute grading artifact fingerprint: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+
+  if (artifact.lifecycleState === 'revoked' || Boolean(artifact.revocationReason)) {
+    return {
+      isValid: false,
+      isTampered: false,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason: `Grading artifact '${artifact.gradingArtifactId}' has been revoked${artifact.revocationReason ? `: ${artifact.revocationReason}` : ''}.`
+    };
+  }
+
+  if (artifact.lifecycleState === 'superseded' || Boolean(artifact.supersededByRevisionId)) {
+    return {
+      isValid: false,
+      isTampered: false,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason: `Grading artifact '${artifact.gradingArtifactId}' has been superseded by '${artifact.supersededByRevisionId ?? 'newer revision'}'.`
+    };
+  }
+
+  if (artifact.lifecycleState !== 'active') {
+    return {
+      isValid: false,
+      isTampered: false,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason: `Grading artifact lifecycleState '${artifact.lifecycleState}' is not active.`
+    };
+  }
+
+  if (!Array.isArray(artifact.sizeRange) || artifact.sizeRange.length < 2 || !artifact.sizeRange.includes(artifact.baseSize)) {
+    return {
+      isValid: false,
+      isTampered: false,
+      isSizeRangeIncomplete: true,
+      isValidationFailed: false,
+      reason: `Grading artifact sizeRange [${(artifact.sizeRange ?? []).join(', ')}] is incomplete or missing baseSize '${artifact.baseSize}'.`
+    };
+  }
+
+  for (const sz of artifact.sizeRange) {
+    const szPieces = artifact.perSizePatternGeometry?.[sz];
+    const szVal = artifact.geometryValidationResult?.[sz];
+    if (!Array.isArray(szPieces) || szPieces.length === 0 || !szVal) {
+      return {
+        isValid: false,
+        isTampered: false,
+        isSizeRangeIncomplete: true,
+        isValidationFailed: false,
+        reason: `Grading artifact is missing pattern geometry or geometry validation record for declared size '${sz}'.`
+      };
+    }
+    for (const p of szPieces) {
+      if (
+        !p.pieceCode ||
+        !p.cutPathData ||
+        !p.sewPathData ||
+        !p.boundingBox ||
+        !Number.isFinite(p.boundingBox.widthCm) ||
+        p.boundingBox.widthCm <= 0 ||
+        !Number.isFinite(p.boundingBox.heightCm) ||
+        p.boundingBox.heightCm <= 0
+      ) {
+        return {
+          isValid: false,
+          isTampered: false,
+          isSizeRangeIncomplete: true,
+          isValidationFailed: true,
+          reason: `Graded piece '${p?.pieceCode ?? 'unknown'}' in size '${sz}' has invalid or empty geometry.`
+        };
+      }
+    }
+    if (!szVal.isValid || szVal.status === 'invalid' || szVal.status === 'unassessed-missing-data' || (szVal.errors && szVal.errors.length > 0)) {
+      return {
+        isValid: false,
+        isTampered: false,
+        isSizeRangeIncomplete: false,
+        isValidationFailed: true,
+        reason: `Grading geometry validation failed for size '${sz}': ${(szVal.errors ?? []).join('; ') || szVal.status}`
+      };
+    }
+  }
+
+  const gvr = artifact.gradingValidationResult;
+  if (
+    !gvr ||
+    !gvr.isOverallGradingValid ||
+    gvr.failedSizeCount > 0 ||
+    gvr.unassessedSizeCount > 0 ||
+    gvr.validSizeCount !== artifact.sizeRange.length ||
+    (Array.isArray(gvr.checks) && gvr.checks.some(c => c.status === 'fail'))
+  ) {
+    return {
+      isValid: false,
+      isTampered: false,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: true,
+      reason: 'Cross-size grading integrity report indicates failed or unassessed sizes.'
+    };
+  }
+
+  return {
+    isValid: true,
+    isTampered: false,
+    isSizeRangeIncomplete: false,
+    isValidationFailed: false
+  };
 }

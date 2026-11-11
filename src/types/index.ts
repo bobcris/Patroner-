@@ -126,25 +126,34 @@ export interface DesignSpecification {
     provenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown' | 'unauthenticated-local-approval' | 'demonstration-fixture';
     verifiedIdentity?: {
       subject: string;
+      subjectId?: string;
       expectedApprover: string;
       issuer: string;
       audience: string;
+      tenantId?: string;
+      keyId?: string;
+      tokenId?: string;
       credentialId: string;
+      notBefore?: string;
       issuedAt: string;
       expiresAt: string;
       verifiedAt: string;
       authorizationClaims: readonly string[];
       providerId: string;
+      verificationMethod?: string;
       tokenDigest: string;
     };
     cryptographicSignature?: {
       keyId: string;
+      publicKeyHex?: string;
       publicKeyFingerprint: string;
       algorithm: string;
       signatureHex: string;
+      signatureDigest?: string;
       signedPayload: {
         schemaVersion: string;
         projectId: string;
+        tenantId?: string;
         garmentId: string;
         specificationRevisionId: string;
         specificationVersion: number;
@@ -152,7 +161,10 @@ export interface DesignSpecification {
         approvalEventId: string;
         approverPrincipal: string;
         authorityTier: 'cryptographic_principal';
+        approvalScope?: string;
         approvalTimestamp: string;
+        keyId?: string;
+        algorithm?: string;
       };
     };
     revocation?: {
@@ -188,25 +200,34 @@ export interface DesignSpecification {
     provenance?: 'designer-approved' | 'designer-edited' | 'ai-proposed' | 'system-derived' | 'unknown' | 'unauthenticated-local-approval' | 'demonstration-fixture';
     verifiedIdentity?: {
       subject: string;
+      subjectId?: string;
       expectedApprover: string;
       issuer: string;
       audience: string;
+      tenantId?: string;
+      keyId?: string;
+      tokenId?: string;
       credentialId: string;
+      notBefore?: string;
       issuedAt: string;
       expiresAt: string;
       verifiedAt: string;
       authorizationClaims: readonly string[];
       providerId: string;
+      verificationMethod?: string;
       tokenDigest: string;
     };
     cryptographicSignature?: {
       keyId: string;
+      publicKeyHex?: string;
       publicKeyFingerprint: string;
       algorithm: string;
       signatureHex: string;
+      signatureDigest?: string;
       signedPayload: {
         schemaVersion: string;
         projectId: string;
+        tenantId?: string;
         garmentId: string;
         specificationRevisionId: string;
         specificationVersion: number;
@@ -214,7 +235,10 @@ export interface DesignSpecification {
         approvalEventId: string;
         approverPrincipal: string;
         authorityTier: 'cryptographic_principal';
+        approvalScope?: string;
         approvalTimestamp: string;
+        keyId?: string;
+        algorithm?: string;
       };
     };
   }>;

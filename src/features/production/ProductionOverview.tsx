@@ -33,6 +33,9 @@ import { calculateCompleteGarmentEase, calculateFabricAdaptedSleeveCapEase } fro
 import { validatePhysicalFit } from '../../engine/prototype/fit-validator';
 import { MOCK_CONFORMING_PROTOTYPE_BODICE_M } from '../../engine/prototype/prototype-fixtures';
 import {
+  computeArtifactInputFingerprint,
+  computeSpecificationFingerprint,
+  createAuthoritativeGradingArtifact,
   createProductionPatternRevision,
   evaluatePipelineDependencyIntegrity,
   MeasurementApprovalStatus,
@@ -237,6 +240,61 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     }
   }, [currentSpec, measurements, activeSize, measurementProvenance, measurementApprovalState, enhancedFabric, pieces, validation]);
 
+  const liveGradingArtifact = React.useMemo(() => {
+    if (!liveSnapshot) return undefined;
+    try {
+      const specRevId = currentSpec.specificationRevisionId ?? `spec-${currentSpec.id}-v${currentSpec.version || 1}`;
+      const specFp = computeSpecificationFingerprint(currentSpec);
+      const measFp = computeArtifactInputFingerprint({
+        unit: measurements.unit,
+        waist: measurements.waist,
+        lowHip: measurements.lowHip,
+        highHip: measurements.highHip,
+        skirtLength: measurements.skirtLength,
+        bust: measurements.bust,
+        waistToHip: measurements.waistToHip,
+        backWaistLength: measurements.backWaistLength,
+        frontWaistLength: measurements.frontWaistLength,
+        acrossBack: measurements.acrossBack,
+        shoulderLength: measurements.shoulderLength,
+        neckCircumference: measurements.neckCircumference,
+        bustSpan: measurements.bustSpan,
+        bustHeight: measurements.bustHeight,
+        armholeDepth: measurements.armholeDepth,
+        bicepsCircumference: measurements.bicepsCircumference,
+        elbowCircumference: measurements.elbowCircumference,
+        wristCircumference: measurements.wristCircumference,
+        sleeveLength: measurements.sleeveLength,
+        armLengthToElbow: measurements.armLengthToElbow,
+        activeSize
+      });
+      const gradingRulesFp = computeArtifactInputFingerprint({
+        system: 'standard-iso-8559',
+        baseSize: 'M',
+        version: 'iso8559-standard',
+        sizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+      });
+
+      return createAuthoritativeGradingArtifact({
+        projectId: 'project-patroner-default',
+        tenantId: 'project-patroner-default',
+        sourceSpecificationId: currentSpec.id,
+        sourceSpecificationRevisionId: specRevId,
+        sourceSpecificationFingerprint: specFp,
+        sourcePatternRevisionId: liveSnapshot.revisionId,
+        sourceMeasurementSetFingerprint: measFp,
+        gradingRuleSetRevision: 'rules-grading-iso8559-standard',
+        gradingRuleSetFingerprint: gradingRulesFp,
+        baseSize: activeSize,
+        sizeRange: [...DEFAULT_SIZE_RANGE],
+        gradedPatternSet,
+        basePatternPieces: pieces
+      });
+    } catch {
+      return undefined;
+    }
+  }, [currentSpec, measurements, activeSize, liveSnapshot, gradedPatternSet, pieces]);
+
   const pipelineReport = React.useMemo(() => {
     return evaluatePipelineDependencyIntegrity({
       specification: currentSpec,
@@ -247,9 +305,10 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       fabric: enhancedFabric,
       patternPieces: pieces,
       validationReport: validation,
-      productionSnapshot: liveSnapshot ?? undefined
+      productionSnapshot: liveSnapshot ?? undefined,
+      gradingArtifact: liveGradingArtifact
     });
-  }, [currentSpec, measurements, measurementApprovalState, measurementProvenance, activeSize, enhancedFabric, pieces, validation, liveSnapshot]);
+  }, [currentSpec, measurements, measurementApprovalState, measurementProvenance, activeSize, enhancedFabric, pieces, validation, liveSnapshot, liveGradingArtifact]);
 
   const liveExportValidation = React.useMemo(() => {
     return validateProductionExportPrerequisites(pipelineReport, liveSnapshot ?? undefined, {
@@ -259,9 +318,14 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       measurementProvenance,
       fabric: enhancedFabric,
       patternPieces: pieces,
-      validationReport: validation
+      validationReport: validation,
+      gradingArtifact: liveGradingArtifact,
+      exportGradingPolicy: {
+        mode: 'graded-multi-size',
+        requiredSizes: [...DEFAULT_SIZE_RANGE]
+      }
     });
-  }, [pipelineReport, liveSnapshot, currentSpec, measurements, measurementApprovalState, measurementProvenance, enhancedFabric, pieces, validation]);
+  }, [pipelineReport, liveSnapshot, currentSpec, measurements, measurementApprovalState, measurementProvenance, enhancedFabric, pieces, validation, liveGradingArtifact]);
 
   const handlePrint = () => {
     if (!liveExportValidation.isExportPermitted) {
@@ -329,12 +393,12 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       }`}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-bold">
-            EXPORT GATE: {liveExportValidation.isExportPermitted ? 'PERMITTED (2D CAD DOCS)' : `BLOCKED [${liveExportValidation.rejectionCode ?? 'PENDING'}]`}
+            EXPORT GATE: {liveExportValidation.isExportPermitted ? 'Graded Multi-Size Export Verified' : `BLOCKED [${liveExportValidation.rejectionCode ?? 'PENDING'}]`}
           </span>
           <span>•</span>
           <span>
             {liveExportValidation.isExportPermitted
-              ? `All 13 pipeline stages synchronized • Snapshot: ${liveSnapshot?.canonicalFingerprint.slice(0, 16)}…`
+              ? `All 13 pipeline stages synchronized • Snapshot: ${liveSnapshot?.canonicalFingerprint.slice(0, 12)}… • Grading Artifact: ${liveGradingArtifact?.canonicalFingerprint.slice(0, 12)}…`
               : liveExportValidation.rejectionReason}
           </span>
         </div>
@@ -351,7 +415,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
             ) : (
               <Badge variant="danger" size="sm">GEOMETRY REVISION REQUIRED</Badge>
             )}
-            <Badge variant="neutral" size="sm">PHYSICAL SAMPLE: UNASSESSED</Badge>
+            <Badge variant="neutral" size="sm">Physical Sample Validation: Not Assessed</Badge>
             <Badge variant="neutral" size="sm">PROTOTYPE: SYNTHETIC FIXTURE ONLY</Badge>
             <span className="text-neutral-400">|</span>
             <span className="text-neutral-300">

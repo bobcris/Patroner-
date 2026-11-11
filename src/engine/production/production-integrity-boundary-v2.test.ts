@@ -46,7 +46,8 @@ import {
   createAuthoritativeMeasurementSet,
   approveAuthoritativeMeasurementSet,
   supersedeAuthoritativeMeasurementSet,
-  verifyMeasurementSetIntegrity
+  verifyMeasurementSetIntegrity,
+  createAuthoritativeGradingArtifact
 } from './pattern-revision-snapshot';
 import { ValidationReport } from '../../types';
 import {
@@ -135,6 +136,7 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
 
     const snapshot = createProductionPatternRevision({
       projectId: 'project-adversarial-v2',
+      revisionId: 'rev-adv-skirt-v2-M',
       targetSize: 'M',
       designSpecification: designSpec,
       measurements: {
@@ -152,6 +154,52 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       physicalValidationStatus: 'not-assessed'
     });
 
+    const graded = gradePattern(designSpec);
+    const measFp = computeArtifactInputFingerprint({
+      unit: sizeM.unit,
+      waist: sizeM.waist,
+      lowHip: sizeM.lowHip,
+      highHip: sizeM.highHip,
+      skirtLength: sizeM.skirtLength,
+      bust: sizeM.bust,
+      waistToHip: sizeM.waistToHip,
+      backWaistLength: sizeM.backWaistLength,
+      frontWaistLength: sizeM.frontWaistLength,
+      acrossBack: sizeM.acrossBack,
+      shoulderLength: sizeM.shoulderLength,
+      neckCircumference: sizeM.neckCircumference,
+      bustSpan: sizeM.bustSpan,
+      bustHeight: sizeM.bustHeight,
+      armholeDepth: sizeM.armholeDepth,
+      bicepsCircumference: sizeM.bicepsCircumference,
+      elbowCircumference: sizeM.elbowCircumference,
+      wristCircumference: sizeM.wristCircumference,
+      sleeveLength: sizeM.sleeveLength,
+      armLengthToElbow: sizeM.armLengthToElbow,
+      activeSize: 'M'
+    });
+    const gradingRulesFp = computeArtifactInputFingerprint({
+      system: 'standard-iso-8559',
+      baseSize: 'M',
+      version: 'iso8559-standard',
+      sizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+    });
+    const gradingArtifact = createAuthoritativeGradingArtifact({
+      projectId: 'project-adversarial-v2',
+      tenantId: 'project-adversarial-v2',
+      sourceSpecificationId: spec.garmentId,
+      sourceSpecificationRevisionId: spec.specificationRevisionId,
+      sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
+      sourcePatternRevisionId: snapshot.revisionId,
+      sourceMeasurementSetFingerprint: measFp,
+      gradingRuleSetRevision: 'rules-grading-iso8559-standard',
+      gradingRuleSetFingerprint: gradingRulesFp,
+      baseSize: 'M',
+      sizeRange: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+      gradedPatternSet: graded,
+      basePatternPieces: pieces
+    });
+
     const report = evaluatePipelineDependencyIntegrity({
       specification: spec,
       measurements: sizeM,
@@ -162,7 +210,7 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       productionSnapshot: snapshot
     });
 
-    return { spec, designSpec, pieces, snapshot, report };
+    return { spec, designSpec, pieces, snapshot, gradingArtifact, report };
   }
 
   // -------------------------------------------------------------------------
@@ -854,14 +902,15 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
   // Scenario 30: Valid, complete, current documentation export permitted
   // -------------------------------------------------------------------------
   it('Scenario 30: permits manufacturing documentation export when all prerequisites are satisfied and isProductionReady remains false', () => {
-    const { spec, pieces, snapshot, report } = createFullPipelineSynchronizedFixture();
+    const { spec, pieces, snapshot, gradingArtifact, report } = createFullPipelineSynchronizedFixture();
 
     const exportResult = validateProductionExportPrerequisites(report, snapshot, {
       specification: spec,
       measurements: sizeM,
       fabric: standardFabric,
       patternPieces: pieces,
-      validationReport: validReport
+      validationReport: validReport,
+      gradingArtifact
     });
 
     assert.equal(exportResult.isExportPermitted, true);
@@ -871,6 +920,7 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
     assert.equal(exportResult.manufacturingDocumentation?.isProductionReady, false);
     assert.ok(exportResult.manufacturingDocumentation?.specificationFingerprint.length === 64);
     assert.ok(exportResult.manufacturingDocumentation?.patternRevisionFingerprint.length === 64);
+    assert.equal(exportResult.manufacturingDocumentation?.gradingArtifactFingerprint, gradingArtifact.canonicalFingerprint);
   });
 
   // =========================================================================

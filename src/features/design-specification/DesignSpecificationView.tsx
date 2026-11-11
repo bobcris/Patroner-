@@ -246,10 +246,10 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
                   {effectiveAuthorityTier === 'demonstration_fixture'
                     ? 'Tier 1: Demonstration Fixture (Non-Authoritative)'
                     : effectiveAuthorityTier === 'authenticated_designer' && spec.approvalRecord?.verifiedIdentity
-                    ? `Tier 3: Authenticated Designer (${spec.approvalRecord.verifiedIdentity.subject})`
+                    ? `Tier 3: OIDC/JWT Authenticated Designer Approval (${spec.approvalRecord.verifiedIdentity.subjectId})`
                     : effectiveAuthorityTier === 'cryptographic_principal' && spec.approvalRecord?.cryptographicSignature
-                    ? `Tier 4: Cryptographic Principal (${spec.approvalRecord.cryptographicSignature.keyId})`
-                    : 'Tier 2: Local Unauthenticated Session'}
+                    ? `Tier 4: Asymmetric Public-Key Signed Principal Approval (${spec.approvalRecord.cryptographicSignature.keyId})`
+                    : 'Tier 2: Unauthenticated Local Session Approval'}
                 </span>
               </span>
               <Button variant="outline" size="sm" onClick={toggleApproval}>

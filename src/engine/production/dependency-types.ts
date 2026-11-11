@@ -117,6 +117,14 @@ export type ProductionExportRejectionCode =
   | 'FORGED_INTEGRITY_REPORT'
   | 'STALE_SOURCE_FINGERPRINT'
   | 'MISSING_REQUIRED_LINEAGE'
+  | 'GRADING_ARTIFACT_MISSING'
+  | 'GRADING_ARTIFACT_TAMPERED'
+  | 'GRADING_ARTIFACT_REVOKED'
+  | 'GRADING_ARTIFACT_SUPERSEDED'
+  | 'GRADING_VALIDATION_FAILED'
+  | 'GRADING_SIZE_RANGE_INCOMPLETE'
+  | 'GRADING_SCOPE_MISMATCH'
+  | 'GRADING_APPLICABILITY_UNDECLARED'
   | 'INDUSTRIAL_SAFETY_VIOLATION';
 
 /**
@@ -129,6 +137,11 @@ export interface ManufacturingDocumentationSummary {
   readonly patternRevisionFingerprint: string;
   readonly revisionId: string;
   readonly exportedAt: string;
+  readonly gradingMode?: 'graded-multi-size' | 'single-size-ungraded';
+  readonly gradingArtifactId?: string;
+  readonly gradingRevisionId?: string;
+  readonly gradingArtifactFingerprint?: string;
+  readonly nonGradingReason?: string;
 }
 
 /**
@@ -143,4 +156,5 @@ export interface ProductionExportValidationResult {
   readonly validationDetails?: Readonly<Record<string, unknown>>;
   readonly manufacturingDocumentation?: ManufacturingDocumentationSummary;
 }
+
 
