@@ -7,7 +7,6 @@ import {
   BoundingBox,
   Dart,
   DesignSpecification,
-  EaseProfile,
   FabricProperty,
   FabricStretch,
   FabricWeight,
@@ -15,38 +14,123 @@ import {
   GarmentConstructionFeature,
   GrainLine,
   Notch,
+  PatternPiece,
   Point,
   SeamLine,
   SegmentOffsetDiagnostic,
-  Silhouette,
-  SleeveEaseStrategy,
-  BodiceDartStyle,
-  PatternPiece,
+  StandardSize,
   ValidationReport
 } from '../../types';
-import { SegmentRole } from '../geometry/primitives';
-import { AssemblyValidationStatus } from '../assembly/assembly-types';
-import { DirectionalProperties, FabricProvenance, FabricPropertyProvenanceRecord } from '../fabric/fabric-types';
+import {
+  DirectionalProperties,
+  EnhancedFabricProperty,
+  FabricPropertyProvenanceRecord,
+  PropertyProvenance
+} from '../fabric/fabric-types';
+import {
+  SegmentRole,
+  SegmentType
+} from '../geometry/primitives';
 import { CrossSizeIntegrityReport, GradedPatternSet } from '../grading/grading-types';
+
+export type ConstructionFeature = GarmentConstructionFeature;
+export type SizeCode = StandardSize | string;
+export type ValidationResult = ValidationReport;
+export type DirectionalFabricBehavior = DirectionalProperties;
+export type ContourWinding = 'clockwise' | 'counter-clockwise' | 'collinear';
+export type OffsetDiagnostic = SegmentOffsetDiagnostic;
 
 export const PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION = '1.0.0' as const;
 export type ProductionPatternSnapshotSchemaVersion = typeof PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION;
 
 /**
- * Declared provenance of a body measurement value.
+ * Pure plain-data representation of a single geometric segment (Line or Cubic Bézier).
+ * Contains no class methods or prototype dependencies so that snapshots remain
+ * deterministically serializable, JSON-safe, and deeply immutable.
+ */
+export interface GeometricSegmentSnapshot {
+  readonly id: string;
+  readonly type: SegmentType;
+  readonly start: Readonly<Point>;
+  readonly end: Readonly<Point>;
+  /** For cubic Bézier curves: [cp1, cp2]. Undefined for line segments. */
+  readonly controlPoints?: readonly [Readonly<Point>, Readonly<Point>];
+  readonly seamAllowanceCm: number;
+  readonly isFold: boolean;
+  readonly seamId?: string;
+  readonly sourceSegmentId?: string;
+  readonly role?: SegmentRole;
+  /** Exact computed arc length in centimeters. */
+  readonly lengthCm: number;
+}
+
+/**
+ * Bounding box representation with explicit approximation metadata.
+ */
+export interface ContourBoundingBoxSnapshot extends Readonly<BoundingBox> {
+  /**
+   * True when the contour contains Bézier curves whose bounding box was derived from
+   * polyline sampling rather than analytic curve extrema.
+   */
+  readonly isApproximate: boolean;
+  readonly basis: 'exact' | 'sampled-polyline-approximation';
+}
+
+/**
+ * Pure plain-data representation of a closed or open 2D geometric contour.
+ */
+export interface GeometricContourSnapshot {
+  readonly id: string;
+  readonly isClosed: boolean;
+  readonly winding?: ContourWinding;
+  readonly segments: readonly GeometricSegmentSnapshot[];
+  readonly totalLengthCm: number;
+  readonly boundingBox: ContourBoundingBoxSnapshot;
+}
+
+/**
+ * Pure plain-data representation of a drafted pattern piece at a specific revision.
+ */
+export interface PatternPieceSnapshot {
+  readonly id: string;
+  readonly pieceCode: string;
+  readonly name: string;
+  readonly garmentCategory: GarmentCategory;
+  readonly sizeCode: SizeCode | string;
+  readonly cutCount: number;
+  readonly onFold: boolean;
+  readonly material: 'self' | 'lining' | 'interfacing';
+  readonly cutPathData: string;
+  readonly sewPathData: string;
+  readonly seamAllowanceWidthCm: number;
+  readonly grainline: Readonly<GrainLine>;
+  readonly darts: readonly Readonly<Dart>[];
+  readonly notches: readonly Readonly<Notch>[];
+  readonly seams: readonly Readonly<SeamLine>[];
+  readonly drillHoles?: readonly Readonly<Point>[];
+  readonly boundingBox: ContourBoundingBoxSnapshot;
+  readonly description?: string;
+  readonly stitchingContour?: GeometricContourSnapshot;
+  readonly cuttingContour?: GeometricContourSnapshot;
+  readonly offsetDiagnostics?: readonly Readonly<OffsetDiagnostic>[];
+  readonly warnings: readonly string[];
+  readonly errors: readonly string[];
+}
+
+/**
+ * Provenance classification for body measurements.
+ * Missing provenance defaults to 'unknown', never 'user-entered'.
  */
 export type MeasurementOrigin =
   | 'user-entered'
+  | 'operator-confirmed'
   | 'standard-chart'
   | 'physically-measured'
   | 'imported'
   | 'ai-estimated'
+  | 'synthetic-fixture'
   | 'unknown';
 
-/**
- * Separate approval lifecycle state for body measurements.
- * Missing approval defaults to 'unverified', never 'approved'.
- */
 export type MeasurementApprovalStatus =
   | 'unverified'
   | 'pending'
@@ -54,28 +138,36 @@ export type MeasurementApprovalStatus =
   | 'rejected'
   | 'superseded';
 
-export type MeasurementApprovalState = MeasurementApprovalStatus;
-
-/**
- * Auditable approval declaration for a measurement dataset.
- */
 export interface MeasurementApprovalRecord {
   readonly state: MeasurementApprovalStatus;
   readonly approvedBy?: string;
-  readonly approvedAt?: string; // ISO 8601 date string
+  readonly approvedAt?: string;
   readonly notes?: string;
   readonly measurementRevisionReference?: string;
 }
 
+export type MeasurementApprovalState = MeasurementApprovalStatus;
+
 /**
- * Authoritative measurement set record with explicit provenance, lifecycle revisioning,
- * separated AI-estimated values, and approval authority.
+ * Immutable snapshot of body measurements with explicit provenance and approval state.
+ */
+export interface MeasurementSetSnapshot {
+  readonly revisionId?: string;
+  readonly unit: 'cm';
+  readonly values: Readonly<Record<string, number>>;
+  readonly defaultOrigin: MeasurementOrigin;
+  readonly perMeasurementOrigin?: Readonly<Record<string, MeasurementOrigin>>;
+  readonly approval: MeasurementApprovalRecord;
+  readonly notes?: readonly string[];
+}
+
+/**
+ * Authoritative Measurement Set Record (Milestone 04.6.2.3.1 / 04.6.2.3.4)
  */
 export interface AuthoritativeMeasurementSetRecord {
   readonly measurementSetId: string;
   readonly revisionId: string;
   readonly parentRevisionId?: string;
-  readonly supersededByRevisionId?: string;
   readonly unit: 'cm';
   readonly values: Readonly<Record<string, number>>;
   readonly aiEstimatedValues?: Readonly<Record<string, number>>;
@@ -86,6 +178,7 @@ export interface AuthoritativeMeasurementSetRecord {
   readonly approvalState: MeasurementApprovalStatus;
   readonly approvingAuthority?: string;
   readonly approvedAt?: string;
+  readonly supersededByRevisionId?: string;
   readonly notes?: readonly string[];
   readonly canonicalFingerprint: string;
 }
@@ -107,48 +200,33 @@ export interface CreateAuthoritativeMeasurementSetInput {
   readonly notes?: string[];
 }
 
-/**
- * Immutable snapshot of a measurement set binding values to origin provenance and approval.
- */
-export interface MeasurementSetSnapshot {
-  readonly measurementSetId?: string;
-  readonly revisionId?: string;
-  readonly unit: 'cm';
-  readonly values: Readonly<Record<string, number>>;
-  readonly aiEstimatedValues?: Readonly<Record<string, number>>;
-  readonly defaultOrigin: MeasurementOrigin;
-  readonly perMeasurementOrigin?: Readonly<Record<string, MeasurementOrigin>>;
-  readonly approval: MeasurementApprovalRecord;
-  readonly notes?: readonly string[];
-}
-
-/**
- * Allowable fabric provenance states in a production snapshot.
- * Unresolved or missing provenance remains explicitly 'unknown' or 'unverified'.
- */
 export type FabricSnapshotProvenance =
-  | FabricProvenance
+  | 'supplier-declared'
+  | 'laboratory-tested'
+  | 'user-entered'
+  | 'project-default'
+  | 'preset-default'
   | 'unknown'
   | 'unverified';
 
 /**
- * Immutable snapshot of material specification capturing property verification details.
+ * Immutable snapshot of fabric physical parameters and verification status.
  */
 export interface FabricSpecificationSnapshot {
   readonly fabricId: string;
   readonly name: string;
-  readonly composition?: string;
+  readonly composition: string;
   readonly fabricRevision?: string;
-  readonly weight?: FabricWeight;
-  readonly stretch?: FabricStretch;
-  readonly directional?: Readonly<DirectionalProperties>;
+  readonly weight: FabricWeight | 'light' | 'medium' | 'heavy';
+  readonly stretch: FabricStretch | 'none' | 'low' | 'medium' | 'high';
+  readonly directional?: Readonly<DirectionalFabricBehavior>;
   readonly gsm?: number;
   readonly thicknessMm?: number;
   readonly moldingFactor?: number;
   readonly provenance: FabricSnapshotProvenance;
   readonly isVerified: boolean;
   readonly propertyVerificationDetails?: Readonly<Record<string, boolean>>;
-  readonly propertyProvenance?: FabricPropertyProvenanceRecord;
+  readonly propertyProvenance?: Readonly<FabricPropertyProvenanceRecord>;
   readonly testStandard?: string;
   readonly laboratoryReference?: string;
   readonly supplierReference?: string;
@@ -157,15 +235,15 @@ export interface FabricSpecificationSnapshot {
 }
 
 /**
- * Immutable snapshot of design specification capturing creative and construction parameters.
+ * Immutable snapshot of the design specification used for drafting.
  */
 export interface DesignSpecificationSnapshot {
   readonly id: string;
   readonly version: number;
   readonly name: string;
   readonly garmentCategory: GarmentCategory;
-  readonly silhouette: Silhouette;
-  readonly easeProfile: EaseProfile;
+  readonly silhouette: string;
+  readonly easeProfile: 'fitted' | 'standard' | 'relaxed' | 'oversized' | string;
   readonly lengthCm: number;
   readonly specificationRevisionId?: string;
   readonly parentRevisionId?: string;
@@ -173,206 +251,83 @@ export interface DesignSpecificationSnapshot {
   readonly approvalProvenance?: string;
   readonly explicitEaseCm?: Readonly<Record<string, number>>;
   readonly targetFinishedDimensions?: Readonly<Record<string, number>>;
-  readonly allowances?: Readonly<{
-    seamAllowanceCm?: number;
-    hemAllowanceCm?: number;
-    waistAllowanceCm?: number;
-  }>;
-  readonly dartStyle?: BodiceDartStyle;
-  readonly sleeveEaseStrategy?: SleeveEaseStrategy;
-  readonly constructionFeatures: readonly GarmentConstructionFeature[];
+  readonly allowances?: {
+    readonly seamAllowanceCm?: number;
+    readonly hemAllowanceCm?: number;
+    readonly waistAllowanceCm?: number;
+  };
+  readonly dartStyle?: 'waist' | 'princess' | 'shoulder' | 'none' | string;
+  readonly sleeveEaseStrategy?: 'classic' | 'minimal' | 'tailored' | string;
+  readonly constructionFeatures: readonly Readonly<ConstructionFeature>[];
   readonly designNotes: readonly string[];
   readonly isApproved: boolean;
   readonly approvedAt?: string;
   readonly aiEstimates?: {
-    readonly suggestedSilhouette: string;
-    readonly styleConfidenceScore: number;
+    readonly suggestedSilhouette?: string;
+    readonly styleConfidenceScore?: number;
     readonly suggestedFabrics: readonly string[];
-    readonly technicalAdvice: string;
-    readonly disclaimer: string;
+    readonly technicalAdvice?: string;
+    readonly disclaimer?: string;
   };
 }
 
 /**
- * Pure plain-data representation of a geometric contour segment.
- * Independent of class prototypes or methods.
- */
-export interface GeometricSegmentSnapshot {
-  readonly id: string;
-  readonly type: 'line' | 'bezier';
-  readonly start: Point;
-  readonly end: Point;
-  readonly controlPoints?: readonly [Point, Point]; // cp1, cp2 for cubic bezier
-  readonly seamAllowanceCm: number;
-  readonly isFold: boolean;
-  readonly seamId?: string;
-  readonly sourceSegmentId?: string;
-  readonly role?: SegmentRole;
-  readonly lengthCm: number;
-}
-
-/**
- * Bounding box for a contour, explicitly indicating whether it is an exact bounds
- * (for rectilinear geometry) or a polyline-sampled approximation (for curves).
- * Full exact geometry is preserved in segments to enable exact recomputation.
- */
-export interface ContourBoundingBoxSnapshot extends BoundingBox {
-  readonly isApproximate: boolean;
-  readonly basis: 'exact' | 'sampled-polyline-approximation';
-}
-
-/**
- * Pure plain-data representation of a closed or open geometric contour.
- */
-export interface GeometricContourSnapshot {
-  readonly id: string;
-  readonly isClosed: boolean;
-  readonly winding?: 'clockwise' | 'counter-clockwise' | 'degenerate' | 'collinear';
-  readonly segments: readonly GeometricSegmentSnapshot[];
-  readonly totalLengthCm: number;
-  readonly boundingBox: ContourBoundingBoxSnapshot;
-}
-
-/**
- * Pure plain-data representation of a pattern piece snapshot with preserved geometric contours.
- */
-export interface PatternPieceSnapshot {
-  readonly id: string;
-  readonly pieceCode: string;
-  readonly name: string;
-  readonly garmentCategory: GarmentCategory;
-  readonly sizeCode: string;
-  readonly cutCount: number;
-  readonly onFold: boolean;
-  readonly material: 'self' | 'lining' | 'interfacing';
-  readonly cutPathData: string;
-  readonly sewPathData: string;
-  readonly seamAllowanceWidthCm: number;
-  readonly grainline: GrainLine;
-  readonly darts: readonly Dart[];
-  readonly notches: readonly Notch[];
-  readonly seams: readonly SeamLine[];
-  readonly drillHoles?: readonly Point[];
-  readonly boundingBox: ContourBoundingBoxSnapshot;
-  readonly description: string;
-  readonly stitchingContour?: GeometricContourSnapshot;
-  readonly cuttingContour?: GeometricContourSnapshot;
-  readonly offsetDiagnostics?: readonly SegmentOffsetDiagnostic[];
-  readonly warnings: readonly string[];
-  readonly errors: readonly string[];
-}
-
-/**
- * Drafting parameters used to generate the pattern piece geometry.
+ * Immutable snapshot of drafting and seam allowance rules.
  */
 export interface DraftingConfigurationSnapshot {
-  readonly dartStyle?: BodiceDartStyle;
-  readonly sleeveEaseStrategy?: SleeveEaseStrategy;
-  readonly seamAllowanceCm?: number;
+  readonly dartStyle: string;
+  readonly sleeveEaseStrategy: string;
+  readonly seamAllowanceCm: number;
+  readonly hemAllowanceCm: number;
   readonly waistAllowanceCm?: number;
-  readonly hemAllowanceCm?: number;
   readonly neckAllowanceCm?: number;
   readonly armholeAllowanceCm?: number;
   readonly shoulderAllowanceCm?: number;
   readonly bezierToleranceCm?: number;
   readonly miterLimit?: number;
   readonly categoryRegistryId?: string;
-  readonly negativeEasePolicyApplied?: boolean;
+  readonly negativeEasePolicyApplied?: string;
   readonly customOptions?: Readonly<Record<string, unknown>>;
 }
 
 /**
- * Comprehensive approval state model separating structural, aesthetic, anatomical,
- * geometric, assembly, and physical validation gates from industrial production readiness.
+ * Summary of engineering and validation approvals at the time of snapshot creation.
  */
 export interface ApprovalStateSummary {
-  readonly designApproval: 'approved' | 'pending' | 'rejected';
+  readonly designApproval: 'pending' | 'approved' | 'rejected';
   readonly measurementApproval: MeasurementApprovalStatus;
-  readonly patternGeometryValidation: 'validated' | 'invalid' | 'incomplete' | 'not_assessed';
-  readonly assemblyValidation: 'verified-valid' | 'invalid' | 'unassessed-missing-data' | 'not-applicable';
-  readonly gradingValidation: 'valid' | 'invalid' | 'unassessed' | 'not-applicable';
-  readonly physicalPrototypeValidation:
-    | 'conforming'
-    | 'acceptable-with-adjustments'
-    | 'non-conforming'
-    | 'incomplete'
-    | 'unsupported-validation-scope'
-    | 'not-assessed';
+  readonly patternGeometryValidation: string;
+  readonly assemblyValidation: 'verified-valid' | 'invalid' | 'not-applicable' | string;
+  readonly gradingValidation: 'valid' | 'invalid' | 'not-applicable' | string;
+  readonly physicalPrototypeValidation: string;
 }
 
 /**
- * Provenance of the algorithmic engines producing the pattern revision.
+ * Engine provenance metadata recording the exact build and engine version.
  */
 export interface EngineProvenanceRecord {
   readonly engineVersion: string;
   readonly appVersion?: string;
   readonly gitCommit?: string;
   readonly buildTimestamp?: string;
-  readonly snapshotEngine: string;
+  readonly snapshotEngine?: string;
+  readonly draftingEngineVersion?: string;
+  readonly gradingEngineVersion?: string;
+  readonly validationEngineVersion?: string;
+  readonly fabricEngineVersion?: string;
 }
 
-/**
- * Optional summary of bodice-sleeve or component assembly compatibility.
- */
-export interface AssemblySummarySnapshot {
-  readonly status: AssemblyValidationStatus;
-  readonly isValid: boolean;
-  readonly totalBodiceArmholeLengthCm: number;
-  readonly totalSleeveCapLengthCm: number;
-  readonly totalEaseCm: number;
-  readonly frontEaseCm: number;
-  readonly backEaseCm: number;
-  readonly frontEaseRatio: number | null;
-  readonly isRatioDefined: boolean;
-  readonly isDistributionBalanced: boolean;
-  readonly isTotalEasePermitted: boolean;
-  readonly targetStrategy: SleeveEaseStrategy;
-  readonly endpointTopologyValid: boolean;
-  readonly notchCorrespondenceStatus: string;
-  readonly unresolvedRisks: readonly string[];
-}
+export type GradingLifecycleState =
+  | 'active'
+  | 'stale'
+  | 'invalid'
+  | 'superseded'
+  | 'revoked';
 
-/**
- * Optional summary of size-range grading metrics and cross-size integrity.
- */
-export interface GradingSummarySnapshot {
-  readonly baseSize: string;
-  readonly supportedSizes: readonly string[];
-  readonly isOverallGradingValid: boolean;
-  readonly validSizeCount: number;
-  readonly failedSizeCount: number;
-  readonly gradeTableName: string;
-  readonly summaryMessage: string;
-  readonly unassessedConditions: readonly string[];
-}
-
-/**
- * Lifecycle state of an AuthoritativeGradingArtifact.
- */
-export type GradingLifecycleState = 'active' | 'superseded' | 'revoked';
-
-/**
- * Explicit grading applicability mode for a production export.
- */
-export type ExportGradingMode = 'graded-multi-size' | 'single-size-ungraded';
-
-/**
- * Explicit policy declaring whether an export requires multi-size grading or is a single-size ungraded export.
- * Never inferred from the absence of a grading artifact.
- */
-export interface ExportGradingPolicy {
-  readonly mode: ExportGradingMode;
-  readonly nonGradingReason?: string;
-  readonly requiredSizes?: readonly string[];
-}
-
-/**
- * Per-size geometry and assembly validation record stored on an AuthoritativeGradingArtifact.
- */
 export interface PerSizeGeometryValidationRecord {
   readonly sizeId: string;
-  readonly size?: string;
-  readonly status: AssemblyValidationStatus | 'validated' | 'invalid' | 'unassessed-missing-data';
+  readonly size: string;
+  readonly status: string;
   readonly isValid: boolean;
   readonly pieceCount: number;
   readonly passedCount?: number;
@@ -383,56 +338,59 @@ export interface PerSizeGeometryValidationRecord {
 }
 
 /**
- * Complete, immutable, verifiable grading artifact required for graded production exports.
- * Binds multi-size graded geometry and validation results to exact upstream specification,
- * pattern revision, measurement set, and grading ruleset fingerprints.
+ * Authoritative Grading Artifact (Milestone 04.6.2.3.2 / 04.6.2.3.4)
  */
 export interface AuthoritativeGradingArtifact {
   readonly gradingArtifactId: string;
   readonly gradingRevisionId: string;
   readonly tenantId: string;
   readonly projectId: string;
+  readonly organizationScope?: string;
   readonly sourcePatternRevisionId: string;
+  readonly sourcePatternSnapshotFingerprint?: string;
+  readonly draftingFingerprint?: string;
+  readonly cadGeometryFingerprint?: string;
   readonly sourceSpecificationId: string;
   readonly sourceSpecificationRevisionId: string;
   readonly sourceSpecificationFingerprint: string;
   readonly sourceMeasurementSetId: string;
   readonly sourceMeasurementSetFingerprint: string;
   readonly sizeRange: readonly string[];
-  readonly baseSize: string;
+  readonly baseSize: SizeCode | string;
   readonly gradingRuleSetId: string;
   readonly gradingRuleSetRevision: string;
   readonly gradingRuleSetFingerprint: string;
   readonly perSizePatternGeometry: Readonly<Record<string, readonly PatternPieceSnapshot[]>>;
   readonly geometryValidationResult: Readonly<Record<string, PerSizeGeometryValidationRecord>>;
-  readonly perSizeGeometryValidation?: Readonly<Record<string, PerSizeGeometryValidationRecord>>;
+  readonly perSizeGeometryValidation: Readonly<Record<string, PerSizeGeometryValidationRecord>>;
   readonly gradingValidationResult: Readonly<CrossSizeIntegrityReport>;
-  readonly crossSizeIntegrityReport?: Readonly<CrossSizeIntegrityReport>;
-  readonly canonicalFingerprint: string;
+  readonly crossSizeIntegrityReport: Readonly<CrossSizeIntegrityReport>;
   readonly createdAt: string;
   readonly lifecycleState: GradingLifecycleState;
   readonly supersededByRevisionId?: string;
   readonly revocationReason?: string;
   readonly revokedAt?: string;
+  readonly canonicalFingerprint: string;
   readonly isProductionReady: false;
 }
 
-/**
- * Input for constructing an AuthoritativeGradingArtifact.
- */
 export interface CreateAuthoritativeGradingArtifactInput {
   readonly gradingArtifactId?: string;
   readonly gradingRevisionId?: string;
   readonly tenantId?: string;
   readonly projectId?: string;
+  readonly organizationScope?: string;
   readonly sourcePatternRevisionId: string;
+  readonly sourcePatternSnapshotFingerprint?: string;
+  readonly draftingFingerprint?: string;
+  readonly cadGeometryFingerprint?: string;
   readonly sourceSpecificationId: string;
   readonly sourceSpecificationRevisionId: string;
   readonly sourceSpecificationFingerprint: string;
   readonly sourceMeasurementSetId?: string;
   readonly sourceMeasurementSetFingerprint: string;
   readonly sizeRange?: readonly string[];
-  readonly baseSize?: string;
+  readonly baseSize?: SizeCode | string;
   readonly gradingRuleSetId?: string;
   readonly gradingRuleSetRevision?: string;
   readonly gradingRuleSetFingerprint?: string;
@@ -450,59 +408,109 @@ export interface CreateAuthoritativeGradingArtifactInput {
   readonly revokedAt?: string;
 }
 
+export type {
+  ExportGradingPolicy,
+  ExportGradingPolicyMode,
+  GradingSummarySnapshot
+} from './dependency-types';
+
 /**
- * Master authoritative production pattern revision snapshot.
- * Binds project identity, design, measurements, material, geometry, validation, and provenance
- * into an immutable historical record.
+ * Immutable Production Pattern Revision Snapshot (Milestone 04.6.1.1).
+ * Captures the complete engineering state of a garment pattern at a specific revision.
  */
 export interface ProductionPatternRevisionSnapshot {
-  readonly schemaVersion: ProductionPatternSnapshotSchemaVersion;
+  readonly schemaVersion: typeof PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION;
   readonly projectId: string;
   readonly revisionId: string;
   readonly parentRevisionId?: string;
   readonly revisionIndex: number;
-  readonly createdAt: string; // ISO 8601 date string
+  readonly createdAt: string;
   readonly createdBy?: string;
   readonly garmentCategory: GarmentCategory;
-  readonly targetSize: string;
+  readonly targetSize: SizeCode | string;
   readonly designSpecification: DesignSpecificationSnapshot;
   readonly measurementSet: MeasurementSetSnapshot;
   readonly fabricSpecification: FabricSpecificationSnapshot;
   readonly patternPieces: readonly PatternPieceSnapshot[];
   readonly draftingConfiguration: DraftingConfigurationSnapshot;
-  readonly validation: Readonly<ValidationReport>;
-  readonly assemblySummary?: AssemblySummarySnapshot;
-  readonly gradingSummary?: GradingSummarySnapshot;
+  readonly validation: ValidationResult;
+  readonly assemblySummary?: {
+    readonly isValid: boolean;
+    readonly totalChecks?: number;
+    readonly passedChecks?: number;
+    readonly failedChecks?: number;
+    readonly warningChecks?: number;
+    readonly summaryMessage?: string;
+    readonly [key: string]: unknown;
+  };
+  readonly gradingSummary?: {
+    readonly isOverallGradingValid: boolean;
+    readonly baseSize?: string;
+    readonly evaluatedSizes?: readonly string[];
+    readonly validSizeCount?: number;
+    readonly failedSizeCount?: number;
+    readonly unassessedSizeCount?: number;
+    readonly summaryMessage?: string;
+    readonly [key: string]: unknown;
+  };
   readonly engineProvenance: EngineProvenanceRecord;
   readonly approvalState: ApprovalStateSummary;
+  readonly canonicalFingerprint: string;
   /**
-   * Industrial safety rule: isProductionReady MUST remain strictly false.
-   * A snapshot represents a validated computational pattern, not certified production tooling.
+   * Non-negotiable industrial safety invariant:
+   * Must remain strictly and literally `false` until physical garment validation,
+   * industrial marker generation, and factory cutting validation are complete.
    */
   readonly isProductionReady: false;
-  /**
-   * Deterministic SHA-256 fingerprint of the canonical snapshot data.
-   */
-  readonly canonicalFingerprint: string;
 }
 
-export type MismatchSeverity = 'breaking' | 'advisory';
+export interface CreateProductionPatternRevisionInput {
+  readonly projectId?: string;
+  readonly revisionId?: string;
+  readonly parentRevisionId?: string;
+  readonly revisionIndex?: number;
+  readonly createdAt?: string;
+  readonly createdBy?: string;
+  readonly targetSize: SizeCode | string;
+  readonly designSpecification: DesignSpecification;
+  readonly measurements: {
+    readonly values: Readonly<Record<string, number>>;
+    readonly defaultOrigin?: MeasurementOrigin;
+    readonly perMeasurementOrigin?: Readonly<Record<string, MeasurementOrigin>>;
+    readonly approval?: Partial<MeasurementApprovalRecord>;
+    readonly notes?: readonly string[];
+  };
+  readonly fabric: FabricProperty | EnhancedFabricProperty;
+  readonly patternPieces: PatternPiece[];
+  readonly draftingConfiguration?: Partial<DraftingConfigurationSnapshot>;
+  readonly validation: ValidationResult;
+  readonly assemblySummary?: Record<string, unknown> & { readonly isValid: boolean };
+  readonly gradingSummary?: Record<string, unknown> & { readonly isOverallGradingValid: boolean };
+  readonly physicalValidationStatus?: string;
+  readonly engineProvenance?: Partial<EngineProvenanceRecord>;
+}
 
-/**
- * Structured diagnostic recording a difference between a revision snapshot and current inputs.
- */
+export interface CurrentRevisionInputs {
+  readonly targetSize?: SizeCode | string;
+  readonly designSpecification?: Partial<DesignSpecification>;
+  readonly measurements?: {
+    readonly values?: Record<string, number>;
+  };
+  readonly fabric?: Partial<FabricProperty & EnhancedFabricProperty>;
+  readonly draftingConfiguration?: Partial<DraftingConfigurationSnapshot>;
+  readonly patternPieces?: PatternPiece[];
+  readonly engineVersion?: string;
+}
+
 export interface RevisionInputMismatch {
   readonly path: string;
   readonly field: string;
   readonly baselineValue: unknown;
   readonly currentValue: unknown;
-  readonly severity: MismatchSeverity;
+  readonly severity: 'breaking' | 'advisory';
   readonly description: string;
 }
 
-/**
- * Result of comparing a saved revision snapshot against current input state.
- */
 export interface RevisionComparisonResult {
   readonly isStale: boolean;
   readonly hasBreakingChanges: boolean;
@@ -510,9 +518,6 @@ export interface RevisionComparisonResult {
   readonly comparedAt: string;
 }
 
-/**
- * Result of validating the structural and semantic integrity of a revision snapshot.
- */
 export interface RevisionValidationResult {
   readonly isValid: boolean;
   readonly errors: readonly string[];
@@ -520,106 +525,34 @@ export interface RevisionValidationResult {
   readonly validatedAt: string;
 }
 
-/**
- * Input arguments for creating a ProductionPatternRevisionSnapshot.
- */
-export interface CreateProductionPatternRevisionInput {
-  readonly projectId: string;
-  readonly revisionId?: string;
-  readonly parentRevisionId?: string;
-  readonly revisionIndex?: number;
-  readonly createdAt?: string;
-  readonly createdBy?: string;
-  readonly targetSize: string;
-  readonly designSpecification: DesignSpecification;
-  readonly measurements: {
-    readonly values: Record<string, number>;
-    readonly defaultOrigin?: MeasurementOrigin;
-    readonly perMeasurementOrigin?: Record<string, MeasurementOrigin>;
-    readonly approval?: Partial<MeasurementApprovalRecord>;
-    readonly notes?: string[];
-  };
-  readonly fabric: FabricProperty;
-  readonly patternPieces: readonly PatternPiece[];
-  readonly draftingConfiguration?: Partial<DraftingConfigurationSnapshot>;
-  readonly validation: ValidationReport;
-  readonly assemblySummary?: Partial<AssemblySummarySnapshot>;
-  readonly gradingSummary?: Partial<GradingSummarySnapshot>;
-  readonly engineProvenance?: Partial<EngineProvenanceRecord>;
-  readonly physicalValidationStatus?:
-    | 'conforming'
-    | 'acceptable-with-adjustments'
-    | 'non-conforming'
-    | 'incomplete'
-    | 'unsupported-validation-scope'
-    | 'not-assessed';
-}
-
-/**
- * Inputs for checking if a snapshot is stale against current workspace state.
- */
-export interface CurrentRevisionInputs {
-  readonly designSpecification?: Partial<DesignSpecification>;
-  readonly measurements?: {
-    readonly values?: Record<string, number>;
-    readonly defaultOrigin?: MeasurementOrigin;
-    readonly perMeasurementOrigin?: Record<string, MeasurementOrigin>;
-    readonly approval?: Partial<MeasurementApprovalRecord>;
-  };
-  readonly targetSize?: string;
-  readonly fabric?: Partial<FabricProperty>;
-  readonly draftingConfiguration?: Partial<DraftingConfigurationSnapshot>;
-  readonly patternPieces?: readonly PatternPiece[];
-  readonly engineVersion?: string;
-}
-
-/**
-  * Base error class for all production snapshot operations.
-  */
-export class ProductionSnapshotError extends Error {
-  constructor(message: string) {
+export class ProductionSnapshotValidationError extends Error {
+  readonly errors?: readonly string[];
+  constructor(message: string, errors?: readonly string[]) {
     super(message);
-    this.name = 'ProductionSnapshotError';
+    this.name = 'ProductionSnapshotValidationError';
+    this.errors = errors;
   }
 }
 
-/**
-  * Error thrown when geometry serialization encounters non-finite coordinates or invalid topology.
-  */
-export class ProductionSnapshotGeometryError extends ProductionSnapshotError {
+export { ProductionSnapshotValidationError as ProductionSnapshotError };
+
+export class ProductionSnapshotGeometryError extends ProductionSnapshotValidationError {
   constructor(message: string) {
     super(message);
     this.name = 'ProductionSnapshotGeometryError';
   }
 }
 
-/**
-  * Error thrown when measurement values, units, or origin provenance violate contracts.
-  */
-export class ProductionSnapshotMeasurementError extends ProductionSnapshotError {
+export class ProductionSnapshotMeasurementError extends ProductionSnapshotValidationError {
   constructor(message: string) {
     super(message);
     this.name = 'ProductionSnapshotMeasurementError';
   }
 }
 
-/**
-  * Error thrown when material properties or physical fabric parameters are invalid.
-  */
-export class ProductionSnapshotFabricError extends ProductionSnapshotError {
+export class ProductionSnapshotFabricError extends ProductionSnapshotValidationError {
   constructor(message: string) {
     super(message);
     this.name = 'ProductionSnapshotFabricError';
   }
 }
-
-/**
-  * Error thrown when snapshot structural or semantic validation fails.
-  */
-export class ProductionSnapshotValidationError extends ProductionSnapshotError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ProductionSnapshotValidationError';
-  }
-}
-

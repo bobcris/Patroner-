@@ -21,6 +21,8 @@ import {
   resetAuthorityProviderContext,
   issueVerifiableIdentityCredential,
   createTrustedIdentityVerifier,
+  createOidcPublicJwk,
+  deriveEd25519SigningKeyPair,
   signSpecificationApprovalPayload,
   createTrustedCryptographicVerifier
 } from './garment-specification';
@@ -902,7 +904,123 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
   // Scenario 30: Valid, complete, current documentation export permitted
   // -------------------------------------------------------------------------
   it('Scenario 30: permits manufacturing documentation export when all prerequisites are satisfied and isProductionReady remains false', () => {
-    const { spec, pieces, snapshot, gradingArtifact, report } = createFullPipelineSynchronizedFixture();
+    const draft = createAuthoritativeGarmentSpecification({
+      projectId: 'project-adversarial-v2',
+      garmentId: 'adv-skirt-v2',
+      specificationRevisionId: 'spec-adv-skirt-v2-v1',
+      name: 'Adversarial Test Skirt V2',
+      garmentCategory: 'skirt',
+      silhouette: 'straight',
+      fabric: standardFabric,
+      easeProfile: 'classic',
+      lengthCm: 68.0
+    });
+    const kp = deriveEd25519SigningKeyPair('key-prod-scen30', 'seed-prod-scen30');
+    const cryptoVerifier = createTrustedCryptographicVerifier({
+      publicKeyRegistry: [kp.publicKeyRegistration]
+    });
+    const sig = signSpecificationApprovalPayload(
+      {
+        projectId: draft.projectId,
+        garmentId: draft.garmentId,
+        specificationRevisionId: draft.specificationRevisionId,
+        specificationVersion: draft.version,
+        canonicalSpecificationFingerprint: computeSpecificationFingerprint(draft),
+        approvalEventId: 'evt-scen30-approve',
+        approverPrincipal: 'Certified Master Tailor',
+        authorityTier: 'cryptographic_principal',
+        approvalTimestamp: '2026-11-09T10:00:00.000Z',
+        schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION
+      },
+      { keyId: 'key-prod-scen30', privateKeyHex: kp.privateKeyHex }
+    );
+    const spec = approveAuthoritativeGarmentSpecification(draft, 'Certified Master Tailor', {
+      authorityTier: 'cryptographic_principal',
+      approvalEventId: 'evt-scen30-approve',
+      approvedAt: '2026-11-09T10:00:00.000Z',
+      cryptographicSignature: sig,
+      cryptographicVerifier: cryptoVerifier
+    });
+    const designSpec = convertToDesignSpecification(spec);
+    const pieces = draftSkirtBlock(sizeM, designSpec);
+    const snapshot = createProductionPatternRevision({
+      projectId: 'project-adversarial-v2',
+      revisionId: 'rev-adv-skirt-v2-M',
+      targetSize: 'M',
+      designSpecification: designSpec,
+      measurements: {
+        values: ({ ...sizeM } as unknown) as Record<string, number>,
+        defaultOrigin: 'user-entered',
+        approval: {
+          state: 'approved',
+          approvedBy: 'Master Tailor',
+          approvedAt: '2026-11-09T08:00:00.000Z'
+        }
+      },
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validation: validReport,
+      physicalValidationStatus: 'not-assessed'
+    });
+    const graded = gradePattern(designSpec);
+    const measFp = computeArtifactInputFingerprint({
+      unit: sizeM.unit,
+      waist: sizeM.waist,
+      lowHip: sizeM.lowHip,
+      highHip: sizeM.highHip,
+      skirtLength: sizeM.skirtLength,
+      bust: sizeM.bust,
+      waistToHip: sizeM.waistToHip,
+      backWaistLength: sizeM.backWaistLength,
+      frontWaistLength: sizeM.frontWaistLength,
+      acrossBack: sizeM.acrossBack,
+      shoulderLength: sizeM.shoulderLength,
+      neckCircumference: sizeM.neckCircumference,
+      bustSpan: sizeM.bustSpan,
+      bustHeight: sizeM.bustHeight,
+      armholeDepth: sizeM.armholeDepth,
+      bicepsCircumference: sizeM.bicepsCircumference,
+      elbowCircumference: sizeM.elbowCircumference,
+      wristCircumference: sizeM.wristCircumference,
+      sleeveLength: sizeM.sleeveLength,
+      armLengthToElbow: sizeM.armLengthToElbow,
+      activeSize: 'M'
+    });
+    const gradingRulesFp = computeArtifactInputFingerprint({
+      system: 'standard-iso-8559',
+      baseSize: 'M',
+      version: 'iso8559-standard',
+      sizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+    });
+    const gradingArtifact = createAuthoritativeGradingArtifact({
+      projectId: 'project-adversarial-v2',
+      tenantId: 'project-adversarial-v2',
+      sourceSpecificationId: spec.garmentId,
+      sourceSpecificationRevisionId: spec.specificationRevisionId,
+      sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
+      sourcePatternRevisionId: snapshot.revisionId,
+      sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
+      sourceMeasurementSetFingerprint: measFp,
+      gradingRuleSetRevision: 'rules-grading-iso8559-standard',
+      gradingRuleSetFingerprint: gradingRulesFp,
+      baseSize: 'M',
+      sizeRange: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+      gradedPatternSet: graded,
+      basePatternPieces: pieces
+    });
+    const report = evaluatePipelineDependencyIntegrity({
+      specification: spec,
+      measurements: sizeM,
+      activeSize: 'M',
+      fabric: standardFabric,
+      patternPieces: pieces,
+      validationReport: validReport,
+      productionSnapshot: snapshot,
+      gradingArtifact,
+      verificationContext: {
+        cryptographicVerifier: cryptoVerifier
+      }
+    });
 
     const exportResult = validateProductionExportPrerequisites(report, snapshot, {
       specification: spec,
@@ -910,7 +1028,14 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       fabric: standardFabric,
       patternPieces: pieces,
       validationReport: validReport,
-      gradingArtifact
+      gradingArtifact,
+      exportGradingPolicy: {
+        mode: 'graded-multi-size',
+        requiredSizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+      },
+      verificationContext: {
+        cryptographicVerifier: cryptoVerifier
+      }
     });
 
     assert.equal(exportResult.isExportPermitted, true);
@@ -962,7 +1087,13 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
     const verifier = createTrustedIdentityVerifier({
       trustedIssuer: 'https://auth.patroner.internal',
       expectedAudience: 'patroner-spec-approval',
-      sharedSecret: 'secret-key-01'
+      publicJwks: [
+        createOidcPublicJwk({
+          keyId: 'idp-kid-v2-32',
+          signingSecretOrPrivateKeyHex: 'secret-key-01',
+          issuer: 'https://auth.patroner.internal'
+        })
+      ]
     });
 
     assert.throws(() => {
@@ -979,8 +1110,9 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
   // -------------------------------------------------------------------------
   it('Scenario 33: rejects cryptographic_principal approval when verifier is supplied without signature', () => {
     const spec = createBaseApprovedSpec();
+    const kp33 = deriveEd25519SigningKeyPair('key-prod-01', 'signing-secret-01');
     const verifier = createTrustedCryptographicVerifier({
-      trustedKeys: { 'key-prod-01': 'signing-secret-01' }
+      trustedKeys: { 'key-prod-01': kp33.publicKeyHex }
     });
 
     assert.throws(() => {
@@ -1007,8 +1139,9 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       lengthCm: 68.0
     });
 
+    const kp34 = deriveEd25519SigningKeyPair('key-prod-01', 'signing-secret-01');
     const verifier = createTrustedCryptographicVerifier({
-      trustedKeys: { 'key-prod-01': 'signing-secret-01' }
+      trustedKeys: { 'key-prod-01': kp34.publicKeyHex }
     });
 
     const forgedSig = signSpecificationApprovalPayload(
@@ -1063,8 +1196,9 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       lengthCm: 72.0
     });
 
+    const kp35 = deriveEd25519SigningKeyPair('key-prod-01', 'signing-secret-01');
     const verifier = createTrustedCryptographicVerifier({
-      trustedKeys: { 'key-prod-01': 'signing-secret-01' }
+      trustedKeys: { 'key-prod-01': kp35.publicKeyHex }
     });
 
     // Sign draftSpec1's fingerprint, but attempt to attach to draftSpec2
@@ -1111,8 +1245,9 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       lengthCm: 68.0
     });
 
+    const kp36 = deriveEd25519SigningKeyPair('key-prod-01', 'signing-secret-01');
     const verifier = createTrustedCryptographicVerifier({
-      trustedKeys: { 'key-prod-01': 'signing-secret-01' }
+      trustedKeys: { 'key-prod-01': kp36.publicKeyHex }
     });
 
     const sigWrongRev = signSpecificationApprovalPayload(
@@ -1157,10 +1292,14 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       lengthCm: 68.0
     });
 
+    const jwk37 = createOidcPublicJwk('idp-key-37', 'idp-secret-01', {
+      issuer: 'https://auth.patroner.internal',
+      tenantId: 'project-adversarial-v2'
+    });
     const verifier = createTrustedIdentityVerifier({
       trustedIssuer: 'https://auth.patroner.internal',
       expectedAudience: 'patroner-spec-approval',
-      sharedSecret: 'idp-secret-01',
+      publicJwks: [jwk37],
       referenceTimeIso: '2026-11-10T12:00:00.000Z'
     });
 
@@ -1170,6 +1309,11 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
         displayName: 'Elena Rostova',
         issuer: 'https://auth.patroner.internal',
         audience: 'patroner-spec-approval',
+        keyId: 'idp-key-37',
+        tenantId: 'project-adversarial-v2',
+        specificationId: draftSpec.garmentId,
+        targetRevisionId: draftSpec.specificationRevisionId,
+        targetSpecificationFingerprint: computeSpecificationFingerprint(draftSpec),
         issuedAt: '2026-11-10T08:00:00.000Z',
         expiresAt: '2026-11-10T09:00:00.000Z', // Expired 3 hours before referenceTimeIso
         claims: ['specification:approve']
@@ -1203,10 +1347,14 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       lengthCm: 68.0
     });
 
+    const jwk38 = createOidcPublicJwk('idp-key-38', 'idp-secret-01', {
+      issuer: 'https://auth.patroner.internal',
+      tenantId: 'project-adversarial-v2'
+    });
     const verifier = createTrustedIdentityVerifier({
       trustedIssuer: 'https://auth.patroner.internal',
       expectedAudience: 'patroner-spec-approval',
-      sharedSecret: 'idp-secret-01',
+      publicJwks: [jwk38],
       referenceTimeIso: '2026-11-10T10:00:00.000Z'
     });
 
@@ -1216,6 +1364,11 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
         displayName: 'Alice Designer',
         issuer: 'https://auth.patroner.internal',
         audience: 'patroner-spec-approval',
+        keyId: 'idp-key-38',
+        tenantId: 'project-adversarial-v2',
+        specificationId: draftSpec.garmentId,
+        targetRevisionId: draftSpec.specificationRevisionId,
+        targetSpecificationFingerprint: computeSpecificationFingerprint(draftSpec),
         issuedAt: '2026-11-10T09:00:00.000Z',
         expiresAt: '2026-11-10T14:00:00.000Z',
         claims: ['specification:approve']
@@ -1884,10 +2037,14 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       lengthCm: 68.0
     });
 
+    const jwk64 = createOidcPublicJwk('idp-key-tier3', 'idp-secret-tier3', {
+      issuer: 'https://auth.patroner.internal',
+      tenantId: 'project-adversarial-v2'
+    });
     const verifier = createTrustedIdentityVerifier({
       trustedIssuer: 'https://auth.patroner.internal',
       expectedAudience: 'patroner-spec-approval',
-      sharedSecret: 'idp-secret-tier3',
+      publicJwks: [jwk64],
       referenceTimeIso: '2026-11-10T10:00:00.000Z'
     });
 
@@ -1897,6 +2054,11 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
         displayName: 'Elena Rostova',
         issuer: 'https://auth.patroner.internal',
         audience: 'patroner-spec-approval',
+        keyId: 'idp-key-tier3',
+        tenantId: 'project-adversarial-v2',
+        specificationId: draft.garmentId,
+        targetRevisionId: draft.specificationRevisionId,
+        targetSpecificationFingerprint: computeSpecificationFingerprint(draft),
         issuedAt: '2026-11-10T09:30:00.000Z',
         expiresAt: '2026-11-10T18:00:00.000Z',
         claims: ['specification:approve']
@@ -1945,8 +2107,9 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       lengthCm: 68.0
     });
 
+    const kp65 = deriveEd25519SigningKeyPair('key-hsm-prod-01', 'hsm-private-key-material-01');
     const verifier = createTrustedCryptographicVerifier({
-      trustedKeys: { 'key-hsm-prod-01': 'hsm-private-key-material-01' }
+      trustedKeys: { 'key-hsm-prod-01': kp65.publicKeyHex }
     });
 
     const approvalTimestamp = '2026-11-10T10:30:00.000Z';

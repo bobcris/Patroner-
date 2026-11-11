@@ -1,28 +1,44 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * Patroner Pipeline Dependency Graph & Export Verification Types (Milestone 04.6.2.3.4)
  */
 
-/**
- * Classification of pipeline nodes: independent source inputs vs derived artifacts.
- */
-export type PipelineNodeCategory = 'independent_source_input' | 'derived_artifact';
+import { ApprovalAuthorityTier } from './garment-specification-types';
+import {
+  FabricSnapshotProvenance,
+  MeasurementApprovalStatus,
+  MeasurementOrigin
+} from './production-types';
 
-/**
- * Primary authoritative source inputs that exist independently of each other.
- * For example: changing garment length never mutates or invalidates anatomical body measurements.
- */
-export type IndependentSourceInputType =
+export type ExportGradingPolicyMode = 'graded-multi-size' | 'single-size-ungraded';
+export type ExportGradingMode = ExportGradingPolicyMode;
+
+export interface ExportGradingPolicy {
+  readonly mode: ExportGradingPolicyMode;
+  readonly requiredSizes?: readonly string[];
+  readonly nonGradingReason?: string;
+}
+
+export interface GradingSummarySnapshot {
+  readonly isOverallGradingValid: boolean;
+  readonly baseSize?: string;
+  readonly gradeTableName?: string;
+  readonly evaluatedSizes?: readonly string[];
+  readonly validSizeCount?: number;
+  readonly failedSizeCount?: number;
+  readonly unassessedSizeCount?: number;
+  readonly summaryMessage?: string;
+  readonly [key: string]: unknown;
+}
+
+export type PipelineArtifactType =
   | 'specification'
   | 'measurements'
   | 'fabric'
   | 'grading-rules'
-  | 'drafting-engine';
-
-/**
- * Derived engineering artifacts computed deterministically from source inputs and upstream artifacts.
- */
-export type DerivedArtifactType =
+  | 'drafting-engine'
   | 'finished-dimensions'
   | 'drafting-configuration'
   | 'drafting'
@@ -32,129 +48,152 @@ export type DerivedArtifactType =
   | 'production-snapshot'
   | 'production-export';
 
-export type PipelineArtifactType = IndependentSourceInputType | DerivedArtifactType;
+export type PipelineArtifactStage = PipelineArtifactType;
 
 export type PipelineArtifactStatus =
   | 'current'
-  | 'stale'
-  | 'pending'
-  | 'invalid'
   | 'approved'
-  | 'revoked';
+  | 'stale'
+  | 'invalid'
+  | 'pending'
+  | 'unverified'
+  | 'revoked'
+  | 'superseded';
 
-/**
- * Detailed lineage and dependency record for each artifact in the garment engineering pipeline.
- */
+export type ArtifactFreshnessStatus = PipelineArtifactStatus;
+
 export interface PipelineArtifactRecord {
   readonly artifactId: string;
   readonly artifactType: PipelineArtifactType;
-  readonly nodeCategory: PipelineNodeCategory;
-  readonly status: PipelineArtifactStatus;
+  readonly nodeCategory?: 'independent_source_input' | 'derived_artifact';
   readonly revisionId: string;
   readonly sourceRevisionId?: string;
+  readonly status: PipelineArtifactStatus;
   readonly inputFingerprint: string;
-  readonly staleReason?: string;
-  readonly affectedInputPaths?: readonly string[];
-  readonly regenerationRequired: boolean;
-  readonly validationStatus?: string;
+  readonly generatedContentFingerprint?: string;
   readonly upstreamDependencies: readonly string[];
   readonly upstreamFingerprints?: Readonly<Record<string, string>>;
-  readonly generatedContentFingerprint?: string;
-  readonly engineVersion?: string;
-  readonly lastEvaluatedAt: string;
+  readonly staleReason?: string;
+  readonly staleReasons?: readonly string[];
+  readonly affectedInputPaths?: readonly string[];
+  readonly regenerationRequired?: boolean;
+  readonly engineVersion: string;
+  readonly validationStatus?: string;
+  readonly lastEvaluatedAt?: string;
 }
 
-/**
- * Full pipeline integrity evaluation result spanning all engineering stages.
- */
+export type ArtifactDependencyNode = PipelineArtifactRecord;
+
 export interface PipelineIntegrityReport {
   readonly isPipelineSynchronized: boolean;
+  readonly isPipelineCurrent?: boolean;
   readonly hasStaleArtifacts: boolean;
   readonly hasBlockingErrors: boolean;
   readonly activeSpecificationRevisionId: string;
-  readonly activeMeasurementRevisionId: string;
+  readonly activeMeasurementRevisionId?: string;
   readonly independentInputs: Readonly<Record<string, PipelineArtifactRecord>>;
   readonly derivedArtifacts: Readonly<Record<string, PipelineArtifactRecord>>;
   readonly artifacts: Readonly<Record<PipelineArtifactType, PipelineArtifactRecord>>;
   readonly staleReasons: readonly string[];
   readonly requiredActions: readonly string[];
+  readonly blockingReasons?: readonly string[];
   readonly canExportProductionDocumentation: boolean;
   readonly evaluatedAt: string;
+  readonly isProductionReady?: false;
 }
 
 /**
- * Machine-readable rejection codes for production documentation export barriers.
+ * Explicit machine-readable rejection codes for `validateProductionExportPrerequisites`.
+ * Includes specification authority enforcement (`SPECIFICATION_APPROVAL_UNAUTHENTICATED`,
+ * `INVALID_APPROVAL_AUTHORITY`) and complete grading lineage codes (`FINDING-14`, `FINDING-15`).
  */
 export type ProductionExportRejectionCode =
+  | 'INDUSTRIAL_SAFETY_VIOLATION'
+  | 'SNAPSHOT_MISSING'
+  | 'SNAPSHOT_CORRUPT'
   | 'MISSING_ACTIVE_INPUTS'
+  | 'FORGED_REPORT_DETECTED'
+  | 'FORGED_INTEGRITY_REPORT'
+  | 'SNAPSHOT_GEOMETRY_TAMPERED'
+  | 'SNAPSHOT_SPECIFICATION_REVISION_MISMATCH'
+  | 'SNAPSHOT_FABRIC_MISMATCH'
+  | 'SNAPSHOT_MEASUREMENTS_MISMATCH'
   | 'SPECIFICATION_UNAPPROVED'
+  | 'SPECIFICATION_INVALID'
   | 'SPECIFICATION_REVOKED'
   | 'SPECIFICATION_SUPERSEDED'
-  | 'SPECIFICATION_INVALID'
   | 'SPECIFICATION_FINGERPRINT_MISMATCH'
+  | 'SPECIFICATION_APPROVAL_UNAUTHENTICATED'
   | 'INVALID_APPROVAL_AUTHORITY'
-  | 'AUTHORITY_TIER_UNAVAILABLE'
   | 'MEASUREMENT_UNAPPROVED'
   | 'MISSING_MEASUREMENT_PROVENANCE'
   | 'AI_MEASUREMENT_NOT_PERMITTED'
+  | 'SYNTHETIC_MEASUREMENT_NOT_PERMITTED'
   | 'MISSING_FABRIC_PROVENANCE'
-  | 'SNAPSHOT_MISSING'
-  | 'SNAPSHOT_TAMPERED'
-  | 'SNAPSHOT_CORRUPT'
-  | 'SNAPSHOT_SPECIFICATION_MISMATCH'
-  | 'SNAPSHOT_SPECIFICATION_REVISION_MISMATCH'
-  | 'SNAPSHOT_MEASUREMENTS_MISMATCH'
-  | 'SNAPSHOT_FABRIC_MISMATCH'
-  | 'SNAPSHOT_GEOMETRY_TAMPERED'
+  | 'ENGINE_VERSION_MISMATCH'
+  | 'UPSTREAM_STAGE_INVALID'
+  | 'UPSTREAM_STAGE_STALE'
+  | 'STALE_SOURCE_FINGERPRINT'
   | 'STALE_PATTERN_GEOMETRY'
   | 'STALE_VALIDATION_REPORT'
   | 'STALE_GRADING_RESULT'
-  | 'ENGINE_VERSION_MISMATCH'
-  | 'GRADING_RULES_MISMATCH'
-  | 'UPSTREAM_STAGE_STALE'
-  | 'UPSTREAM_STAGE_INVALID'
-  | 'FORGED_REPORT_DETECTED'
-  | 'FORGED_INTEGRITY_REPORT'
-  | 'STALE_SOURCE_FINGERPRINT'
-  | 'MISSING_REQUIRED_LINEAGE'
+  | 'GRADING_APPLICABILITY_UNDECLARED'
   | 'GRADING_ARTIFACT_MISSING'
   | 'GRADING_ARTIFACT_TAMPERED'
   | 'GRADING_ARTIFACT_REVOKED'
   | 'GRADING_ARTIFACT_SUPERSEDED'
-  | 'GRADING_VALIDATION_FAILED'
+  | 'GRADING_RULES_MISMATCH'
   | 'GRADING_SIZE_RANGE_INCOMPLETE'
-  | 'GRADING_SCOPE_MISMATCH'
-  | 'GRADING_APPLICABILITY_UNDECLARED'
-  | 'INDUSTRIAL_SAFETY_VIOLATION';
+  | 'GRADING_VALIDATION_FAILED'
+  | 'GRADING_SCOPE_MISMATCH';
 
-/**
- * Summary of manufacturing documentation export metadata.
- * Physical manufacturing readiness remains strictly false.
- */
-export interface ManufacturingDocumentationSummary {
-  readonly isProductionReady: false;
-  readonly specificationFingerprint: string;
-  readonly patternRevisionFingerprint: string;
-  readonly revisionId: string;
+export interface ManufacturingDocumentationBundle {
+  readonly bundleId?: string;
   readonly exportedAt: string;
-  readonly gradingMode?: 'graded-multi-size' | 'single-size-ungraded';
+  readonly revisionId?: string;
+  readonly snapshotRevisionId?: string;
+  readonly patternRevisionFingerprint: string;
+  readonly snapshotCanonicalFingerprint?: string;
+  readonly specificationId?: string;
+  readonly specificationRevisionId?: string;
+  readonly specificationVersion?: number;
+  readonly specificationFingerprint: string;
+  readonly approvalAuthorityTier?: ApprovalAuthorityTier;
+  readonly approvedBy?: string;
+  readonly approvedAt?: string;
+  readonly measurementRevisionId?: string;
+  readonly measurementSetFingerprint?: string;
+  readonly measurementProvenance?: MeasurementOrigin;
+  readonly measurementApprovalState?: MeasurementApprovalStatus;
+  readonly fabricId?: string;
+  readonly fabricRevision?: string;
+  readonly fabricProvenance?: FabricSnapshotProvenance;
+  readonly fabricFingerprint?: string;
+  readonly patternPieceFingerprints?: readonly string[];
+  readonly validationStatus?: 'validated' | 'warnings' | 'invalid' | string;
+  readonly gradingMode?: ExportGradingMode;
   readonly gradingArtifactId?: string;
   readonly gradingRevisionId?: string;
   readonly gradingArtifactFingerprint?: string;
+  readonly gradingRuleSetId?: string;
+  readonly gradingRuleSetRevision?: string;
+  readonly gradingRuleSetFingerprint?: string;
+  readonly gradedSizeRange?: readonly string[];
   readonly nonGradingReason?: string;
+  readonly physicalValidationStatus?: string;
+  readonly engineVersion?: string;
+  readonly isProductionReady: false;
+  readonly disclaimer?: string;
 }
 
-/**
- * Validation result for production export requests.
- */
 export interface ProductionExportValidationResult {
   readonly isExportPermitted: boolean;
-  readonly rejectionCode?: ProductionExportRejectionCode;
-  readonly rejectionReason?: string;
   readonly blockingArtifacts: readonly string[];
-  readonly warnings: readonly string[];
+  readonly warnings?: readonly string[];
+  readonly rejectionReason?: string;
+  readonly rejectionCode?: ProductionExportRejectionCode;
   readonly validationDetails?: Readonly<Record<string, unknown>>;
-  readonly manufacturingDocumentation?: ManufacturingDocumentationSummary;
+  readonly manufacturingDocumentation?: ManufacturingDocumentationBundle;
 }
 
-
+export type ProductionExportVerificationResult = ProductionExportValidationResult;

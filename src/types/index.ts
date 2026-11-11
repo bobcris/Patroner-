@@ -99,6 +99,8 @@ export interface DesignSpecification {
   fabricRevision?: string;
   fabricProvenance?: 'supplier-declared' | 'laboratory-tested' | 'user-entered' | 'project-default' | 'unknown' | 'unverified';
   approvedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
   approvalState?: 'draft' | 'pending_approval' | 'approved' | 'revoked' | 'superseded' | 'invalid';
   approvalAuthorityTier?: 'unauthenticated_local_session' | 'demonstration_fixture' | 'authenticated_designer' | 'cryptographic_principal';
   supersededByRevisionId?: string;

@@ -216,6 +216,20 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
   const liveSnapshot = React.useMemo(() => {
     try {
+      const measurementApproverLabel =
+        measurementApprovalState !== 'approved'
+          ? undefined
+          : measurementProvenance === 'operator-confirmed'
+            ? 'Local Operator Confirmation (Unauthenticated)'
+            : measurementProvenance === 'physically-measured'
+              ? 'Physical Tape Measurement Record'
+              : measurementProvenance === 'user-entered'
+                ? 'User-Entered Measurement Record'
+                : measurementProvenance === 'standard-chart'
+                  ? 'ISO 13402 Standard Reference Chart'
+                  : measurementProvenance === 'imported'
+                    ? 'Imported Measurement Profile'
+                    : undefined;
       return createProductionPatternRevision({
         projectId: 'project-patroner-default',
         revisionId: `rev-${currentSpec.id}-v${currentSpec.version}-${activeSize}`,
@@ -226,7 +240,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
           defaultOrigin: measurementProvenance,
           approval: {
             state: measurementApprovalState,
-            approvedBy: measurementApprovalState === 'approved' ? 'Operator Confirmed' : undefined,
+            approvedBy: measurementApproverLabel,
             approvedAt: measurementApprovalState === 'approved' ? '2026-11-09T08:00:00.000Z' : undefined
           }
         },
@@ -282,6 +296,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         sourceSpecificationRevisionId: specRevId,
         sourceSpecificationFingerprint: specFp,
         sourcePatternRevisionId: liveSnapshot.revisionId,
+        sourcePatternSnapshotFingerprint: liveSnapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,

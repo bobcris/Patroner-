@@ -32,7 +32,7 @@ export default function App() {
     skirtLength: INITIAL_CONCEPTS[0].lengthCm
   });
   const [measurementProvenance, setMeasurementProvenance] = useState<MeasurementOrigin>('standard-chart');
-  const [measurementApprovalState, setMeasurementApprovalState] = useState<MeasurementApprovalStatus>('approved');
+  const [measurementApprovalState, setMeasurementApprovalState] = useState<MeasurementApprovalStatus>('unverified');
   const [measurementRevisionCount, setMeasurementRevisionCount] = useState<number>(1);
 
   // Compute live validation status for current draft

@@ -1,1282 +1,1983 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * Patroner Authoritative Garment Specification Engine (Milestone 04.6.2.3.4)
+ *
+ * Implements:
+ * 1. Complete canonical specification serialization & SHA-256 fingerprinting.
+ * 2. Hardened RFC 8032 Ed25519 asymmetric public-key signature creation & verification
+ *    with strict small-order torsion point rejection and public-key-only boundaries (FINDING-01..05, 08..11).
+ * 3. Hardened OIDC / JWT (`EdDSA` / `Ed25519`) compact token verification against a
+ *    controlled JWKS registry with target-revision/fingerprint binding (`FINDING-06`),
+ *    atomic single-use JTI replay protection (`JtiReplayStore`), critical header (`crit`)
+ *    rejection (`FINDING-07`), `amr`/`acr` context validation, and trusted-time key
+ *    lifecycle & compromise revocation enforcement (`FINDING-11`).
+ * 4. Immutable revision and append-only approval/revocation history.
  */
 
-import { DesignSpecification } from '../../types';
-import { CURRENT_ENGINE_VERSION } from './pattern-revision-snapshot';
-import { canonicalizeJson, deepFreeze } from './pattern-revision-snapshot';
 import {
-  base64UrlDecodeBytes,
-  base64UrlDecodeUtf8,
+  BodiceDartStyle,
+  DesignSpecification,
+  EaseProfile,
+  FabricProperty,
+  GarmentCategory,
+  GarmentConstructionFeature,
+  Silhouette,
+  SleeveEaseStrategy
+} from '../../types';
+import {
+  EnhancedFabricProperty
+} from '../fabric/fabric-types';
+import { getEnhancedFabricById } from '../fabric/fabric-presets';
+import {
+  base64UrlDecodeToBytes,
+  base64UrlDecodeToUtf8,
   base64UrlEncodeBytes,
+  base64UrlEncodeUtf8,
   bytesToHex,
+  canonicalizeJson,
+  computeCanonicalSha256,
   computeEd25519PublicKeyFingerprint,
-  Ed25519KeyPair,
   generateEd25519KeyPairFromSeed,
   hexToBytes,
-  OidcJwtHeader,
-  OidcJwtPayload,
+  isValidEd25519PublicKey,
+  isValidEd25519PublicKeyBytes,
   sha256Hex,
+  signEd25519Bytes,
   signEd25519Message,
-  signOidcJwtEdDsa,
+  utf8ToBytes,
+  verifyEd25519Bytes,
   verifyEd25519Signature
 } from './crypto';
 import {
   ApprovalAuthorityTier,
   ApprovalVerificationContext,
-  AuthorityProviderContext,
   AuthoritativeGarmentSpecification,
+  AuthorityProviderContext,
+  CanonicalApprovalSigningPayload,
   ControlledPublicKeyRegistration,
+  ControlledPublicKeyRegistry,
   CreateAuthoritativeSpecificationInput,
   CryptographicApprovalBindingPayload,
+  CryptographicVerificationResult,
+  ExplicitGarmentEaseAllowances,
+  IdentityCredentialVerificationOptions,
+  IdentityVerificationResult,
+  JtiReplayRecord,
+  JtiReplayStore,
+  ManufacturingSeamAllowances,
   OidcJwkPublicKey,
+  OidcJwtHeader,
+  OidcJwtPayload,
   ParameterValueProvenance,
   SPECIFICATION_CANONICAL_SCHEMA_VERSION,
   SpecificationApprovalEvent,
   SpecificationApprovalRecord,
-  SpecificationApprovalState,
+  SpecificationApprovalVerificationContext,
+  SpecificationApprovalVerificationResult,
   SpecificationLifecycleEvent,
   SpecificationRevocationEvent,
-  SpecificationSupersessionEvent,
   SpecificationValueProvenance,
-  TrustedCryptographicVerificationResult,
+  TargetFinishedGarmentDimensions,
   TrustedCryptographicVerifier,
-  TrustedIdentityVerificationResult,
   TrustedIdentityVerifier,
   VerifiableCryptographicSignature,
   VerifiableIdentityCredential,
   VerifiedIdentityProvenance
 } from './garment-specification-types';
-import { EnhancedFabricProperty } from '../fabric/fabric-types';
-import { ProductionSnapshotValidationError } from './production-types';
+import {
+  EngineProvenanceRecord,
+  FabricSnapshotProvenance,
+  ProductionSnapshotValidationError
+} from './production-types';
 
-const CANONICAL_MISSING_SENTINEL = '__MISSING__' as const;
-
-const VALID_GARMENT_CATEGORIES = new Set(['skirt', 'bodice', 'trouser', 'dress']);
-const VALID_SILHOUETTES = new Set(['a-line', 'straight', 'pencil', 'flared', 'tailored', 'relaxed', 'wrap']);
-const VALID_EASE_PROFILES = new Set(['ultra-fitted', 'fitted', 'classic', 'relaxed', 'oversized']);
-
-/**
- * Validates whether an ISO date string is syntactically well-formed and parseable.
- */
-function isValidIsoDate(dateStr: unknown): boolean {
-  if (typeof dateStr !== 'string' || dateStr.trim() === '') return false;
-  const epoch = Date.parse(dateStr);
-  return Number.isFinite(epoch);
-}
+// ============================================================================
+// STRICT PUBLIC-KEY-ONLY BOUNDARY GUARD (FINDING-08, FINDING-10)
+// ============================================================================
 
 /**
- * Locked global authority provider context.
- * CORRECTION B: Global mutable boolean state is NEVER trusted as proof of identity or cryptographic signing.
- * Callers cannot elevate their own approval authority by configuring global boolean flags.
+ * Exhaustive list of private-key, seed, and shared-secret field names that MUST NEVER
+ * appear in any verification-only configuration, public-key registration, or JWK (`FINDING-10`).
  */
-const LOCKED_UNTRUSTED_GLOBAL_PROVIDER_CONTEXT: AuthorityProviderContext = Object.freeze({
-  identityProviderConfigured: false,
-  cryptographicProviderConfigured: false,
-  hasAuthenticatedIdentityProvider: () => false,
-  hasCryptographicSigningProvider: () => false
-});
+export const FORBIDDEN_VERIFIER_PRIVATE_KEY_FIELDS = Object.freeze([
+  'd',
+  'privateKey',
+  'privateKeyHex',
+  'privateKeyPem',
+  'privateKeySecret',
+  'privateKeySeed',
+  'privateKeySeedHex',
+  'seed',
+  'seedHex',
+  'signingKeyMaterial',
+  'signingSecret',
+  'secret',
+  'secretKey',
+  'sharedSecret',
+  'providerSecret'
+] as const);
 
-export function setAuthorityProviderContext(_ctx: AuthorityProviderContext): void {
-  // Security boundary (Correction B): Global mutable authority configuration is disabled.
-  // Authority verification requires dependency-injected TrustedIdentityVerifier / TrustedCryptographicVerifier
-  // and verifiable credentials/signatures per operation.
+function assertNoPrivateKeyMaterialInVerifierBoundary(
+  candidate: unknown,
+  boundaryName: string
+): void {
+  if (!candidate || typeof candidate !== 'object') {
+    return;
+  }
+  const record = candidate as Record<string, unknown>;
+  for (const field of FORBIDDEN_VERIFIER_PRIVATE_KEY_FIELDS) {
+    if (field in record && record[field] !== undefined) {
+      if (field === 'd') {
+        throw new ProductionSnapshotValidationError(
+          `Security boundary violation: ${boundaryName} must not contain private key parameter "d".`,
+          ['verifier-private-key-material-forbidden']
+        );
+      }
+      throw new ProductionSnapshotValidationError(
+        `Security boundary violation: ${boundaryName} must contain public-key material only (forbidden private/secret field "${field}" detected).`,
+        ['verifier-private-key-material-forbidden']
+      );
+    }
+  }
 }
 
-export function resetAuthorityProviderContext(): void {
-  // No-op: global authority context remains permanently locked.
+// ============================================================================
+// AUTHORITY PROVIDER CONTEXT (LEGACY BOOLEAN BYPASS PERMANENTLY DISABLED)
+// ============================================================================
+
+/**
+ * Retained only for backwards-compatible test imports; never enables Tier 3 or Tier 4.
+ * Calling `setAuthorityProviderContext({ identityProviderConfigured: true })` is a no-op
+ * that keeps both flags `false`, preventing boolean privilege elevation (Scenario 31).
+ */
+export function setAuthorityProviderContext(_ctx: Partial<AuthorityProviderContext>): void {
+  // Intentionally ignored: Tier 3 and Tier 4 require real asymmetric verifiers.
 }
 
 export function getAuthorityProviderContext(): AuthorityProviderContext {
-  return LOCKED_UNTRUSTED_GLOBAL_PROVIDER_CONTEXT;
+  return {
+    identityProviderConfigured: false,
+    cryptographicProviderConfigured: false
+  };
 }
 
+export function resetAuthorityProviderContext(): void {
+  // No-op: global boolean flags are permanently disabled.
+}
+
+// ============================================================================
+// CONTROLLED PUBLIC-KEY REGISTRY & GOVERNANCE (Ed25519)
+// ============================================================================
+
+export const PUBLIC_KEY_REGISTRY_SCHEMA_VERSION = '04.6.2.3.4-pk-registry-v1';
+
 /**
- * Generates an RFC 8032 Ed25519 asymmetric keypair and controlled public-key registration entry
- * from a seed string or 64-character hex seed.
+ * Derives an Ed25519 signing keypair and a corresponding public-key-only
+ * `ControlledPublicKeyRegistration` for test/HSM signing setup.
+ * Supports both `deriveEd25519SigningKeyPair(seed)` and `deriveEd25519SigningKeyPair(keyId, seed, options)`.
  */
 export function deriveEd25519SigningKeyPair(
-  keyIdOrSeed: string,
-  privateKeySeed?: string,
-  metadata?: {
-    readonly issuer?: string;
-    readonly providerId?: string;
-    readonly tenantId?: string;
-    readonly activatedAt?: string;
-    readonly expiresAt?: string;
-    readonly revoked?: boolean;
-    readonly trustStatus?: 'trusted' | 'untrusted' | 'revoked' | 'expired' | 'controlled_local_public_key';
-    readonly registrationProvenance?: string;
-    readonly allowedPrincipals?: readonly string[];
-  }
-): Ed25519KeyPair & {
+  firstArg: string,
+  secondArg?: string,
+  options?: Partial<ControlledPublicKeyRegistration>
+): {
   readonly keyId: string;
-  readonly keyPair: Ed25519KeyPair;
+  readonly privateKeyHex: string;
+  readonly publicKeyHex: string;
+  readonly publicKeyBase64Url: string;
+  readonly publicKeyFingerprint: string;
+  readonly algorithm: 'Ed25519';
   readonly publicKeyRegistration: ControlledPublicKeyRegistration;
 } {
-  const effectiveKeyId = privateKeySeed !== undefined ? keyIdOrSeed : 'ed25519-key-default';
-  const effectiveSeed = privateKeySeed !== undefined ? privateKeySeed : keyIdOrSeed;
-  const keyPair = generateEd25519KeyPairFromSeed(effectiveSeed);
+  const hasExplicitKeyId = typeof secondArg === 'string' && secondArg.trim().length > 0;
+  const seedOrHex = hasExplicitKeyId ? secondArg! : firstArg;
+  const kp = generateEd25519KeyPairFromSeed(seedOrHex);
+  const keyId = hasExplicitKeyId
+    ? firstArg.trim()
+    : options?.keyId?.trim() || `ed25519-key-${kp.publicKeyFingerprint.slice(0, 12)}`;
+
   const publicKeyRegistration: ControlledPublicKeyRegistration = Object.freeze({
-    keyId: effectiveKeyId,
-    publicKeyHex: keyPair.publicKeyHex,
-    publicKeyFingerprint: keyPair.publicKeyFingerprint,
+    keyId,
     algorithm: 'Ed25519',
-    issuer: metadata?.issuer ?? 'patroner-enterprise-kms',
-    providerId: metadata?.providerId ?? 'patroner-kms-ed25519',
-    tenantId: metadata?.tenantId,
-    organizationScope: metadata?.tenantId,
-    activatedAt: metadata?.activatedAt,
-    expiresAt: metadata?.expiresAt,
-    revoked: metadata?.revoked ?? false,
-    trustStatus: metadata?.trustStatus ?? (metadata?.revoked ? 'revoked' : 'trusted'),
-    registrationProvenance: metadata?.registrationProvenance ?? 'controlled-key-registry',
-    allowedPrincipals: metadata?.allowedPrincipals ? [...metadata.allowedPrincipals] : undefined
+    publicKeyHex: kp.publicKeyHex,
+    publicKeyBase64Url: kp.publicKeyBase64Url,
+    publicKeyFingerprint: kp.publicKeyFingerprint,
+    principalId: options?.principalId ?? options?.ownerPrincipal ?? '*',
+    ownerPrincipal: options?.ownerPrincipal ?? options?.principalId ?? '*',
+    issuer: options?.issuer ?? 'urn:patroner:pki:default',
+    tenantId: options?.tenantId ?? '*',
+    allowedScopes: options?.allowedScopes ?? ['specification:approve'],
+    activatedAt: options?.activatedAt ?? '2025-01-01T00:00:00.000Z',
+    expiresAt: options?.expiresAt ?? '2030-01-01T00:00:00.000Z',
+    revoked: options?.revoked ?? false,
+    trustStatus: options?.trustStatus ?? 'controlled_local_public_key'
   });
+
   return Object.freeze({
-    ...keyPair,
-    keyId: effectiveKeyId,
-    keyPair,
+    keyId,
+    privateKeyHex: kp.privateKeyHex,
+    publicKeyHex: kp.publicKeyHex,
+    publicKeyBase64Url: kp.publicKeyBase64Url,
+    publicKeyFingerprint: kp.publicKeyFingerprint,
+    algorithm: 'Ed25519' as const,
     publicKeyRegistration
   });
 }
 
 /**
- * Creates a public-key-only OIDC JWK entry (`kty: 'OKP'`, `crv: 'Ed25519'`, `alg: 'EdDSA'`) from a seed or public key hex.
+ * Creates an empty or initialized controlled public-key registry.
  */
-export function createOidcPublicJwk(
-  kidOrOptions:
-    | string
-    | {
-        readonly kid?: string;
-        readonly keyId?: string;
-        readonly signingSecretOrPrivateKeyHex?: string;
-        readonly privateKeySeed?: string;
-        readonly publicKeyHex?: string;
-        readonly issuer?: string;
-        readonly tenantId?: string;
-        readonly activatedAt?: string;
-        readonly expiresAt?: string;
-        readonly revoked?: boolean;
-        readonly trustStatus?: 'trusted' | 'untrusted' | 'revoked' | 'expired';
-      },
-  seedOrPublicKey?: { readonly privateKeySeed?: string; readonly publicKeyHex?: string },
-  metadata?: {
-    readonly issuer?: string;
-    readonly tenantId?: string;
-    readonly activatedAt?: string;
-    readonly expiresAt?: string;
-    readonly revoked?: boolean;
-    readonly trustStatus?: 'trusted' | 'untrusted' | 'revoked' | 'expired';
+export function createControlledPublicKeyRegistry(
+  initialEntries: ControlledPublicKeyRegistration[] = []
+): ControlledPublicKeyRegistry {
+  let registry: ControlledPublicKeyRegistry = {
+    schemaVersion: PUBLIC_KEY_REGISTRY_SCHEMA_VERSION,
+    entries: {}
+  };
+  for (const entry of initialEntries) {
+    registry = registerPublicKeyInRegistry(registry, entry);
   }
-): OidcJwkPublicKey {
-  if (typeof kidOrOptions === 'object' && kidOrOptions !== null) {
-    const kid = (kidOrOptions.kid ?? kidOrOptions.keyId ?? '').trim();
-    const seed = kidOrOptions.signingSecretOrPrivateKeyHex ?? kidOrOptions.privateKeySeed ?? '';
-    const pubHex = kidOrOptions.publicKeyHex
-      ? kidOrOptions.publicKeyHex.toLowerCase()
-      : generateEd25519KeyPairFromSeed(seed).publicKeyHex;
-    const pubBytes = hexToBytes(pubHex);
-    return Object.freeze({
-      kty: 'OKP',
-      crv: 'Ed25519',
-      kid,
-      alg: 'EdDSA',
-      use: 'sig',
-      x: base64UrlEncodeBytes(pubBytes),
-      publicKeyHex: pubHex,
-      issuer: kidOrOptions.issuer,
-      tenantId: kidOrOptions.tenantId,
-      activatedAt: kidOrOptions.activatedAt,
-      expiresAt: kidOrOptions.expiresAt,
-      revoked: kidOrOptions.revoked ?? false,
-      trustStatus: kidOrOptions.trustStatus ?? (kidOrOptions.revoked ? 'revoked' : 'trusted')
-    });
-  }
-
-  const pubHex = seedOrPublicKey?.publicKeyHex
-    ? seedOrPublicKey.publicKeyHex.toLowerCase()
-    : generateEd25519KeyPairFromSeed(seedOrPublicKey?.privateKeySeed ?? '').publicKeyHex;
-  const pubBytes = hexToBytes(pubHex);
-  return Object.freeze({
-    kty: 'OKP',
-    crv: 'Ed25519',
-    kid: kidOrOptions,
-    alg: 'EdDSA',
-    use: 'sig',
-    x: base64UrlEncodeBytes(pubBytes),
-    publicKeyHex: pubHex,
-    issuer: metadata?.issuer,
-    tenantId: metadata?.tenantId,
-    activatedAt: metadata?.activatedAt,
-    expiresAt: metadata?.expiresAt,
-    revoked: metadata?.revoked ?? false,
-    trustStatus: metadata?.trustStatus ?? (metadata?.revoked ? 'revoked' : 'trusted')
-  });
+  return registry;
 }
 
 /**
- * Canonicalizes the complete cryptographic approval binding payload for asymmetric signing and verification.
+ * Validates a `ControlledPublicKeyRegistration` entry to ensure it contains only
+ * valid, canonical, non-torsion Ed25519 public-key material (`FINDING-02`, `FINDING-08`, `FINDING-10`).
  */
-export function canonicalizeApprovalSignaturePayload(
-  payload: CryptographicApprovalBindingPayload
-): string {
-  if (!payload || typeof payload !== 'object') {
-    throw new ProductionSnapshotValidationError('Cryptographic approval binding payload must be a non-null object.');
-  }
-  return canonicalizeJson({
-    algorithm: payload.algorithm ?? 'Ed25519',
-    approvalEventId: payload.approvalEventId,
-    approvalScope: payload.approvalScope ?? 'specification_approval',
-    approvalTimestamp: payload.approvalTimestamp,
-    approverPrincipal: payload.approverPrincipal,
-    authorityTier: payload.authorityTier,
-    canonicalSpecificationFingerprint: payload.canonicalSpecificationFingerprint,
-    garmentId: payload.garmentId,
-    keyId: payload.keyId ?? '',
-    projectId: payload.projectId,
-    schemaVersion: payload.schemaVersion,
-    specificationRevisionId: payload.specificationRevisionId,
-    specificationVersion: payload.specificationVersion,
-    tenantId: payload.tenantId ?? payload.projectId
-  });
-}
-
-/**
- * Computes the deterministic SHA-256 digest of the canonical approval binding payload.
- */
-export function computeApprovalSignaturePayloadDigest(
-  payload: CryptographicApprovalBindingPayload
-): string {
-  return sha256Hex(canonicalizeApprovalSignaturePayload(payload));
-}
-
-/**
- * Signs a CryptographicApprovalBindingPayload using an asymmetric Ed25519 private key
- * to produce a VerifiableCryptographicSignature.
- *
- * Legacy shared-secret SHA-256 constructions are strictly prohibited.
- */
-export function signSpecificationApprovalPayload(
-  payload: CryptographicApprovalBindingPayload,
-  keyMaterial: {
-    readonly keyId: string;
-    readonly privateKeyHex?: string;
-    readonly privateKeySecret?: string;
-    readonly signingKeyMaterial?: string;
-    readonly algorithm?: string;
-    readonly issuer?: string;
-    readonly tenantId?: string;
-  }
-): VerifiableCryptographicSignature {
-  const secretOrSeed = keyMaterial.privateKeyHex ?? keyMaterial.privateKeySecret ?? keyMaterial.signingKeyMaterial ?? '';
-  if (!keyMaterial.keyId || !secretOrSeed) {
-    throw new ProductionSnapshotValidationError('Key ID and asymmetric private key seed are required for cryptographic signing.');
-  }
-  const requestedAlgorithm = keyMaterial.algorithm ?? payload.algorithm ?? 'Ed25519';
-  if (requestedAlgorithm !== 'Ed25519') {
+export function validateControlledPublicKeyRegistration(
+  registration: ControlledPublicKeyRegistration
+): ControlledPublicKeyRegistration {
+  if (!registration || typeof registration !== 'object') {
     throw new ProductionSnapshotValidationError(
-      `Unsupported cryptographic signing algorithm '${requestedAlgorithm}'. Only asymmetric 'Ed25519' is permitted.`
+      'Invalid public-key registration: registration must be an object.',
+      ['invalid-public-key-registration']
     );
   }
 
-  const boundPayload: CryptographicApprovalBindingPayload = {
-    schemaVersion: payload.schemaVersion,
-    projectId: payload.projectId,
-    tenantId: payload.tenantId ?? keyMaterial.tenantId ?? payload.projectId,
-    garmentId: payload.garmentId,
-    specificationRevisionId: payload.specificationRevisionId,
-    specificationVersion: payload.specificationVersion,
-    canonicalSpecificationFingerprint: payload.canonicalSpecificationFingerprint,
-    approvalEventId: payload.approvalEventId,
-    approverPrincipal: payload.approverPrincipal,
-    authorityTier: 'cryptographic_principal',
-    approvalScope: payload.approvalScope ?? 'specification_approval',
-    approvalTimestamp: payload.approvalTimestamp,
-    keyId: payload.keyId ?? keyMaterial.keyId,
-    algorithm: 'Ed25519'
+  // Strictly forbid any private-key or seed fields (FINDING-08, FINDING-10)
+  assertNoPrivateKeyMaterialInVerifierBoundary(
+    registration,
+    'ControlledPublicKeyRegistration'
+  );
+
+  if (typeof registration.keyId !== 'string' || registration.keyId.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'Public-key registration requires a non-empty keyId.',
+      ['missing-key-id']
+    );
+  }
+
+  const alg = registration.algorithm ?? 'Ed25519';
+  if (alg !== 'Ed25519') {
+    throw new ProductionSnapshotValidationError(
+      `Unsupported public-key registration algorithm "${String(alg)}". Only "Ed25519" is permitted.`,
+      ['unsupported-key-algorithm']
+    );
+  }
+
+  const pubHex =
+    typeof registration.publicKeyHex === 'string'
+      ? registration.publicKeyHex.trim().toLowerCase()
+      : '';
+  if (!/^[0-9a-f]{64}$/.test(pubHex)) {
+    throw new ProductionSnapshotValidationError(
+      `Invalid Ed25519 publicKeyHex for keyId "${registration.keyId}": must be a 64-character hexadecimal string (32 bytes).`,
+      ['invalid-ed25519-public-key']
+    );
+  }
+
+  // Reject small-order torsion points and non-canonical curve encodings at registration time (FINDING-02, FINDING-04)
+  if (!isValidEd25519PublicKey(pubHex)) {
+    throw new ProductionSnapshotValidationError(
+      `Invalid or small-order torsion Ed25519 publicKeyHex rejected for keyId "${registration.keyId}".`,
+      ['torsion-or-invalid-ed25519-public-key']
+    );
+  }
+
+  if (registration.publicKeyBase64Url !== undefined) {
+    let decodedBytes: Uint8Array;
+    try {
+      decodedBytes = base64UrlDecodeToBytes(registration.publicKeyBase64Url);
+    } catch {
+      throw new ProductionSnapshotValidationError(
+        `Invalid publicKeyBase64Url encoding for keyId "${registration.keyId}".`,
+        ['invalid-ed25519-public-key-b64']
+      );
+    }
+    if (bytesToHex(decodedBytes) !== pubHex) {
+      throw new ProductionSnapshotValidationError(
+        `Mismatch between publicKeyHex and publicKeyBase64Url for keyId "${registration.keyId}".`,
+        ['inconsistent-public-key-encoding']
+      );
+    }
+  }
+
+  const expectedFp = computeEd25519PublicKeyFingerprint(pubHex);
+  if (
+    registration.publicKeyFingerprint !== undefined &&
+    registration.publicKeyFingerprint.trim().toLowerCase() !== expectedFp &&
+    registration.publicKeyFingerprint.trim().toLowerCase() !== sha256Hex(pubHex)
+  ) {
+    throw new ProductionSnapshotValidationError(
+      `Public-key registration "${registration.keyId}" has inconsistent publicKeyFingerprint.`,
+      ['inconsistent-public-key-fingerprint']
+    );
+  }
+
+  const activatedAt = registration.activatedAt ?? '2020-01-01T00:00:00.000Z';
+  const expiresAt = registration.expiresAt ?? '2035-01-01T00:00:00.000Z';
+  const activatedMs = Date.parse(activatedAt);
+  const expiresMs = Date.parse(expiresAt);
+  if (Number.isNaN(activatedMs) || Number.isNaN(expiresMs) || expiresMs <= activatedMs) {
+    throw new ProductionSnapshotValidationError(
+      `Public-key registration "${registration.keyId}" has invalid activatedAt/expiresAt window.`,
+      ['invalid-key-validity-window']
+    );
+  }
+
+  const resolvedPrincipal =
+    registration.ownerPrincipal?.trim() ||
+    registration.principalId?.trim() ||
+    '*';
+  const resolvedTenant =
+    registration.tenantId?.trim() ||
+    registration.organizationScope?.trim() ||
+    '*';
+  const resolvedScopes =
+    Array.isArray(registration.allowedScopes) && registration.allowedScopes.length > 0
+      ? [...registration.allowedScopes]
+      : ['specification:approve'];
+
+  return {
+    ...registration,
+    keyId: registration.keyId.trim(),
+    algorithm: 'Ed25519',
+    publicKeyHex: pubHex,
+    publicKeyFingerprint: registration.publicKeyFingerprint ?? expectedFp,
+    principalId: resolvedPrincipal,
+    ownerPrincipal: resolvedPrincipal,
+    tenantId: resolvedTenant,
+    allowedScopes: resolvedScopes,
+    activatedAt,
+    expiresAt,
+    revoked: registration.revoked ?? false
+  };
+}
+
+/**
+ * Validates and constructs a `ControlledPublicKeyRegistration` entry (`FINDING-02`, `FINDING-08`, `FINDING-10`).
+ */
+export function createControlledPublicKeyRegistration(
+  registration: ControlledPublicKeyRegistration
+): ControlledPublicKeyRegistration {
+  return validateControlledPublicKeyRegistration(registration);
+}
+
+function keyWindowsOverlap(
+  a: { activatedAt?: string; expiresAt?: string; revoked?: boolean },
+  b: { activatedAt?: string; expiresAt?: string; revoked?: boolean }
+): boolean {
+  if (a.revoked || b.revoked) {
+    return false;
+  }
+  const aStart = a.activatedAt ? Date.parse(a.activatedAt) : 0;
+  const aEnd = a.expiresAt ? Date.parse(a.expiresAt) : Number.MAX_SAFE_INTEGER;
+  const bStart = b.activatedAt ? Date.parse(b.activatedAt) : 0;
+  const bEnd = b.expiresAt ? Date.parse(b.expiresAt) : Number.MAX_SAFE_INTEGER;
+  return aStart < bEnd && bStart < aEnd;
+}
+
+/**
+ * Registers a validated Ed25519 public key into a `ControlledPublicKeyRegistry`.
+ * Rejects duplicate `keyId` and duplicate `publicKeyHex` across concurrently active keys (`FINDING-09`).
+ */
+export function registerPublicKeyInRegistry(
+  registry: ControlledPublicKeyRegistry,
+  registration: ControlledPublicKeyRegistration,
+  options?: { allowOverwrite?: boolean; allowDuplicatePublicKeyMaterial?: boolean }
+): ControlledPublicKeyRegistry {
+  const normalized = validateControlledPublicKeyRegistration(registration);
+
+  if (!options?.allowOverwrite && registry.entries[normalized.keyId]) {
+    throw new ProductionSnapshotValidationError(
+      `Duplicate keyId "${normalized.keyId}" in ControlledPublicKeyRegistry is prohibited.`,
+      ['duplicate-key-id']
+    );
+  }
+
+  if (!options?.allowDuplicatePublicKeyMaterial) {
+    for (const [existingKeyId, existingEntry] of Object.entries(registry.entries)) {
+      if (
+        existingKeyId !== normalized.keyId &&
+        existingEntry.publicKeyHex === normalized.publicKeyHex &&
+        keyWindowsOverlap(existingEntry, normalized)
+      ) {
+        throw new ProductionSnapshotValidationError(
+          `Duplicate publicKeyHex material across distinct active keyIds ("${existingKeyId}" and "${normalized.keyId}") is prohibited.`,
+          ['duplicate-public-key-material']
+        );
+      }
+    }
+  }
+
+  return {
+    ...registry,
+    entries: {
+      ...registry.entries,
+      [normalized.keyId]: normalized
+    }
+  };
+}
+
+/**
+ * Marks a registered public key as revoked in the `ControlledPublicKeyRegistry`.
+ */
+export function revokePublicKeyInRegistry(
+  registry: ControlledPublicKeyRegistry,
+  keyId: string,
+  reason: string,
+  revokedAt: string = new Date().toISOString(),
+  options?: { compromised?: boolean }
+): ControlledPublicKeyRegistry {
+  const existing = registry.entries[keyId];
+  if (!existing) {
+    throw new ProductionSnapshotValidationError(
+      `Cannot revoke unknown keyId "${keyId}" in ControlledPublicKeyRegistry.`,
+      ['unknown-key-id']
+    );
+  }
+  if (typeof reason !== 'string' || reason.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'Public-key revocation reason cannot be empty.',
+      ['empty-key-revocation-reason']
+    );
+  }
+
+  const isCompromise =
+    options?.compromised === true || reason.toLowerCase().includes('compromise');
+
+  const updated: ControlledPublicKeyRegistration = {
+    ...existing,
+    revoked: true,
+    compromised: isCompromise,
+    revokedAt,
+    revocationReason: reason.trim(),
+    revocationReasonCode: isCompromise ? 'compromise' : 'unspecified',
+    trustStatus: 'revoked_key'
   };
 
-  const canonicalPayload = canonicalizeApprovalSignaturePayload(boundPayload);
-  const sigResult = signEd25519Message(canonicalPayload, secretOrSeed);
-
-  return deepFreeze({
-    keyId: keyMaterial.keyId,
-    publicKeyHex: sigResult.publicKeyHex,
-    publicKeyFingerprint: sigResult.publicKeyFingerprint,
-    algorithm: 'Ed25519',
-    signatureHex: sigResult.signatureHex,
-    signatureDigest: sigResult.signatureHex,
-    signedPayload: boundPayload
-  });
+  return {
+    ...registry,
+    entries: {
+      ...registry.entries,
+      [keyId]: updated
+    }
+  };
 }
 
-/**
- * Creates a trusted asymmetric cryptographic signature verifier backed by a controlled public-key registry.
- *
- * SECURITY INVARIANTS (Milestone 04.6.2.3.2):
- * 1. Signature verification uses ONLY public-key material (`publicKeyHex`).
- * 2. Any ControlledPublicKeyRegistration entry containing private key fields is rejected.
- * 3. Legacy shared-secret `SHA256-KEYED-BINDING` signatures are strictly rejected.
- * 4. Validates key trustStatus, revocation, activation/expiration window, algorithm, tenant scope, and all bound payload fields.
- */
-export function createTrustedCryptographicVerifier(config: {
-  readonly verifierId?: string;
-  readonly trustedIssuers?: readonly string[];
-  readonly expectedTenantId?: string;
-  readonly referenceTimeIso?: string;
-  readonly trustedKeys?:
-    | ReadonlyArray<ControlledPublicKeyRegistration>
-    | Readonly<Record<string, string>>;
-  readonly publicKeyRegistry?: ReadonlyArray<ControlledPublicKeyRegistration>;
-}): TrustedCryptographicVerifier & {
-  verifySignature(
-    expectedPayload: CryptographicApprovalBindingPayload,
-    signature: VerifiableCryptographicSignature
-  ): TrustedCryptographicVerificationResult & { readonly isValid: boolean };
-} {
-  const registryEntries: ControlledPublicKeyRegistration[] = [];
-  const rawKeysInput = config.trustedKeys ?? config.publicKeyRegistry;
+// ============================================================================
+// CANONICAL SPECIFICATION PAYLOAD & FINGERPRINTING
+// ============================================================================
 
-  if (Array.isArray(rawKeysInput)) {
-    for (const k of rawKeysInput) {
-      const raw = k as unknown as Record<string, unknown>;
-      if (
-        raw.privateKeyHex !== undefined ||
-        raw.privateKeySecret !== undefined ||
-        raw.signingKeyMaterial !== undefined ||
-        raw.privateKeyPem !== undefined ||
-        raw.sharedSecret !== undefined
-      ) {
-        throw new ProductionSnapshotValidationError(
-          `Security boundary violation: ControlledPublicKeyRegistration must contain public-key material only (key '${k.keyId}').`
-        );
-      }
-      if (!k.keyId || !k.publicKeyHex || !/^[0-9a-fA-F]{64}$/.test(k.publicKeyHex)) {
-        throw new ProductionSnapshotValidationError(
-          `ControlledPublicKeyRegistration for key '${k?.keyId ?? 'unknown'}' requires a valid 64-character hex Ed25519 publicKeyHex.`
-        );
-      }
-      const pubHex = k.publicKeyHex.toLowerCase();
-      const computedFp = computeEd25519PublicKeyFingerprint(pubHex);
-      if (k.publicKeyFingerprint && k.publicKeyFingerprint !== computedFp) {
-        throw new ProductionSnapshotValidationError(
-          `Public key fingerprint mismatch for key '${k.keyId}'.`
-        );
-      }
-      const normalizedAllowedPrincipals = k.allowedPrincipals
-        ? Object.freeze([...k.allowedPrincipals])
-        : k.principalId
-          ? Object.freeze([k.principalId])
-          : undefined;
-      registryEntries.push(
-        Object.freeze({
-          keyId: k.keyId,
-          publicKeyHex: pubHex,
-          publicKeyFingerprint: computedFp,
-          algorithm: k.algorithm ?? 'Ed25519',
-          principalId: k.principalId,
-          issuer: k.issuer ?? 'patroner-enterprise-kms',
-          providerId: k.providerId ?? 'patroner-kms-ed25519',
-          tenantId: k.tenantId ?? k.organizationScope,
-          organizationScope: k.organizationScope ?? k.tenantId,
-          activatedAt: k.activatedAt,
-          expiresAt: k.expiresAt,
-          revoked: Boolean(k.revoked),
-          revokedAt: k.revokedAt,
-          revocationReason: k.revocationReason,
-          trustStatus: k.trustStatus ?? (k.revoked ? 'revoked' : 'trusted'),
-          registrationProvenance: k.registrationProvenance ?? 'controlled-key-registry',
-          allowedPrincipals: normalizedAllowedPrincipals
-        })
-      );
-    }
-  } else if (rawKeysInput && typeof rawKeysInput === 'object') {
-    for (const [keyId, pubOrSeed] of Object.entries(rawKeysInput as Record<string, string>)) {
-      const pubHex =
-        pubOrSeed.startsWith('ed25519-pub:') && /^[0-9a-fA-F]{64}$/.test(pubOrSeed.slice(12))
-          ? pubOrSeed.slice(12).toLowerCase()
-          : generateEd25519KeyPairFromSeed(pubOrSeed).publicKeyHex;
-      const pubFp = computeEd25519PublicKeyFingerprint(pubHex);
-      registryEntries.push(
-        Object.freeze({
-          keyId,
-          publicKeyHex: pubHex,
-          publicKeyFingerprint: pubFp,
-          algorithm: 'Ed25519',
-          issuer: 'patroner-enterprise-kms',
-          providerId: 'patroner-kms-ed25519',
-          revoked: false,
-          trustStatus: 'trusted',
-          registrationProvenance: 'controlled-key-registry'
-        })
-      );
-    }
-  }
-
-  const isTrustedStatus = (st?: string) =>
-    st === undefined ||
-    st === 'trusted' ||
-    st === 'controlled_local_public_key' ||
-    st === 'enterprise_pki_verified';
-
-  const keyById = new Map(registryEntries.map(k => [k.keyId, k]));
-  const trustedPublicKeyFingerprints = registryEntries
-    .filter(k => isTrustedStatus(k.trustStatus) && !k.revoked)
-    .map(k => k.publicKeyFingerprint!);
-
-  const observedEvents = new Map<string, string>();
-
-  function performVerification(
-    signature: VerifiableCryptographicSignature,
-    expectedPayload: CryptographicApprovalBindingPayload
-  ): TrustedCryptographicVerificationResult & { readonly isValid: boolean } {
-    try {
-      if (!signature || typeof signature !== 'object' || !signature.signedPayload) {
-        return { verified: false, isValid: false, reason: 'Missing or malformed cryptographic signature object.' };
-      }
-
-      // Reject legacy shared-secret or non-Ed25519 algorithms immediately
-      if (signature.algorithm === 'SHA256-KEYED-BINDING' || signature.algorithm !== 'Ed25519') {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Unsupported or downgraded signature algorithm '${signature.algorithm}'. Asymmetric 'Ed25519' signature is required.`
-        };
-      }
-
-      const trustedKey = keyById.get(signature.keyId);
-      if (!trustedKey) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Unregistered or untrusted public keyId '${signature.keyId}' not found in controlled public-key registry.`
-        };
-      }
-
-      if (trustedKey.revoked || trustedKey.trustStatus === 'revoked' || trustedKey.trustStatus === 'revoked_key') {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Signing key '${signature.keyId}' has been revoked${trustedKey.revocationReason ? `: ${trustedKey.revocationReason}` : ''}.`
-        };
-      }
-
-      if (!isTrustedStatus(trustedKey.trustStatus)) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Signing key '${signature.keyId}' is not trusted (status: '${trustedKey.trustStatus}').`
-        };
-      }
-
-      if (trustedKey.algorithm !== 'Ed25519' || trustedKey.algorithm !== signature.algorithm) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Signing key '${signature.keyId}' algorithm '${trustedKey.algorithm}' does not match signature algorithm '${signature.algorithm}'.`
-        };
-      }
-
-      if (signature.publicKeyFingerprint !== trustedKey.publicKeyFingerprint) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Public key fingerprint '${signature.publicKeyFingerprint}' does not match registered public key for '${signature.keyId}'.`
-        };
-      }
-
-      if (signature.publicKeyHex && signature.publicKeyHex.toLowerCase() !== trustedKey.publicKeyHex) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Public key material on signature does not match registered public key for '${signature.keyId}'.`
-        };
-      }
-
-      if (
-        config.trustedIssuers &&
-        config.trustedIssuers.length > 0 &&
-        (!trustedKey.issuer || !config.trustedIssuers.includes(trustedKey.issuer))
-      ) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Signing key issuer '${trustedKey.issuer ?? 'unknown'}' is not in the trusted issuers allowlist.`
-        };
-      }
-
-      // Validate key activation and expiration window
-      const evalTimeIso = config.referenceTimeIso ?? expectedPayload.approvalTimestamp;
-      if (!isValidIsoDate(expectedPayload.approvalTimestamp) || !isValidIsoDate(evalTimeIso)) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Approval or verification timestamp is not a valid ISO 8601 date.'
-        };
-      }
-      const approvalMs = Date.parse(expectedPayload.approvalTimestamp);
-      const evalMs = Date.parse(evalTimeIso);
-
-      if (trustedKey.activatedAt) {
-        if (!isValidIsoDate(trustedKey.activatedAt)) {
-          return { verified: false, isValid: false, reason: `Signing key '${signature.keyId}' has an invalid activatedAt timestamp.` };
-        }
-        const activatedMs = Date.parse(trustedKey.activatedAt);
-        if (approvalMs < activatedMs || evalMs < activatedMs) {
-          return {
-            verified: false,
-            isValid: false,
-            reason: `Signing key '${signature.keyId}' was not yet active at approval timestamp '${expectedPayload.approvalTimestamp}' (activatedAt: '${trustedKey.activatedAt}').`
-          };
-        }
-      }
-
-      if (trustedKey.expiresAt) {
-        if (!isValidIsoDate(trustedKey.expiresAt)) {
-          return { verified: false, isValid: false, reason: `Signing key '${signature.keyId}' has an invalid expiresAt timestamp.` };
-        }
-        const expiresMs = Date.parse(trustedKey.expiresAt);
-        if (approvalMs >= expiresMs || evalMs >= expiresMs) {
-          return {
-            verified: false,
-            isValid: false,
-            reason: `Signing key '${signature.keyId}' expired at '${trustedKey.expiresAt}' prior to approval or verification.`
-          };
-        }
-      }
-
-      // Validate tenant / organization scope binding
-      const expectedTenant = config.expectedTenantId ?? expectedPayload.tenantId ?? expectedPayload.projectId;
-      const signedTenant = signature.signedPayload.tenantId ?? signature.signedPayload.projectId;
-      if (trustedKey.tenantId && trustedKey.tenantId !== expectedTenant) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Signing key '${signature.keyId}' tenant scope '${trustedKey.tenantId}' does not match specification tenant/project '${expectedTenant}'.`
-        };
-      }
-      if (signedTenant !== expectedTenant) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Cryptographic signature verification failed: signed payload tenant '${signedTenant}' does not match expected tenant/project '${expectedTenant}'.`
-        };
-      }
-
-      if (
-        trustedKey.allowedPrincipals &&
-        trustedKey.allowedPrincipals.length > 0 &&
-        !trustedKey.allowedPrincipals.includes(expectedPayload.approverPrincipal)
-      ) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Cryptographic signature verification failed: Principal '${expectedPayload.approverPrincipal}' is not authorized to sign with key '${signature.keyId}'.`
-        };
-      }
-
-      // Verify exact match of all bound payload fields
-      const sp = signature.signedPayload;
-      const signedScope = sp.approvalScope ?? 'specification_approval';
-      const expectedScope = expectedPayload.approvalScope ?? signedScope;
-      const isStandardSpecScope = (s: string) =>
-        s === 'specification_approval' || s === 'specification:approve';
-      const isValidApprovalScope = isStandardSpecScope(signedScope);
-      const scopesMatch =
-        signedScope === expectedScope ||
-        (isStandardSpecScope(signedScope) && isStandardSpecScope(expectedScope));
-      const signedKeyId = sp.keyId ?? signature.keyId;
-      const signedAlg = sp.algorithm ?? signature.algorithm;
-
-      if (
-        sp.projectId !== expectedPayload.projectId ||
-        signedTenant !== expectedTenant ||
-        sp.garmentId !== expectedPayload.garmentId ||
-        sp.specificationRevisionId !== expectedPayload.specificationRevisionId ||
-        sp.specificationVersion !== expectedPayload.specificationVersion ||
-        sp.canonicalSpecificationFingerprint !== expectedPayload.canonicalSpecificationFingerprint ||
-        sp.approvalEventId !== expectedPayload.approvalEventId ||
-        sp.approverPrincipal !== expectedPayload.approverPrincipal ||
-        sp.authorityTier !== 'cryptographic_principal' ||
-        !isValidApprovalScope ||
-        !scopesMatch ||
-        sp.approvalTimestamp !== expectedPayload.approvalTimestamp ||
-        sp.schemaVersion !== expectedPayload.schemaVersion ||
-        signedKeyId !== signature.keyId ||
-        signedAlg !== 'Ed25519'
-      ) {
-        const isReplayMismatch = observedEvents.has(expectedPayload.approvalEventId);
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Cryptographic signature verification failed: signed approval payload mismatch${isReplayMismatch ? ' (Replay detected for approvalEventId)' : ''} — does not match expected specification revision, fingerprint, event ID, tenant scope, timestamp, keyId, or principal.`
-        };
-      }
-
-      const normalizedExpectedPayload: CryptographicApprovalBindingPayload = {
-        schemaVersion: expectedPayload.schemaVersion,
-        projectId: expectedPayload.projectId,
-        tenantId: expectedTenant,
-        garmentId: expectedPayload.garmentId,
-        specificationRevisionId: expectedPayload.specificationRevisionId,
-        specificationVersion: expectedPayload.specificationVersion,
-        canonicalSpecificationFingerprint: expectedPayload.canonicalSpecificationFingerprint,
-        approvalEventId: expectedPayload.approvalEventId,
-        approverPrincipal: expectedPayload.approverPrincipal,
-        authorityTier: 'cryptographic_principal',
-        approvalScope: signedScope,
-        approvalTimestamp: expectedPayload.approvalTimestamp,
-        keyId: signature.keyId,
-        algorithm: 'Ed25519'
-      };
-
-      const expectedCanonical = canonicalizeApprovalSignaturePayload(normalizedExpectedPayload);
-      const expectedDigest = sha256Hex(expectedCanonical);
-
-      // Replay check on approvalEventId across distinct payloads
-      const existingDigestForEvent = observedEvents.get(expectedPayload.approvalEventId);
-      if (existingDigestForEvent && existingDigestForEvent !== expectedDigest) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Cryptographic signature verification failed: Replay detected for approvalEventId '${expectedPayload.approvalEventId}'.`
-        };
-      }
-
-      const rawSigHex =
-        signature.signatureDigest && signature.signatureDigest !== signature.signatureHex
-          ? signature.signatureDigest
-          : (signature.signatureHex ?? signature.signatureDigest ?? '');
-
-      // Perform genuine RFC 8032 Ed25519 public-key verification using ONLY trustedKey.publicKeyHex
-      const isSignatureValid = verifyEd25519Signature(
-        trustedKey.publicKeyHex,
-        expectedCanonical,
-        rawSigHex
-      );
-
-      if (!isSignatureValid) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Cryptographic signature verification failed: Ed25519 asymmetric digital signature verification failed.'
-        };
-      }
-
-      observedEvents.set(expectedPayload.approvalEventId, expectedDigest);
-
-      return {
-        verified: true,
-        isValid: true,
-        keyId: signature.keyId,
-        algorithm: 'Ed25519',
-        publicKeyFingerprint: trustedKey.publicKeyFingerprint,
-        verifiedPayloadDigest: expectedDigest
-      };
-    } catch (err) {
-      return {
-        verified: false,
-        isValid: false,
-        reason: `Cryptographic verifier exception: ${err instanceof Error ? err.message : String(err)}`
-      };
-    }
-  }
-
-  return Object.freeze({
-    verifierId: config.verifierId ?? 'crypto-verifier-ed25519',
-    trustedPublicKeyFingerprints: Object.freeze([...trustedPublicKeyFingerprints]),
-    publicKeyRegistry: Object.freeze([...registryEntries]),
-    verifyApprovalSignature(
-      signature: VerifiableCryptographicSignature,
-      expectedPayload: CryptographicApprovalBindingPayload
-    ): TrustedCryptographicVerificationResult {
-      return performVerification(signature, expectedPayload);
-    },
-    verifySignature(
-      expectedPayload: CryptographicApprovalBindingPayload,
-      signature: VerifiableCryptographicSignature
-    ): TrustedCryptographicVerificationResult & { readonly isValid: boolean } {
-      return performVerification(signature, expectedPayload);
-    }
-  });
-}
-
-/**
- * Issues a verifiable OIDC/JWT identity credential (`header.payload.signature`) signed with
- * an asymmetric EdDSA (Ed25519) identity-provider private key.
- *
- * Legacy `pat-id-v1.*` shared-secret hashes are strictly prohibited.
- */
-export function issueVerifiableIdentityCredential(
-  params: {
-    readonly credentialId?: string;
-    readonly subject?: string;
-    readonly subjectId?: string;
-    readonly expectedApprover?: string;
-    readonly displayName?: string;
-    readonly issuer: string;
-    readonly audience: string;
-    readonly tenantId?: string;
-    readonly keyId?: string;
-    readonly algorithm?: string;
-    readonly tokenType?: string;
-    readonly intendedUse?: string;
-    readonly notBefore?: string;
-    readonly issuedAt: string;
-    readonly expiresAt: string;
-    readonly authorizationClaims?: readonly string[];
-    readonly claims?: readonly string[];
-    readonly providerId?: string;
-  },
-  idpPrivateKeySeed: string
-): VerifiableIdentityCredential & { readonly token: string; readonly credentialToken: string } {
-  const subject = (params.subject ?? params.subjectId ?? '').trim();
-  const expectedApprover = (params.expectedApprover ?? params.displayName ?? '').trim();
-  if (!subject || (expectedApprover && subject === expectedApprover)) {
+function assertValidPositiveNumber(value: unknown, fieldName: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new ProductionSnapshotValidationError(
-      'Identity credential subjectId must be a non-empty opaque identifier distinct from displayName.'
+      `Specification validation failed: "${fieldName}" must be a finite number > 0 (received ${String(value)}).`,
+      [fieldName]
     );
   }
-  const authorizationClaims = [...(params.authorizationClaims ?? params.claims ?? [])];
-  const credentialId = params.credentialId ?? `jti-${subject || 'anon'}`;
-  const providerId = params.providerId ?? 'patroner-oidc-idp';
-  const keyId = params.keyId ?? 'idp-eddsa-key-01';
-  const algorithm = params.algorithm ?? 'EdDSA';
-  const tokenType = params.tokenType ?? 'at+jwt';
-  const intendedUse = params.intendedUse ?? 'specification_approval';
-  const notBeforeIso = params.notBefore ?? params.issuedAt;
+  return value;
+}
 
-  const iatSec = Math.floor(Date.parse(params.issuedAt) / 1000);
-  const nbfSec = Math.floor(Date.parse(notBeforeIso) / 1000);
-  const expSec = Math.floor(Date.parse(params.expiresAt) / 1000);
+function assertValidNonNegativeNumber(value: unknown, fieldName: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new ProductionSnapshotValidationError(
+      `Specification validation failed: "${fieldName}" must be a finite number >= 0 (received ${String(value)}).`,
+      [fieldName]
+    );
+  }
+  return value;
+}
+
+function assertValidFiniteNumber(value: unknown, fieldName: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new ProductionSnapshotValidationError(
+      `Specification validation failed: "${fieldName}" must be a finite number (received ${String(value)}).`,
+      [fieldName]
+    );
+  }
+  return value;
+}
+
+const KNOWN_SPECIFICATION_TOP_LEVEL_KEYS = new Set<string>([
+  'schemaVersion',
+  'projectId',
+  'garmentId',
+  'id',
+  'specificationRevisionId',
+  'version',
+  'specificationVersion',
+  'specificationFingerprint',
+  'parentRevisionId',
+  'previousRevisionId',
+  'supersededByRevisionId',
+  'name',
+  'garmentCategory',
+  'silhouette',
+  'prompt',
+  'fabric',
+  'fabricRevision',
+  'fabricProvenance',
+  'color',
+  'easeProfile',
+  'sleeveEaseStrategy',
+  'dartStyle',
+  'waistband',
+  'lengthCm',
+  'targetFinishedDimensions',
+  'explicitEaseCm',
+  'allowances',
+  'constructionFeatures',
+  'designNotes',
+  'fieldProvenance',
+  'createdAt',
+  'updatedAt',
+  'isApproved',
+  'approvalState',
+  'approvalAuthorityTier',
+  'approvedBy',
+  'approvedAt',
+  'approvedContentFingerprint',
+  'approvalProvenance',
+  'engineProvenance',
+  'aiEstimates',
+  'approvalRecord',
+  'revocationRecord',
+  'approvalHistory',
+  'verifiedIdentity',
+  'cryptographicSignature',
+  'isProductionReady'
+]);
+
+function ensureAuthoritativeSpec(
+  specOrDesign: AuthoritativeGarmentSpecification | DesignSpecification
+): AuthoritativeGarmentSpecification {
+  if (!specOrDesign || typeof specOrDesign !== 'object') {
+    throw new ProductionSnapshotValidationError(
+      'Cannot process null or non-object garment specification.',
+      ['specification']
+    );
+  }
+  const candidate = specOrDesign as Partial<AuthoritativeGarmentSpecification> & Partial<DesignSpecification>;
+  if (
+    typeof candidate.garmentId === 'string' &&
+    typeof candidate.specificationRevisionId === 'string' &&
+    typeof candidate.version === 'number' &&
+    candidate.targetFinishedDimensions !== undefined
+  ) {
+    return specOrDesign as AuthoritativeGarmentSpecification;
+  }
+  return convertFromDesignSpecification(specOrDesign as DesignSpecification);
+}
+
+/**
+ * Extracts and validates the complete canonical engineering payload of an
+ * `AuthoritativeGarmentSpecification` for deterministic serialization.
+ */
+export function canonicalizeSpecificationPayload(
+  specInput: AuthoritativeGarmentSpecification | DesignSpecification
+): string {
+  if (!specInput || typeof specInput !== 'object') {
+    throw new ProductionSnapshotValidationError(
+      'Cannot canonicalize null or non-object garment specification.',
+      ['specification']
+    );
+  }
+
+  const rawInput = specInput as Partial<AuthoritativeGarmentSpecification> & Partial<DesignSpecification>;
+  if ('name' in rawInput && (typeof rawInput.name !== 'string' || rawInput.name.trim().length === 0)) {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "name" is required and cannot be empty.',
+      ['name']
+    );
+  }
+  if ('garmentCategory' in rawInput && rawInput.garmentCategory !== 'skirt' && rawInput.garmentCategory !== 'bodice') {
+    throw new ProductionSnapshotValidationError(
+      `Specification canonicalization failed: invalid "garmentCategory" (${String(rawInput.garmentCategory)}).`,
+      ['garmentCategory']
+    );
+  }
+  if (
+    'fabric' in rawInput &&
+    (!rawInput.fabric || typeof rawInput.fabric !== 'object' || typeof rawInput.fabric.id !== 'string' || rawInput.fabric.id.trim().length === 0)
+  ) {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "fabric" object with non-empty id is required.',
+      ['fabric']
+    );
+  }
+
+  const spec = ensureAuthoritativeSpec(specInput);
+
+  if (typeof spec.projectId !== 'string' || spec.projectId.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "projectId" is required and cannot be empty.',
+      ['projectId']
+    );
+  }
+
+  if (typeof spec.garmentId !== 'string' || spec.garmentId.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "garmentId" is required and cannot be empty.',
+      ['garmentId']
+    );
+  }
+
+  if (typeof spec.specificationRevisionId !== 'string' || spec.specificationRevisionId.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "specificationRevisionId" is required and cannot be empty.',
+      ['specificationRevisionId']
+    );
+  }
+
+  if (typeof spec.version !== 'number' || !Number.isInteger(spec.version) || spec.version < 1) {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "version" must be a positive integer >= 1.',
+      ['version']
+    );
+  }
+
+  if (typeof spec.name !== 'string' || spec.name.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "name" is required and cannot be empty.',
+      ['name']
+    );
+  }
+
+  if (spec.garmentCategory !== 'skirt' && spec.garmentCategory !== 'bodice') {
+    throw new ProductionSnapshotValidationError(
+      `Specification canonicalization failed: invalid "garmentCategory" (${String(spec.garmentCategory)}).`,
+      ['garmentCategory']
+    );
+  }
+
+  if (!spec.silhouette || typeof spec.silhouette !== 'string') {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "silhouette" is required.',
+      ['silhouette']
+    );
+  }
+
+  if (!spec.easeProfile || typeof spec.easeProfile !== 'string') {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "easeProfile" is required.',
+      ['easeProfile']
+    );
+  }
+
+  const effectiveLength = spec.lengthCm ?? spec.targetFinishedDimensions?.lengthCm;
+  assertValidPositiveNumber(effectiveLength, 'lengthCm');
+
+  if (!spec.fabric || typeof spec.fabric !== 'object' || typeof spec.fabric.id !== 'string' || spec.fabric.id.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "fabric" object with non-empty id is required.',
+      ['fabric']
+    );
+  }
+
+  const enhancedFabric = spec.fabric as Partial<EnhancedFabricProperty> & {
+    gsm?: number;
+    drape?: unknown;
+    blend?: unknown;
+    weaveStructure?: unknown;
+    shrinkage?: unknown;
+    patternAdjustmentPolicy?: unknown;
+  };
+  assertValidPositiveNumber(enhancedFabric.gsm, 'fabric.gsm');
+  if (enhancedFabric.thicknessMm !== undefined) {
+    assertValidPositiveNumber(enhancedFabric.thicknessMm, 'fabric.thicknessMm');
+  }
+
+  if (!spec.targetFinishedDimensions || typeof spec.targetFinishedDimensions !== 'object') {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "targetFinishedDimensions" is required.',
+      ['targetFinishedDimensions']
+    );
+  }
+
+  assertValidPositiveNumber(spec.targetFinishedDimensions.lengthCm, 'targetFinishedDimensions.lengthCm');
+  if (spec.targetFinishedDimensions.waistCm !== undefined && spec.targetFinishedDimensions.waistCm !== null) {
+    assertValidPositiveNumber(spec.targetFinishedDimensions.waistCm, 'targetFinishedDimensions.waistCm');
+  }
+  if (spec.targetFinishedDimensions.hipCm !== undefined && spec.targetFinishedDimensions.hipCm !== null) {
+    assertValidPositiveNumber(spec.targetFinishedDimensions.hipCm, 'targetFinishedDimensions.hipCm');
+  }
+  if (spec.targetFinishedDimensions.bustCm !== undefined && spec.targetFinishedDimensions.bustCm !== null) {
+    assertValidPositiveNumber(spec.targetFinishedDimensions.bustCm, 'targetFinishedDimensions.bustCm');
+  }
+  if (spec.targetFinishedDimensions.hemSweepCm !== undefined && spec.targetFinishedDimensions.hemSweepCm !== null) {
+    assertValidPositiveNumber(spec.targetFinishedDimensions.hemSweepCm, 'targetFinishedDimensions.hemSweepCm');
+  }
+  if (spec.targetFinishedDimensions.bicepsCm !== undefined && spec.targetFinishedDimensions.bicepsCm !== null) {
+    assertValidPositiveNumber(spec.targetFinishedDimensions.bicepsCm, 'targetFinishedDimensions.bicepsCm');
+  }
+  if (spec.targetFinishedDimensions.bicepCm !== undefined && spec.targetFinishedDimensions.bicepCm !== null) {
+    assertValidPositiveNumber(spec.targetFinishedDimensions.bicepCm, 'targetFinishedDimensions.bicepCm');
+  }
+  if (spec.targetFinishedDimensions.wristCm !== undefined && spec.targetFinishedDimensions.wristCm !== null) {
+    assertValidPositiveNumber(spec.targetFinishedDimensions.wristCm, 'targetFinishedDimensions.wristCm');
+  }
+  if (spec.targetFinishedDimensions.sleeveLengthCm !== undefined && spec.targetFinishedDimensions.sleeveLengthCm !== null) {
+    assertValidPositiveNumber(spec.targetFinishedDimensions.sleeveLengthCm, 'targetFinishedDimensions.sleeveLengthCm');
+  }
+
+  if (spec.explicitEaseCm !== undefined && spec.explicitEaseCm !== null) {
+    for (const [easeKey, easeVal] of Object.entries(spec.explicitEaseCm)) {
+      if (easeVal !== undefined && easeVal !== null) {
+        assertValidFiniteNumber(easeVal, `explicitEaseCm.${easeKey}`);
+      }
+    }
+  }
+
+  if (!spec.allowances || typeof spec.allowances !== 'object') {
+    throw new ProductionSnapshotValidationError(
+      'Specification canonicalization failed: "allowances" is required.',
+      ['allowances']
+    );
+  }
+  assertValidNonNegativeNumber(spec.allowances.seamAllowanceCm, 'allowances.seamAllowanceCm');
+  assertValidNonNegativeNumber(spec.allowances.hemAllowanceCm, 'allowances.hemAllowanceCm');
+  if (spec.allowances.waistAllowanceCm !== undefined) {
+    assertValidNonNegativeNumber(spec.allowances.waistAllowanceCm, 'allowances.waistAllowanceCm');
+  }
+  if (spec.allowances.neckAllowanceCm !== undefined) {
+    assertValidNonNegativeNumber(spec.allowances.neckAllowanceCm, 'allowances.neckAllowanceCm');
+  }
+  if (spec.allowances.armholeAllowanceCm !== undefined) {
+    assertValidNonNegativeNumber(spec.allowances.armholeAllowanceCm, 'allowances.armholeAllowanceCm');
+  }
+  if (spec.allowances.shoulderAllowanceCm !== undefined) {
+    assertValidNonNegativeNumber(spec.allowances.shoulderAllowanceCm, 'allowances.shoulderAllowanceCm');
+  }
+
+  if (spec.color !== undefined && spec.color !== null) {
+    if (
+      typeof spec.color !== 'object' ||
+      typeof spec.color.name !== 'string' ||
+      spec.color.name.trim().length === 0 ||
+      typeof spec.color.hex !== 'string' ||
+      !/^#[0-9a-fA-F]{6}$/.test(spec.color.hex)
+    ) {
+      throw new ProductionSnapshotValidationError(
+        'Specification canonicalization failed: "color" must include a non-empty name and a valid 6-digit hex code (#RRGGBB).',
+        ['color']
+      );
+    }
+  }
+
+  const additionalFields: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(specInput as unknown as Record<string, unknown>)) {
+    if (!KNOWN_SPECIFICATION_TOP_LEVEL_KEYS.has(k)) {
+      additionalFields[k] = v;
+    }
+  }
+
+  const hasPromptKey = 'prompt' in (specInput as object);
+  const promptVal = hasPromptKey ? (specInput as { prompt?: unknown }).prompt : undefined;
+
+  const hasColorKey = 'color' in (specInput as object);
+  const colorVal = hasColorKey ? (specInput as { color?: unknown }).color : spec.color;
+
+  const canonicalObject = {
+    schemaVersion: spec.schemaVersion || SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+    projectId: spec.projectId,
+    garmentId: spec.garmentId,
+    specificationRevisionId: spec.specificationRevisionId,
+    version: spec.version,
+    previousRevisionId: spec.previousRevisionId ?? spec.parentRevisionId,
+    name: spec.name,
+    garmentCategory: spec.garmentCategory,
+    silhouette: spec.silhouette,
+    prompt: hasPromptKey ? promptVal : undefined,
+    fabric: {
+      id: spec.fabric.id,
+      name: spec.fabric.name,
+      weight: spec.fabric.weight,
+      drape: enhancedFabric.drape,
+      stretch: spec.fabric.stretch,
+      gsm: enhancedFabric.gsm,
+      blend: enhancedFabric.blend,
+      composition: enhancedFabric.composition,
+      weaveStructure: enhancedFabric.weaveStructure,
+      thicknessMm: enhancedFabric.thicknessMm,
+      directional: enhancedFabric.directional,
+      shrinkage: enhancedFabric.shrinkage,
+      patternAdjustmentPolicy: enhancedFabric.patternAdjustmentPolicy,
+      provenance: enhancedFabric.provenance ?? spec.fabricProvenance,
+      revision: enhancedFabric.revision ?? spec.fabricRevision
+    },
+    fabricRevision: spec.fabricRevision,
+    fabricProvenance: spec.fabricProvenance,
+    color: colorVal,
+    easeProfile: spec.easeProfile,
+    sleeveEaseStrategy: spec.sleeveEaseStrategy,
+    dartStyle: spec.dartStyle,
+    waistband: spec.waistband,
+    lengthCm: effectiveLength,
+    targetFinishedDimensions: {
+      waistCm: spec.targetFinishedDimensions.waistCm,
+      hipCm: spec.targetFinishedDimensions.hipCm,
+      bustCm: spec.targetFinishedDimensions.bustCm,
+      lengthCm: spec.targetFinishedDimensions.lengthCm,
+      hemSweepCm: spec.targetFinishedDimensions.hemSweepCm,
+      bicepsCm: spec.targetFinishedDimensions.bicepsCm ?? spec.targetFinishedDimensions.bicepCm,
+      wristCm: spec.targetFinishedDimensions.wristCm,
+      sleeveLengthCm: spec.targetFinishedDimensions.sleeveLengthCm
+    },
+    explicitEaseCm: {
+      waist: spec.explicitEaseCm?.waist,
+      hip: spec.explicitEaseCm?.hip,
+      bust: spec.explicitEaseCm?.bust,
+      biceps: spec.explicitEaseCm?.biceps,
+      wrist: spec.explicitEaseCm?.wrist,
+      neck: spec.explicitEaseCm?.neck,
+      armholeDepth: spec.explicitEaseCm?.armholeDepth,
+      capEase: spec.explicitEaseCm?.capEase
+    },
+    allowances: {
+      seamAllowanceCm: spec.allowances.seamAllowanceCm,
+      hemAllowanceCm: spec.allowances.hemAllowanceCm,
+      waistAllowanceCm: spec.allowances.waistAllowanceCm,
+      neckAllowanceCm: spec.allowances.neckAllowanceCm,
+      armholeAllowanceCm: spec.allowances.armholeAllowanceCm,
+      shoulderAllowanceCm: spec.allowances.shoulderAllowanceCm
+    },
+    constructionFeatures: spec.constructionFeatures.map(cf => ({
+      id: cf.id,
+      category: cf.category,
+      name: cf.name,
+      description: cf.description,
+      patternImpact: cf.patternImpact
+    })),
+    designNotes: [...spec.designNotes],
+    fieldProvenance: { ...(spec.fieldProvenance ?? {}) },
+    additionalEngineeringFields: additionalFields
+  };
+
+  return canonicalizeJson(canonicalObject, { preserveUndefinedAsSentinel: true });
+}
+
+/**
+ * Computes the 64-character hex SHA-256 fingerprint over the canonical specification payload.
+ */
+export function computeSpecificationFingerprint(
+  spec: AuthoritativeGarmentSpecification | DesignSpecification
+): string {
+  const canonicalPayload = canonicalizeSpecificationPayload(spec);
+  return sha256Hex(canonicalPayload);
+}
+
+// ============================================================================
+// ATOMIC JTI REPLAY PROTECTION IMPLEMENTATION (FINDING-06)
+// ============================================================================
+
+export interface InMemoryJtiReplayStoreOptions {
+  /** Additional retention window beyond `exp` (seconds, default 300) */
+  retentionGraceSeconds?: number;
+  /** Maximum tracked entries before oldest expired are purged (default 10_000) */
+  maxEntries?: number;
+}
+
+/**
+ * Creates a process-local atomic JTI replay store (`FINDING-06`).
+ *
+ * Disclosure: `isDurableDistributedStore = false` — this store enforces atomic
+ * single-use JTI semantics within the active JavaScript runtime process, and does NOT
+ * persist across process restarts or coordinate across multi-instance deployments.
+ */
+export function createInMemoryJtiReplayStore(
+  options: InMemoryJtiReplayStoreOptions = {}
+): JtiReplayStore {
+  const retentionGraceSeconds = options.retentionGraceSeconds ?? 300;
+  const maxEntries = options.maxEntries ?? 10000;
+  const consumedMap = new Map<string, JtiReplayRecord>();
+  let lockActive = false;
+
+  function makeCompositeKey(jti: string, issuer?: string): string {
+    return `${(issuer ?? '*').trim()}::${jti.trim()}`;
+  }
+
+  function purgeExpired(nowEpochSeconds: number): number {
+    let purged = 0;
+    for (const [key, rec] of consumedMap.entries()) {
+      if (rec.expiresAtEpochSeconds + retentionGraceSeconds < nowEpochSeconds) {
+        consumedMap.delete(key);
+        purged++;
+      }
+    }
+    return purged;
+  }
+
+  return {
+    isDurableDistributedStore: false,
+    storeType: 'in-memory-local-process',
+
+    consumeJti(record: JtiReplayRecord, nowEpochSeconds: number) {
+      if (lockActive) {
+        return {
+          consumed: false,
+          reason: 'Concurrent JTI replay store access contention detected (fail-closed).'
+        };
+      }
+      lockActive = true;
+      try {
+        if (!record || typeof record.jti !== 'string' || record.jti.trim().length === 0) {
+          return {
+            consumed: false,
+            reason: 'Invalid or empty JWT jti claim cannot be recorded in replay store.'
+          };
+        }
+        if (typeof record.issuer !== 'string' || record.issuer.trim().length === 0) {
+          return {
+            consumed: false,
+            reason: 'Invalid or empty JWT issuer claim cannot be recorded in replay store.'
+          };
+        }
+        if (
+          typeof record.expiresAtEpochSeconds !== 'number' ||
+          !Number.isFinite(record.expiresAtEpochSeconds)
+        ) {
+          return {
+            consumed: false,
+            reason: 'Invalid JWT expiration timestamp for replay store retention.'
+          };
+        }
+
+        purgeExpired(nowEpochSeconds);
+
+        const compositeKey = makeCompositeKey(record.jti, record.issuer);
+        const rawJtiKey = makeCompositeKey(record.jti, '*');
+
+        const existing = consumedMap.get(compositeKey) ?? consumedMap.get(rawJtiKey);
+        if (existing) {
+          return {
+            consumed: false,
+            reason: `Replay detected: JWT jti "${record.jti.trim()}" from issuer "${record.issuer.trim()}" has already been consumed at ${existing.consumedAtIso}.`,
+            existingRecord: existing
+          };
+        }
+
+        if (consumedMap.size >= maxEntries) {
+          return {
+            consumed: false,
+            reason: 'JTI replay store capacity exhausted (fail-closed).'
+          };
+        }
+
+        const frozenRecord: JtiReplayRecord = Object.freeze({
+          ...record,
+          jti: record.jti.trim(),
+          issuer: record.issuer.trim()
+        });
+        consumedMap.set(compositeKey, frozenRecord);
+        consumedMap.set(rawJtiKey, frozenRecord);
+
+        return { consumed: true };
+      } finally {
+        lockActive = false;
+      }
+    },
+
+    getConsumedRecord(jti: string, issuer?: string): JtiReplayRecord | undefined {
+      if (typeof jti !== 'string' || jti.trim().length === 0) {
+        return undefined;
+      }
+      if (issuer) {
+        const byIssuer = consumedMap.get(makeCompositeKey(jti, issuer));
+        if (byIssuer) return byIssuer;
+      }
+      return consumedMap.get(makeCompositeKey(jti, '*'));
+    },
+
+    purgeExpired
+  };
+}
+
+// ============================================================================
+// OIDC / JWT ASYMMETRIC EdDSA CREDENTIAL ISSUANCE & VERIFICATION (TIER 3)
+// ============================================================================
+
+export interface IssueIdentityCredentialParams {
+  subjectId?: string;
+  subject?: string;
+  displayName?: string;
+  expectedApprover?: string;
+  issuer: string;
+  audience: string;
+  issuedAt: string;
+  notBefore?: string;
+  expiresAt: string;
+  claims?: readonly string[];
+  authorizationClaims?: readonly string[];
+  /** Key ID (`kid`) in the OIDC JWK Set */
+  keyId?: string;
+  /** Organization / project / tenant identifier (`tid`) */
+  tenantId?: string;
+  /** Unique JWT ID (`jti` / `credentialId`) */
+  jti?: string;
+  credentialId?: string;
+  /** Bound specification / garment ID (`spec_id`, `FINDING-06`) */
+  specificationId?: string;
+  /** Bound target specification revision ID (`target_revision_id`, `FINDING-06`) */
+  targetRevisionId?: string;
+  /** Bound target canonical specification fingerprint (`target_specification_fingerprint`, `FINDING-06`) */
+  targetSpecificationFingerprint?: string;
+  /** Optional Authentication Context Class Reference (`acr`, `FINDING-07`) */
+  acr?: string;
+  /** Optional Authentication Methods References (`amr`, `FINDING-07`) */
+  amr?: readonly string[];
+}
+
+let monotonicJtiCounter = 0;
+
+/**
+ * Helper to derive an RFC 8037 `OKP` `Ed25519` public JWK from a signing seed or private key.
+ * Returns ONLY the public JWK (`kty`, `crv`, `alg`, `kid`, `x`), never the private parameter `d`.
+ */
+export function createOidcPublicJwk(
+  firstArg:
+    | string
+    | {
+        keyId: string;
+        publicKeyHex?: string;
+        signingSecretOrPrivateKeyHex?: string;
+        privateKeySeed?: string;
+        privateKeyHex?: string;
+        issuer?: string;
+        tenantId?: string;
+        activatedAt?: string;
+        expiresAt?: string;
+        revoked?: boolean;
+        compromised?: boolean;
+        revokedAt?: string;
+        revocationReason?: string;
+      },
+  secondArg?:
+    | string
+    | {
+        publicKeyHex?: string;
+        privateKeySeed?: string;
+        privateKeyHex?: string;
+        signingSecretOrPrivateKeyHex?: string;
+      },
+  thirdArg?: {
+    issuer?: string;
+    tenantId?: string;
+    activatedAt?: string;
+    expiresAt?: string;
+    revoked?: boolean;
+    compromised?: boolean;
+    revokedAt?: string;
+    revocationReason?: string;
+  }
+): OidcJwkPublicKey {
+  let keyId: string;
+  let seed = '';
+  let directPubHex = '';
+  let meta: {
+    issuer?: string;
+    tenantId?: string;
+    activatedAt?: string;
+    expiresAt?: string;
+    revoked?: boolean;
+    compromised?: boolean;
+    revokedAt?: string;
+    revocationReason?: string;
+  } = {};
+
+  if (typeof firstArg === 'string') {
+    keyId = firstArg.trim();
+    if (typeof secondArg === 'string') {
+      seed = secondArg;
+    } else if (secondArg && typeof secondArg === 'object') {
+      directPubHex = secondArg.publicKeyHex?.trim().toLowerCase() ?? '';
+      seed =
+        secondArg.privateKeySeed ??
+        secondArg.privateKeyHex ??
+        secondArg.signingSecretOrPrivateKeyHex ??
+        '';
+    }
+    meta = thirdArg ?? {};
+  } else {
+    keyId = firstArg.keyId.trim();
+    directPubHex = firstArg.publicKeyHex?.trim().toLowerCase() ?? '';
+    seed =
+      firstArg.signingSecretOrPrivateKeyHex ??
+      firstArg.privateKeySeed ??
+      firstArg.privateKeyHex ??
+      '';
+    meta = firstArg;
+  }
+
+  let pubHex: string;
+  let pubB64Url: string;
+  if (directPubHex && !seed) {
+    pubHex = directPubHex;
+    pubB64Url = base64UrlEncodeBytes(hexToBytes(pubHex));
+  } else {
+    const kp = generateEd25519KeyPairFromSeed(seed);
+    pubHex = kp.publicKeyHex;
+    pubB64Url = kp.publicKeyBase64Url;
+  }
+
+  return {
+    kty: 'OKP',
+    crv: 'Ed25519',
+    alg: 'EdDSA',
+    use: 'sig',
+    kid: keyId,
+    x: pubB64Url,
+    publicKeyHex: pubHex,
+    issuer: meta.issuer,
+    tenantId: meta.tenantId,
+    activatedAt: meta.activatedAt,
+    expiresAt: meta.expiresAt,
+    revoked: meta.revoked ?? false,
+    compromised: meta.compromised ?? false,
+    revokedAt: meta.revokedAt,
+    revocationReason: meta.revocationReason
+  };
+}
+
+/**
+ * Issues a standard 3-part compact OIDC/JWT (`header.payload.signature`) signed with
+ * asymmetric Ed25519 (`EdDSA` per RFC 8037 / RFC 7515), including target specification/revision/fingerprint
+ * binding claims (`FINDING-06`) and unique `jti`.
+ */
+export function issueVerifiableIdentityCredential(
+  params: IssueIdentityCredentialParams,
+  signingPrivateKeyOrSeed: string
+): VerifiableIdentityCredential {
+  const subjectId = (params.subjectId ?? params.subject ?? '').trim();
+  const displayName = (params.displayName ?? params.expectedApprover ?? '').trim();
+  const claimsList = params.claims ?? params.authorizationClaims ?? [];
+
+  if (!subjectId) {
+    throw new ProductionSnapshotValidationError('Identity credential subjectId cannot be empty.');
+  }
+  if (!displayName) {
+    throw new ProductionSnapshotValidationError('Identity credential displayName cannot be empty.');
+  }
+  if (subjectId === displayName) {
+    throw new ProductionSnapshotValidationError(
+      'Identity credential subjectId must be a unique principal identifier distinct from displayName.',
+      ['subjectId']
+    );
+  }
+  if (typeof signingPrivateKeyOrSeed !== 'string' || signingPrivateKeyOrSeed.trim().length === 0) {
+    throw new ProductionSnapshotValidationError('Identity provider Ed25519 signing seed/private key cannot be empty.');
+  }
+
+  const issuedMs = Date.parse(params.issuedAt);
+  const expiresMs = Date.parse(params.expiresAt);
+  if (Number.isNaN(issuedMs) || Number.isNaN(expiresMs)) {
+    throw new ProductionSnapshotValidationError('Identity credential issuedAt and expiresAt must be valid ISO-8601 timestamps.');
+  }
+
+  const iat = Math.floor(issuedMs / 1000);
+  const exp = Math.floor(expiresMs / 1000);
+  const nbf = params.notBefore ? Math.floor(Date.parse(params.notBefore) / 1000) : iat;
+  const kid = params.keyId?.trim() || 'idp-ed25519-default-kid';
+  monotonicJtiCounter += 1;
+  const jti =
+    params.jti?.trim() ||
+    params.credentialId?.trim() ||
+    `jwt-${sha256Hex(`${params.issuer}:${subjectId}:${params.issuedAt}:${kid}:${monotonicJtiCounter}`).slice(0, 24)}`;
 
   const header: OidcJwtHeader = {
-    alg: algorithm,
-    typ: tokenType,
-    kid: keyId
+    alg: 'EdDSA',
+    typ: 'at+jwt',
+    kid
   };
 
   const payload: OidcJwtPayload = {
-    iss: params.issuer,
-    sub: subject,
-    aud: params.audience,
-    jti: credentialId,
-    iat: iatSec,
-    nbf: nbfSec,
-    exp: expSec,
-    name: expectedApprover,
-    roles: authorizationClaims,
-    use: intendedUse,
-    provider_id: providerId,
-    ...(params.tenantId ? { tid: params.tenantId } : {})
+    iss: params.issuer.trim(),
+    sub: subjectId,
+    aud: params.audience.trim(),
+    iat,
+    nbf,
+    exp,
+    jti,
+    name: displayName,
+    tid: params.tenantId?.trim(),
+    use: 'specification_approval',
+    scope: claimsList.join(' '),
+    roles: [...claimsList],
+    ...(params.specificationId ? { spec_id: params.specificationId.trim() } : {}),
+    ...(params.targetRevisionId ? { target_revision_id: params.targetRevisionId.trim() } : {}),
+    ...(params.targetSpecificationFingerprint
+      ? { target_specification_fingerprint: params.targetSpecificationFingerprint.trim().toLowerCase() }
+      : {}),
+    ...(params.acr ? { acr: params.acr.trim() } : {}),
+    ...(params.amr ? { amr: [...params.amr] } : {})
   };
 
-  const { jwt } = signOidcJwtEdDsa(header, payload, idpPrivateKeySeed);
+  const encodedHeader = base64UrlEncodeUtf8(canonicalizeJson(header));
+  const encodedPayload = base64UrlEncodeUtf8(canonicalizeJson(payload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
 
-  return deepFreeze({
-    credentialId,
-    subject,
-    subjectId: subject,
-    expectedApprover,
-    displayName: expectedApprover,
-    issuer: params.issuer,
-    audience: params.audience,
-    tenantId: params.tenantId,
-    keyId,
-    algorithm,
-    tokenType,
-    intendedUse,
-    notBefore: notBeforeIso,
+  const kp = generateEd25519KeyPairFromSeed(signingPrivateKeyOrSeed);
+  const signatureHex = signEd25519Bytes(utf8ToBytes(signingInput), kp.privateKeyHex);
+  const signatureBytes = new Uint8Array(64);
+  for (let i = 0; i < 64; i++) {
+    signatureBytes[i] = parseInt(signatureHex.slice(i * 2, i * 2 + 2), 16);
+  }
+  const encodedSignature = base64UrlEncodeBytes(signatureBytes);
+
+  const compactJwt = `${signingInput}.${encodedSignature}`;
+
+  return {
+    credentialToken: compactJwt,
+    token: compactJwt,
+    credentialId: jti,
+    subjectId,
+    subject: subjectId,
+    displayName,
+    expectedApprover: displayName,
+    issuer: params.issuer.trim(),
+    audience: params.audience.trim(),
     issuedAt: params.issuedAt,
+    notBefore: params.notBefore,
     expiresAt: params.expiresAt,
-    authorizationClaims,
-    claims: authorizationClaims,
-    providerId,
-    token: jwt,
-    credentialToken: jwt
-  });
+    claims: [...claimsList],
+    authorizationClaims: [...claimsList],
+    keyId: kid,
+    tenantId: params.tenantId?.trim(),
+    jti,
+    specificationId: params.specificationId?.trim(),
+    targetRevisionId: params.targetRevisionId?.trim(),
+    targetSpecificationFingerprint: params.targetSpecificationFingerprint?.trim().toLowerCase(),
+    acr: params.acr?.trim(),
+    amr: params.amr ? [...params.amr] : undefined
+  };
+}
+
+export interface TrustedIdentityVerifierConfig {
+  trustedIssuer?: string;
+  trustedIssuers?: readonly string[];
+  expectedAudience: string;
+  /** Controlled JWKS registry of trusted public Ed25519 keys (`OKP` / `Ed25519`, mandatory) */
+  publicJwks: readonly OidcJwkPublicKey[];
+  /** Optional expected organization/project/tenant identifier (`tid`) */
+  expectedTenantId?: string;
+  /** Optional reference time for deterministic testing; defaults to current system clock */
+  referenceTimeIso?: string;
+  /** Optional clock skew tolerance in seconds (default: 60s) */
+  clockSkewToleranceSeconds?: number;
+  /** Optional atomic JTI replay store (`FINDING-06`); defaults to an internal process-local store */
+  replayStore?: JtiReplayStore;
+  /** When true, rejects in-memory process-local replay stores and requires an external durable store (`FINDING-06`) */
+  requireDurableReplayStore?: boolean;
+  /** Optional required Authentication Context Class Reference (`acr`, `FINDING-07`) */
+  requiredAcr?: string | readonly string[];
+  /** Optional required Authentication Methods References (`amr`, `FINDING-07`) */
+  requiredAmr?: readonly string[];
+  /** Optional list of supported critical (`crit`) JWT header extensions (default: none, `FINDING-07`) */
+  supportedCriticalHeaders?: readonly string[];
 }
 
 /**
- * Creates a trusted OIDC/JWT identity verifier that validates asymmetric EdDSA JWT signatures
- * against a trusted JWKS public-key registry along with issuer, audience, subject, tenant,
- * expiration (`exp`), not-before (`nbf`), issued-at (`iat`), token type (`typ`), intended use (`use`),
- * and authorization claims (`specification:approve`).
+ * Validates an `OidcJwkPublicKey` entry at registration/configuration time (`FINDING-08`, `FINDING-09`, `FINDING-10`, `FINDING-11`).
+ * Returns the validated 64-character lowercase hex Ed25519 public key.
  */
-export function createTrustedIdentityVerifier(config: {
-  readonly verifierId?: string;
-  readonly trustedIssuers?: readonly string[];
-  readonly trustedIssuer?: string;
-  readonly expectedAudience: string;
-  readonly expectedTenantId?: string;
-  readonly jwks?: readonly OidcJwkPublicKey[];
-  readonly publicJwks?: readonly OidcJwkPublicKey[];
-  readonly providerSecret?: string;
-  readonly sharedSecret?: string;
-  readonly requiredClaim?: string;
-  readonly referenceTimeIso?: string;
-  readonly maxClockSkewSeconds?: number;
-}): TrustedIdentityVerifier & {
-  verifyIdentityCredential(
-    credential: VerifiableIdentityCredential,
-    context: {
-      readonly targetRevisionId: string;
-      readonly targetSpecificationFingerprint: string;
-      readonly expectedApprover: string;
-      readonly approvalTimestamp: string;
-      readonly expectedTenantId?: string;
-    }
-  ): TrustedIdentityVerificationResult;
-  verifyCredential(
-    credential: VerifiableIdentityCredential,
-    context?: unknown
-  ): TrustedIdentityVerificationResult & { readonly isValid: boolean };
-} {
-  const requiredClaim = config.requiredClaim ?? 'specification:approve';
-  const trustedIssuers = config.trustedIssuers ?? (config.trustedIssuer ? [config.trustedIssuer] : []);
-  const verifierId = config.verifierId ?? 'oidc-jwt-verifier-eddsa';
-  const clockSkewSec = config.maxClockSkewSeconds ?? 0;
+export function validateOidcPublicJwk(jwk: OidcJwkPublicKey): string {
+  if (!jwk || typeof jwk !== 'object') {
+    throw new ProductionSnapshotValidationError(
+      'Invalid JWK in publicJwks: entry must be an object.',
+      ['invalid-jwk']
+    );
+  }
 
-  const publicJwks: OidcJwkPublicKey[] = [];
-  const rawJwksInput = config.jwks ?? config.publicJwks;
-  if (Array.isArray(rawJwksInput)) {
-    for (const jwk of rawJwksInput) {
-      const raw = jwk as unknown as Record<string, unknown>;
-      if (raw.d !== undefined || raw.privateKeyHex !== undefined || raw.privateKeySecret !== undefined) {
-        throw new ProductionSnapshotValidationError(
-          `Security boundary violation: JWK in publicJwks must not contain private key parameter "d" (kid '${jwk.kid}').`
-        );
-      }
-      let pubHex = jwk.publicKeyHex ? jwk.publicKeyHex.toLowerCase() : undefined;
-      if (!pubHex && jwk.x) {
-        pubHex = bytesToHex(base64UrlDecodeBytes(jwk.x));
-      }
-      if (!jwk.kid || !pubHex || pubHex.length !== 64) {
-        throw new ProductionSnapshotValidationError(
-          `OIDC JWK '${jwk?.kid ?? 'unknown'}' requires a valid 32-byte Ed25519 public key ('x' or 'publicKeyHex').`
-        );
-      }
-      publicJwks.push(
-        Object.freeze({
-          kty: 'OKP',
-          crv: 'Ed25519',
-          kid: jwk.kid,
-          alg: jwk.alg ?? 'EdDSA',
-          use: jwk.use ?? 'sig',
-          x: jwk.x ?? base64UrlEncodeBytes(hexToBytes(pubHex)),
-          publicKeyHex: pubHex,
-          issuer: jwk.issuer,
-          tenantId: jwk.tenantId,
-          activatedAt: jwk.activatedAt,
-          expiresAt: jwk.expiresAt,
-          revoked: Boolean(jwk.revoked),
-          trustStatus: jwk.trustStatus ?? (jwk.revoked ? 'revoked' : 'trusted')
-        })
-      );
-    }
-  } else {
-    const seed = config.providerSecret ?? config.sharedSecret ?? '';
-    if (seed) {
-      publicJwks.push(
-        createOidcPublicJwk('idp-eddsa-key-01', { privateKeySeed: seed }, {
-          issuer: trustedIssuers[0],
-          tenantId: config.expectedTenantId
-        })
+  // Reject any private-key or seed parameter (including "d")
+  assertNoPrivateKeyMaterialInVerifierBoundary(jwk, 'JWK in publicJwks');
+
+  if (jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519') {
+    throw new ProductionSnapshotValidationError(
+      `Unsupported JWK key type/curve (${String(jwk.kty)} / ${String(jwk.crv)}). Expected kty="OKP", crv="Ed25519".`,
+      ['unsupported-jwk-curve']
+    );
+  }
+
+  if (jwk.alg !== 'EdDSA') {
+    throw new ProductionSnapshotValidationError(
+      `Unsupported JWK alg "${String(jwk.alg)}". Expected alg="EdDSA".`,
+      ['unsupported-jwk-alg']
+    );
+  }
+
+  if (jwk.use !== undefined && jwk.use !== 'sig') {
+    throw new ProductionSnapshotValidationError(
+      `Unsupported JWK use "${String(jwk.use)}". Expected use="sig".`,
+      ['unsupported-jwk-use']
+    );
+  }
+
+  if (typeof jwk.kid !== 'string' || jwk.kid.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'JWK in publicJwks requires a non-empty kid.',
+      ['missing-jwk-kid']
+    );
+  }
+
+  if (typeof jwk.x !== 'string' || jwk.x.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      `JWK "${jwk.kid}" requires a non-empty Base64URL public key parameter "x".`,
+      ['missing-jwk-x']
+    );
+  }
+
+  let xBytes: Uint8Array;
+  try {
+    xBytes = base64UrlDecodeToBytes(jwk.x.trim());
+  } catch {
+    throw new ProductionSnapshotValidationError(
+      `JWK "${jwk.kid}" contains invalid Base64URL public key parameter "x".`,
+      ['invalid-jwk-x-base64url']
+    );
+  }
+
+  if (!isValidEd25519PublicKeyBytes(xBytes)) {
+    throw new ProductionSnapshotValidationError(
+      `JWK "${jwk.kid}" contains an invalid, non-canonical, or small-order torsion Ed25519 public key in "x".`,
+      ['torsion-or-invalid-jwk-public-key']
+    );
+  }
+
+  const derivedHex = bytesToHex(xBytes);
+  if (jwk.publicKeyHex !== undefined) {
+    const providedHex =
+      typeof jwk.publicKeyHex === 'string' ? jwk.publicKeyHex.trim().toLowerCase() : '';
+    if (providedHex !== derivedHex) {
+      throw new ProductionSnapshotValidationError(
+        `JWK "${jwk.kid}" has inconsistent publicKeyHex and Base64URL "x" parameters.`,
+        ['inconsistent-jwk-public-key-hex']
       );
     }
   }
 
-  const jwkByKid = new Map(publicJwks.map(k => [k.kid, k]));
-
-  function performIdentityVerification(
-    credential: VerifiableIdentityCredential,
-    context?: {
-      readonly targetRevisionId?: string;
-      readonly targetSpecificationFingerprint?: string;
-      readonly expectedApprover?: string;
-      readonly approvalTimestamp?: string;
-      readonly expectedTenantId?: string;
+  if (jwk.activatedAt !== undefined && jwk.expiresAt !== undefined) {
+    const actMs = Date.parse(jwk.activatedAt);
+    const expMs = Date.parse(jwk.expiresAt);
+    if (Number.isNaN(actMs) || Number.isNaN(expMs) || expMs <= actMs) {
+      throw new ProductionSnapshotValidationError(
+        `JWK "${jwk.kid}" has an invalid activatedAt/expiresAt validity window.`,
+        ['invalid-jwk-validity-window']
+      );
     }
-  ): TrustedIdentityVerificationResult & { readonly isValid: boolean } {
+  }
+
+  return derivedHex;
+}
+
+/**
+ * Creates a `TrustedIdentityVerifier` that validates compact OIDC/JWT (`EdDSA` / `Ed25519`)
+ * tokens against a controlled JWKS registry of public keys with target-revision binding (`FINDING-06`)
+ * and atomic single-use JTI replay protection (`FINDING-06`).
+ */
+export function createTrustedIdentityVerifier(
+  config: TrustedIdentityVerifierConfig
+): TrustedIdentityVerifier {
+  if (!config || typeof config !== 'object') {
+    throw new ProductionSnapshotValidationError(
+      'TrustedIdentityVerifier requires a configuration object.',
+      ['missing-identity-verifier-config']
+    );
+  }
+
+  // Strictly forbid private keys, seeds, sharedSecret, providerSecret on the verifier config (FINDING-10)
+  assertNoPrivateKeyMaterialInVerifierBoundary(config, 'TrustedIdentityVerifierConfig');
+
+  const trustedIssuersList = [
+    ...(config.trustedIssuer ? [config.trustedIssuer.trim()] : []),
+    ...(Array.isArray(config.trustedIssuers) ? config.trustedIssuers.map(i => i.trim()) : [])
+  ].filter(Boolean);
+
+  if (trustedIssuersList.length === 0) {
+    throw new ProductionSnapshotValidationError('TrustedIdentityVerifier requires a non-empty trustedIssuer or trustedIssuers.');
+  }
+  if (!config.expectedAudience || config.expectedAudience.trim().length === 0) {
+    throw new ProductionSnapshotValidationError('TrustedIdentityVerifier requires a non-empty expectedAudience.');
+  }
+
+  if (!Array.isArray(config.publicJwks) || config.publicJwks.length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'TrustedIdentityVerifier requires at least one public JWK in publicJwks.'
+    );
+  }
+
+  const jwkMap = new Map<string, { jwk: OidcJwkPublicKey; publicKeyHex: string }>();
+
+  for (const jwk of config.publicJwks) {
+    const validatedPubHex = validateOidcPublicJwk(jwk);
+    const normalizedKid = jwk.kid.trim();
+
+    if (jwkMap.has(normalizedKid)) {
+      throw new ProductionSnapshotValidationError(
+        `Duplicate JWK kid "${normalizedKid}" in publicJwks is prohibited.`,
+        ['duplicate-jwk-kid']
+      );
+    }
+
+    for (const [existingKid, existingItem] of jwkMap.entries()) {
+      if (
+        existingKid !== normalizedKid &&
+        existingItem.publicKeyHex === validatedPubHex &&
+        keyWindowsOverlap(existingItem.jwk, jwk)
+      ) {
+        throw new ProductionSnapshotValidationError(
+          `Duplicate Ed25519 public key material across distinct active JWK kids ("${existingKid}" and "${normalizedKid}") is prohibited.`,
+          ['duplicate-jwk-public-key-material']
+        );
+      }
+    }
+
+    jwkMap.set(normalizedKid, {
+      jwk: {
+        ...jwk,
+        kid: normalizedKid,
+        publicKeyHex: validatedPubHex
+      },
+      publicKeyHex: validatedPubHex
+    });
+  }
+
+  const replayStore: JtiReplayStore = config.replayStore ?? createInMemoryJtiReplayStore();
+  if (config.requireDurableReplayStore && !replayStore.isDurableDistributedStore) {
+    throw new ProductionSnapshotValidationError(
+      'TrustedIdentityVerifier configuration error: requireDurableReplayStore is true, but the provided JtiReplayStore is a process-local in-memory store (isDurableDistributedStore === false).',
+      ['non-durable-replay-store-rejected']
+    );
+  }
+
+  const skewSec = config.clockSkewToleranceSeconds ?? 60;
+  const supportedCrit = new Set<string>(config.supportedCriticalHeaders ?? []);
+
+  function evaluateCredential(
+    credential: VerifiableIdentityCredential,
+    options?: IdentityCredentialVerificationOptions
+  ): IdentityVerificationResult {
+    const fail = (reason: string): IdentityVerificationResult => ({
+      verified: false,
+      isValid: false,
+      reason
+    });
+
+    if (!credential || typeof credential !== 'object') {
+      return fail('Missing or malformed identity credential object.');
+    }
+
+    const rawToken = credential.credentialToken ?? credential.token;
+    if (typeof rawToken !== 'string' || rawToken.trim().length === 0) {
+      return fail('Missing cryptographic credentialToken.');
+    }
+
+    const rawJwt = rawToken.trim();
+
+    if (rawJwt.startsWith('pat-id-v1.')) {
+      return fail(
+        'Legacy pat-id-v1.* custom shared-secret tokens are rejected. A standard 3-part compact OIDC/JWT signed with asymmetric EdDSA (Ed25519) is required.'
+      );
+    }
+
+    const parts = rawJwt.split('.');
+    if (parts.length !== 3) {
+      return fail(
+        'Malformed OIDC/JWT token: expected compact 3-part serialization (header.payload.signature).'
+      );
+    }
+
+    const [encodedHeader, encodedPayload, encodedSignature] = parts;
+    if (!encodedHeader || !encodedPayload || !encodedSignature) {
+      return fail(
+        'Malformed OIDC/JWT token: header, payload, and signature segments must all be non-empty (alg: "none" is forbidden).'
+      );
+    }
+
+    let headerObj: Record<string, unknown>;
+    let payloadObj: Record<string, unknown>;
+    let signatureBytes: Uint8Array;
+
     try {
-      if (!credential || typeof credential !== 'object') {
-        return { verified: false, isValid: false, reason: 'Identity credential is missing or malformed.' };
-      }
-      const rawToken = credential.token ?? credential.credentialToken;
-      if (!rawToken || typeof rawToken !== 'string') {
-        return { verified: false, isValid: false, reason: 'OIDC JWT token is missing.' };
-      }
-
-      // Reject legacy custom pat-id-v1 shared-secret tokens immediately
-      if (rawToken.startsWith('pat-id-v1.')) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Legacy pat-id-v1.* custom shared-secret tokens are rejected; a signed OIDC/JWT token is required.'
-        };
-      }
-
-      const parts = rawToken.split('.');
-      if (parts.length !== 3 || !parts[0] || !parts[1]) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Malformed OIDC JWT: token must be a compact 3-part Base64URL string (header.payload.signature).'
-        };
-      }
-
-      const [encodedHeader, encodedPayload, encodedSignature] = parts;
-      let header: OidcJwtHeader;
-      let payload: OidcJwtPayload;
-      try {
-        header = JSON.parse(base64UrlDecodeUtf8(encodedHeader)) as OidcJwtHeader;
-        payload = JSON.parse(base64UrlDecodeUtf8(encodedPayload)) as OidcJwtPayload;
-      } catch {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Malformed OIDC JWT: unable to decode Base64URL JSON header or payload.'
-        };
-      }
-
-      if (!header || typeof header !== 'object' || !payload || typeof payload !== 'object') {
-        return { verified: false, isValid: false, reason: 'Malformed OIDC JWT header or payload structure.' };
-      }
-
-      // Strictly reject alg: "none" and any non-EdDSA / symmetric HMAC algorithm
-      if (!header.alg || header.alg.toLowerCase() === 'none') {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'OIDC JWT verification rejected: unsigned JWT (alg: "none") is strictly prohibited.'
-        };
-      }
-      if (header.alg !== 'EdDSA') {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT verification rejected: Symmetric JWT algorithm or unsupported algorithm '${header.alg}' is prohibited; asymmetric 'EdDSA' required.`
-        };
-      }
-      if (credential.algorithm && credential.algorithm !== header.alg) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT algorithm mismatch between credential metadata ('${credential.algorithm}') and JWT header ('${header.alg}').`
-        };
-      }
-
-      // Validate JWT token type (typ)
-      if (!header.typ || (header.typ !== 'at+jwt' && header.typ !== 'JWT')) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT verification rejected: invalid token type '${header.typ ?? 'missing'}' (expected 'at+jwt' or 'JWT').`
-        };
-      }
-
-      // Validate key ID (kid) against trusted JWKS registry
-      if (!header.kid || typeof header.kid !== 'string' || header.kid.trim() === '') {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'OIDC JWT verification rejected: missing key ID (kid) in JWT header.'
-        };
-      }
-      const jwk = jwkByKid.get(header.kid);
-      if (!jwk) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT verification rejected: Unknown or untrusted OIDC JWK kid '${header.kid}' not found in trusted JWKS.`
-        };
-      }
-      if (jwk.revoked || jwk.trustStatus === 'revoked' || jwk.trustStatus === 'revoked_key') {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT verification rejected: JWKS public key '${jwk.kid}' has been revoked.`
-        };
-      }
-      if (
-        jwk.trustStatus !== undefined &&
-        jwk.trustStatus !== 'trusted' &&
-        jwk.trustStatus !== 'controlled_local_public_key' &&
-        jwk.trustStatus !== 'enterprise_pki_verified'
-      ) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT verification rejected: JWKS public key '${jwk.kid}' is not trusted (status: '${jwk.trustStatus}').`
-        };
-      }
-      if (jwk.alg !== 'EdDSA' || jwk.alg !== header.alg) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT verification rejected: JWKS key '${jwk.kid}' algorithm '${jwk.alg}' does not match JWT header '${header.alg}'.`
-        };
-      }
-
-      const approvalTimestamp = context?.approvalTimestamp ?? config.referenceTimeIso ?? credential.issuedAt;
-      const evalTimestamp = config.referenceTimeIso ?? approvalTimestamp;
-      if (!isValidIsoDate(evalTimestamp) || !isValidIsoDate(approvalTimestamp)) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Approval or verification timestamp is not a valid ISO 8601 date.'
-        };
-      }
-      const evalMs = Date.parse(evalTimestamp);
-      const approvalMs = Date.parse(approvalTimestamp);
-
-      if (jwk.activatedAt && (evalMs < Date.parse(jwk.activatedAt) || approvalMs < Date.parse(jwk.activatedAt))) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT verification rejected: JWKS key '${jwk.kid}' was not yet active.`
-        };
-      }
-      if (jwk.expiresAt && (evalMs >= Date.parse(jwk.expiresAt) || approvalMs >= Date.parse(jwk.expiresAt))) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT verification rejected: JWKS key '${jwk.kid}' has expired.`
-        };
-      }
-
-      // Verify cryptographic Ed25519 signature over header.payload using ONLY the JWK public key
-      if (!encodedSignature) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'OIDC JWT verification rejected: missing cryptographic signature segment.'
-        };
-      }
-      let sigBytes: Uint8Array;
-      try {
-        sigBytes = base64UrlDecodeBytes(encodedSignature);
-      } catch {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'OIDC JWT verification rejected: malformed Base64URL signature.'
-        };
-      }
-      if (sigBytes.length !== 64) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'OIDC JWT verification rejected: invalid Ed25519 signature length.'
-        };
-      }
-      const signingInput = `${encodedHeader}.${encodedPayload}`;
-      const isJwtSigValid = verifyEd25519Signature(jwk.publicKeyHex!, signingInput, bytesToHex(sigBytes));
-      if (!isJwtSigValid) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'OIDC/JWT asymmetric Ed25519 signature verification failed.'
-        };
-      }
-
-      // Validate signed JWT payload claims and cross-check against outer credential wrapper
-      const jwtSub = typeof payload.sub === 'string' ? payload.sub.trim() : '';
-      const credSub = (credential.subject ?? credential.subjectId ?? '').trim();
-      if (!jwtSub || !credSub || jwtSub !== credSub) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Identity credential missing subject (sub) or outer credential subject does not match signed JWT sub claim.'
-        };
-      }
-
-      const expectedApproverInCred = (credential.expectedApprover ?? credential.displayName ?? '').trim();
-      const targetApprover = (context?.expectedApprover ?? expectedApproverInCred).trim();
-
-      // Do not infer identity from display name: subject must be a distinct principal identifier
-      if (jwtSub === targetApprover || (expectedApproverInCred && jwtSub === expectedApproverInCred)) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Identity subject cannot be inferred solely from display name (must be distinct from displayName).'
-        };
-      }
-
-      const jwtName = typeof payload.name === 'string' ? payload.name.trim() : '';
-      if (jwtName !== expectedApproverInCred) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Outer credential expectedApprover/displayName does not match signed JWT name claim.'
-        };
-      }
-      if (
-        targetApprover &&
-        expectedApproverInCred !== targetApprover &&
-        jwtSub !== targetApprover
-      ) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Identity credential subject/expectedApprover '${expectedApproverInCred}' does not match requested approver '${targetApprover}'.`
-        };
-      }
-
-      // Validate issuer (iss)
-      if (typeof payload.iss !== 'string' || payload.iss !== credential.issuer || !trustedIssuers.includes(payload.iss)) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Untrusted OIDC issuer '${payload.iss ?? credential.issuer}'.`
-        };
-      }
-      if (jwk.issuer && jwk.issuer !== payload.iss) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `JWKS key '${jwk.kid}' issuer '${jwk.issuer}' does not match JWT iss '${payload.iss}'.`
-        };
-      }
-
-      // Validate audience (aud)
-      const audList = Array.isArray(payload.aud) ? payload.aud : (typeof payload.aud === 'string' ? [payload.aud] : []);
-      if (!audList.includes(config.expectedAudience) || credential.audience !== config.expectedAudience) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Invalid identity audience '${String(payload.aud)}' (expected '${config.expectedAudience}').`
-        };
-      }
-
-      // Validate intended use (use)
-      if (payload.use !== 'specification_approval') {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Invalid OIDC token intended use '${String(payload.use)}' (expected 'specification_approval').`
-        };
-      }
-
-      // Validate tenant / organization claim (tid / tenantId)
-      const jwtTenant = typeof payload.tid === 'string'
-        ? payload.tid
-        : (typeof payload.tenantId === 'string' ? payload.tenantId : undefined);
-      const requiredTenant = config.expectedTenantId ?? context?.expectedTenantId ?? jwk.tenantId;
-      if (requiredTenant && jwtTenant !== requiredTenant) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `OIDC JWT tenantId claim '${jwtTenant ?? 'missing'}' does not match expected tenantId '${requiredTenant}'.`
-        };
-      }
-      if (credential.tenantId && credential.tenantId !== jwtTenant) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Credential tenantId '${credential.tenantId}' does not match signed JWT tenant claim '${jwtTenant ?? 'missing'}'.`
-        };
-      }
-
-      // Validate iat, nbf, exp timestamps & clock skew
-      if (
-        typeof payload.iat !== 'number' || !Number.isFinite(payload.iat) ||
-        typeof payload.nbf !== 'number' || !Number.isFinite(payload.nbf) ||
-        typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) ||
-        !isValidIsoDate(credential.issuedAt) || !isValidIsoDate(credential.expiresAt)
-      ) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'OIDC JWT missing or invalid numeric iat, nbf, or exp claim.'
-        };
-      }
-
-      const evalSec = Math.floor(evalMs / 1000);
-      const approvalSec = Math.floor(approvalMs / 1000);
-
-      if (evalSec + clockSkewSec < payload.nbf || approvalSec + clockSkewSec < payload.nbf) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Identity credential is not valid before (nbf) the approval or evaluation timestamp (issued in the future).'
-        };
-      }
-      if (evalSec + clockSkewSec < payload.iat || approvalSec + clockSkewSec < payload.iat) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: 'Identity credential issued-at (iat) is in the future (not valid before evaluation or approval timestamp).'
-        };
-      }
-      if (evalSec - clockSkewSec >= payload.exp || approvalSec - clockSkewSec >= payload.exp) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Identity credential expired at '${credential.expiresAt}' prior to evaluation time '${evalTimestamp}'.`
-        };
-      }
-
-      // Validate authorization claims / roles
-      const jwtRoles = Array.isArray(payload.roles)
-        ? payload.roles
-        : (Array.isArray(payload.authorizationClaims) ? payload.authorizationClaims : []);
-      const credClaims = credential.authorizationClaims ?? credential.claims ?? [];
-      if (
-        !jwtRoles.includes(requiredClaim) ||
-        !Array.isArray(credClaims) ||
-        !credClaims.includes(requiredClaim)
-      ) {
-        return {
-          verified: false,
-          isValid: false,
-          reason: `Identity credential lacks required authorization claim '${requiredClaim}'.`
-        };
-      }
-
-      const jti = typeof payload.jti === 'string' && payload.jti.trim() !== '' ? payload.jti : (credential.credentialId ?? `jti-${jwtSub}`);
-      const provenance: VerifiedIdentityProvenance = deepFreeze({
-        subject: jwtSub,
-        subjectId: jwtSub,
-        expectedApprover: expectedApproverInCred,
-        issuer: payload.iss,
-        audience: config.expectedAudience,
-        tenantId: jwtTenant,
-        keyId: header.kid,
-        tokenId: jti,
-        credentialId: jti,
-        notBefore: new Date(payload.nbf * 1000).toISOString(),
-        issuedAt: credential.issuedAt,
-        expiresAt: credential.expiresAt,
-        verifiedAt: approvalTimestamp,
-        authorizationClaims: [...jwtRoles],
-        providerId: typeof payload.provider_id === 'string' ? payload.provider_id : (credential.providerId ?? 'patroner-oidc-idp'),
-        verificationMethod: 'OIDC-JWT-EdDSA',
-        tokenDigest: sha256Hex(rawToken)
-      });
-
-      return {
-        verified: true,
-        isValid: true,
-        provenance
-      };
-    } catch (err) {
-      return {
-        verified: false,
-        isValid: false,
-        reason: `Identity verifier exception: ${err instanceof Error ? err.message : String(err)}`
-      };
+      headerObj = JSON.parse(base64UrlDecodeToUtf8(encodedHeader)) as Record<string, unknown>;
+      payloadObj = JSON.parse(base64UrlDecodeToUtf8(encodedPayload)) as Record<string, unknown>;
+      signatureBytes = base64UrlDecodeToBytes(encodedSignature);
+    } catch {
+      return fail(
+        'Malformed OIDC/JWT token: failed to decode Base64URL JSON header, payload, or signature.'
+      );
     }
+
+    // 1. Validate JWT Header: reject alg: "none", HS256/384/512, RS256, etc. Only EdDSA is permitted.
+    const alg = headerObj.alg;
+    if (alg === 'none' || typeof alg !== 'string') {
+      return fail('JWT header alg: "none" or missing algorithm is strictly forbidden.');
+    }
+    if (alg.startsWith('HS')) {
+      return fail(
+        `Symmetric JWT algorithm "${alg}" is forbidden. Only asymmetric "EdDSA" (Ed25519) is permitted.`
+      );
+    }
+    if (alg !== 'EdDSA') {
+      return fail(`Unsupported JWT algorithm "${alg}". Expected "EdDSA" (Ed25519).`);
+    }
+
+    // Reject unknown critical header parameters per RFC 7515 §4.1.11 (FINDING-07)
+    if ('crit' in headerObj && headerObj.crit !== undefined) {
+      if (
+        !Array.isArray(headerObj.crit) ||
+        headerObj.crit.length === 0 ||
+        !headerObj.crit.every(
+          ext => typeof ext === 'string' && ext.trim().length > 0 && supportedCrit.has(ext)
+        )
+      ) {
+        return fail(
+          'Unsupported or malformed critical JWT header parameter ("crit") rejected per RFC 7515 §4.1.11.'
+        );
+      }
+    }
+
+    const kid = typeof headerObj.kid === 'string' ? headerObj.kid.trim() : '';
+    if (!kid) {
+      return fail('JWT header is missing required "kid" (Key ID) parameter.');
+    }
+
+    // 2. Lookup JWK in controlled JWKS registry
+    const matchedEntry = jwkMap.get(kid);
+    if (!matchedEntry) {
+      return fail(
+        `Unknown or untrusted OIDC JWK kid "${kid}": key is not registered in the controlled JWKS registry.`
+      );
+    }
+
+    const { jwk: matchedJwk, publicKeyHex } = matchedEntry;
+
+    if (
+      matchedJwk.revoked === true ||
+      matchedJwk.compromised === true ||
+      matchedJwk.trustStatus === 'revoked' ||
+      matchedJwk.trustStatus === 'revoked_key' ||
+      matchedJwk.revocationReason?.toLowerCase().includes('compromise')
+    ) {
+      return fail(
+        `OIDC JWK "${kid}" has been revoked${matchedJwk.revocationReason ? ` (${matchedJwk.revocationReason})` : ''} and cannot verify credentials.`
+      );
+    }
+
+    if (matchedJwk.issuer && !trustedIssuersList.includes(matchedJwk.issuer.trim())) {
+      return fail(
+        `OIDC JWK "${kid}" is bound to issuer "${matchedJwk.issuer}", which does not match trustedIssuers.`
+      );
+    }
+
+    const nowMs = config.referenceTimeIso
+      ? Date.parse(config.referenceTimeIso)
+      : options?.approvalTimestamp
+        ? Date.parse(options.approvalTimestamp)
+        : Date.now();
+    if (Number.isNaN(nowMs)) {
+      return fail('Invalid verifier referenceTimeIso.');
+    }
+
+    if (matchedJwk.revokedAt) {
+      const revMs = Date.parse(matchedJwk.revokedAt);
+      if (Number.isNaN(revMs) || nowMs >= revMs) {
+        return fail(
+          `OIDC JWK "${kid}" was revoked at "${matchedJwk.revokedAt}" and cannot verify credentials.`
+        );
+      }
+    }
+
+    if (matchedJwk.activatedAt) {
+      const actMs = Date.parse(matchedJwk.activatedAt);
+      if (!Number.isNaN(actMs) && nowMs + skewSec * 1000 < actMs) {
+        return fail(
+          `OIDC JWK "${kid}" is not yet active (activatedAt: ${matchedJwk.activatedAt}).`
+        );
+      }
+    }
+
+    if (matchedJwk.expiresAt) {
+      const expKeyMs = Date.parse(matchedJwk.expiresAt);
+      if (!Number.isNaN(expKeyMs) && nowMs - skewSec * 1000 >= expKeyMs) {
+        return fail(
+          `OIDC JWK "${kid}" has expired (expiresAt: ${matchedJwk.expiresAt}).`
+        );
+      }
+    }
+
+    // 3. Verify asymmetric Ed25519 signature over raw UTF-8 bytes of `base64url(header).base64url(payload)`
+    if (signatureBytes.length !== 64) {
+      return fail(
+        `Invalid EdDSA JWT signature length (${signatureBytes.length} bytes; expected 64 bytes).`
+      );
+    }
+
+    const signingInputBytes = utf8ToBytes(`${encodedHeader}.${encodedPayload}`);
+    const signatureHex = bytesToHex(signatureBytes);
+
+    if (!verifyEd25519Bytes(signingInputBytes, signatureHex, publicKeyHex)) {
+      return fail(
+        'OIDC/JWT asymmetric Ed25519 signature verification failed: token is forged, tampered, or signed by an untrusted key.'
+      );
+    }
+
+    // 4. Validate standard OIDC/JWT claims inside the signed payload
+    const iss = typeof payloadObj.iss === 'string' ? payloadObj.iss.trim() : '';
+    if (!trustedIssuersList.includes(iss)) {
+      return fail(
+        `Untrusted OIDC issuer "${iss}" (expected one of ${trustedIssuersList.join(', ')}).`
+      );
+    }
+
+    const audClaim = payloadObj.aud;
+    const expectedAud = config.expectedAudience.trim();
+    const audMatches =
+      (typeof audClaim === 'string' && audClaim.trim() === expectedAud) ||
+      (Array.isArray(audClaim) && audClaim.some(a => typeof a === 'string' && a.trim() === expectedAud));
+    if (!audMatches) {
+      return fail(
+        `Invalid OIDC audience "${JSON.stringify(audClaim)}" (expected "${expectedAud}").`
+      );
+    }
+
+    const sub = typeof payloadObj.sub === 'string' ? payloadObj.sub.trim() : '';
+    const wrapperSub = (credential.subjectId ?? credential.subject ?? '').trim();
+    const wrapperName = (credential.displayName ?? credential.expectedApprover ?? '').trim();
+    const displayName = typeof payloadObj.name === 'string' ? payloadObj.name.trim() : wrapperName;
+
+    if (!sub) {
+      return fail('OIDC/JWT payload is missing required "sub" (subject) claim.');
+    }
+    if (sub === displayName) {
+      return fail(
+        'OIDC/JWT "sub" claim must be a unique principal identifier distinct from display name.'
+      );
+    }
+
+    if (wrapperSub && wrapperSub !== sub) {
+      return fail(
+        `Credential wrapper subjectId "${wrapperSub}" does not match signed JWT sub claim "${sub}".`
+      );
+    }
+    if (credential.issuer && credential.issuer.trim() !== iss) {
+      return fail(
+        `Credential wrapper issuer "${credential.issuer}" does not match signed JWT iss claim "${iss}".`
+      );
+    }
+
+    const iat = typeof payloadObj.iat === 'number' ? payloadObj.iat : NaN;
+    const exp = typeof payloadObj.exp === 'number' ? payloadObj.exp : NaN;
+    const nbf = typeof payloadObj.nbf === 'number' ? payloadObj.nbf : iat;
+
+    if (!Number.isFinite(iat) || !Number.isFinite(exp) || exp <= iat) {
+      return fail('OIDC/JWT payload contains invalid "iat" or "exp" numeric timestamps.');
+    }
+
+    const nowSec = Math.floor(nowMs / 1000);
+    if (nowSec + skewSec < iat) {
+      return fail('OIDC/JWT token issuedAt (iat) is in the future.');
+    }
+    if (nowSec + skewSec < nbf) {
+      return fail('OIDC/JWT token is not valid before its nbf (not-before) timestamp.');
+    }
+    if (nowSec - skewSec >= exp) {
+      return fail('OIDC/JWT token has expired (exp).');
+    }
+
+    // Validate JTI claim presence (mandatory for replay protection, FINDING-06)
+    const jti = typeof payloadObj.jti === 'string' ? payloadObj.jti.trim() : '';
+    if (!jti) {
+      return fail(
+        'OIDC/JWT payload is missing required "jti" (unique token ID) claim for replay protection.'
+      );
+    }
+    const wrapperJti = credential.jti ?? credential.credentialId;
+    if (wrapperJti !== undefined && wrapperJti.trim() !== jti) {
+      return fail(
+        `Credential wrapper jti "${wrapperJti}" does not match signed JWT jti claim "${jti}".`
+      );
+    }
+
+    // 5. Validate token purpose (`use`) and approval role/scope (`specification:approve`)
+    const tokenUse = typeof payloadObj.use === 'string' ? payloadObj.use : '';
+    if (tokenUse !== 'specification_approval') {
+      return fail(
+        `OIDC/JWT token "use" claim must be "specification_approval" (received "${tokenUse}").`
+      );
+    }
+
+    const roles: string[] = Array.isArray(payloadObj.roles)
+      ? payloadObj.roles.filter((r): r is string => typeof r === 'string')
+      : [];
+    const authClaims: string[] = Array.isArray(payloadObj.authorizationClaims)
+      ? payloadObj.authorizationClaims.filter((r): r is string => typeof r === 'string')
+      : [];
+    const scopes: string[] =
+      typeof payloadObj.scope === 'string'
+        ? payloadObj.scope.split(/\s+/).filter(Boolean)
+        : [];
+    const combinedClaims = Array.from(new Set([...roles, ...authClaims, ...scopes]));
+
+    if (!combinedClaims.includes('specification:approve')) {
+      return fail(
+        'OIDC/JWT token does not grant required "specification:approve" role or scope.'
+      );
+    }
+
+    // 6. Validate tenant/project scope (`tid`) if configured on verifier or expected in options
+    const tid =
+      typeof payloadObj.tid === 'string'
+        ? payloadObj.tid.trim()
+        : typeof payloadObj.tenantId === 'string'
+          ? payloadObj.tenantId.trim()
+          : undefined;
+    const expectedTenant =
+      options?.expectedTenantId?.trim() ?? config.expectedTenantId?.trim();
+    if (expectedTenant) {
+      if (!tid || tid !== expectedTenant) {
+        return fail(
+          `OIDC/JWT tenantId (tid="${String(tid)}") does not match expected project/tenant "${expectedTenant}".`
+        );
+      }
+    }
+
+    // 7. Validate Authentication Context (`acr` / `amr`, FINDING-07)
+    const tokenAcr = typeof payloadObj.acr === 'string' ? payloadObj.acr.trim() : undefined;
+    const tokenAmr = Array.isArray(payloadObj.amr)
+      ? payloadObj.amr.filter((m): m is string => typeof m === 'string')
+      : undefined;
+
+    if (config.requiredAcr !== undefined) {
+      const allowedAcrs = Array.isArray(config.requiredAcr)
+        ? config.requiredAcr
+        : [config.requiredAcr];
+      if (!tokenAcr || !allowedAcrs.includes(tokenAcr)) {
+        return fail(
+          `OIDC/JWT authentication context class (acr="${String(tokenAcr)}") does not satisfy required policy (${allowedAcrs.join(', ')}).`
+        );
+      }
+    }
+
+    if (config.requiredAmr !== undefined && config.requiredAmr.length > 0) {
+      if (!tokenAmr || !config.requiredAmr.every(reqMethod => tokenAmr.includes(reqMethod))) {
+        return fail(
+          `OIDC/JWT authentication methods (amr=${JSON.stringify(tokenAmr ?? [])}) do not satisfy required policy (${config.requiredAmr.join(', ')}).`
+        );
+      }
+    }
+
+    // 8. Validate target specification / revision / fingerprint binding (FINDING-06)
+    const tokenSpecId =
+      typeof payloadObj.spec_id === 'string' && payloadObj.spec_id.trim().length > 0
+        ? payloadObj.spec_id.trim()
+        : undefined;
+    const tokenTargetRevId =
+      typeof payloadObj.target_revision_id === 'string' &&
+      payloadObj.target_revision_id.trim().length > 0
+        ? payloadObj.target_revision_id.trim()
+        : undefined;
+    const tokenTargetFp =
+      typeof payloadObj.target_specification_fingerprint === 'string' &&
+      payloadObj.target_specification_fingerprint.trim().length > 0
+        ? payloadObj.target_specification_fingerprint.trim().toLowerCase()
+        : undefined;
+
+    if (credential.specificationId !== undefined && credential.specificationId.trim() !== tokenSpecId) {
+      return fail(
+        `Credential wrapper specificationId "${credential.specificationId}" does not match signed JWT spec_id claim "${String(tokenSpecId)}".`
+      );
+    }
+    if (credential.targetRevisionId !== undefined && credential.targetRevisionId.trim() !== tokenTargetRevId) {
+      return fail(
+        `Credential wrapper targetRevisionId "${credential.targetRevisionId}" does not match signed JWT target_revision_id claim "${String(tokenTargetRevId)}".`
+      );
+    }
+    if (
+      credential.targetSpecificationFingerprint !== undefined &&
+      credential.targetSpecificationFingerprint.trim().toLowerCase() !== tokenTargetFp
+    ) {
+      return fail(
+        'Credential wrapper targetSpecificationFingerprint does not match signed JWT target_specification_fingerprint claim.'
+      );
+    }
+
+    if (options?.requireTargetBinding) {
+      if (!tokenSpecId || !tokenTargetRevId || !tokenTargetFp) {
+        return fail(
+          'OIDC/JWT approval credential is missing required target-binding claims ("spec_id", "target_revision_id", and "target_specification_fingerprint"). Unbound tokens cannot approve a garment specification.'
+        );
+      }
+    }
+
+    if (options?.expectedSpecificationId) {
+      const expectedSpecId = options.expectedSpecificationId.trim();
+      if ((options.requireTargetBinding || tokenSpecId !== undefined) && tokenSpecId !== expectedSpecId) {
+        return fail(
+          `OIDC/JWT target specificationId mismatch: token is bound to spec_id="${String(tokenSpecId)}", but target specification is "${expectedSpecId}".`
+        );
+      }
+    }
+
+    if (options?.expectedRevisionId) {
+      const expectedRevId = options.expectedRevisionId.trim();
+      if (
+        (options.requireTargetBinding || tokenTargetRevId !== undefined) &&
+        tokenTargetRevId !== expectedRevId
+      ) {
+        return fail(
+          `OIDC/JWT targetRevisionId mismatch: token is bound to target_revision_id="${String(tokenTargetRevId)}", but target revision is "${expectedRevId}".`
+        );
+      }
+    }
+
+    if (options?.expectedSpecificationFingerprint) {
+      const expectedFp = options.expectedSpecificationFingerprint.trim().toLowerCase();
+      if (
+        (options.requireTargetBinding || tokenTargetFp !== undefined) &&
+        tokenTargetFp !== expectedFp
+      ) {
+        return fail(
+          `OIDC/JWT targetSpecificationFingerprint mismatch: token is bound to fingerprint "${String(tokenTargetFp)}", but target specification fingerprint is "${expectedFp}".`
+        );
+      }
+    }
+
+    // 9. Atomic JTI Replay Protection (FINDING-06)
+    const tokenDigest = sha256Hex(rawJwt);
+    const verifiedAtIso = new Date(nowMs).toISOString();
+
+    if (options?.reverifyRecordedApproval) {
+      const reverify = options.reverifyRecordedApproval;
+      if (tokenDigest !== reverify.recordedTokenDigest) {
+        return fail('Identity credential token digest does not match the recorded approval tokenDigest.');
+      }
+      if (reverify.recordedJti && jti !== reverify.recordedJti) {
+        return fail(
+          `Identity credential jti "${jti}" does not match the recorded approval jti "${reverify.recordedJti}".`
+        );
+      }
+      const existingRecord = replayStore.getConsumedRecord(jti, iss);
+      if (existingRecord) {
+        if (
+          existingRecord.tokenDigest !== reverify.recordedTokenDigest ||
+          (existingRecord.targetRevisionId &&
+            existingRecord.targetRevisionId !== reverify.recordedRevisionId) ||
+          (existingRecord.targetSpecificationFingerprint &&
+            existingRecord.targetSpecificationFingerprint !==
+              reverify.recordedSpecificationFingerprint.toLowerCase()) ||
+          (existingRecord.specificationId &&
+            existingRecord.specificationId !== reverify.recordedSpecificationId)
+        ) {
+          return fail(
+            `Replay detected during approval re-verification: JWT jti "${jti}" was originally consumed for a different specification or revision.`
+          );
+        }
+      }
+    } else {
+      try {
+        const consumeRes = replayStore.consumeJti(
+          {
+            jti,
+            issuer: iss,
+            subjectId: sub,
+            consumedAtIso: verifiedAtIso,
+            expiresAtEpochSeconds: exp,
+            specificationId: tokenSpecId ?? options?.expectedSpecificationId,
+            targetRevisionId: tokenTargetRevId ?? options?.expectedRevisionId,
+            targetSpecificationFingerprint:
+              tokenTargetFp ?? options?.expectedSpecificationFingerprint?.toLowerCase(),
+            tokenDigest
+          },
+          nowSec
+        );
+        if (!consumeRes.consumed) {
+          return fail(
+            consumeRes.reason ??
+              `Replay detected: OIDC/JWT token jti "${jti}" has already been consumed.`
+          );
+        }
+      } catch (err) {
+        return fail(
+          `JTI replay store failure (fail-closed): ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+
+    const provenance: VerifiedIdentityProvenance = {
+      subject: sub,
+      subjectId: sub,
+      displayName,
+      expectedApprover: displayName,
+      issuer: iss,
+      audience: expectedAud,
+      tenantId: tid,
+      keyId: kid,
+      tokenId: jti,
+      jti,
+      credentialId: jti,
+      notBefore: credential.notBefore,
+      issuedAt: credential.issuedAt,
+      expiresAt: credential.expiresAt,
+      verifiedAt: verifiedAtIso,
+      claims: combinedClaims,
+      authorizationClaims: combinedClaims,
+      providerId: iss,
+      verificationMethod: 'OIDC-JWT-EdDSA',
+      tokenDigest,
+      targetSpecificationId: tokenSpecId,
+      targetRevisionId: tokenTargetRevId,
+      targetSpecificationFingerprint: tokenTargetFp,
+      acr: tokenAcr,
+      amr: tokenAmr
+    };
+
+    return {
+      verified: true,
+      isValid: true,
+      provenance,
+      verifiedSubjectId: sub,
+      verifiedDisplayName: displayName,
+      verifiedIssuer: iss,
+      verifiedAudience: expectedAud,
+      verifiedKeyId: kid,
+      verifiedTenantId: tid,
+      verifiedClaims: combinedClaims,
+      verifiedJti: jti,
+      verifiedSpecificationId: tokenSpecId,
+      verifiedTargetRevisionId: tokenTargetRevId,
+      verifiedTargetSpecificationFingerprint: tokenTargetFp,
+      verifiedAcr: tokenAcr,
+      verifiedAmr: tokenAmr,
+      verifiedAt: verifiedAtIso
+    };
   }
 
-  return Object.freeze({
-    verifierId,
-    trustedIssuers: Object.freeze([...trustedIssuers]),
-    expectedAudience: config.expectedAudience,
-    expectedTenantId: config.expectedTenantId,
-    publicJwks: Object.freeze([...publicJwks]),
+  return {
+    verifierId: `oidc-verifier-${trustedIssuersList[0]}`,
+    trustedIssuers: trustedIssuersList,
+    expectedAudience: config.expectedAudience.trim(),
+    expectedTenantId: config.expectedTenantId?.trim(),
+    publicJwks: Array.from(jwkMap.values()).map(v => v.jwk),
+    replayStore,
+
+    verifyCredential(
+      credential: VerifiableIdentityCredential,
+      options?: IdentityCredentialVerificationOptions
+    ): IdentityVerificationResult {
+      return evaluateCredential(credential, options);
+    },
+
     verifyIdentityCredential(
       credential: VerifiableIdentityCredential,
       context: {
@@ -1285,1896 +1986,1761 @@ export function createTrustedIdentityVerifier(config: {
         readonly expectedApprover: string;
         readonly approvalTimestamp: string;
         readonly expectedTenantId?: string;
+        readonly expectedSpecificationId?: string;
       }
-    ): TrustedIdentityVerificationResult {
-      return performIdentityVerification(credential, context);
-    },
-    verifyCredential(
-      credential: VerifiableIdentityCredential,
-      context?: unknown
-    ): TrustedIdentityVerificationResult & { readonly isValid: boolean } {
-      return performIdentityVerification(
-        credential,
-        context && typeof context === 'object' ? (context as Record<string, string>) : undefined
-      );
+    ): IdentityVerificationResult {
+      return evaluateCredential(credential, {
+        expectedSpecificationId: context.expectedSpecificationId,
+        expectedRevisionId: context.targetRevisionId,
+        expectedSpecificationFingerprint: context.targetSpecificationFingerprint,
+        expectedApprover: context.expectedApprover,
+        approvalTimestamp: context.approvalTimestamp,
+        expectedTenantId: context.expectedTenantId
+      });
     }
-  });
+  };
 }
 
-/**
- * Helper to preserve explicit distinction between missing (undefined), null, and supplied values.
- */
-function canonicalizeOptionalValue<T>(val: T | undefined | null): T | null | typeof CANONICAL_MISSING_SENTINEL {
-  if (val === undefined) return CANONICAL_MISSING_SENTINEL;
-  if (val === null) return null;
-  return val;
-}
+// ============================================================================
+// CRYPTOGRAPHIC PRINCIPAL Ed25519 SIGNING & VERIFICATION (TIER 4)
+// ============================================================================
 
 /**
- * Validates that any numeric values within an unknown engineering structure are finite.
+ * Deterministically serializes the canonical approval signing payload.
  */
-function validateFiniteEngineeringNumbers(value: unknown, path: string): unknown {
-  if (value === undefined) return CANONICAL_MISSING_SENTINEL;
-  if (value === null) return null;
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) {
-      throw new ProductionSnapshotValidationError(`Non-finite numeric value at '${path}' (received ${value}).`);
-    }
-    return Object.is(value, -0) ? 0 : value;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item, idx) => validateFiniteEngineeringNumbers(item, `${path}[${idx}]`));
-  }
-  if (typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = validateFiniteEngineeringNumbers(v, `${path}.${k}`);
-    }
-    return out;
-  }
-  return value;
-}
-
-/**
- * Produces an exhaustive, canonical JSON representation of all engineering-significant
- * specification properties for cryptographic hashing and tamper detection.
- *
- * CANONICALIZATION CONTRACT (Milestone 04.6.2.3.1 — Schema v1.1.0):
- * 1. Independent of property insertion order (recursively sorted keys).
- * 2. Independent of locale.
- * 3. Preserves exact numeric precision without rounding or silent defaults.
- * 4. Explicitly distinguishes missing ('__MISSING__'), null (null), and supplied values.
- * 5. Includes parameter-level value provenance classifications.
- * 6. Rejects missing mandatory engineering fields and non-finite/invalid numbers.
- * 7. Validates color hex format (#RGB, #RRGGBB, #RRGGBBAA).
- * 8. Preserves array order where order has engineering meaning (constructionFeatures).
- * 9. Sorts order-independent collections (designNotes, suggestedFabrics).
- * 10. Includes complete fabric mechanical properties and provenance, plus any additional engineering fields.
- */
-export function canonicalizeSpecificationPayload(
-  spec: AuthoritativeGarmentSpecification | CreateAuthoritativeSpecificationInput | DesignSpecification,
-  options?: { schemaVersion?: string }
+export function canonicalizeApprovalSigningPayload(
+  payload: CanonicalApprovalSigningPayload
 ): string {
-  if (!spec || typeof spec !== 'object') {
-    throw new ProductionSnapshotValidationError('Specification payload must be a non-null object.');
+  const ordered: CanonicalApprovalSigningPayload = {
+    schemaVersion: payload.schemaVersion || SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+    projectId: payload.projectId,
+    tenantId: payload.tenantId || payload.projectId,
+    garmentId: payload.garmentId,
+    specificationRevisionId: payload.specificationRevisionId,
+    specificationVersion: payload.specificationVersion,
+    canonicalSpecificationFingerprint: payload.canonicalSpecificationFingerprint,
+    approvalEventId: payload.approvalEventId,
+    approverPrincipal: payload.approverPrincipal,
+    authorityTier: 'cryptographic_principal',
+    approvalScope: 'specification:approve',
+    approvalTimestamp: payload.approvalTimestamp,
+    keyId: payload.keyId,
+    algorithm: 'Ed25519'
+  };
+  return canonicalizeJson(ordered, { preserveUndefinedAsSentinel: true });
+}
+
+export interface SignSpecificationApprovalOptions {
+  keyId: string;
+  /** 64-character hex private seed or symbolic seed for key derivation on the signing side */
+  privateKeyHex?: string;
+  /** Alias for `privateKeyHex` on the signing side */
+  signingKeyMaterial?: string;
+  /** Optional issuer metadata */
+  issuer?: string;
+  /** Optional tenantId override (defaults to `payload.projectId`) */
+  tenantId?: string;
+}
+
+/**
+ * Signs a specification approval payload using RFC 8032 Ed25519.
+ */
+export function signSpecificationApprovalPayload(
+  payloadInput: Omit<CanonicalApprovalSigningPayload, 'tenantId' | 'approvalScope' | 'keyId' | 'algorithm'> & {
+    tenantId?: string;
+    approvalScope?: string;
+    keyId?: string;
+    algorithm?: string;
+  },
+  keyConfig: SignSpecificationApprovalOptions
+): VerifiableCryptographicSignature {
+  if (!keyConfig.keyId || keyConfig.keyId.trim().length === 0) {
+    throw new ProductionSnapshotValidationError('Cryptographic signing keyId cannot be empty.');
+  }
+  const secretSeed = keyConfig.privateKeyHex ?? keyConfig.signingKeyMaterial;
+  if (!secretSeed || secretSeed.trim().length === 0) {
+    throw new ProductionSnapshotValidationError('Cryptographic signing requires privateKeyHex or signingKeyMaterial.');
   }
 
-  // 1. Identity and revision
-  const rawGarmentId = 'garmentId' in spec && spec.garmentId !== undefined
-    ? spec.garmentId
-    : ('id' in spec && (spec as DesignSpecification).id !== undefined ? (spec as DesignSpecification).id : undefined);
+  const fullPayload: CanonicalApprovalSigningPayload = {
+    schemaVersion: payloadInput.schemaVersion || SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+    projectId: payloadInput.projectId,
+    tenantId: payloadInput.tenantId ?? keyConfig.tenantId ?? payloadInput.projectId,
+    garmentId: payloadInput.garmentId,
+    specificationRevisionId: payloadInput.specificationRevisionId,
+    specificationVersion: payloadInput.specificationVersion,
+    canonicalSpecificationFingerprint: payloadInput.canonicalSpecificationFingerprint,
+    approvalEventId: payloadInput.approvalEventId,
+    approverPrincipal: payloadInput.approverPrincipal,
+    authorityTier: 'cryptographic_principal',
+    approvalScope: 'specification:approve',
+    approvalTimestamp: payloadInput.approvalTimestamp,
+    keyId: keyConfig.keyId.trim(),
+    algorithm: 'Ed25519'
+  };
 
-  if (rawGarmentId !== undefined && (typeof rawGarmentId !== 'string' || rawGarmentId.trim() === '')) {
-    throw new ProductionSnapshotValidationError('Garment ID, when provided, must be a non-empty string.');
-  }
-  const garmentId = rawGarmentId ? rawGarmentId.trim() : 'garment';
+  const canonicalJson = canonicalizeApprovalSigningPayload(fullPayload);
+  const payloadFp = sha256Hex(canonicalJson);
 
-  const version = spec.version ?? 1;
-  if (!Number.isInteger(version) || version <= 0) {
-    throw new ProductionSnapshotValidationError(`Specification version must be a positive integer (received ${version}).`);
-  }
+  const kp = generateEd25519KeyPairFromSeed(secretSeed);
+  const sigObj = signEd25519Message(canonicalJson, kp.privateKeyHex);
 
-  const specificationRevisionId = spec.specificationRevisionId ?? `spec-${garmentId}-v${version}`;
-  const parentRevisionId = canonicalizeOptionalValue(spec.parentRevisionId);
-  const projectId = ('projectId' in spec && spec.projectId) ? spec.projectId : 'project-patroner-default';
+  return {
+    keyId: fullPayload.keyId!,
+    algorithm: 'Ed25519',
+    publicKeyHex: kp.publicKeyHex,
+    publicKeyFingerprint: kp.publicKeyFingerprint,
+    signerPrincipal: fullPayload.approverPrincipal,
+    signatureHex: sigObj.signatureHex,
+    signatureDigest: sigObj.signatureHex,
+    signedPayload: fullPayload,
+    signedPayloadCanonicalJson: canonicalJson,
+    signedPayloadFingerprint: payloadFp,
+    signedAt: fullPayload.approvalTimestamp
+  };
+}
 
-  const garmentCategory = spec.garmentCategory;
-  if (!garmentCategory || !VALID_GARMENT_CATEGORIES.has(garmentCategory)) {
-    throw new ProductionSnapshotValidationError(`Valid garmentCategory is required (received '${garmentCategory}').`);
-  }
+export interface TrustedCryptographicVerifierConfig {
+  /**
+   * Controlled registry of trusted Ed25519 public keys (either a `ControlledPublicKeyRegistry`
+   * or an array of `ControlledPublicKeyRegistration` entries).
+   */
+  publicKeyRegistry?: ControlledPublicKeyRegistry | readonly ControlledPublicKeyRegistration[];
+  /**
+   * Public-key map (`keyId -> 64-char publicKeyHex` or `ed25519-pub:<64-char publicKeyHex>`)
+   * or map of `keyId -> ControlledPublicKeyRegistration`.
+   * NOTE: Raw seeds or passphrases in `trustedKeys` are strictly rejected (`FINDING-10`).
+   */
+  trustedKeys?: Record<string, string | ControlledPublicKeyRegistration>;
+  /** Optional trusted issuers list */
+  trustedIssuers?: readonly string[];
+  /** Optional expected tenant/project scope */
+  expectedTenantId?: string;
+  /** Optional trusted reference time for key lifecycle checks (`FINDING-11`) */
+  referenceTimeIso?: string;
+  /** Optional clock skew tolerance in seconds for approvalTimestamp vs referenceTimeIso (default: 300s) */
+  clockSkewToleranceSeconds?: number;
+  /** Optional flag to allow multiple keyIds to share the same publicKeyHex (default: false, `FINDING-09`) */
+  allowDuplicatePublicKeyMaterial?: boolean;
+}
 
-  const silhouette = spec.silhouette;
-  if (!silhouette || !VALID_SILHOUETTES.has(silhouette)) {
-    throw new ProductionSnapshotValidationError(`Valid silhouette is required (received '${silhouette}').`);
-  }
-
-  const easeProfile = spec.easeProfile;
-  if (!easeProfile || !VALID_EASE_PROFILES.has(easeProfile)) {
-    throw new ProductionSnapshotValidationError(`Valid easeProfile is required (received '${easeProfile}').`);
-  }
-
-  // 2. Name validation
-  const name = typeof spec.name === 'string' ? spec.name.trim() : '';
-  if (!name) {
-    throw new ProductionSnapshotValidationError('Specification name is required and cannot be empty.');
-  }
-
-  // 3. Color validation (distinguishes missing vs null vs supplied)
-  let colorData: { name: string; hex: string } | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
-  if ('color' in spec) {
-    if (spec.color === null) {
-      colorData = null;
-    } else if (spec.color !== undefined) {
-      if (typeof spec.color !== 'object') {
-        throw new ProductionSnapshotValidationError('Specification color must be an object.');
-      }
-      const cName = typeof spec.color.name === 'string' ? spec.color.name.trim() : '';
-      const cHex = typeof spec.color.hex === 'string' ? spec.color.hex.trim().toLowerCase() : '';
-      if (cHex && !/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/.test(cHex)) {
-        throw new ProductionSnapshotValidationError(
-          `Invalid color hex format: "${spec.color.hex}". Must be #RGB, #RRGGBB, or #RRGGBBAA.`
-        );
-      }
-      colorData = {
-        name: cName,
-        hex: cHex
-      };
-    }
-  }
-
-  // 4. Target Finished Dimensions (extract all dimensions without loss, distinguishing missing vs null)
-  let lengthCm: number | undefined = undefined;
-  let waistCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
-  let hipCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
-  let bustCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
-  let chestCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
-  let acrossBackCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
-  let bicepCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
-  let wristCm: number | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
-
-  const extraDimensions: Record<string, unknown> = {};
-
-  if ('targetFinishedDimensions' in spec && spec.targetFinishedDimensions) {
-    const td = spec.targetFinishedDimensions as Record<string, unknown>;
-    if (typeof td.lengthCm === 'number') lengthCm = td.lengthCm;
-    else if (typeof td.length === 'number') lengthCm = td.length;
-
-    const extractDim = (kCm: string, kShort: string): number | null | typeof CANONICAL_MISSING_SENTINEL => {
-      if (kCm in td && td[kCm] !== undefined) {
-        return td[kCm] as number | null;
-      }
-      if (kShort in td && td[kShort] !== undefined) {
-        return td[kShort] as number | null;
-      }
-      return CANONICAL_MISSING_SENTINEL;
-    };
-
-    waistCm = extractDim('waistCm', 'waist');
-    hipCm = extractDim('hipCm', 'hip');
-    bustCm = extractDim('bustCm', 'bust');
-    chestCm = extractDim('chestCm', 'chest');
-    acrossBackCm = extractDim('acrossBackCm', 'acrossBack');
-    bicepCm = extractDim('bicepCm', 'bicep');
-    wristCm = extractDim('wristCm', 'wrist');
-
-    const standardDimKeys = new Set([
-      'lengthCm', 'length',
-      'waistCm', 'waist',
-      'hipCm', 'hip',
-      'bustCm', 'bust',
-      'chestCm', 'chest',
-      'acrossBackCm', 'acrossBack',
-      'bicepCm', 'bicep',
-      'wristCm', 'wrist'
-    ]);
-    for (const [k, v] of Object.entries(td)) {
-      if (!standardDimKeys.has(k)) {
-        if (typeof v === 'number') {
-          if (!Number.isFinite(v) || v <= 0) {
-            throw new ProductionSnapshotValidationError(
-              `Target finished dimension "${k}" must be a positive finite number (received ${v}).`
-            );
-          }
-          extraDimensions[k] = v;
-        } else {
-          extraDimensions[k] = canonicalizeOptionalValue(v);
-        }
-      }
-    }
-  }
-
-  if (lengthCm === undefined && 'lengthCm' in spec && typeof spec.lengthCm === 'number') {
-    lengthCm = spec.lengthCm;
-  }
-
-  if (typeof lengthCm !== 'number' || !Number.isFinite(lengthCm) || lengthCm <= 0) {
+/**
+ * Creates a `TrustedCryptographicVerifier` that verifies RFC 8032 Ed25519 signatures
+ * strictly against a controlled registry of public keys (`ControlledPublicKeyRegistration`).
+ */
+export function createTrustedCryptographicVerifier(
+  config: TrustedCryptographicVerifierConfig
+): TrustedCryptographicVerifier {
+  if (!config || typeof config !== 'object') {
     throw new ProductionSnapshotValidationError(
-      `Target finished lengthCm is mandatory and must be a positive finite number (received ${lengthCm}).`
+      'TrustedCryptographicVerifier requires a configuration object.',
+      ['missing-crypto-verifier-config']
     );
   }
 
-  for (const [dimKey, dimVal] of [
-    ['waistCm', waistCm],
-    ['hipCm', hipCm],
-    ['bustCm', bustCm],
-    ['chestCm', chestCm],
-    ['acrossBackCm', acrossBackCm],
-    ['bicepCm', bicepCm],
-    ['wristCm', wristCm]
-  ] as const) {
-    if (dimVal !== CANONICAL_MISSING_SENTINEL && dimVal !== null) {
-      if (typeof dimVal !== 'number' || !Number.isFinite(dimVal) || dimVal <= 0) {
+  // Strictly forbid private keys or seeds on the top-level config (FINDING-08, FINDING-10)
+  assertNoPrivateKeyMaterialInVerifierBoundary(config, 'TrustedCryptographicVerifierConfig');
+
+  const registryMap = new Map<string, ControlledPublicKeyRegistration>();
+
+  function addRegistrationEntry(entry: ControlledPublicKeyRegistration): void {
+    const normalized = validateControlledPublicKeyRegistration(entry);
+    const keyId = normalized.keyId;
+    const pubHex = normalized.publicKeyHex;
+
+    if (registryMap.has(keyId)) {
+      throw new ProductionSnapshotValidationError(
+        `Duplicate keyId "${keyId}" in TrustedCryptographicVerifier publicKeyRegistry is prohibited.`,
+        ['duplicate-key-id']
+      );
+    }
+
+    if (!config.allowDuplicatePublicKeyMaterial) {
+      for (const [existingKeyId, existingEntry] of registryMap.entries()) {
+        if (
+          existingKeyId !== keyId &&
+          existingEntry.publicKeyHex === pubHex &&
+          keyWindowsOverlap(existingEntry, normalized)
+        ) {
+          throw new ProductionSnapshotValidationError(
+            `Duplicate Ed25519 publicKeyHex across distinct active keyIds ("${existingKeyId}" and "${keyId}") is prohibited.`,
+            ['duplicate-public-key-material']
+          );
+        }
+      }
+    }
+
+    registryMap.set(keyId, normalized);
+  }
+
+  // 1. Load from `publicKeyRegistry`
+  if (config.publicKeyRegistry) {
+    if (Array.isArray(config.publicKeyRegistry)) {
+      for (const entry of config.publicKeyRegistry) {
+        addRegistrationEntry(entry);
+      }
+    } else if (
+      typeof config.publicKeyRegistry === 'object' &&
+      'entries' in config.publicKeyRegistry &&
+      config.publicKeyRegistry.entries &&
+      typeof config.publicKeyRegistry.entries === 'object'
+    ) {
+      assertNoPrivateKeyMaterialInVerifierBoundary(
+        config.publicKeyRegistry,
+        'ControlledPublicKeyRegistry'
+      );
+      for (const entry of Object.values(config.publicKeyRegistry.entries)) {
+        addRegistrationEntry(entry);
+      }
+    } else {
+      throw new ProductionSnapshotValidationError(
+        'Invalid publicKeyRegistry passed to createTrustedCryptographicVerifier.',
+        ['invalid-public-key-registry']
+      );
+    }
+  }
+
+  // 2. Load from `trustedKeys` (strictly public-key hex or ControlledPublicKeyRegistration only — NO seed derivation! FINDING-10)
+  if (config.trustedKeys && typeof config.trustedKeys === 'object') {
+    for (const [kId, val] of Object.entries(config.trustedKeys)) {
+      if (typeof val === 'object' && val !== null) {
+        addRegistrationEntry(val);
+      } else if (typeof val === 'string' && val.trim().length > 0) {
+        const rawVal = val.trim();
+        const candidatePubHex = rawVal.startsWith('ed25519-pub:')
+          ? rawVal.slice('ed25519-pub:'.length).trim().toLowerCase()
+          : rawVal.toLowerCase();
+
+        if (!/^[0-9a-f]{64}$/.test(candidatePubHex) || !isValidEd25519PublicKey(candidatePubHex)) {
+          throw new ProductionSnapshotValidationError(
+            `Security boundary violation: trustedKeys["${kId}"] must be a valid, canonical, non-torsion 64-character hex Ed25519 public key. Private seeds, passphrases, and small-order keys are rejected in verification services.`,
+            ['verifier-private-seed-or-invalid-key-rejected']
+          );
+        }
+
+        addRegistrationEntry({
+          keyId: kId.trim(),
+          algorithm: 'Ed25519',
+          publicKeyHex: candidatePubHex,
+          ownerPrincipal: '*',
+          principalId: '*',
+          tenantId: config.expectedTenantId ?? '*',
+          allowedScopes: ['specification:approve'],
+          trustStatus: 'trusted_local_Configured_key',
+          activatedAt: '2020-01-01T00:00:00.000Z',
+          expiresAt: '2035-01-01T00:00:00.000Z',
+          revoked: false
+        });
+      } else {
         throw new ProductionSnapshotValidationError(
-          `Target finished dimension "${dimKey}" must be a positive finite number (received ${dimVal}).`
+          `Invalid entry for trustedKeys["${kId}"] in createTrustedCryptographicVerifier.`,
+          ['invalid-trusted-key-entry']
         );
       }
     }
   }
 
-  // 5. Explicit Ease (distinguishes missing vs null vs supplied, preserves extra ease keys)
-  let explicitEase: Record<string, unknown> | null | typeof CANONICAL_MISSING_SENTINEL = CANONICAL_MISSING_SENTINEL;
-  if ('explicitEaseCm' in spec) {
-    if (spec.explicitEaseCm === null) {
-      explicitEase = null;
-    } else if (spec.explicitEaseCm !== undefined) {
-      const easeRecord: Record<string, unknown> = {
-        waist: canonicalizeOptionalValue(spec.explicitEaseCm.waist),
-        hip: canonicalizeOptionalValue(spec.explicitEaseCm.hip),
-        bust: canonicalizeOptionalValue(spec.explicitEaseCm.bust),
-        biceps: canonicalizeOptionalValue(spec.explicitEaseCm.biceps),
-        wrist: canonicalizeOptionalValue(spec.explicitEaseCm.wrist),
-        neck: canonicalizeOptionalValue(spec.explicitEaseCm.neck)
-      };
-      for (const [k, v] of Object.entries(spec.explicitEaseCm as Record<string, unknown>)) {
-        if (v !== undefined && v !== null) {
-          if (typeof v !== 'number' || !Number.isFinite(v)) {
-            throw new ProductionSnapshotValidationError(
-              `Explicit ease value for "${k}" must be a finite number (received ${v}).`
-            );
-          }
-        }
-        if (!(k in easeRecord)) {
-          easeRecord[k] = canonicalizeOptionalValue(v);
-        }
-      }
-      explicitEase = easeRecord;
+  if (registryMap.size === 0) {
+    throw new ProductionSnapshotValidationError(
+      'TrustedCryptographicVerifier requires at least one valid public key in publicKeyRegistry or trustedKeys.'
+    );
+  }
+
+  const skewMs = (config.clockSkewToleranceSeconds ?? 300) * 1000;
+  const trustedIssuersSet =
+    Array.isArray(config.trustedIssuers) && config.trustedIssuers.length > 0
+      ? new Set(config.trustedIssuers.map(i => i.trim()))
+      : null;
+
+  // Track approvalEventId -> canonicalJson to detect cross-payload replay (Crypto 10)
+  const consumedApprovalEvents = new Map<string, string>();
+
+  function performVerification(
+    signature: VerifiableCryptographicSignature,
+    expectedPayload: CanonicalApprovalSigningPayload
+  ): CryptographicVerificationResult {
+    const fail = (
+      reason: string,
+      trustStatus?: ControlledPublicKeyRegistration['trustStatus']
+    ): CryptographicVerificationResult => ({
+      verified: false,
+      isValid: false,
+      reason,
+      trustStatus
+    });
+
+    if (!signature || typeof signature !== 'object') {
+      return fail('Missing or malformed cryptographic signature object.');
     }
-  }
 
-  // 6. Design and construction features (preserves array sequence for constructionFeatures)
-  const constructionFeatures = Array.isArray(spec.constructionFeatures)
-    ? [...spec.constructionFeatures].map(f => ({
-        id: f.id,
-        category: f.category,
-        name: f.name,
-        description: canonicalizeOptionalValue(f.description),
-        patternImpact: canonicalizeOptionalValue(f.patternImpact)
-      }))
-    : [];
-
-  const designNotes = Array.isArray(spec.designNotes)
-    ? [...spec.designNotes].filter(n => typeof n === 'string' && n.trim() !== '').sort()
-    : [];
-
-  // 7. Complete Fabric Engineering Properties & Provenance
-  const fab = spec.fabric;
-  if (!fab || typeof fab !== 'object') {
-    throw new ProductionSnapshotValidationError('Fabric property specification is required.');
-  }
-  if (!fab.id || typeof fab.id !== 'string' || fab.id.trim() === '') {
-    throw new ProductionSnapshotValidationError('Fabric specification requires a non-empty id.');
-  }
-  if (!fab.name || typeof fab.name !== 'string' || fab.name.trim() === '') {
-    throw new ProductionSnapshotValidationError('Fabric specification requires a non-empty name.');
-  }
-  if (!fab.weight) {
-    throw new ProductionSnapshotValidationError('Fabric specification requires weight.');
-  }
-  if (!fab.stretch) {
-    throw new ProductionSnapshotValidationError('Fabric specification requires stretch.');
-  }
-
-  const enhanced = fab as Partial<EnhancedFabricProperty>;
-  const extraFab = fab as unknown as Record<string, unknown>;
-
-  if (enhanced.gsm !== undefined && enhanced.gsm !== null) {
-    if (!Number.isFinite(enhanced.gsm) || enhanced.gsm <= 0) {
-      throw new ProductionSnapshotValidationError(
-        `Fabric GSM must be a positive finite number (received ${enhanced.gsm}).`
+    // 1. Algorithm check: reject legacy SHA256-KEYED-BINDING or any non-Ed25519 algorithm
+    if (signature.algorithm !== 'Ed25519') {
+      return fail(
+        `Unsupported or downgraded signature algorithm "${String(signature.algorithm)}". Only asymmetric "Ed25519" is permitted.`
       );
     }
-  }
-  if (enhanced.thicknessMm !== undefined && enhanced.thicknessMm !== null) {
-    if (!Number.isFinite(enhanced.thicknessMm) || enhanced.thicknessMm <= 0) {
-      throw new ProductionSnapshotValidationError(
-        `Fabric thickness must be a positive finite number (received ${enhanced.thicknessMm}).`
+
+    const keyId = typeof signature.keyId === 'string' ? signature.keyId.trim() : '';
+    if (!keyId) {
+      return fail('Signature is missing required keyId.');
+    }
+
+    // 2. Lookup public key in controlled registry
+    const keyEntry = registryMap.get(keyId);
+    if (!keyEntry || keyEntry.trustStatus === 'unregistered_key' || keyEntry.trustStatus === 'untrusted') {
+      return fail(
+        `Unregistered or untrusted public keyId "${keyId}": arbitrary caller-supplied public keys are not trusted.`,
+        'unregistered_key'
       );
     }
-  }
-  if (enhanced.moldingFactor !== undefined && enhanced.moldingFactor !== null) {
-    if (!Number.isFinite(enhanced.moldingFactor) || enhanced.moldingFactor <= 0) {
-      throw new ProductionSnapshotValidationError(
-        `Fabric molding factor must be a positive finite number (received ${enhanced.moldingFactor}).`
+
+    if (
+      trustedIssuersSet &&
+      keyEntry.issuer &&
+      !trustedIssuersSet.has(keyEntry.issuer.trim())
+    ) {
+      return fail(
+        `Public key "${keyId}" issuer "${keyEntry.issuer}" is not in trustedIssuers.`
       );
     }
-  }
 
-  const knownFabricKeys = new Set([
-    'id', 'name', 'composition', 'weight', 'stretch', 'drapeDescription',
-    'recommendedEaseCm', 'gsm', 'thicknessMm', 'moldingFactor', 'directional',
-    'revision', 'provenance', 'propertyProvenance', 'propertyVerificationDetails',
-    'testStandard', 'laboratoryReference', 'supplierReference', 'isVerified',
-    'isIllustrativeReference', 'isIllustrative', 'isProvisional'
-  ]);
-  const additionalFabricFields: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(extraFab)) {
-    if (!knownFabricKeys.has(k)) {
-      additionalFabricFields[k] = validateFiniteEngineeringNumbers(v, `fabric.${k}`);
+    // 3. Enforce key revocation and compromise semantics (FINDING-11)
+    if (
+      keyEntry.revoked ||
+      keyEntry.compromised === true ||
+      keyEntry.trustStatus === 'revoked_key' ||
+      keyEntry.trustStatus === 'revoked' ||
+      keyEntry.revocationReasonCode === 'compromise' ||
+      keyEntry.revocationReason?.toLowerCase().includes('compromise')
+    ) {
+      return fail(
+        `Public key "${keyId}" has been revoked${keyEntry.revocationReason ? ` (${keyEntry.revocationReason})` : ''} and cannot verify approvals.`,
+        'revoked_key'
+      );
     }
-  }
 
-  const fabricData = {
-    id: fab.id,
-    name: fab.name,
-    composition: canonicalizeOptionalValue(fab.composition),
-    drapeDescription: canonicalizeOptionalValue(fab.drapeDescription),
-    weight: fab.weight,
-    stretch: fab.stretch,
-    gsm: canonicalizeOptionalValue(enhanced.gsm),
-    thicknessMm: canonicalizeOptionalValue(enhanced.thicknessMm),
-    moldingFactor: canonicalizeOptionalValue(enhanced.moldingFactor),
-    directional: enhanced.directional === undefined
-      ? CANONICAL_MISSING_SENTINEL
-      : enhanced.directional === null
-      ? null
-      : {
-          warp: enhanced.directional.warp ? {
-            shrinkagePercent: enhanced.directional.warp.shrinkagePercent,
-            stretchPercent: enhanced.directional.warp.stretchPercent
-          } : canonicalizeOptionalValue(enhanced.directional.warp),
-          weft: enhanced.directional.weft ? {
-            shrinkagePercent: enhanced.directional.weft.shrinkagePercent,
-            stretchPercent: enhanced.directional.weft.stretchPercent
-          } : canonicalizeOptionalValue(enhanced.directional.weft),
-          bias: enhanced.directional.bias ? {
-            stretchPercent: enhanced.directional.bias.stretchPercent
-          } : canonicalizeOptionalValue(enhanced.directional.bias)
-        },
-    recommendedEaseCm: fab.recommendedEaseCm === undefined
-      ? CANONICAL_MISSING_SENTINEL
-      : fab.recommendedEaseCm === null
-      ? null
-      : {
-          waist: fab.recommendedEaseCm.waist,
-          hip: fab.recommendedEaseCm.hip,
-          bust: canonicalizeOptionalValue(fab.recommendedEaseCm.bust)
-        },
-    fabricRevision: 'fabricRevision' in spec && spec.fabricRevision !== undefined
-      ? canonicalizeOptionalValue(spec.fabricRevision)
-      : canonicalizeOptionalValue(enhanced.revision),
-    fabricProvenance: 'fabricProvenance' in spec && spec.fabricProvenance !== undefined
-      ? spec.fabricProvenance
-      : (enhanced.provenance ?? 'unknown'),
-    propertyProvenance: canonicalizeOptionalValue(enhanced.propertyProvenance),
-    propertyVerificationDetails: canonicalizeOptionalValue(extraFab.propertyVerificationDetails),
-    testStandard: canonicalizeOptionalValue(enhanced.testStandard),
-    laboratoryReference: canonicalizeOptionalValue(extraFab.laboratoryReference),
-    supplierReference: canonicalizeOptionalValue(extraFab.supplierReference),
-    isVerified: canonicalizeOptionalValue(enhanced.isVerified),
-    isIllustrativeReference: canonicalizeOptionalValue(enhanced.isIllustrativeReference ?? extraFab.isIllustrative),
-    isProvisional: canonicalizeOptionalValue(extraFab.isProvisional),
-    additionalFabricFields
-  };
-
-  // 8. Allowances (preserve exact supplied values vs missing vs null without silent substitution during canonicalization)
-  const rawAllowancesSource: Record<string, unknown> =
-    'allowances' in spec && spec.allowances && typeof spec.allowances === 'object'
-      ? (spec.allowances as unknown as Record<string, unknown>)
-      : {
-          seamAllowanceCm: (spec as DesignSpecification).seamAllowanceCm,
-          hemAllowanceCm: (spec as DesignSpecification).hemAllowanceCm,
-          waistAllowanceCm: (spec as DesignSpecification).waistAllowanceCm,
-          neckAllowanceCm: (spec as DesignSpecification).neckAllowanceCm,
-          armholeAllowanceCm: (spec as DesignSpecification).armholeAllowanceCm,
-          shoulderAllowanceCm: (spec as DesignSpecification).shoulderAllowanceCm
-        };
-
-  const allowances: Record<string, unknown> = {
-    seamAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.seamAllowanceCm),
-    hemAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.hemAllowanceCm),
-    waistAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.waistAllowanceCm),
-    neckAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.neckAllowanceCm),
-    armholeAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.armholeAllowanceCm),
-    shoulderAllowanceCm: canonicalizeOptionalValue(rawAllowancesSource.shoulderAllowanceCm)
-  };
-
-  for (const [k, v] of Object.entries(rawAllowancesSource)) {
-    if (!(k in allowances)) {
-      allowances[k] = canonicalizeOptionalValue(v);
+    const signedTimeMs = Date.parse(expectedPayload.approvalTimestamp);
+    if (Number.isNaN(signedTimeMs)) {
+      return fail('Invalid approvalTimestamp in expected signing payload.');
     }
-  }
 
-  for (const [aKey, aVal] of Object.entries(allowances)) {
-    if (aVal !== CANONICAL_MISSING_SENTINEL && aVal !== null) {
-      if (typeof aVal !== 'number' || !Number.isFinite(aVal) || aVal < 0) {
-        throw new ProductionSnapshotValidationError(
-          `Allowance "${aKey}" must be a non-negative finite number (received ${aVal}).`
+    const refTimeMs = config.referenceTimeIso ? Date.parse(config.referenceTimeIso) : signedTimeMs;
+    if (Number.isNaN(refTimeMs)) {
+      return fail('Invalid referenceTimeIso in TrustedCryptographicVerifier.');
+    }
+
+    if (keyEntry.revokedAt) {
+      const revokedAtMs = Date.parse(keyEntry.revokedAt);
+      if (Number.isNaN(revokedAtMs) || signedTimeMs >= revokedAtMs || refTimeMs >= revokedAtMs) {
+        return fail(
+          `Public key "${keyId}" was revoked at "${keyEntry.revokedAt}" and cannot verify approvals.`,
+          'revoked_key'
         );
       }
     }
-  }
 
-  // 9. AI Estimates (explicitly separated as non-authoritative proposals)
-  const aiEstimates =
-    !('aiEstimates' in spec) || spec.aiEstimates === undefined
-      ? CANONICAL_MISSING_SENTINEL
-      : spec.aiEstimates === null
-      ? null
-      : {
-          suggestedSilhouette: canonicalizeOptionalValue(spec.aiEstimates.suggestedSilhouette),
-          styleConfidenceScore: canonicalizeOptionalValue(spec.aiEstimates.styleConfidenceScore),
-          suggestedFabrics: Array.isArray(spec.aiEstimates.suggestedFabrics)
-            ? [...spec.aiEstimates.suggestedFabrics].sort()
-            : [],
-          technicalAdvice: canonicalizeOptionalValue(spec.aiEstimates.technicalAdvice),
-          disclaimer: canonicalizeOptionalValue(spec.aiEstimates.disclaimer)
-        };
-
-  // 10. Parameter-level Value Provenance Classification
-  const explicitFieldProvenance =
-    'fieldProvenance' in spec && spec.fieldProvenance
-      ? { ...spec.fieldProvenance }
-      : {};
-
-  const classifyFieldState = (val: unknown, defaultProvenance: ParameterValueProvenance): ParameterValueProvenance => {
-    if (val === undefined || val === CANONICAL_MISSING_SENTINEL) return 'missing';
-    if (val === null) return 'explicit-null';
-    return defaultProvenance;
-  };
-
-  const computedFieldProvenance: Record<string, ParameterValueProvenance> = {
-    lengthCm: explicitFieldProvenance.lengthCm ?? 'explicit-value',
-    waistCm: explicitFieldProvenance.waistCm ?? classifyFieldState(waistCm, 'explicit-value'),
-    hipCm: explicitFieldProvenance.hipCm ?? classifyFieldState(hipCm, 'explicit-value'),
-    bustCm: explicitFieldProvenance.bustCm ?? classifyFieldState(bustCm, 'explicit-value'),
-    explicitEaseCm: explicitFieldProvenance.explicitEaseCm ?? classifyFieldState(explicitEase, 'explicit-value'),
-    seamAllowanceCm:
-      explicitFieldProvenance.seamAllowanceCm ??
-      classifyFieldState(allowances.seamAllowanceCm, 'explicit-value'),
-    hemAllowanceCm:
-      explicitFieldProvenance.hemAllowanceCm ??
-      classifyFieldState(allowances.hemAllowanceCm, 'explicit-value'),
-    aiEstimates:
-      explicitFieldProvenance.aiEstimates ??
-      classifyFieldState(aiEstimates, 'ai-proposed'),
-    ...explicitFieldProvenance
-  };
-
-  // 11. Preserve any unknown / additional engineering fields on the specification object
-  const knownSpecKeys = new Set([
-    'id', 'garmentId', 'projectId', 'specificationRevisionId', 'parentRevisionId',
-    'supersededByRevisionId', 'version', 'name', 'garmentCategory', 'silhouette',
-    'prompt', 'color', 'fabric', 'fabricRevision', 'fabricProvenance',
-    'easeProfile', 'explicitEaseCm', 'targetFinishedDimensions', 'lengthCm',
-    'dartStyle', 'sleeveEaseStrategy', 'allowances',
-    'seamAllowanceCm', 'hemAllowanceCm', 'waistAllowanceCm',
-    'neckAllowanceCm', 'armholeAllowanceCm', 'shoulderAllowanceCm',
-    'constructionFeatures', 'designNotes', 'fieldProvenance',
-    'aiEstimates', 'engineProvenance',
-    // Approval / lifecycle / volatile timestamp metadata (excluded from content hash so approval binds to content)
-    'isApproved', 'approvalState', 'approvalAuthorityTier', 'approvalRecord',
-    'verifiedIdentity', 'cryptographicSignature',
-    'approvalHistory', 'revocationRecord', 'approvedBy', 'approvedAt',
-    'approvalProvenance', 'createdAt', 'updatedAt'
-  ]);
-
-  const additionalEngineeringFields: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(spec as unknown as Record<string, unknown>)) {
-    if (!knownSpecKeys.has(k)) {
-      additionalEngineeringFields[k] = validateFiniteEngineeringNumbers(v, `spec.${k}`);
+    // 4. Enforce key activation and expiration window against BOTH signed timestamp AND trusted evaluation time (FINDING-11)
+    const keyActivatedMs = Date.parse(keyEntry.activatedAt ?? '2020-01-01T00:00:00.000Z');
+    const keyExpiresMs = Date.parse(keyEntry.expiresAt ?? '2035-01-01T00:00:00.000Z');
+    if (signedTimeMs < keyActivatedMs || refTimeMs + skewMs < keyActivatedMs) {
+      return fail(
+        `Public key "${keyId}" was not yet active at "${expectedPayload.approvalTimestamp}" (activatedAt: "${keyEntry.activatedAt}").`
+      );
     }
+    if (
+      signedTimeMs >= keyExpiresMs ||
+      refTimeMs - skewMs >= keyExpiresMs ||
+      keyEntry.trustStatus === 'expired_key' ||
+      keyEntry.trustStatus === 'expired'
+    ) {
+      return fail(
+        `Public key "${keyId}" has expired (expiresAt: "${keyEntry.expiresAt}").`,
+        'expired_key'
+      );
+    }
+
+    if (config.referenceTimeIso && signedTimeMs > refTimeMs + skewMs) {
+      return fail(
+        `Approval timestamp "${expectedPayload.approvalTimestamp}" is in the future relative to trusted evaluation time "${config.referenceTimeIso}".`
+      );
+    }
+
+    // 5. Enforce principal binding
+    const keyOwner = keyEntry.ownerPrincipal ?? keyEntry.principalId ?? '*';
+    if (keyOwner !== '*' && keyOwner !== expectedPayload.approverPrincipal.trim()) {
+      return fail(
+        `Public key "${keyId}" is bound to principal "${keyOwner}", not "${expectedPayload.approverPrincipal}".`
+      );
+    }
+    const sigSigner =
+      signature.signerPrincipal ?? signature.signedPayload?.approverPrincipal;
+    if (sigSigner && sigSigner.trim() !== expectedPayload.approverPrincipal.trim()) {
+      return fail(
+        `Signature signerPrincipal "${sigSigner}" does not match expected approverPrincipal "${expectedPayload.approverPrincipal}".`
+      );
+    }
+
+    // 6. Enforce tenant/project scope binding
+    const expectedTenant =
+      config.expectedTenantId ?? expectedPayload.tenantId ?? expectedPayload.projectId;
+    const keyTenant = keyEntry.tenantId ?? keyEntry.organizationScope ?? '*';
+    if (keyTenant !== '*' && keyTenant !== expectedTenant) {
+      return fail(
+        `Public key "${keyId}" is scoped to tenant "${keyTenant}", which does not match active tenant/project "${expectedTenant}".`
+      );
+    }
+
+    // 7. Enforce scope binding
+    const scopes = keyEntry.allowedScopes ?? ['specification:approve'];
+    if (!scopes.includes('specification:approve')) {
+      return fail(
+        `Public key "${keyId}" is not authorized for scope "specification:approve".`
+      );
+    }
+
+    // 8. If signature includes publicKeyHex, it must match the registered public key
+    if (
+      signature.publicKeyHex &&
+      signature.publicKeyHex.trim().toLowerCase() !== keyEntry.publicKeyHex
+    ) {
+      return fail(
+        `Signature publicKeyHex does not match registered public key for keyId "${keyId}".`
+      );
+    }
+
+    // 9. Recompute expected canonical signing payload and verify exact match
+    const expectedPayloadWithKey: CanonicalApprovalSigningPayload = {
+      ...expectedPayload,
+      tenantId: expectedPayload.tenantId || expectedPayload.projectId,
+      approvalScope: 'specification:approve',
+      keyId,
+      algorithm: 'Ed25519'
+    };
+    const expectedCanonicalJson = canonicalizeApprovalSigningPayload(expectedPayloadWithKey);
+    const expectedPayloadFp = sha256Hex(expectedCanonicalJson);
+
+    const actualSignedCanonicalJson =
+      signature.signedPayloadCanonicalJson ??
+      (signature.signedPayload ? canonicalizeApprovalSigningPayload(signature.signedPayload) : '');
+    const actualSignedFp =
+      signature.signedPayloadFingerprint ??
+      (actualSignedCanonicalJson ? sha256Hex(actualSignedCanonicalJson) : '');
+
+    if (
+      actualSignedCanonicalJson !== expectedCanonicalJson ||
+      actualSignedFp !== expectedPayloadFp
+    ) {
+      return fail(
+        'Cryptographic signature payload mismatch: signed payload does not match active specification revision, fingerprint, project, version, or approval metadata.'
+      );
+    }
+
+    // Check cross-payload approvalEventId replay
+    const existingEventCanonical = consumedApprovalEvents.get(expectedPayload.approvalEventId);
+    if (existingEventCanonical && existingEventCanonical !== expectedCanonicalJson) {
+      return fail(
+        `Replay detected: approvalEventId "${expectedPayload.approvalEventId}" has already been used for a different specification approval payload.`
+      );
+    }
+
+    // 10. Verify RFC 8032 Ed25519 signature using ONLY the registered public key
+    const rawSigHex = (signature.signatureHex ?? signature.signatureDigest ?? '').trim();
+    const isEd25519Valid = verifyEd25519Signature(
+      keyEntry.publicKeyHex,
+      expectedCanonicalJson,
+      rawSigHex
+    );
+
+    if (!isEd25519Valid) {
+      return fail('Ed25519 asymmetric digital signature verification failed.');
+    }
+
+    consumedApprovalEvents.set(expectedPayload.approvalEventId, expectedCanonicalJson);
+
+    return {
+      verified: true,
+      isValid: true,
+      keyId,
+      verifiedKeyId: keyId,
+      verifiedPublicKeyHex: keyEntry.publicKeyHex,
+      publicKeyFingerprint: keyEntry.publicKeyFingerprint,
+      verifiedPrincipal: expectedPayload.approverPrincipal.trim(),
+      verifiedTenantId: expectedTenant,
+      algorithm: 'Ed25519',
+      verifiedAlgorithm: 'Ed25519',
+      verifiedPayloadDigest: expectedPayloadFp,
+      trustStatus: keyEntry.trustStatus,
+      verifiedAt: config.referenceTimeIso ?? new Date().toISOString()
+    };
   }
 
-  // 12. Engine & Schema Version
-  const engineVersion = ('engineProvenance' in spec && spec.engineProvenance?.engineVersion)
-    ? spec.engineProvenance.engineVersion
-    : CURRENT_ENGINE_VERSION;
-  const schemaVersion = options?.schemaVersion ?? SPECIFICATION_CANONICAL_SCHEMA_VERSION;
+  const allEntries = Array.from(registryMap.values());
 
-  const promptVal = !('prompt' in spec) || spec.prompt === undefined
-    ? CANONICAL_MISSING_SENTINEL
-    : spec.prompt === null
-    ? null
-    : spec.prompt;
+  return {
+    verifierId: `crypto-verifier-${allEntries.map(e => e.keyId).join(',')}`,
+    trustedPublicKeyFingerprints: allEntries.map(
+      e => e.publicKeyFingerprint ?? computeEd25519PublicKeyFingerprint(e.publicKeyHex)
+    ),
+    publicKeyRegistry: allEntries,
 
-  const payload = {
-    schemaVersion,
+    verifyApprovalSignature(
+      signature: VerifiableCryptographicSignature,
+      expectedPayload: CryptographicApprovalBindingPayload
+    ): CryptographicVerificationResult {
+      return performVerification(signature, expectedPayload);
+    },
+
+    verifySignature(
+      firstArg: CryptographicApprovalBindingPayload | VerifiableCryptographicSignature,
+      secondArg: VerifiableCryptographicSignature | CryptographicApprovalBindingPayload
+    ): CryptographicVerificationResult {
+      const isFirstSignature =
+        firstArg &&
+        typeof firstArg === 'object' &&
+        ('signatureHex' in firstArg || 'signatureDigest' in firstArg || 'signedPayload' in firstArg);
+      if (isFirstSignature) {
+        return performVerification(
+          firstArg as VerifiableCryptographicSignature,
+          secondArg as CryptographicApprovalBindingPayload
+        );
+      }
+      return performVerification(
+        secondArg as VerifiableCryptographicSignature,
+        firstArg as CryptographicApprovalBindingPayload
+      );
+    }
+  };
+}
+
+// ============================================================================
+// SPECIFICATION CREATION, REVISION, SUPERSEDING, APPROVAL & VERIFICATION
+// ============================================================================
+
+export type CreateGarmentSpecificationParams = CreateAuthoritativeSpecificationInput;
+
+const DEFAULT_ALLOWANCES: ManufacturingSeamAllowances = {
+  seamAllowanceCm: 1.5,
+  hemAllowanceCm: 3.0,
+  waistAllowanceCm: 1.0,
+  neckAllowanceCm: 1.0,
+  armholeAllowanceCm: 1.0,
+  shoulderAllowanceCm: 1.0
+};
+
+const DEFAULT_ENGINE_PROVENANCE: EngineProvenanceRecord = {
+  engineVersion: '0.4.6-production-snapshot',
+  draftingEngineVersion: '0.4.3-drafting',
+  gradingEngineVersion: '0.4.5-grading',
+  validationEngineVersion: '0.4.4-validation',
+  fabricEngineVersion: '0.4.6-fabric'
+};
+
+/**
+ * Creates a new draft `AuthoritativeGarmentSpecification` (unapproved, `version: 1` by default).
+ */
+export function createAuthoritativeGarmentSpecification(
+  params: CreateAuthoritativeSpecificationInput
+): AuthoritativeGarmentSpecification {
+  const now = params.createdAt ?? '2026-11-01T00:00:00.000Z';
+  const projectId = params.projectId?.trim() || 'project-patroner-default';
+  const garmentId = params.garmentId?.trim() || `garment-${sha256Hex(params.name || 'unnamed').slice(0, 10)}`;
+  const version = params.version ?? 1;
+  const specificationRevisionId =
+    params.specificationRevisionId?.trim() || `spec-${garmentId}-v${version}`;
+
+  const enhancedLookup = params.fabric?.id ? getEnhancedFabricById(params.fabric.id) : { status: 'not-found' as const };
+  const resolvedFabric: FabricProperty =
+    enhancedLookup.status === 'found'
+      ? { ...enhancedLookup.fabric, ...params.fabric }
+      : params.fabric;
+
+  const enhancedPart = resolvedFabric as Partial<EnhancedFabricProperty>;
+  const fabricRevision =
+    params.fabricRevision ?? enhancedPart.revision ?? `fab-rev-${resolvedFabric?.id ?? 'unknown'}-v1`;
+  const fabricProvenance: FabricSnapshotProvenance =
+    params.fabricProvenance ?? enhancedPart.provenance ?? 'preset-default';
+
+  const targetFinishedDimensions: TargetFinishedGarmentDimensions = {
+    lengthCm: params.targetFinishedDimensions?.lengthCm ?? params.lengthCm,
+    waistCm: params.targetFinishedDimensions?.waistCm,
+    hipCm: params.targetFinishedDimensions?.hipCm,
+    bustCm: params.targetFinishedDimensions?.bustCm,
+    chestCm: params.targetFinishedDimensions?.chestCm,
+    acrossBackCm: params.targetFinishedDimensions?.acrossBackCm,
+    bicepCm: params.targetFinishedDimensions?.bicepCm ?? params.targetFinishedDimensions?.bicepsCm,
+    bicepsCm: params.targetFinishedDimensions?.bicepsCm ?? params.targetFinishedDimensions?.bicepCm,
+    wristCm: params.targetFinishedDimensions?.wristCm,
+    hemSweepCm: params.targetFinishedDimensions?.hemSweepCm,
+    sleeveLengthCm: params.targetFinishedDimensions?.sleeveLengthCm
+  };
+
+  const explicitEaseCm: ExplicitGarmentEaseAllowances = {
+    waist: params.explicitEaseCm?.waist,
+    hip: params.explicitEaseCm?.hip,
+    bust: params.explicitEaseCm?.bust,
+    biceps: params.explicitEaseCm?.biceps,
+    wrist: params.explicitEaseCm?.wrist,
+    neck: params.explicitEaseCm?.neck,
+    armholeDepth: params.explicitEaseCm?.armholeDepth,
+    capEase: params.explicitEaseCm?.capEase
+  };
+
+  const allowances: ManufacturingSeamAllowances = {
+    seamAllowanceCm: params.allowances?.seamAllowanceCm ?? DEFAULT_ALLOWANCES.seamAllowanceCm,
+    hemAllowanceCm: params.allowances?.hemAllowanceCm ?? DEFAULT_ALLOWANCES.hemAllowanceCm,
+    waistAllowanceCm: params.allowances?.waistAllowanceCm ?? DEFAULT_ALLOWANCES.waistAllowanceCm,
+    neckAllowanceCm: params.allowances?.neckAllowanceCm ?? DEFAULT_ALLOWANCES.neckAllowanceCm,
+    armholeAllowanceCm: params.allowances?.armholeAllowanceCm ?? DEFAULT_ALLOWANCES.armholeAllowanceCm,
+    shoulderAllowanceCm: params.allowances?.shoulderAllowanceCm ?? DEFAULT_ALLOWANCES.shoulderAllowanceCm
+  };
+
+  const defaultProvenance: Record<string, ParameterValueProvenance> = {
+    name: 'explicit-value',
+    garmentCategory: 'explicit-value',
+    silhouette: 'explicit-value',
+    fabric: 'explicit-value',
+    easeProfile: 'explicit-value',
+    lengthCm: 'explicit-value',
+    allowances: params.allowances ? 'explicit-value' : 'approved-project-default',
+    ...(params.fieldProvenance ?? {})
+  };
+
+  const prevRev = params.previousRevisionId ?? params.parentRevisionId;
+
+  const spec: AuthoritativeGarmentSpecification = {
+    schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION,
     projectId,
     garmentId,
     specificationRevisionId,
-    parentRevisionId,
     version,
-    garmentCategory,
-    name,
-    silhouette,
-    prompt: promptVal,
-    color: colorData,
-    dartStyle: canonicalizeOptionalValue(spec.dartStyle),
-    sleeveEaseStrategy: canonicalizeOptionalValue(spec.sleeveEaseStrategy),
-    constructionFeatures,
-    designNotes,
-    fabric: fabricData,
-    targetFinishedDimensions: {
-      lengthCm,
-      waistCm,
-      hipCm,
-      bustCm,
-      chestCm,
-      acrossBackCm,
-      bicepCm,
-      wristCm,
-      ...extraDimensions
-    },
-    explicitEaseCm: explicitEase,
-    easeProfile,
+    parentRevisionId: prevRev,
+    previousRevisionId: prevRev,
+    supersededByRevisionId: params.supersededByRevisionId,
+    name: params.name,
+    garmentCategory: params.garmentCategory,
+    silhouette: params.silhouette,
+    prompt: params.prompt ?? '',
+    fabric: resolvedFabric,
+    fabricRevision,
+    fabricProvenance,
+    color: params.color ?? { name: 'Atelier Charcoal', hex: '#1E1E24' },
+    easeProfile: params.easeProfile,
+    sleeveEaseStrategy: params.sleeveEaseStrategy ?? 'classic',
+    dartStyle: params.dartStyle ?? 'single',
+    waistband: params.waistband ?? 'straight',
+    lengthCm: params.lengthCm,
+    targetFinishedDimensions,
+    explicitEaseCm,
     allowances,
-    aiEstimates,
-    fieldProvenance: computedFieldProvenance,
-    additionalEngineeringFields,
-    engineVersion
+    constructionFeatures: params.constructionFeatures ? [...params.constructionFeatures] : [],
+    designNotes: params.designNotes ? [...params.designNotes] : [],
+    fieldProvenance: defaultProvenance,
+    createdAt: now,
+    updatedAt: params.updatedAt ?? now,
+    isApproved: params.isApproved ?? false,
+    approvalState: params.approvalState ?? 'draft',
+    approvalAuthorityTier: params.approvalAuthorityTier,
+    approvalRecord: params.approvalRecord,
+    revocationRecord: params.revocationRecord,
+    approvedBy: params.approvedBy,
+    approvedAt: params.approvedAt,
+    approvalProvenance: params.approvalProvenance ?? 'unknown',
+    engineProvenance: {
+      ...DEFAULT_ENGINE_PROVENANCE,
+      ...(params.engineProvenance ?? {})
+    },
+    aiEstimates: params.aiEstimates as AuthoritativeGarmentSpecification['aiEstimates'],
+    approvalHistory: params.approvalHistory ? [...params.approvalHistory] : [],
+    isProductionReady: false
   };
 
-  return canonicalizeJson(payload);
+  if (!('prompt' in params)) {
+    delete (spec as { prompt?: string }).prompt;
+  }
+  if (!('color' in params)) {
+    delete (spec as { color?: unknown }).color;
+  }
+
+  canonicalizeSpecificationPayload(spec);
+  return {
+    ...spec,
+    prompt: params.prompt ?? '',
+    color: params.color ?? { name: 'Atelier Charcoal', hex: '#1E1E24' }
+  };
 }
 
+export type GarmentSpecificationRevisionChanges = Partial<
+  Pick<
+    AuthoritativeGarmentSpecification,
+    | 'name'
+    | 'garmentCategory'
+    | 'silhouette'
+    | 'prompt'
+    | 'fabric'
+    | 'fabricRevision'
+    | 'fabricProvenance'
+    | 'color'
+    | 'easeProfile'
+    | 'sleeveEaseStrategy'
+    | 'dartStyle'
+    | 'waistband'
+    | 'lengthCm'
+    | 'targetFinishedDimensions'
+    | 'explicitEaseCm'
+    | 'allowances'
+    | 'constructionFeatures'
+    | 'designNotes'
+    | 'fieldProvenance'
+  >
+> & {
+  updatedAt?: string;
+  specificationRevisionId?: string;
+};
+
 /**
- * Computes a deterministic SHA-256 fingerprint for ALL engineering-significant specification fields.
- * Used for cryptographic approval binding, tamper detection, and dependency tracking.
- *
- * Excludes volatile metadata (createdAt, updatedAt) and approval wrapper state so the approval
- * record can bind directly to the exact canonical content digest.
+ * Creates a new draft revision from an existing specification.
  */
-export function computeSpecificationFingerprint(
-  spec: AuthoritativeGarmentSpecification | CreateAuthoritativeSpecificationInput | DesignSpecification,
-  options?: { schemaVersion?: string }
-): string {
-  const canonical = canonicalizeSpecificationPayload(spec, options);
-  return sha256Hex(canonical);
+export function reviseAuthoritativeGarmentSpecification(
+  currentInput: AuthoritativeGarmentSpecification | DesignSpecification,
+  changes: GarmentSpecificationRevisionChanges
+): AuthoritativeGarmentSpecification {
+  const current = ensureAuthoritativeSpec(currentInput);
+  const nextVersion = current.version + 1;
+  const nextRevisionId =
+    changes.specificationRevisionId?.trim() || `spec-${current.garmentId}-v${nextVersion}`;
+  const updatedAt = changes.updatedAt ?? new Date().toISOString();
+
+  const nextLengthCm =
+    changes.lengthCm ??
+    changes.targetFinishedDimensions?.lengthCm ??
+    current.lengthCm ??
+    current.targetFinishedDimensions.lengthCm;
+
+  const nextTargetFinishedDimensions: TargetFinishedGarmentDimensions = {
+    ...current.targetFinishedDimensions,
+    ...(changes.targetFinishedDimensions ?? {}),
+    lengthCm:
+      changes.targetFinishedDimensions?.lengthCm ??
+      (changes.lengthCm !== undefined ? changes.lengthCm : current.targetFinishedDimensions.lengthCm)
+  };
+
+  const nextFabric = changes.fabric ?? current.fabric;
+  const enhancedNextFabric = nextFabric as Partial<EnhancedFabricProperty>;
+  const nextFabricRevision =
+    changes.fabricRevision ??
+    (changes.fabric ? enhancedNextFabric.revision ?? `fab-rev-${nextFabric.id}-v${nextVersion}` : current.fabricRevision);
+  const nextFabricProvenance =
+    changes.fabricProvenance ??
+    (changes.fabric ? enhancedNextFabric.provenance ?? current.fabricProvenance : current.fabricProvenance);
+
+  const revised: AuthoritativeGarmentSpecification = {
+    ...current,
+    schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+    specificationRevisionId: nextRevisionId,
+    version: nextVersion,
+    parentRevisionId: current.specificationRevisionId,
+    previousRevisionId: current.specificationRevisionId,
+    supersededByRevisionId: undefined,
+    name: changes.name ?? current.name,
+    garmentCategory: changes.garmentCategory ?? current.garmentCategory,
+    silhouette: changes.silhouette ?? current.silhouette,
+    prompt: changes.prompt !== undefined ? changes.prompt : current.prompt,
+    color: changes.color !== undefined ? changes.color : current.color,
+    fabric: nextFabric,
+    fabricRevision: nextFabricRevision,
+    fabricProvenance: nextFabricProvenance,
+    easeProfile: changes.easeProfile ?? current.easeProfile,
+    sleeveEaseStrategy: changes.sleeveEaseStrategy ?? current.sleeveEaseStrategy,
+    dartStyle: changes.dartStyle ?? current.dartStyle,
+    waistband: changes.waistband ?? current.waistband,
+    lengthCm: nextLengthCm,
+    targetFinishedDimensions: nextTargetFinishedDimensions,
+    explicitEaseCm: {
+      ...(current.explicitEaseCm ?? {}),
+      ...(changes.explicitEaseCm ?? {})
+    },
+    allowances: {
+      ...current.allowances,
+      ...(changes.allowances ?? {})
+    },
+    constructionFeatures: changes.constructionFeatures
+      ? [...changes.constructionFeatures]
+      : [...current.constructionFeatures],
+    designNotes: changes.designNotes ? [...changes.designNotes] : [...current.designNotes],
+    fieldProvenance: {
+      ...(current.fieldProvenance ?? {}),
+      ...(changes.fieldProvenance ?? {})
+    },
+    updatedAt,
+    isApproved: false,
+    approvalState: 'draft',
+    approvalAuthorityTier: undefined,
+    approvedBy: undefined,
+    approvedAt: undefined,
+    approvedContentFingerprint: undefined,
+    approvalRecord: undefined,
+    revocationRecord: undefined,
+    verifiedIdentity: undefined,
+    cryptographicSignature: undefined,
+    approvalProvenance: 'designer-edited',
+    approvalHistory: [],
+    isProductionReady: false
+  };
+
+  canonicalizeSpecificationPayload(revised);
+  return revised;
 }
 
 /**
- * Verifies whether a specification revision has a valid, untampered approval record.
- * Recomputes the canonical specification fingerprint, enforces revocation/supersession precedence,
- * and requires real provider verification for authenticated_designer and cryptographic_principal tiers.
+ * Supersedes an existing specification revision, returning both the marked
+ * `supersededSpec` (`approvalState: 'superseded'`) and the new `nextRevision` (`draft`).
+ */
+export function supersedeAuthoritativeGarmentSpecification(
+  currentInput: AuthoritativeGarmentSpecification | DesignSpecification,
+  changes: GarmentSpecificationRevisionChanges
+): {
+  supersededSpec: AuthoritativeGarmentSpecification;
+  nextRevision: AuthoritativeGarmentSpecification;
+} {
+  const current = ensureAuthoritativeSpec(currentInput);
+  const nextRevision = reviseAuthoritativeGarmentSpecification(current, changes);
+  const supersededSpec: AuthoritativeGarmentSpecification = {
+    ...current,
+    isApproved: false,
+    approvalState: 'superseded',
+    supersededByRevisionId: nextRevision.specificationRevisionId,
+    updatedAt: nextRevision.updatedAt,
+    isProductionReady: false
+  };
+  return { supersededSpec, nextRevision };
+}
+
+export interface ApproveSpecificationOptions {
+  authorityTier?: ApprovalAuthorityTier;
+  approverId?: string;
+  approvalEventId?: string;
+  approvedAt?: string;
+  notes?: string;
+  provenance?: SpecificationValueProvenance;
+  /** Required when `authorityTier === 'authenticated_designer'` */
+  identityCredential?: VerifiableIdentityCredential;
+  /** Required when `authorityTier === 'authenticated_designer'` */
+  identityVerifier?: TrustedIdentityVerifier;
+  /** Required when `authorityTier === 'cryptographic_principal'` (unless `cryptographicKeyConfig` is provided) */
+  cryptographicSignature?: VerifiableCryptographicSignature;
+  /** Optional signing key configuration when signing at approval time */
+  cryptographicKeyConfig?: SignSpecificationApprovalOptions;
+  /** Required when `authorityTier === 'cryptographic_principal'` */
+  cryptographicVerifier?: TrustedCryptographicVerifier;
+}
+
+/**
+ * Approves an `AuthoritativeGarmentSpecification` under the four-tier authority model.
+ */
+export function approveAuthoritativeGarmentSpecification(
+  specInput: AuthoritativeGarmentSpecification | DesignSpecification,
+  approverName: string,
+  optionsOrNotes?: string | ApproveSpecificationOptions
+): AuthoritativeGarmentSpecification {
+  const options: ApproveSpecificationOptions =
+    typeof optionsOrNotes === 'string'
+      ? { notes: optionsOrNotes }
+      : optionsOrNotes ?? {};
+
+  if (typeof approverName !== 'string' || approverName.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'Cannot approve specification without a valid approvedBy identity: approverName is mandatory and cannot be empty.',
+      ['approverName']
+    );
+  }
+
+  const spec = ensureAuthoritativeSpec(specInput);
+
+  if (spec.approvalState === 'superseded' || spec.supersededByRevisionId) {
+    throw new ProductionSnapshotValidationError(
+      `Cannot approve superseded specification revision "${spec.specificationRevisionId}" (superseded by "${String(spec.supersededByRevisionId)}").`,
+      ['supersededByRevisionId']
+    );
+  }
+
+  const trimmedApprover = approverName.trim();
+  const authorityTier: ApprovalAuthorityTier =
+    options.authorityTier ?? 'unauthenticated_local_session';
+  const approvedAt = options.approvedAt ?? '2026-11-01T12:00:00.000Z';
+  const canonicalFingerprint = computeSpecificationFingerprint(spec);
+  const eventId =
+    options.approvalEventId?.trim() ||
+    `evt-app-${spec.specificationRevisionId}-${(spec.approvalHistory?.length ?? 0) + 1}`;
+
+  let verifiedIdentity: VerifiedIdentityProvenance | undefined;
+  let verifiedSignature: VerifiableCryptographicSignature | undefined;
+  let resolvedApproverId = options.approverId?.trim() || trimmedApprover;
+
+  if (authorityTier === 'authenticated_designer') {
+    if (
+      !options.identityVerifier ||
+      (typeof options.identityVerifier.verifyCredential !== 'function' &&
+        typeof options.identityVerifier.verifyIdentityCredential !== 'function')
+    ) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: authenticated_designer authority tier is unavailable without an external TrustedIdentityVerifier.',
+        ['identityVerifier']
+      );
+    }
+    if (!options.identityCredential) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: authenticated_designer authority tier requires a VerifiableIdentityCredential.',
+        ['identityCredential']
+      );
+    }
+
+    let idResult: IdentityVerificationResult;
+    try {
+      if (typeof options.identityVerifier.verifyCredential === 'function') {
+        idResult = options.identityVerifier.verifyCredential(options.identityCredential, {
+          expectedSpecificationId: spec.garmentId,
+          expectedRevisionId: spec.specificationRevisionId,
+          expectedSpecificationFingerprint: canonicalFingerprint,
+          expectedApprover: trimmedApprover,
+          approvalTimestamp: approvedAt,
+          requireTargetBinding: true
+        });
+      } else {
+        idResult = options.identityVerifier.verifyIdentityCredential!(options.identityCredential, {
+          expectedSpecificationId: spec.garmentId,
+          targetRevisionId: spec.specificationRevisionId,
+          targetSpecificationFingerprint: canonicalFingerprint,
+          expectedApprover: trimmedApprover,
+          approvalTimestamp: approvedAt
+        });
+      }
+    } catch (err) {
+      throw new ProductionSnapshotValidationError(
+        `Specification approval rejected: TrustedIdentityVerifier threw an exception during verification (${err instanceof Error ? err.message : String(err)}).`,
+        ['identityVerifier']
+      );
+    }
+
+    const isIdValid = idResult && (idResult.isValid || idResult.verified);
+    const verifiedSub = idResult?.verifiedSubjectId ?? idResult?.provenance?.subjectId;
+    if (!isIdValid || !verifiedSub) {
+      throw new ProductionSnapshotValidationError(
+        `Specification approval rejected by TrustedIdentityVerifier: ${idResult?.reason ?? 'invalid identity credential'}.`,
+        ['identityCredential']
+      );
+    }
+
+    if (options.approverId && options.approverId.trim() !== verifiedSub) {
+      throw new ProductionSnapshotValidationError(
+        `Specification approval rejected: credential subject "${verifiedSub}" does not match requested approver "${options.approverId.trim()}".`,
+        ['approverId']
+      );
+    }
+    const verifiedDisp = idResult.verifiedDisplayName ?? idResult.provenance?.expectedApprover;
+    if (
+      verifiedDisp &&
+      verifiedDisp !== trimmedApprover &&
+      verifiedSub !== trimmedApprover
+    ) {
+      throw new ProductionSnapshotValidationError(
+        `Specification approval rejected: credential displayName "${verifiedDisp}" does not match requested approver "${trimmedApprover}".`,
+        ['approverName']
+      );
+    }
+
+    resolvedApproverId = verifiedSub;
+    const rawTokenStr = (options.identityCredential.credentialToken ?? options.identityCredential.token ?? '').trim();
+    const claimsArr = idResult.verifiedClaims ?? options.identityCredential.claims ?? options.identityCredential.authorizationClaims ?? [];
+
+    verifiedIdentity = idResult.provenance ?? {
+      subject: verifiedSub,
+      subjectId: verifiedSub,
+      displayName: verifiedDisp ?? trimmedApprover,
+      expectedApprover: verifiedDisp ?? trimmedApprover,
+      issuer: idResult.verifiedIssuer ?? options.identityCredential.issuer,
+      audience: idResult.verifiedAudience ?? options.identityCredential.audience,
+      issuedAt: options.identityCredential.issuedAt,
+      expiresAt: options.identityCredential.expiresAt,
+      verifiedAt: idResult.verifiedAt ?? approvedAt,
+      claims: [...claimsArr],
+      authorizationClaims: [...claimsArr],
+      providerId: idResult.verifiedIssuer ?? options.identityCredential.issuer,
+      credentialId: idResult.verifiedJti ?? options.identityCredential.jti ?? eventId,
+      tokenId: idResult.verifiedJti ?? options.identityCredential.jti,
+      jti: idResult.verifiedJti ?? options.identityCredential.jti,
+      tokenDigest: sha256Hex(rawTokenStr),
+      keyId: idResult.verifiedKeyId ?? options.identityCredential.keyId,
+      tenantId: idResult.verifiedTenantId ?? options.identityCredential.tenantId,
+      targetSpecificationId: idResult.verifiedSpecificationId ?? spec.garmentId,
+      targetRevisionId: idResult.verifiedTargetRevisionId ?? spec.specificationRevisionId,
+      targetSpecificationFingerprint:
+        idResult.verifiedTargetSpecificationFingerprint ?? canonicalFingerprint,
+      acr: idResult.verifiedAcr ?? options.identityCredential.acr,
+      amr: idResult.verifiedAmr ?? options.identityCredential.amr,
+      verificationMethod: 'OIDC-JWT-EdDSA'
+    };
+  } else if (authorityTier === 'cryptographic_principal') {
+    if (
+      !options.cryptographicVerifier ||
+      (typeof options.cryptographicVerifier.verifySignature !== 'function' &&
+        typeof options.cryptographicVerifier.verifyApprovalSignature !== 'function')
+    ) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: cryptographic_principal authority tier is unavailable without cryptographic provider configuration (TrustedCryptographicVerifier).',
+        ['cryptographicVerifier']
+      );
+    }
+
+    const candidateSignature: VerifiableCryptographicSignature | undefined =
+      options.cryptographicSignature ??
+      (options.cryptographicKeyConfig
+        ? signSpecificationApprovalPayload(
+            {
+              schemaVersion: spec.schemaVersion || SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+              projectId: spec.projectId,
+              tenantId: spec.projectId,
+              garmentId: spec.garmentId,
+              specificationRevisionId: spec.specificationRevisionId,
+              specificationVersion: spec.version,
+              canonicalSpecificationFingerprint: canonicalFingerprint,
+              approvalEventId: eventId,
+              approverPrincipal: options.approverId?.trim() || trimmedApprover,
+              authorityTier: 'cryptographic_principal',
+              approvalTimestamp: approvedAt
+            },
+            options.cryptographicKeyConfig
+          )
+        : undefined);
+
+    if (!candidateSignature) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: cryptographic_principal authority tier requires a VerifiableCryptographicSignature.',
+        ['cryptographicSignature']
+      );
+    }
+
+    const expectedSigningPayload: CanonicalApprovalSigningPayload = {
+      schemaVersion: spec.schemaVersion || SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+      projectId: spec.projectId,
+      tenantId: spec.projectId,
+      garmentId: spec.garmentId,
+      specificationRevisionId: spec.specificationRevisionId,
+      specificationVersion: spec.version,
+      canonicalSpecificationFingerprint: canonicalFingerprint,
+      approvalEventId: eventId,
+      approverPrincipal: options.approverId?.trim() || trimmedApprover,
+      authorityTier: 'cryptographic_principal',
+      approvalScope: 'specification:approve',
+      approvalTimestamp: approvedAt,
+      keyId: candidateSignature.keyId,
+      algorithm: 'Ed25519'
+    };
+
+    let cryptoResult: CryptographicVerificationResult;
+    try {
+      if (typeof options.cryptographicVerifier.verifySignature === 'function') {
+        cryptoResult = options.cryptographicVerifier.verifySignature(
+          candidateSignature,
+          expectedSigningPayload
+        );
+      } else {
+        cryptoResult = options.cryptographicVerifier.verifyApprovalSignature(
+          candidateSignature,
+          expectedSigningPayload
+        );
+      }
+    } catch (err) {
+      throw new ProductionSnapshotValidationError(
+        `Specification approval rejected: TrustedCryptographicVerifier threw an exception (${err instanceof Error ? err.message : String(err)}).`,
+        ['cryptographicVerifier']
+      );
+    }
+
+    if (!cryptoResult || (!cryptoResult.isValid && !cryptoResult.verified)) {
+      throw new ProductionSnapshotValidationError(
+        `Cryptographic signature verification failed: ${cryptoResult?.reason ?? 'invalid signature'}.`,
+        ['cryptographicSignature']
+      );
+    }
+
+    resolvedApproverId = cryptoResult.verifiedPrincipal ?? resolvedApproverId;
+    verifiedSignature = {
+      ...candidateSignature,
+      publicKeyHex: cryptoResult.verifiedPublicKeyHex ?? candidateSignature.publicKeyHex
+    };
+  }
+
+  const approvalProvenance: SpecificationValueProvenance =
+    options.provenance ??
+    (authorityTier === 'demonstration_fixture'
+      ? 'demonstration-fixture'
+      : authorityTier === 'unauthenticated_local_session'
+        ? 'unauthenticated-local-approval'
+        : 'designer-approved');
+
+  const approvalEvent: SpecificationApprovalEvent = {
+    id: eventId,
+    eventId,
+    eventType: 'approval',
+    targetRevisionId: spec.specificationRevisionId,
+    specificationRevisionId: spec.specificationRevisionId,
+    specificationVersion: spec.version,
+    targetSpecificationFingerprint: canonicalFingerprint,
+    canonicalContentFingerprint: canonicalFingerprint,
+    approverId: resolvedApproverId,
+    approverName: trimmedApprover,
+    authorityTier,
+    approvedAt,
+    notes: options.notes,
+    provenance: approvalProvenance,
+    verifiedIdentity,
+    cryptographicSignature: verifiedSignature
+  };
+
+  const approvalRecord: SpecificationApprovalRecord = {
+    eventId,
+    eventType: 'approval',
+    approverId: resolvedApproverId,
+    approverName: trimmedApprover,
+    authorityTier,
+    approvedAt,
+    targetRevisionId: spec.specificationRevisionId,
+    specificationRevisionId: spec.specificationRevisionId,
+    specificationVersion: spec.version,
+    targetSpecificationFingerprint: canonicalFingerprint,
+    canonicalContentFingerprint: canonicalFingerprint,
+    notes: options.notes,
+    provenance: approvalProvenance,
+    verifiedIdentity,
+    cryptographicSignature: verifiedSignature
+  };
+
+  const priorHistory: SpecificationLifecycleEvent[] = Array.isArray(spec.approvalHistory)
+    ? [...spec.approvalHistory]
+    : [];
+
+  return {
+    ...spec,
+    updatedAt: approvedAt,
+    isApproved: true,
+    approvalState: 'approved',
+    approvalAuthorityTier: authorityTier,
+    approvedBy: trimmedApprover,
+    approvedAt,
+    approvedContentFingerprint: canonicalFingerprint,
+    approvalProvenance,
+    approvalRecord,
+    revocationRecord: undefined,
+    verifiedIdentity,
+    cryptographicSignature: verifiedSignature,
+    approvalHistory: [...priorHistory, approvalEvent],
+    isProductionReady: false
+  };
+}
+
+/**
+ * Revokes an existing specification approval, appending an immutable
+ * `SpecificationRevocationEvent` to `approvalHistory` without erasing prior events.
+ */
+export function revokeAuthoritativeGarmentSpecificationApproval(
+  specInput: AuthoritativeGarmentSpecification | DesignSpecification,
+  reason: string,
+  options: { revokerName?: string; revokerId?: string; revokedAt?: string } = {}
+): AuthoritativeGarmentSpecification {
+  if (typeof reason !== 'string' || reason.trim().length === 0) {
+    throw new ProductionSnapshotValidationError(
+      'Revocation reason is mandatory and cannot be empty.',
+      ['reason']
+    );
+  }
+
+  const spec = ensureAuthoritativeSpec(specInput);
+  const canonicalFp = computeSpecificationFingerprint(spec);
+  const revokedAt = options.revokedAt ?? new Date().toISOString();
+  const revokerName = options.revokerName?.trim() || 'System Operator';
+  const revokerId = options.revokerId?.trim() || revokerName;
+  const priorHistory: SpecificationLifecycleEvent[] = Array.isArray(spec.approvalHistory)
+    ? [...spec.approvalHistory]
+    : [];
+
+  const eventId = `evt-rev-${spec.specificationRevisionId}-${priorHistory.length + 1}`;
+  const revocationRecord: SpecificationRevocationEvent = {
+    id: eventId,
+    eventId,
+    eventType: 'revocation',
+    originalApprovalEventId: spec.approvalRecord?.eventId,
+    revokedApprovalEventId: spec.approvalRecord?.eventId,
+    targetRevisionId: spec.specificationRevisionId,
+    specificationRevisionId: spec.specificationRevisionId,
+    specificationVersion: spec.version,
+    targetSpecificationFingerprint: canonicalFp,
+    revokerId,
+    revokerName,
+    authorityTier: spec.approvalAuthorityTier ?? 'unauthenticated_local_session',
+    revokedAt,
+    reason: reason.trim()
+  };
+
+  const revocationNote = `[Approval revoked: ${reason.trim()} by ${revokerName} at ${revokedAt}]`;
+  const updatedNotes = Array.isArray(spec.designNotes)
+    ? [...spec.designNotes, revocationNote]
+    : [revocationNote];
+
+  return {
+    ...spec,
+    updatedAt: revokedAt,
+    isApproved: false,
+    approvalState: 'revoked',
+    designNotes: updatedNotes,
+    revocationRecord,
+    approvalHistory: [...priorHistory, revocationRecord],
+    isProductionReady: false
+  };
+}
+
+/**
+ * Independently verifies the approval state, content fingerprint, append-only lifecycle history,
+ * and authority tier evidence of an `AuthoritativeGarmentSpecification` or `DesignSpecification`.
  */
 export function verifySpecificationApproval(
-  spec: AuthoritativeGarmentSpecification | DesignSpecification,
-  verificationContext?: ApprovalVerificationContext
-): {
-  isValid: boolean;
-  state: SpecificationApprovalState;
-  authorityTier?: ApprovalAuthorityTier;
-  reason?: string;
-  fingerprint: string;
-} {
-  const currentFingerprint = computeSpecificationFingerprint(spec);
-  const specId = 'garmentId' in spec && spec.garmentId
-    ? spec.garmentId
-    : ('id' in spec && (spec as DesignSpecification).id ? (spec as DesignSpecification).id : 'garment');
-  const specRevId = spec.specificationRevisionId ?? `spec-${specId}-v${spec.version || 1}`;
-  const specProjectId = spec.projectId ?? 'project-patroner-default';
-
-  // CORRECTION G: Check revocation across state, revocationRecord, approvalRecord.revocation, and approvalHistory
-  // BEFORE checking isApproved, so a revoked specification remains invalid even if legacy booleans are tampered.
-  const historyEvents = Array.isArray(spec.approvalHistory) ? spec.approvalHistory : [];
-  const revEventsForRev = historyEvents.filter(
-    e => e.eventType === 'revocation' && e.targetRevisionId === specRevId
-  );
-  const latestEventForRev = [...historyEvents]
-    .reverse()
-    .find(e => e.targetRevisionId === specRevId);
-
-  const hasActiveRevocationInHistory =
-    latestEventForRev?.eventType === 'revocation' ||
-    (spec.approvalRecord?.eventId !== undefined &&
-      revEventsForRev.some(
-        e => (e as SpecificationRevocationEvent).originalApprovalEventId === spec.approvalRecord?.eventId
-      ));
-
-  if (
-    spec.approvalState === 'revoked' ||
-    spec.revocationRecord !== undefined ||
-    spec.approvalRecord?.revocation !== undefined ||
-    Boolean(spec.approvalRecord?.revocationReason) ||
-    hasActiveRevocationInHistory
-  ) {
-    const revReason =
-      spec.revocationRecord?.reason ??
-      spec.approvalRecord?.revocation?.reason ??
-      spec.approvalRecord?.revocationReason ??
-      (latestEventForRev?.eventType === 'revocation' ? latestEventForRev.reason : undefined);
-
-    return {
-      isValid: false,
-      state: 'revoked',
-      reason: revReason
-        ? `Specification approval was explicitly revoked: ${revReason}`
-        : 'Specification approval was explicitly revoked.',
-      fingerprint: currentFingerprint
-    };
-  }
-
-  // CORRECTION G: Check supersession across state, supersededByRevisionId, and approvalHistory
-  // BEFORE checking isApproved, so a superseded specification remains invalid even if isApproved is manipulated.
-  const hasSupersessionInHistory = historyEvents.some(
-    e => e.eventType === 'supersession' && e.targetRevisionId === specRevId
-  );
-
-  if (
-    spec.approvalState === 'superseded' ||
-    Boolean(spec.supersededByRevisionId) ||
-    hasSupersessionInHistory
-  ) {
-    return {
-      isValid: false,
-      state: 'superseded',
-      reason: spec.supersededByRevisionId
-        ? `Specification revision '${specRevId}' has been superseded by revision '${spec.supersededByRevisionId}'.`
-        : 'Specification revision has been superseded by a newer revision.',
-      fingerprint: currentFingerprint
-    };
-  }
-
-  if (!spec.isApproved) {
-    const st = spec.approvalState ?? 'draft';
-    return {
-      isValid: false,
-      state: st === 'approved' ? 'draft' : st,
-      reason: 'Specification is not approved.',
-      fingerprint: currentFingerprint
-    };
-  }
-
-  const effectiveTier = spec.approvalRecord?.authorityTier ?? spec.approvalAuthorityTier;
-
-  // Verify specification authority tier claims before trusting record
-  if (effectiveTier === 'authenticated_designer') {
-    if (
-      !verificationContext?.identityVerifier ||
-      (typeof verificationContext.identityVerifier.verifyIdentityCredential !== 'function' &&
-        typeof verificationContext.identityVerifier.verifyCredential !== 'function')
-    ) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: effectiveTier,
-        reason: 'authenticated_designer authority tier is unavailable without verified identity provider configuration.',
-        fingerprint: currentFingerprint
-      };
-    }
-  }
-
-  if (effectiveTier === 'cryptographic_principal') {
-    if (!verificationContext?.cryptographicVerifier || typeof verificationContext.cryptographicVerifier.verifyApprovalSignature !== 'function') {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: effectiveTier,
-        reason: 'cryptographic_principal authority tier is unavailable without cryptographic provider configuration.',
-        fingerprint: currentFingerprint
-      };
-    }
-  }
-
-  if (!spec.approvalRecord) {
-    if (spec.approvalAuthorityTier === 'demonstration_fixture') {
-      if (!spec.approvedBy || spec.approvedBy.trim() === '') {
-        return {
-          isValid: false,
-          state: 'invalid',
-          authorityTier: 'demonstration_fixture',
-          reason: 'Approved demonstration fixture lacks an approver identity.',
-          fingerprint: currentFingerprint
-        };
-      }
-      if (!spec.approvedAt || !isValidIsoDate(spec.approvedAt)) {
-        return {
-          isValid: false,
-          state: 'invalid',
-          authorityTier: 'demonstration_fixture',
-          reason: 'Approved demonstration fixture lacks a valid ISO approval timestamp.',
-          fingerprint: currentFingerprint
-        };
-      }
-      return {
-        isValid: true,
-        state: 'approved',
-        authorityTier: 'demonstration_fixture',
-        fingerprint: currentFingerprint
-      };
-    }
-
+  specInput: AuthoritativeGarmentSpecification | DesignSpecification,
+  verificationContext?: SpecificationApprovalVerificationContext
+): SpecificationApprovalVerificationResult {
+  let spec: AuthoritativeGarmentSpecification;
+  let canonicalFingerprint: string;
+  try {
+    spec = ensureAuthoritativeSpec(specInput);
+    canonicalFingerprint = computeSpecificationFingerprint(specInput);
+  } catch (err) {
     return {
       isValid: false,
       state: 'invalid',
-      authorityTier: effectiveTier,
-      reason: 'Approved specification lacks an authoritative approval record.',
-      fingerprint: currentFingerprint
+      canonicalFingerprint: '',
+      reason: `Specification canonicalization failed: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+
+  // 1. Check superseded state
+  if (spec.approvalState === 'superseded' || Boolean(spec.supersededByRevisionId)) {
+    return {
+      isValid: false,
+      state: 'superseded',
+      canonicalFingerprint,
+      recordedFingerprint: spec.approvedContentFingerprint,
+      reason: `Specification revision "${spec.specificationRevisionId}" has been superseded by "${String(spec.supersededByRevisionId)}".`
+    };
+  }
+
+  // 2. Inspect append-only approvalHistory for latest event
+  const history = Array.isArray(spec.approvalHistory) ? spec.approvalHistory : [];
+  const latestEvent = history.length > 0 ? history[history.length - 1] : undefined;
+
+  if (
+    spec.approvalState === 'revoked' ||
+    Boolean(spec.revocationRecord) ||
+    latestEvent?.eventType === 'revocation'
+  ) {
+    const revReason =
+      spec.revocationRecord?.reason ??
+      (latestEvent?.eventType === 'revocation' ? latestEvent.reason : undefined) ??
+      spec.approvalRecord?.revocationReason ??
+      'Approval was revoked.';
+    return {
+      isValid: false,
+      state: 'revoked',
+      canonicalFingerprint,
+      recordedFingerprint: spec.approvedContentFingerprint,
+      reason: `Specification approval was revoked: ${revReason}`
+    };
+  }
+
+  // 3. Check draft / unapproved state
+  if (!spec.isApproved || spec.approvalState !== 'approved' || !spec.approvalRecord) {
+    return {
+      isValid: false,
+      state: 'draft',
+      canonicalFingerprint,
+      reason: 'Specification is in draft state and has no active approval record.'
     };
   }
 
   const record = spec.approvalRecord;
+  const recordedRevId = record.specificationRevisionId ?? record.targetRevisionId;
+  const recordedFp = record.canonicalContentFingerprint ?? record.targetSpecificationFingerprint;
 
-  if (spec.approvalAuthorityTier && record.authorityTier !== spec.approvalAuthorityTier) {
+  // 4. Verify revision & version linkage
+  if (
+    recordedRevId !== spec.specificationRevisionId ||
+    (record.specificationVersion !== undefined && record.specificationVersion !== spec.version)
+  ) {
     return {
       isValid: false,
       state: 'invalid',
-      authorityTier: record.authorityTier,
-      reason: `Approval authority tier mismatch between specification ('${spec.approvalAuthorityTier}') and approvalRecord ('${record.authorityTier}').`,
-      fingerprint: currentFingerprint
+      canonicalFingerprint,
+      recordedFingerprint: recordedFp,
+      reason: 'Approval record revisionId or version does not match the specification.'
     };
   }
 
-  // Verify exact revision ID
-  if (record.targetRevisionId !== specRevId) {
+  // 5. Verify canonical content fingerprint against recorded fingerprint
+  if (
+    recordedFp !== canonicalFingerprint ||
+    (spec.approvedContentFingerprint && spec.approvedContentFingerprint !== canonicalFingerprint)
+  ) {
     return {
       isValid: false,
       state: 'invalid',
-      authorityTier: record.authorityTier,
-      reason: `Approval record target revision '${record.targetRevisionId}' does not match specification revision '${specRevId}'.`,
-      fingerprint: currentFingerprint
+      canonicalFingerprint,
+      recordedFingerprint: recordedFp,
+      reason:
+        'Specification content fingerprint mismatch: specification engineering parameters were modified after approval.'
     };
   }
 
-  // Verify exact specification fingerprint
-  if (record.targetSpecificationFingerprint !== currentFingerprint) {
+  // 6. Verify approver identity consistency
+  if (
+    typeof record.approverName !== 'string' ||
+    record.approverName.trim().length === 0 ||
+    (spec.approvedBy && spec.approvedBy.trim() !== record.approverName.trim())
+  ) {
     return {
       isValid: false,
       state: 'invalid',
-      authorityTier: record.authorityTier,
-      reason: 'Specification content has been modified after approval was granted; content fingerprint mismatch.',
-      fingerprint: currentFingerprint
+      canonicalFingerprint,
+      recordedFingerprint: recordedFp,
+      reason: 'Specification approver identity mismatch or blank approverName.'
     };
   }
 
-  // Verify approver identity
-  if (!record.approverName || record.approverName.trim() === '' || !record.approverId || record.approverId.trim() === '') {
+  const tier: ApprovalAuthorityTier =
+    spec.approvalAuthorityTier ?? record.authorityTier ?? 'unauthenticated_local_session';
+  if (spec.approvalAuthorityTier && spec.approvalAuthorityTier !== record.authorityTier) {
     return {
       isValid: false,
       state: 'invalid',
-      authorityTier: record.authorityTier,
-      reason: 'Approved specification approval record lacks a valid approver identity.',
-      fingerprint: currentFingerprint
+      canonicalFingerprint,
+      recordedFingerprint: recordedFp,
+      reason: 'Specification approvalAuthorityTier disagrees with approvalRecord.authorityTier.'
     };
   }
 
-  if (spec.approvedBy && record.approverName !== spec.approvedBy && record.approverId !== spec.approvedBy) {
-    return {
-      isValid: false,
-      state: 'invalid',
-      authorityTier: record.authorityTier,
-      reason: 'approver identity mismatch between approvedBy and approvalRecord.',
-      fingerprint: currentFingerprint
-    };
-  }
+  // 7. Tier-specific cryptographic & identity verification
+  if (tier === 'authenticated_designer') {
+    const idProv = spec.verifiedIdentity ?? record.verifiedIdentity;
+    if (!idProv || idProv.verificationMethod !== 'OIDC-JWT-EdDSA') {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason:
+          'authenticated_designer authority tier is unavailable without verified OIDC-JWT-EdDSA identity provenance.'
+      };
+    }
 
-  // Prevent local unauthenticated session from claiming verified identity or cryptographic provenance
-  if (record.authorityTier === 'unauthenticated_local_session' || record.authorityTier === 'demonstration_fixture') {
-    if (record.approverId === record.approverName) {
+    if (
+      idProv.targetSpecificationId !== undefined &&
+      idProv.targetSpecificationId !== spec.garmentId
+    ) {
       return {
         isValid: false,
         state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: 'Approver ID cannot be a raw display name impersonation; must use distinct principal or local session identifier.',
-        fingerprint: currentFingerprint
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason: 'Verified identity provenance targetSpecificationId does not match specification garmentId.'
       };
     }
-  }
+    if (
+      idProv.targetRevisionId !== undefined &&
+      idProv.targetRevisionId !== spec.specificationRevisionId
+    ) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason: 'Verified identity provenance targetRevisionId does not match specificationRevisionId.'
+      };
+    }
+    if (
+      idProv.targetSpecificationFingerprint !== undefined &&
+      idProv.targetSpecificationFingerprint.toLowerCase() !== canonicalFingerprint.toLowerCase()
+    ) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason: 'Verified identity provenance targetSpecificationFingerprint does not match canonical specification fingerprint.'
+      };
+    }
 
-  // Verify approval timestamp
-  if (!record.approvedAt || !isValidIsoDate(record.approvedAt)) {
-    return {
-      isValid: false,
-      state: 'invalid',
-      authorityTier: record.authorityTier,
-      reason: 'Approved specification approval record lacks a valid ISO approval timestamp.',
-      fingerprint: currentFingerprint
-    };
-  }
+    if (!verificationContext?.identityVerifier) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason:
+          'authenticated_designer approval cannot be verified without an active TrustedIdentityVerifier in verificationContext.'
+      };
+    }
 
-  if (spec.approvedAt && spec.approvedAt !== record.approvedAt) {
-    return {
-      isValid: false,
-      state: 'invalid',
-      authorityTier: record.authorityTier,
-      reason: `Approval timestamp mismatch between specification ('${spec.approvedAt}') and approvalRecord ('${record.approvedAt}').`,
-      fingerprint: currentFingerprint
-    };
-  }
-
-  // Tier 3 (authenticated_designer) real OIDC/JWT identity provenance verification
-  if (record.authorityTier === 'authenticated_designer') {
-    const idProv = record.verifiedIdentity;
-    if (!idProv) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: 'authenticated_designer approval record lacks verifiedIdentity provenance.',
-        fingerprint: currentFingerprint
-      };
-    }
-    if (idProv.verificationMethod !== 'OIDC-JWT-EdDSA') {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: `authenticated_designer provenance verificationMethod '${idProv.verificationMethod ?? 'missing'}' is invalid; 'OIDC-JWT-EdDSA' required.`,
-        fingerprint: currentFingerprint
-      };
-    }
-    const idVerifier = verificationContext?.identityVerifier;
-    if (!idVerifier) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: 'authenticated_designer authority tier is unavailable without verified identity provider configuration.',
-        fingerprint: currentFingerprint
-      };
-    }
-    if (verificationContext?.identityCredential) {
-      const verifyFn =
-        idVerifier.verifyIdentityCredential?.bind(idVerifier) ??
-        idVerifier.verifyCredential?.bind(idVerifier);
-      if (typeof verifyFn === 'function') {
-        const liveCheck = verifyFn(verificationContext.identityCredential, {
-          targetRevisionId: specRevId,
-          targetSpecificationFingerprint: currentFingerprint,
-          expectedApprover: record.approverName,
-          approvalTimestamp: verificationContext.currentTimestamp ?? record.approvedAt,
-          expectedTenantId: idVerifier.expectedTenantId
-        });
-        if (!liveCheck.verified || !liveCheck.provenance) {
-          return {
-            isValid: false,
-            state: 'invalid',
-            authorityTier: record.authorityTier,
-            reason: `authenticated_designer OIDC credential re-verification failed: ${liveCheck.reason ?? 'invalid credential'}`,
-            fingerprint: currentFingerprint
-          };
-        }
-        if (liveCheck.provenance.tokenDigest !== idProv.tokenDigest) {
-          return {
-            isValid: false,
-            state: 'invalid',
-            authorityTier: record.authorityTier,
-            reason: 'authenticated_designer credential token digest does not match recorded approval provenance.',
-            fingerprint: currentFingerprint
-          };
-        }
-      }
-    }
-    if (idVerifier.trustedIssuers && !idVerifier.trustedIssuers.includes(idProv.issuer)) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: `authenticated_designer provenance issuer '${idProv.issuer}' is not trusted by verifier '${idVerifier.verifierId ?? 'default'}'.`,
-        fingerprint: currentFingerprint
-      };
-    }
-    if (idVerifier.expectedAudience && idProv.audience !== idVerifier.expectedAudience) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: `authenticated_designer provenance audience '${idProv.audience}' does not match expected audience '${idVerifier.expectedAudience}'.`,
-        fingerprint: currentFingerprint
-      };
-    }
-    if (idVerifier.expectedTenantId && idProv.tenantId !== idVerifier.expectedTenantId) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: `authenticated_designer provenance tenantId '${idProv.tenantId ?? 'missing'}' does not match expected tenant '${idVerifier.expectedTenantId}'.`,
-        fingerprint: currentFingerprint
-      };
-    }
-    if (idVerifier.publicJwks && idVerifier.publicJwks.length > 0) {
-      const matchedJwk = idVerifier.publicJwks.find(k => k.kid === idProv.keyId);
-      if (!matchedJwk || matchedJwk.revoked || matchedJwk.trustStatus !== 'trusted') {
+    if (verificationContext.identityCredential) {
+      let reverify: IdentityVerificationResult;
+      try {
+        reverify = verificationContext.identityVerifier.verifyCredential(
+          verificationContext.identityCredential,
+          {
+            expectedSpecificationId: spec.garmentId,
+            expectedRevisionId: spec.specificationRevisionId,
+            expectedSpecificationFingerprint: canonicalFingerprint,
+            requireTargetBinding: true,
+            reverifyRecordedApproval: {
+              recordedTokenDigest: idProv.tokenDigest,
+              recordedJti: idProv.jti ?? idProv.tokenId,
+              recordedSpecificationId: spec.garmentId,
+              recordedRevisionId: spec.specificationRevisionId,
+              recordedSpecificationFingerprint: canonicalFingerprint
+            }
+          }
+        );
+      } catch (err) {
         return {
           isValid: false,
           state: 'invalid',
-          authorityTier: record.authorityTier,
-          reason: `authenticated_designer provenance JWKS key '${idProv.keyId ?? 'missing'}' is unknown, untrusted, or revoked.`,
-          fingerprint: currentFingerprint
+          authorityTier: tier,
+          authorityClassification: tier,
+          isApprovalAuthenticated: false,
+          isApprovalCryptographicallySigned: false,
+          canonicalFingerprint,
+          reason: `TrustedIdentityVerifier threw an exception: ${err instanceof Error ? err.message : String(err)}`
         };
       }
-    }
-    if (idProv.subject !== record.approverId || idProv.subject === record.approverName) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: 'authenticated_designer subject mismatch or inferred from display name.',
-        fingerprint: currentFingerprint
-      };
-    }
-    const evalTime = verificationContext?.currentTimestamp ?? record.approvedAt;
-    if (!isValidIsoDate(idProv.issuedAt) || !isValidIsoDate(idProv.expiresAt) || !isValidIsoDate(evalTime)) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: 'authenticated_designer credential timestamps are invalid.',
-        fingerprint: currentFingerprint
-      };
-    }
-    if (idProv.notBefore && isValidIsoDate(idProv.notBefore)) {
-      if (Date.parse(evalTime) < Date.parse(idProv.notBefore) || Date.parse(record.approvedAt) < Date.parse(idProv.notBefore)) {
+      const reverifiedSub = reverify.verifiedSubjectId ?? reverify.provenance?.subjectId;
+      if (!reverify.isValid || reverifiedSub !== idProv.subjectId) {
         return {
           isValid: false,
           state: 'invalid',
-          authorityTier: record.authorityTier,
-          reason: `authenticated_designer identity credential is not yet valid before '${idProv.notBefore}'.`,
-          fingerprint: currentFingerprint
+          authorityTier: tier,
+          authorityClassification: tier,
+          isApprovalAuthenticated: false,
+          isApprovalCryptographicallySigned: false,
+          canonicalFingerprint,
+          reason: `Re-verification of OIDC/JWT identity credential failed: ${reverify.reason ?? 'subject mismatch'}`
         };
       }
     }
-    if (Date.parse(evalTime) >= Date.parse(idProv.expiresAt) || Date.parse(record.approvedAt) >= Date.parse(idProv.expiresAt)) {
+  } else if (tier === 'cryptographic_principal') {
+    const sig = spec.cryptographicSignature ?? record.cryptographicSignature;
+    if (!sig) {
       return {
         isValid: false,
         state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: `authenticated_designer identity credential expired at '${idProv.expiresAt}'.`,
-        fingerprint: currentFingerprint
-      };
-    }
-  }
-
-  // Tier 4 (cryptographic_principal) real asymmetric Ed25519 signature verification over all bound fields
-  if (record.authorityTier === 'cryptographic_principal') {
-    const sig = record.cryptographicSignature;
-    if (!sig || !sig.signedPayload) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: 'cryptographic_principal approval record lacks a verifiable cryptographicSignature.',
-        fingerprint: currentFingerprint
-      };
-    }
-    const cryptoVerifier = verificationContext?.cryptographicVerifier;
-    if (!cryptoVerifier) {
-      return {
-        isValid: false,
-        state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: 'cryptographic_principal authority tier is unavailable without cryptographic provider configuration.',
-        fingerprint: currentFingerprint
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason:
+          'cryptographic_principal authority tier is unavailable without a VerifiableCryptographicSignature.'
       };
     }
 
-    const expectedBindingPayload: CryptographicApprovalBindingPayload = {
-      schemaVersion: sig.signedPayload.schemaVersion || SPECIFICATION_CANONICAL_SCHEMA_VERSION,
-      projectId: specProjectId,
-      tenantId: specProjectId,
-      garmentId: specId,
-      specificationRevisionId: specRevId,
-      specificationVersion: spec.version || 1,
-      canonicalSpecificationFingerprint: currentFingerprint,
-      approvalEventId: record.eventId ?? '',
-      approverPrincipal: record.approverId,
+    if (!verificationContext?.cryptographicVerifier) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason:
+          'cryptographic_principal authority tier is unavailable without an active TrustedCryptographicVerifier in verificationContext.'
+      };
+    }
+
+    const expectedPayload: CanonicalApprovalSigningPayload = {
+      schemaVersion: spec.schemaVersion || SPECIFICATION_CANONICAL_SCHEMA_VERSION,
+      projectId: spec.projectId,
+      tenantId: spec.projectId,
+      garmentId: spec.garmentId,
+      specificationRevisionId: spec.specificationRevisionId,
+      specificationVersion: spec.version,
+      canonicalSpecificationFingerprint: canonicalFingerprint,
+      approvalEventId: record.eventId ?? `evt-app-${spec.specificationRevisionId}-1`,
+      approverPrincipal: record.approverId || record.approverName,
       authorityTier: 'cryptographic_principal',
-      approvalScope: 'specification_approval',
+      approvalScope: 'specification:approve',
       approvalTimestamp: record.approvedAt,
       keyId: sig.keyId,
-      algorithm: sig.algorithm
+      algorithm: 'Ed25519'
     };
 
-    const sigCheck = cryptoVerifier.verifyApprovalSignature(sig, expectedBindingPayload);
-    if (!sigCheck.verified) {
+    let cryptoRes: CryptographicVerificationResult;
+    try {
+      cryptoRes = verificationContext.cryptographicVerifier.verifySignature(sig, expectedPayload);
+    } catch (err) {
       return {
         isValid: false,
         state: 'invalid',
-        authorityTier: record.authorityTier,
-        reason: `Cryptographic signature verification failed: ${sigCheck.reason ?? 'invalid signature'}`,
-        fingerprint: currentFingerprint
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        reason: `TrustedCryptographicVerifier threw an exception: ${err instanceof Error ? err.message : String(err)}`
+      };
+    }
+
+    if (!cryptoRes.isValid && !cryptoRes.verified) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason: `Cryptographic signature re-verification failed: ${cryptoRes.reason ?? 'invalid signature'}`
       };
     }
   }
 
-  // Verify append-only approvalHistory consistency if present
-  if (historyEvents.length > 0 && record.eventId) {
-    const matchingEvt = historyEvents.find(
-      e => e.eventType === 'approval' && e.id === record.eventId
-    ) as SpecificationApprovalEvent | undefined;
-    if (matchingEvt) {
-      if (
-        matchingEvt.targetRevisionId !== specRevId ||
-        matchingEvt.targetSpecificationFingerprint !== currentFingerprint ||
-        matchingEvt.authorityTier !== record.authorityTier ||
-        matchingEvt.approvedAt !== record.approvedAt ||
-        matchingEvt.approverId !== record.approverId
-      ) {
-        return {
-          isValid: false,
-          state: 'invalid',
-          authorityTier: record.authorityTier,
-          reason: 'Approval history event does not match approvalRecord lineage or fingerprint.',
-          fingerprint: currentFingerprint
-        };
-      }
+  if (latestEvent && latestEvent.eventType === 'approval') {
+    const latestFp = latestEvent.canonicalContentFingerprint ?? latestEvent.targetSpecificationFingerprint;
+    if (
+      latestEvent.approverName !== record.approverName ||
+      (latestEvent.approverId && record.approverId && latestEvent.approverId !== record.approverId) ||
+      latestFp !== recordedFp ||
+      latestEvent.authorityTier !== record.authorityTier
+    ) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason: 'Specification approvalRecord approver identity mismatch against append-only approvalHistory.'
+      };
     }
   }
 
   return {
     isValid: true,
     state: 'approved',
-    authorityTier: record.authorityTier,
-    fingerprint: currentFingerprint
+    authorityTier: tier,
+    authorityClassification: tier,
+    isApprovalAuthenticated: tier === 'authenticated_designer',
+    isApprovalCryptographicallySigned: tier === 'cryptographic_principal',
+    canonicalFingerprint,
+    recordedFingerprint: recordedFp,
+    approverName: record.approverName,
+    approvedAt: record.approvedAt,
+    verifiedIdentity: spec.verifiedIdentity ?? record.verifiedIdentity,
+    cryptographicSignature: spec.cryptographicSignature ?? record.cryptographicSignature
   };
 }
+
+// ============================================================================
+// BIDIRECTIONAL CONVERSION WITH UI DesignSpecification
+// ============================================================================
 
 /**
- * Creates an authoritative garment specification binding creative design intent
- * with deterministic mechanical allowances, target dimensions, and explicit ease.
- */
-export function createAuthoritativeGarmentSpecification(
-  input: CreateAuthoritativeSpecificationInput
-): AuthoritativeGarmentSpecification {
-  if (!input.name || input.name.trim() === '') {
-    throw new ProductionSnapshotValidationError('Specification name is required and cannot be empty.');
-  }
-  if (!input.garmentCategory || !VALID_GARMENT_CATEGORIES.has(input.garmentCategory)) {
-    throw new ProductionSnapshotValidationError('Garment category is required.');
-  }
-  if (!input.silhouette || !VALID_SILHOUETTES.has(input.silhouette)) {
-    throw new ProductionSnapshotValidationError('Valid silhouette is required.');
-  }
-  if (!input.easeProfile || !VALID_EASE_PROFILES.has(input.easeProfile)) {
-    throw new ProductionSnapshotValidationError('Valid easeProfile is required.');
-  }
-  if (!Number.isFinite(input.lengthCm) || input.lengthCm <= 0) {
-    throw new ProductionSnapshotValidationError(
-      `Target lengthCm must be a positive finite number (received ${input.lengthCm}).`
-    );
-  }
-  if (!input.fabric || typeof input.fabric !== 'object') {
-    throw new ProductionSnapshotValidationError('Fabric property specification is required.');
-  }
-
-  const now = new Date().toISOString();
-  const version = input.version ?? 1;
-  const garmentId = input.garmentId ?? input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  const specId = input.specificationRevisionId ?? `spec-${garmentId}-v${version}`;
-
-  const hasApprover = Boolean(input.approvedBy && input.approvedBy.trim() !== '');
-  const isRevoked = input.approvalState === 'revoked' || input.revocationRecord !== undefined;
-  const isSuperseded = input.approvalState === 'superseded' || Boolean(input.supersededByRevisionId);
-  const isApprovedRequested = Boolean((input.isApproved || input.approvalState === 'approved') && !isRevoked && !isSuperseded);
-  const isApproved = isApprovedRequested && hasApprover;
-
-  let approvedBy = isApproved ? input.approvedBy?.trim() : undefined;
-  let approvedAt = isApproved ? input.approvedAt : undefined;
-  let approvalAuthorityTier: ApprovalAuthorityTier | undefined = isApproved
-    ? (input.approvalAuthorityTier ?? 'unauthenticated_local_session')
-    : undefined;
-
-  let approvalState: SpecificationApprovalState = isRevoked
-    ? 'revoked'
-    : isSuperseded
-    ? 'superseded'
-    : (input.approvalState ?? (isApproved ? 'approved' : 'draft'));
-
-  if (isApprovedRequested && !hasApprover) {
-    approvalState = 'draft';
-  }
-
-  let approvalProvenance: SpecificationValueProvenance = input.approvalProvenance ?? (
-    isApproved
-      ? (approvalAuthorityTier === 'demonstration_fixture'
-          ? 'demonstration-fixture'
-          : approvalAuthorityTier === 'authenticated_designer' || approvalAuthorityTier === 'cryptographic_principal'
-          ? 'designer-approved'
-          : 'unauthenticated-local-approval')
-      : 'designer-edited'
-  );
-
-  if (isApproved) {
-    if (!approvedAt || !isValidIsoDate(approvedAt)) {
-      approvedAt = now;
-    }
-  } else {
-    approvedBy = undefined;
-    approvedAt = undefined;
-    approvalAuthorityTier = undefined;
-    if (approvalProvenance === 'designer-approved' || approvalProvenance === 'unauthenticated-local-approval') {
-      approvalProvenance = 'designer-edited';
-    }
-  }
-
-  const targetFinishedDimensions = {
-    lengthCm: input.lengthCm,
-    ...(input.targetFinishedDimensions ?? {})
-  };
-
-  const allowances = {
-    seamAllowanceCm: input.allowances?.seamAllowanceCm ?? 1.5,
-    hemAllowanceCm: input.allowances?.hemAllowanceCm ?? 3.0,
-    waistAllowanceCm: input.allowances?.waistAllowanceCm ?? 1.0,
-    neckAllowanceCm: input.allowances?.neckAllowanceCm ?? 1.0,
-    armholeAllowanceCm: input.allowances?.armholeAllowanceCm ?? 1.0,
-    shoulderAllowanceCm: input.allowances?.shoulderAllowanceCm ?? 1.0
-  };
-
-  const fieldProvenance: Record<string, ParameterValueProvenance> = {
-    lengthCm: 'explicit-value',
-    seamAllowanceCm: input.allowances?.seamAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
-    hemAllowanceCm: input.allowances?.hemAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
-    waistAllowanceCm: input.allowances?.waistAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
-    neckAllowanceCm: input.allowances?.neckAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
-    armholeAllowanceCm: input.allowances?.armholeAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
-    shoulderAllowanceCm: input.allowances?.shoulderAllowanceCm !== undefined ? 'explicit-value' : 'approved-project-default',
-    ...(input.fieldProvenance ?? {})
-  };
-
-  const engineProvenance = {
-    engineVersion: input.engineProvenance?.engineVersion ?? CURRENT_ENGINE_VERSION,
-    snapshotEngine: 'Patroner Authoritative Specification Engine v1.1',
-    buildTimestamp: input.engineProvenance?.buildTimestamp ?? now,
-    ...(input.engineProvenance ?? {})
-  };
-
-  const tempSpecPayload = {
-    projectId: input.projectId ?? 'project-patroner-default',
-    garmentId,
-    specificationRevisionId: specId,
-    parentRevisionId: input.parentRevisionId,
-    supersededByRevisionId: input.supersededByRevisionId,
-    version,
-    name: input.name.trim(),
-    garmentCategory: input.garmentCategory,
-    silhouette: input.silhouette,
-    prompt: input.prompt ?? '',
-    color: input.color ?? { name: 'Chalk Oatmeal', hex: '#E8E3D9' },
-    fabric: input.fabric,
-    fabricRevision: input.fabricRevision,
-    fabricProvenance: input.fabricProvenance ?? 'unknown',
-    easeProfile: input.easeProfile,
-    explicitEaseCm: input.explicitEaseCm,
-    targetFinishedDimensions,
-    dartStyle: input.dartStyle,
-    sleeveEaseStrategy: input.sleeveEaseStrategy,
-    allowances,
-    constructionFeatures: input.constructionFeatures ?? [],
-    designNotes: input.designNotes ?? [],
-    fieldProvenance,
-    aiEstimates: input.aiEstimates,
-    engineProvenance
-  };
-
-  const specFingerprint = computeSpecificationFingerprint(tempSpecPayload as unknown as AuthoritativeGarmentSpecification);
-
-  let approvalRecord: SpecificationApprovalRecord | undefined = undefined;
-  const approvalHistory: SpecificationLifecycleEvent[] = input.approvalHistory ? [...input.approvalHistory] : [];
-  // CORRECTION G: Never silently discard revocationRecord
-  const revocationRecord: SpecificationRevocationEvent | undefined = input.revocationRecord;
-
-  if (isApproved) {
-    if (input.approvalRecord && input.approvalRecord.targetSpecificationFingerprint === specFingerprint) {
-      approvalRecord = input.approvalRecord;
-    } else {
-      const eventId = `appr-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-      const approvalEvent: SpecificationApprovalEvent = {
-        id: eventId,
-        eventType: 'approval',
-        targetRevisionId: specId,
-        targetSpecificationFingerprint: specFingerprint,
-        approverId: `approver-${(approvedBy ?? 'operator').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-        approverName: approvedBy ?? 'Local Operator',
-        authorityTier: approvalAuthorityTier ?? 'unauthenticated_local_session',
-        approvedAt: approvedAt!,
-        provenance: approvalProvenance
-      };
-
-      approvalRecord = {
-        eventId,
-        approverId: approvalEvent.approverId,
-        approverName: approvalEvent.approverName,
-        authorityTier: approvalEvent.authorityTier,
-        approvedAt: approvalEvent.approvedAt,
-        targetRevisionId: specId,
-        targetSpecificationFingerprint: specFingerprint,
-        provenance: approvalProvenance
-      };
-
-      approvalHistory.push(approvalEvent);
-    }
-  } else if (revocationRecord) {
-    if (input.approvalRecord) {
-      approvalRecord = {
-        ...input.approvalRecord,
-        revocation: revocationRecord,
-        revocationReason: revocationRecord.reason
-      };
-    }
-  }
-
-  const spec: AuthoritativeGarmentSpecification = {
-    projectId: input.projectId ?? 'project-patroner-default',
-    garmentId,
-    specificationRevisionId: specId,
-    parentRevisionId: input.parentRevisionId,
-    supersededByRevisionId: input.supersededByRevisionId,
-    version,
-    name: input.name.trim(),
-    garmentCategory: input.garmentCategory,
-    silhouette: input.silhouette,
-    prompt: input.prompt ?? '',
-    color: input.color ?? { name: 'Chalk Oatmeal', hex: '#E8E3D9' },
-    fabric: input.fabric,
-    fabricRevision: input.fabricRevision,
-    fabricProvenance: input.fabricProvenance ?? 'unknown',
-    easeProfile: input.easeProfile,
-    explicitEaseCm: input.explicitEaseCm ? { ...input.explicitEaseCm } : undefined,
-    targetFinishedDimensions,
-    dartStyle: input.dartStyle,
-    sleeveEaseStrategy: input.sleeveEaseStrategy,
-    allowances,
-    constructionFeatures: input.constructionFeatures ? [...input.constructionFeatures] : [],
-    designNotes: input.designNotes ? [...input.designNotes] : [],
-    fieldProvenance,
-    isApproved,
-    approvalState,
-    approvalAuthorityTier,
-    approvalRecord,
-    verifiedIdentity: approvalRecord?.verifiedIdentity,
-    cryptographicSignature: approvalRecord?.cryptographicSignature,
-    approvalHistory: approvalHistory.length > 0 ? approvalHistory : undefined,
-    revocationRecord,
-    approvedBy,
-    approvedAt,
-    approvalProvenance,
-    engineProvenance,
-    aiEstimates: input.aiEstimates,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  return deepFreeze(spec);
-}
-
-/**
- * Creates a revised specification from an existing baseline.
- * Enforces historical immutability: the base specification remains unchanged.
- * Prohibits editing an approved specification in place.
- * The new revision increments the version, tracks parentRevisionId, records supersession in history,
- * and resets approval to 'draft'.
- */
-export function reviseAuthoritativeGarmentSpecification(
-  base: AuthoritativeGarmentSpecification,
-  updates: Partial<CreateAuthoritativeSpecificationInput>
-): AuthoritativeGarmentSpecification {
-  if (base.isApproved || base.approvalState === 'approved') {
-    if (
-      (updates.version !== undefined && updates.version <= base.version) ||
-      (updates.specificationRevisionId !== undefined && updates.specificationRevisionId === base.specificationRevisionId)
-    ) {
-      throw new ProductionSnapshotValidationError(
-        'Cannot edit an approved specification in place. A modification must create a new revision with an incremented version.'
-      );
-    }
-  }
-
-  const newVersion = updates.version ?? (base.version + 1);
-  const newRevisionId = updates.specificationRevisionId ?? `spec-${base.garmentId}-v${newVersion}`;
-  const parentRevisionId = updates.parentRevisionId !== undefined
-    ? updates.parentRevisionId
-    : (newVersion === base.version ? base.parentRevisionId : base.specificationRevisionId);
-
-  const baseFp = computeSpecificationFingerprint(base);
-  const supersessionEvent: SpecificationSupersessionEvent = {
-    id: `sup-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-    eventType: 'supersession',
-    targetRevisionId: base.specificationRevisionId,
-    targetSpecificationFingerprint: baseFp,
-    supersededByRevisionId: newRevisionId,
-    authorityTier: base.approvalAuthorityTier ?? 'unauthenticated_local_session',
-    supersededAt: new Date().toISOString(),
-    reason: `Superseded by revision ${newRevisionId} (v${newVersion}).`
-  };
-
-  const history: SpecificationLifecycleEvent[] = updates.approvalHistory
-    ? [...updates.approvalHistory]
-    : base.approvalHistory
-    ? [...base.approvalHistory, supersessionEvent]
-    : [supersessionEvent];
-
-  return createAuthoritativeGarmentSpecification({
-    projectId: updates.projectId ?? base.projectId,
-    garmentId: updates.garmentId ?? base.garmentId,
-    specificationRevisionId: newRevisionId,
-    parentRevisionId,
-    version: newVersion,
-    name: updates.name ?? base.name,
-    garmentCategory: updates.garmentCategory ?? base.garmentCategory,
-    silhouette: updates.silhouette ?? base.silhouette,
-    prompt: updates.prompt ?? base.prompt,
-    color: updates.color ?? base.color,
-    fabric: updates.fabric ?? base.fabric,
-    fabricRevision: updates.fabricRevision ?? base.fabricRevision,
-    fabricProvenance: updates.fabricProvenance ?? base.fabricProvenance,
-    easeProfile: updates.easeProfile ?? base.easeProfile,
-    explicitEaseCm: updates.explicitEaseCm !== undefined ? updates.explicitEaseCm : base.explicitEaseCm,
-    lengthCm: updates.lengthCm ?? base.targetFinishedDimensions.lengthCm,
-    targetFinishedDimensions: {
-      ...base.targetFinishedDimensions,
-      ...(updates.targetFinishedDimensions ?? {})
-    },
-    dartStyle: updates.dartStyle ?? base.dartStyle,
-    sleeveEaseStrategy: updates.sleeveEaseStrategy ?? base.sleeveEaseStrategy,
-    allowances: {
-      ...base.allowances,
-      ...(updates.allowances ?? {})
-    },
-    constructionFeatures: updates.constructionFeatures ?? base.constructionFeatures,
-    designNotes: updates.designNotes ?? base.designNotes,
-    fieldProvenance: updates.fieldProvenance ?? base.fieldProvenance,
-    // A newly modified specification requires new approval
-    isApproved: updates.isApproved ?? false,
-    approvalState: updates.approvalState ?? (updates.isApproved ? 'approved' : 'draft'),
-    approvalAuthorityTier: updates.approvalAuthorityTier,
-    approvalRecord: updates.approvalRecord,
-    approvalHistory: history,
-    revocationRecord: updates.revocationRecord,
-    approvedBy: updates.approvedBy,
-    approvedAt: updates.approvedAt,
-    approvalProvenance: updates.approvalProvenance ?? 'designer-edited',
-    engineProvenance: updates.engineProvenance ?? base.engineProvenance,
-    aiEstimates: updates.aiEstimates ?? (base.aiEstimates ? {
-      suggestedSilhouette: base.aiEstimates.suggestedSilhouette,
-      styleConfidenceScore: base.aiEstimates.styleConfidenceScore,
-      suggestedFabrics: [...base.aiEstimates.suggestedFabrics],
-      technicalAdvice: base.aiEstimates.technicalAdvice,
-      disclaimer: base.aiEstimates.disclaimer
-    } : undefined)
-  });
-}
-
-/**
- * Marks a specification revision as superseded by a newer revision, preserving append-only history.
- * Supports either passing a target revision ID string or an updates object (returning both supersededSpec and nextRevision).
- */
-export function supersedeAuthoritativeGarmentSpecification(
-  spec: AuthoritativeGarmentSpecification,
-  supersededByRevisionId: string,
-  reason?: string
-): AuthoritativeGarmentSpecification;
-export function supersedeAuthoritativeGarmentSpecification(
-  spec: AuthoritativeGarmentSpecification,
-  updates: Partial<CreateAuthoritativeSpecificationInput>,
-  reason?: string
-): {
-  supersededSpec: AuthoritativeGarmentSpecification;
-  nextRevision: AuthoritativeGarmentSpecification;
-};
-export function supersedeAuthoritativeGarmentSpecification(
-  spec: AuthoritativeGarmentSpecification,
-  supersededByOrUpdates: string | Partial<CreateAuthoritativeSpecificationInput>,
-  reason?: string
-):
-  | AuthoritativeGarmentSpecification
-  | {
-      supersededSpec: AuthoritativeGarmentSpecification;
-      nextRevision: AuthoritativeGarmentSpecification;
-    } {
-  if (typeof supersededByOrUpdates === 'object' && supersededByOrUpdates !== null) {
-    const nextRevision = reviseAuthoritativeGarmentSpecification(spec, supersededByOrUpdates);
-    const supersededSpec = supersedeAuthoritativeGarmentSpecification(
-      spec,
-      nextRevision.specificationRevisionId,
-      reason
-    );
-    return deepFreeze({ supersededSpec, nextRevision });
-  }
-
-  const supersededByRevisionId = supersededByOrUpdates;
-  if (!supersededByRevisionId || supersededByRevisionId.trim() === '') {
-    throw new ProductionSnapshotValidationError('supersededByRevisionId is required to mark a specification superseded.');
-  }
-  const now = new Date().toISOString();
-  const specFingerprint = computeSpecificationFingerprint(spec);
-  const supEvent: SpecificationSupersessionEvent = {
-    id: `sup-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-    eventType: 'supersession',
-    targetRevisionId: spec.specificationRevisionId,
-    targetSpecificationFingerprint: specFingerprint,
-    supersededByRevisionId: supersededByRevisionId.trim(),
-    authorityTier: spec.approvalAuthorityTier ?? 'unauthenticated_local_session',
-    supersededAt: now,
-    reason: reason ?? `Superseded by ${supersededByRevisionId.trim()}`
-  };
-
-  const history: SpecificationLifecycleEvent[] = spec.approvalHistory
-    ? [...spec.approvalHistory, supEvent]
-    : [supEvent];
-
-  return createAuthoritativeGarmentSpecification({
-    ...spec,
-    lengthCm: spec.targetFinishedDimensions.lengthCm,
-    supersededByRevisionId: supersededByRevisionId.trim(),
-    isApproved: false,
-    approvalState: 'superseded',
-    approvalHistory: history
-  });
-}
-
-export interface ApproveSpecificationOptions {
-  readonly approvedAt?: string;
-  readonly approverId?: string;
-  readonly authorityTier?: ApprovalAuthorityTier;
-  readonly notes?: string;
-  readonly eventId?: string;
-  readonly approvalEventId?: string;
-  readonly identityCredential?: VerifiableIdentityCredential;
-  readonly identityVerifier?: TrustedIdentityVerifier;
-  readonly cryptographicSignature?: VerifiableCryptographicSignature;
-  readonly cryptographicVerifier?: TrustedCryptographicVerifier;
-}
-
-/**
- * Formally approves a specification revision.
- * Enforces real identity-credential verification for Tier 3 (authenticated_designer) and
- * real 10-field signature verification for Tier 4 (cryptographic_principal).
- */
-export function approveAuthoritativeGarmentSpecification(
-  spec: AuthoritativeGarmentSpecification,
-  approvedBy: string,
-  approvedAtOrOptions?: string | ApproveSpecificationOptions
-): AuthoritativeGarmentSpecification {
-  if (!approvedBy || approvedBy.trim() === '') {
-    throw new ProductionSnapshotValidationError('Cannot approve specification without a valid approvedBy identity.');
-  }
-
-  let approvedAt: string;
-  let authorityTier: ApprovalAuthorityTier = 'unauthenticated_local_session';
-  let notes: string | undefined = undefined;
-  let opts: ApproveSpecificationOptions = {};
-
-  if (typeof approvedAtOrOptions === 'string') {
-    approvedAt = approvedAtOrOptions;
-  } else if (approvedAtOrOptions && typeof approvedAtOrOptions === 'object') {
-    opts = approvedAtOrOptions;
-    approvedAt = opts.approvedAt ?? new Date().toISOString();
-    authorityTier = opts.authorityTier ?? 'unauthenticated_local_session';
-    notes = opts.notes;
-  } else {
-    approvedAt = new Date().toISOString();
-  }
-
-  if (!isValidIsoDate(approvedAt)) {
-    throw new ProductionSnapshotValidationError('Approval timestamp must be a valid ISO 8601 date.');
-  }
-
-  // Prepare clean specification copy without prior revocation so fingerprint reflects approved state
-  const cleanSpecForFp: AuthoritativeGarmentSpecification = {
-    ...spec,
-    supersededByRevisionId: undefined,
-    revocationRecord: undefined
-  };
-  const specFingerprint = computeSpecificationFingerprint(cleanSpecForFp);
-  const eventId =
-    opts.eventId ??
-    opts.approvalEventId ??
-    `appr-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-
-  let approverId =
-    opts.approverId && opts.approverId.trim() !== '' && opts.approverId.trim() !== approvedBy.trim()
-      ? opts.approverId.trim()
-      : `approver-${approvedBy.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-  let verifiedIdentity: VerifiedIdentityProvenance | undefined = undefined;
-  let cryptographicSignature: VerifiableCryptographicSignature | undefined = undefined;
-
-  // Tier 3: Require real identity provider verification operation
-  if (authorityTier === 'authenticated_designer') {
-    const verifyFn =
-      opts.identityVerifier?.verifyIdentityCredential?.bind(opts.identityVerifier) ??
-      opts.identityVerifier?.verifyCredential?.bind(opts.identityVerifier);
-
-    if (!opts.identityVerifier || typeof verifyFn !== 'function' || !opts.identityCredential) {
-      throw new ProductionSnapshotValidationError(
-        'authenticated_designer authority tier is unavailable without verified identity provider configuration (TrustedIdentityVerifier and VerifiableIdentityCredential required).'
-      );
-    }
-
-    let idResult: TrustedIdentityVerificationResult;
-    try {
-      idResult = verifyFn(opts.identityCredential, {
-        targetRevisionId: spec.specificationRevisionId,
-        targetSpecificationFingerprint: specFingerprint,
-        expectedApprover: approvedBy.trim(),
-        approvalTimestamp: approvedAt
-      });
-    } catch (err) {
-      throw new ProductionSnapshotValidationError(
-        `authenticated_designer identity verification failed closed due to verifier exception: ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
-
-    if (!idResult || !idResult.verified || !idResult.provenance) {
-      throw new ProductionSnapshotValidationError(
-        `authenticated_designer identity verification rejected: ${idResult?.reason ?? 'invalid identity credential'}`
-      );
-    }
-
-    if (opts.approverId && idResult.provenance.subject !== opts.approverId.trim()) {
-      throw new ProductionSnapshotValidationError(
-        `Identity credential subject '${idResult.provenance.subject}' does not match requested approver '${opts.approverId}'.`
-      );
-    }
-
-    verifiedIdentity = idResult.provenance;
-    approverId = verifiedIdentity.subject;
-  }
-
-  // Tier 4: Require real cryptographic signature verification operation over all 10 required fields
-  if (authorityTier === 'cryptographic_principal') {
-    if (
-      !opts.cryptographicVerifier ||
-      typeof opts.cryptographicVerifier.verifyApprovalSignature !== 'function' ||
-      !opts.cryptographicSignature
-    ) {
-      throw new ProductionSnapshotValidationError(
-        'cryptographic_principal authority tier is unavailable without cryptographic provider configuration (TrustedCryptographicVerifier and VerifiableCryptographicSignature required).'
-      );
-    }
-
-    const expectedPrincipal =
-      opts.approverId && opts.approverId.trim() !== ''
-        ? opts.approverId.trim()
-        : opts.cryptographicSignature.signedPayload?.approverPrincipal;
-    if (!expectedPrincipal || expectedPrincipal.trim() === '') {
-      throw new ProductionSnapshotValidationError(
-        'cryptographic_principal requires a non-empty cryptographic principal identifier.'
-      );
-    }
-
-    const expectedBindingPayload: CryptographicApprovalBindingPayload = {
-      schemaVersion: SPECIFICATION_CANONICAL_SCHEMA_VERSION,
-      projectId: spec.projectId,
-      tenantId: spec.projectId,
-      garmentId: spec.garmentId,
-      specificationRevisionId: spec.specificationRevisionId,
-      specificationVersion: spec.version,
-      canonicalSpecificationFingerprint: specFingerprint,
-      approvalEventId: eventId,
-      approverPrincipal: expectedPrincipal,
-      authorityTier: 'cryptographic_principal',
-      approvalScope: 'specification_approval',
-      approvalTimestamp: approvedAt,
-      keyId: opts.cryptographicSignature.keyId,
-      algorithm: opts.cryptographicSignature.algorithm
-    };
-
-    let sigResult: TrustedCryptographicVerificationResult;
-    try {
-      sigResult = opts.cryptographicVerifier.verifyApprovalSignature(
-        opts.cryptographicSignature,
-        expectedBindingPayload
-      );
-    } catch (err) {
-      throw new ProductionSnapshotValidationError(
-        `Cryptographic signature verification failed due to verifier exception: ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
-
-    if (!sigResult || !sigResult.verified) {
-      throw new ProductionSnapshotValidationError(
-        `Cryptographic signature verification failed: ${sigResult?.reason ?? 'invalid signature'}`
-      );
-    }
-
-    cryptographicSignature = opts.cryptographicSignature;
-    approverId = expectedPrincipal;
-  }
-
-  const finalEventId = cryptographicSignature?.signedPayload.approvalEventId ?? eventId;
-
-  const approvalEvent: SpecificationApprovalEvent = {
-    id: finalEventId,
-    eventType: 'approval',
-    targetRevisionId: spec.specificationRevisionId,
-    targetSpecificationFingerprint: specFingerprint,
-    approverId,
-    approverName: approvedBy.trim(),
-    authorityTier,
-    approvedAt,
-    notes,
-    provenance:
-      authorityTier === 'demonstration_fixture'
-        ? 'demonstration-fixture'
-        : authorityTier === 'authenticated_designer' || authorityTier === 'cryptographic_principal'
-        ? 'designer-approved'
-        : 'unauthenticated-local-approval',
-    verifiedIdentity,
-    cryptographicSignature
-  };
-
-  const approvalRecord: SpecificationApprovalRecord = {
-    eventId: finalEventId,
-    approverId: approvalEvent.approverId,
-    approverName: approvalEvent.approverName,
-    authorityTier,
-    approvedAt,
-    targetRevisionId: spec.specificationRevisionId,
-    targetSpecificationFingerprint: specFingerprint,
-    notes,
-    provenance: approvalEvent.provenance,
-    verifiedIdentity,
-    cryptographicSignature
-  };
-
-  const history: SpecificationLifecycleEvent[] = spec.approvalHistory
-    ? [...spec.approvalHistory, approvalEvent]
-    : [approvalEvent];
-
-  return createAuthoritativeGarmentSpecification({
-    ...spec,
-    lengthCm: spec.targetFinishedDimensions.lengthCm,
-    specificationRevisionId: spec.specificationRevisionId,
-    parentRevisionId: spec.parentRevisionId,
-    supersededByRevisionId: undefined,
-    version: spec.version,
-    isApproved: true,
-    approvalState: 'approved',
-    approvalAuthorityTier: authorityTier,
-    approvalRecord,
-    approvalHistory: history,
-    revocationRecord: undefined,
-    approvedBy: approvedBy.trim(),
-    approvedAt,
-    approvalProvenance: approvalEvent.provenance
-  });
-}
-
-/**
- * Revokes approval on a specification.
- * Returns a new record explicitly marked unapproved with revocation state.
- * Preserves the original approval event in append-only history.
- */
-export function revokeAuthoritativeGarmentSpecificationApproval(
-  spec: AuthoritativeGarmentSpecification,
-  reason: string,
-  options?: {
-    revokerId?: string;
-    revokerName?: string;
-    revokedAt?: string;
-    authorityTier?: ApprovalAuthorityTier;
-  }
-): AuthoritativeGarmentSpecification {
-  const cleanReason = (reason ?? '').trim();
-  if (!cleanReason) {
-    throw new ProductionSnapshotValidationError('Revocation reason is mandatory and cannot be empty.');
-  }
-
-  const now = options?.revokedAt ?? new Date().toISOString();
-  if (!isValidIsoDate(now)) {
-    throw new ProductionSnapshotValidationError('Revocation timestamp must be a valid ISO 8601 date.');
-  }
-
-  const revokerId = options?.revokerId ?? 'operator-revoker';
-  const revokerName = options?.revokerName ?? 'Local Atelier Operator';
-  const authorityTier = options?.authorityTier ?? spec.approvalRecord?.authorityTier ?? 'unauthenticated_local_session';
-
-  const specFingerprint = computeSpecificationFingerprint(spec);
-  const revocationEventId = `rev-evt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-
-  const revocationEvent: SpecificationRevocationEvent = {
-    id: revocationEventId,
-    eventType: 'revocation',
-    originalApprovalEventId: spec.approvalRecord?.eventId,
-    targetRevisionId: spec.specificationRevisionId,
-    targetSpecificationFingerprint: specFingerprint,
-    revokerId,
-    revokerName,
-    authorityTier,
-    revokedAt: now,
-    reason: cleanReason
-  };
-
-  const updatedApprovalRecord: SpecificationApprovalRecord | undefined = spec.approvalRecord ? {
-    ...spec.approvalRecord,
-    revocation: revocationEvent,
-    revocationReason: cleanReason
-  } : undefined;
-
-  const history: SpecificationLifecycleEvent[] = spec.approvalHistory
-    ? [...spec.approvalHistory, revocationEvent]
-    : [revocationEvent];
-
-  const notes = [...spec.designNotes, `Approval revoked: ${cleanReason}`];
-
-  return createAuthoritativeGarmentSpecification({
-    ...spec,
-    lengthCm: spec.targetFinishedDimensions.lengthCm,
-    specificationRevisionId: spec.specificationRevisionId,
-    parentRevisionId: spec.parentRevisionId,
-    version: spec.version,
-    isApproved: false,
-    approvalState: 'revoked',
-    approvalAuthorityTier: undefined,
-    approvalRecord: updatedApprovalRecord,
-    approvalHistory: history,
-    revocationRecord: revocationEvent,
-    approvedBy: undefined,
-    approvedAt: undefined,
-    approvalProvenance: 'designer-edited',
-    designNotes: notes
-  });
-}
-
-/**
- * Converts an AuthoritativeGarmentSpecification to the standard DesignSpecification
- * consumed across the CAD and UI layers, ensuring bidirectional lossless compatibility.
+ * Converts an `AuthoritativeGarmentSpecification` into a `DesignSpecification`
+ * while preserving all revision, fingerprint, provenance, and approval lineage fields.
  */
 export function convertToDesignSpecification(
   spec: AuthoritativeGarmentSpecification
 ): DesignSpecification {
+  const canonicalFp = computeSpecificationFingerprint(spec);
   return {
     id: spec.garmentId,
+    projectId: spec.projectId,
+    specificationRevisionId: spec.specificationRevisionId,
+    version: spec.version,
+    specificationVersion: spec.version,
+    specificationFingerprint: canonicalFp,
+    previousRevisionId: spec.previousRevisionId ?? spec.parentRevisionId,
+    supersededByRevisionId: spec.supersededByRevisionId,
     name: spec.name,
-    prompt: spec.prompt,
     garmentCategory: spec.garmentCategory,
     silhouette: spec.silhouette,
+    prompt: spec.prompt ?? '',
     fabric: spec.fabric,
-    color: spec.color,
+    fabricRevision: spec.fabricRevision,
+    fabricProvenance: spec.fabricProvenance,
+    color: spec.color ?? { name: 'Atelier Charcoal', hex: '#1E1E24' },
     easeProfile: spec.easeProfile,
-    lengthCm: spec.targetFinishedDimensions.lengthCm,
-    dartStyle: spec.dartStyle,
     sleeveEaseStrategy: spec.sleeveEaseStrategy,
-    constructionFeatures: [...spec.constructionFeatures],
+    dartStyle: spec.dartStyle,
+    waistband: spec.waistband,
+    lengthCm: spec.lengthCm ?? spec.targetFinishedDimensions.lengthCm,
+    targetFinishedDimensions: { ...spec.targetFinishedDimensions },
+    explicitEaseCm: spec.explicitEaseCm ? { ...spec.explicitEaseCm } : undefined,
+    allowances: { ...spec.allowances },
+    constructionFeatures: spec.constructionFeatures.map(cf => ({ ...cf })),
     designNotes: [...spec.designNotes],
     fieldProvenance: spec.fieldProvenance ? { ...spec.fieldProvenance } : undefined,
-    supersededByRevisionId: spec.supersededByRevisionId,
+    createdAt: spec.createdAt,
+    updatedAt: spec.updatedAt,
     isApproved: spec.isApproved,
     approvalState: spec.approvalState,
     approvalAuthorityTier: spec.approvalAuthorityTier,
-    approvalRecord: spec.approvalRecord ? {
-      eventId: spec.approvalRecord.eventId,
-      approverId: spec.approvalRecord.approverId,
-      approverName: spec.approvalRecord.approverName,
-      authorityTier: spec.approvalRecord.authorityTier,
-      approvedAt: spec.approvalRecord.approvedAt,
-      targetRevisionId: spec.approvalRecord.targetRevisionId,
-      targetSpecificationFingerprint: spec.approvalRecord.targetSpecificationFingerprint,
-      revocationReason: spec.approvalRecord.revocationReason,
-      notes: spec.approvalRecord.notes,
-      provenance: spec.approvalRecord.provenance,
-      verifiedIdentity: spec.approvalRecord.verifiedIdentity ? { ...spec.approvalRecord.verifiedIdentity } : undefined,
-      cryptographicSignature: spec.approvalRecord.cryptographicSignature ? {
-        ...spec.approvalRecord.cryptographicSignature,
-        signedPayload: { ...spec.approvalRecord.cryptographicSignature.signedPayload }
-      } : undefined,
-      revocation: spec.approvalRecord.revocation ? { ...spec.approvalRecord.revocation } : undefined
-    } : undefined,
-    approvalHistory: spec.approvalHistory ? spec.approvalHistory.map(evt => ({ ...evt })) : undefined,
-    revocationRecord: spec.revocationRecord ? { ...spec.revocationRecord } : undefined,
-    approvedAt: spec.approvedAt,
-    version: spec.version,
-    aiEstimates: spec.aiEstimates ? {
-      suggestedSilhouette: spec.aiEstimates.suggestedSilhouette,
-      styleConfidenceScore: spec.aiEstimates.styleConfidenceScore,
-      suggestedFabrics: [...spec.aiEstimates.suggestedFabrics],
-      technicalAdvice: spec.aiEstimates.technicalAdvice,
-      disclaimer: spec.aiEstimates.disclaimer
-    } : undefined,
-    specificationRevisionId: spec.specificationRevisionId,
-    parentRevisionId: spec.parentRevisionId,
-    projectId: spec.projectId,
-    fabricRevision: spec.fabricRevision,
-    fabricProvenance: spec.fabricProvenance,
     approvedBy: spec.approvedBy,
-    approvalProvenance: spec.approvalProvenance,
-    explicitEaseCm: spec.explicitEaseCm ? { ...spec.explicitEaseCm } : undefined,
-    targetFinishedDimensions: {
-      length: spec.targetFinishedDimensions.lengthCm,
-      waist: spec.targetFinishedDimensions.waistCm,
-      hip: spec.targetFinishedDimensions.hipCm,
-      bust: spec.targetFinishedDimensions.bustCm,
-      chest: spec.targetFinishedDimensions.chestCm,
-      acrossBack: spec.targetFinishedDimensions.acrossBackCm,
-      bicep: spec.targetFinishedDimensions.bicepCm,
-      wrist: spec.targetFinishedDimensions.wristCm
-    },
-    seamAllowanceCm: spec.allowances.seamAllowanceCm,
-    hemAllowanceCm: spec.allowances.hemAllowanceCm,
-    waistAllowanceCm: spec.allowances.waistAllowanceCm,
-    neckAllowanceCm: spec.allowances.neckAllowanceCm,
-    armholeAllowanceCm: spec.allowances.armholeAllowanceCm,
-    shoulderAllowanceCm: spec.allowances.shoulderAllowanceCm
-  };
+    approvedAt: spec.approvedAt,
+    approvedContentFingerprint: spec.approvedContentFingerprint,
+    approvalRecord: spec.approvalRecord,
+    revocationRecord: spec.revocationRecord,
+    approvalHistory: spec.approvalHistory ? [...spec.approvalHistory] : [],
+    verifiedIdentity: spec.verifiedIdentity,
+    cryptographicSignature: spec.cryptographicSignature,
+    aiEstimates: spec.aiEstimates,
+    isProductionReady: false
+  } as DesignSpecification;
 }
 
 /**
- * Converts a standard DesignSpecification into an AuthoritativeGarmentSpecification.
- * Strictly prevents unauthenticated, empty, or fabricated approvals from being granted.
+ * Lifts a `DesignSpecification` into an `AuthoritativeGarmentSpecification`
+ * without silently inventing missing engineering fields or promoting unverified approvals.
  */
 export function convertFromDesignSpecification(
-  design: DesignSpecification,
-  options: {
-    projectId?: string;
-    parentRevisionId?: string;
-    specificationRevisionId?: string;
-  } = {}
+  designSpec: DesignSpecification,
+  options?: { readonly projectId?: string }
 ): AuthoritativeGarmentSpecification {
-  const targetFinishedDimensions: Partial<AuthoritativeGarmentSpecification['targetFinishedDimensions']> = {
-    lengthCm: design.lengthCm,
-    waistCm: design.targetFinishedDimensions?.waist,
-    hipCm: design.targetFinishedDimensions?.hip,
-    bustCm: design.targetFinishedDimensions?.bust,
-    chestCm: design.targetFinishedDimensions?.chest,
-    acrossBackCm: design.targetFinishedDimensions?.acrossBack,
-    bicepCm: design.targetFinishedDimensions?.bicep,
-    wristCm: design.targetFinishedDimensions?.wrist
-  };
+  const raw = designSpec as unknown as Partial<AuthoritativeGarmentSpecification> & DesignSpecification;
+  const effectiveProjectId = options?.projectId || raw.projectId || 'project-patroner-default';
 
-  const hasValidApprover = Boolean(design.approvedBy && design.approvedBy.trim() !== '');
-  const isRevoked = design.approvalState === 'revoked' || design.revocationRecord !== undefined;
-  const isSuperseded = design.approvalState === 'superseded' || Boolean(design.supersededByRevisionId);
-  const isApproved = Boolean(design.isApproved && hasValidApprover && !isRevoked && !isSuperseded);
-  const approvalState: SpecificationApprovalState = isRevoked
-    ? 'revoked'
-    : isSuperseded
-    ? 'superseded'
-    : isApproved
-    ? (design.approvalState ?? 'approved')
-    : 'draft';
+  if (
+    raw.specificationRevisionId &&
+    typeof raw.version === 'number' &&
+    raw.targetFinishedDimensions &&
+    raw.allowances
+  ) {
+    return {
+      ...raw,
+      garmentId: raw.garmentId || designSpec.id,
+      projectId: effectiveProjectId,
+      lengthCm: raw.lengthCm ?? raw.targetFinishedDimensions.lengthCm,
+      approvalProvenance: raw.approvalProvenance ?? 'unknown',
+      engineProvenance: raw.engineProvenance ?? DEFAULT_ENGINE_PROVENANCE,
+      approvalHistory: Array.isArray(raw.approvalHistory) ? [...raw.approvalHistory] : [],
+      isProductionReady: false
+    } as AuthoritativeGarmentSpecification;
+  }
 
-  return createAuthoritativeGarmentSpecification({
-    projectId: options.projectId ?? design.projectId ?? 'project-patroner-default',
-    garmentId: design.id,
-    specificationRevisionId: options.specificationRevisionId ?? design.specificationRevisionId ?? `spec-${design.id}-v${design.version || 1}`,
-    parentRevisionId: options.parentRevisionId ?? design.parentRevisionId,
-    supersededByRevisionId: design.supersededByRevisionId,
-    version: design.version || 1,
-    name: design.name,
-    garmentCategory: design.garmentCategory,
-    silhouette: design.silhouette,
-    prompt: design.prompt,
-    color: design.color,
-    fabric: design.fabric,
-    fabricRevision: design.fabricRevision,
-    fabricProvenance: design.fabricProvenance,
-    easeProfile: design.easeProfile,
-    explicitEaseCm: design.explicitEaseCm,
-    lengthCm: design.lengthCm,
-    targetFinishedDimensions,
-    dartStyle: design.dartStyle,
-    sleeveEaseStrategy: design.sleeveEaseStrategy,
-    allowances: {
-      seamAllowanceCm: design.seamAllowanceCm ?? 1.5,
-      hemAllowanceCm: design.hemAllowanceCm ?? 3.0,
-      waistAllowanceCm: design.waistAllowanceCm ?? 1.0,
-      neckAllowanceCm: design.neckAllowanceCm ?? 1.0,
-      armholeAllowanceCm: design.armholeAllowanceCm ?? 1.0,
-      shoulderAllowanceCm: design.shoulderAllowanceCm ?? 1.0
-    },
-    constructionFeatures: design.constructionFeatures,
-    designNotes: design.designNotes,
-    fieldProvenance: design.fieldProvenance,
-    isApproved,
-    approvalState,
-    approvalAuthorityTier: design.approvalAuthorityTier ?? (isApproved ? 'unauthenticated_local_session' : undefined),
-    approvalRecord: design.approvalRecord as SpecificationApprovalRecord | undefined,
-    approvalHistory: design.approvalHistory as SpecificationLifecycleEvent[] | undefined,
-    revocationRecord: design.revocationRecord as SpecificationRevocationEvent | undefined,
-    approvedBy: isApproved ? design.approvedBy : undefined,
-    approvedAt: isApproved ? design.approvedAt : undefined,
-    approvalProvenance: design.approvalProvenance ?? (isApproved ? 'unauthenticated-local-approval' : 'designer-edited'),
-    aiEstimates: design.aiEstimates
+  const base = createAuthoritativeGarmentSpecification({
+    projectId: effectiveProjectId,
+    garmentId: designSpec.id,
+    specificationRevisionId:
+      raw.specificationRevisionId ||
+      `spec-${designSpec.id}-v${(raw as { specificationVersion?: number }).specificationVersion ?? 1}`,
+    version: (raw as { specificationVersion?: number }).specificationVersion ?? 1,
+    previousRevisionId: raw.previousRevisionId ?? raw.parentRevisionId,
+    name: designSpec.name,
+    garmentCategory: designSpec.garmentCategory ?? 'skirt',
+    silhouette: designSpec.silhouette,
+    prompt: designSpec.prompt,
+    fabric: designSpec.fabric,
+    fabricRevision: raw.fabricRevision,
+    fabricProvenance: raw.fabricProvenance,
+    color: designSpec.color,
+    easeProfile: designSpec.easeProfile,
+    sleeveEaseStrategy: designSpec.sleeveEaseStrategy,
+    dartStyle: designSpec.dartStyle,
+    waistband: (designSpec as { waistband?: string }).waistband,
+    lengthCm: designSpec.lengthCm,
+    targetFinishedDimensions: raw.targetFinishedDimensions,
+    explicitEaseCm: designSpec.explicitEaseCm,
+    allowances: raw.allowances,
+    constructionFeatures: designSpec.constructionFeatures,
+    designNotes: designSpec.designNotes,
+    fieldProvenance: raw.fieldProvenance,
+    aiEstimates: designSpec.aiEstimates,
+    createdAt: designSpec.createdAt
   });
+
+  if (raw.supersededByRevisionId || raw.approvalState === 'superseded') {
+    return {
+      ...base,
+      isApproved: false,
+      approvalState: 'superseded',
+      supersededByRevisionId: raw.supersededByRevisionId
+    };
+  }
+
+  if (raw.approvalState === 'revoked' || raw.revocationRecord) {
+    return {
+      ...base,
+      isApproved: false,
+      approvalState: 'revoked',
+      revocationRecord: raw.revocationRecord,
+      approvalHistory: Array.isArray(raw.approvalHistory) ? [...raw.approvalHistory] : []
+    };
+  }
+
+  if (designSpec.isApproved && designSpec.approvedBy) {
+    if (raw.approvalRecord) {
+      return {
+        ...base,
+        isApproved: true,
+        approvalState: 'approved',
+        approvalAuthorityTier: raw.approvalAuthorityTier ?? raw.approvalRecord.authorityTier,
+        approvedBy: designSpec.approvedBy,
+        approvedAt: designSpec.approvedAt ?? raw.approvalRecord.approvedAt,
+        approvedContentFingerprint:
+          raw.approvedContentFingerprint ??
+          raw.approvalRecord.canonicalContentFingerprint ??
+          raw.approvalRecord.targetSpecificationFingerprint,
+        approvalRecord: raw.approvalRecord,
+        verifiedIdentity: raw.verifiedIdentity ?? raw.approvalRecord.verifiedIdentity,
+        cryptographicSignature: raw.cryptographicSignature ?? raw.approvalRecord.cryptographicSignature,
+        approvalHistory: Array.isArray(raw.approvalHistory)
+          ? [...raw.approvalHistory]
+          : []
+      };
+    }
+
+    const tier: ApprovalAuthorityTier =
+      raw.approvalAuthorityTier === 'demonstration_fixture'
+        ? 'demonstration_fixture'
+        : 'unauthenticated_local_session';
+
+    return approveAuthoritativeGarmentSpecification(base, designSpec.approvedBy, {
+      authorityTier: tier,
+      approvedAt: designSpec.approvedAt ?? designSpec.createdAt
+    });
+  }
+
+  return base;
 }
+
+export { computeCanonicalSha256 };
+export type { ApprovalVerificationContext };

@@ -61,10 +61,12 @@ export const CURRENT_SNAPSHOT_ENGINE = 'Patroner Production Revision Engine';
 
 export const VALID_MEASUREMENT_ORIGINS: readonly MeasurementOrigin[] = [
   'user-entered',
+  'operator-confirmed',
   'standard-chart',
   'physically-measured',
   'imported',
   'ai-estimated',
+  'synthetic-fixture',
   'unknown'
 ] as const;
 
@@ -377,12 +379,12 @@ export function serializePatternPieceSnapshot(
  * - AI-estimated measurements remain pending unless explicit human approval metadata is supplied.
  */
 export function createMeasurementSetSnapshot(
-  values: Record<string, number>,
+  values: Readonly<Record<string, number>>,
   options: {
     defaultOrigin?: MeasurementOrigin;
-    perMeasurementOrigin?: Record<string, MeasurementOrigin>;
+    perMeasurementOrigin?: Readonly<Record<string, MeasurementOrigin>>;
     approval?: Partial<MeasurementApprovalRecord>;
-    notes?: string[];
+    notes?: readonly string[];
   } = {}
 ): MeasurementSetSnapshot {
   if (!values || typeof values !== 'object' || Object.keys(values).length === 0) {
@@ -434,6 +436,15 @@ export function createMeasurementSetSnapshot(
   const isAiOrigin =
     defaultOrigin === 'ai-estimated' ||
     Object.values(perMeasurementOrigin).includes('ai-estimated');
+  const isSyntheticOrigin =
+    defaultOrigin === 'synthetic-fixture' ||
+    Object.values(perMeasurementOrigin).includes('synthetic-fixture');
+
+  if (isSyntheticOrigin && requestedState === 'approved') {
+    throw new ProductionSnapshotMeasurementError(
+      'Synthetic fixture measurements cannot be marked as approved for production.'
+    );
+  }
 
   if (isAiOrigin && requestedState === 'approved') {
     if (!options.approval?.approvedBy || !options.approval?.approvedAt) {
@@ -553,10 +564,20 @@ export function createAuthoritativeMeasurementSet(
     );
   }
 
+  const hasSyntheticValues =
+    source === 'synthetic-fixture' ||
+    provenance === 'synthetic-fixture' ||
+    Object.values(perMeasurementOrigin).includes('synthetic-fixture');
+
   if (approvalState === 'approved') {
     if (hasAiInActiveValues) {
       throw new ProductionSnapshotMeasurementError(
         'AI-estimated measurements must be stored separately and cannot be marked as approved physical or authoritative measurements.'
+      );
+    }
+    if (hasSyntheticValues) {
+      throw new ProductionSnapshotMeasurementError(
+        'Synthetic fixture measurements cannot be marked as approved authoritative measurements.'
       );
     }
     if (source === 'unknown' || provenance === 'unknown') {
@@ -732,6 +753,17 @@ export function verifyMeasurementSetIntegrity(
       isValid: false,
       isApproved: false,
       reason: 'Per-measurement origin contains AI-estimated values.'
+    };
+  }
+  if (
+    record.source === 'synthetic-fixture' ||
+    record.provenance === 'synthetic-fixture' ||
+    (record.perMeasurementOrigin && Object.values(record.perMeasurementOrigin).includes('synthetic-fixture'))
+  ) {
+    return {
+      isValid: false,
+      isApproved: false,
+      reason: 'Synthetic fixture measurements are not permitted as authoritative production measurements.'
     };
   }
   if (record.source === 'unknown' || record.provenance === 'unknown') {
@@ -969,6 +1001,9 @@ export function canonicalizeJson(value: unknown): string {
     if (typeof value === 'number') {
       return Number.isFinite(value) ? value.toString() : 'null';
     }
+    if (typeof value === 'string') {
+      return JSON.stringify(value.normalize('NFC'));
+    }
     return JSON.stringify(value);
   }
 
@@ -980,7 +1015,7 @@ export function canonicalizeJson(value: unknown): string {
   const keys = Object.keys(value as Record<string, unknown>).sort();
   const entries = keys
     .filter(k => (value as Record<string, unknown>)[k] !== undefined)
-    .map(k => `${JSON.stringify(k)}:${canonicalizeJson((value as Record<string, unknown>)[k])}`);
+    .map(k => `${JSON.stringify(k.normalize('NFC'))}:${canonicalizeJson((value as Record<string, unknown>)[k])}`);
 
   return `{${entries.join(',')}}`;
 }
@@ -1443,7 +1478,11 @@ export function computeCanonicalGradingArtifactFingerprint(
     gradingRevisionId: artifact.gradingRevisionId,
     tenantId: artifact.tenantId,
     projectId: artifact.projectId,
+    organizationScope: artifact.organizationScope ?? null,
     sourcePatternRevisionId: artifact.sourcePatternRevisionId,
+    sourcePatternSnapshotFingerprint: artifact.sourcePatternSnapshotFingerprint ?? null,
+    draftingFingerprint: artifact.draftingFingerprint ?? null,
+    cadGeometryFingerprint: artifact.cadGeometryFingerprint ?? null,
     sourceSpecificationId: artifact.sourceSpecificationId,
     sourceSpecificationRevisionId: artifact.sourceSpecificationRevisionId,
     sourceSpecificationFingerprint: artifact.sourceSpecificationFingerprint,
@@ -1456,11 +1495,14 @@ export function computeCanonicalGradingArtifactFingerprint(
     gradingRuleSetFingerprint: artifact.gradingRuleSetFingerprint,
     perSizePatternGeometry: artifact.perSizePatternGeometry,
     geometryValidationResult: artifact.geometryValidationResult,
+    perSizeGeometryValidation: artifact.perSizeGeometryValidation ?? artifact.geometryValidationResult,
     gradingValidationResult: artifact.gradingValidationResult,
+    crossSizeIntegrityReport: artifact.crossSizeIntegrityReport ?? artifact.gradingValidationResult,
     createdAt: artifact.createdAt,
     lifecycleState: artifact.lifecycleState,
     supersededByRevisionId: artifact.supersededByRevisionId ?? null,
     revocationReason: artifact.revocationReason ?? null,
+    revokedAt: artifact.revokedAt ?? null,
     isProductionReady: false as const
   };
   return computeCanonicalFingerprint(payload);
@@ -1665,7 +1707,11 @@ export function createAuthoritativeGradingArtifact(
     gradingRevisionId,
     tenantId,
     projectId,
+    organizationScope: input.organizationScope?.trim(),
     sourcePatternRevisionId: input.sourcePatternRevisionId.trim(),
+    sourcePatternSnapshotFingerprint: input.sourcePatternSnapshotFingerprint?.trim(),
+    draftingFingerprint: input.draftingFingerprint?.trim(),
+    cadGeometryFingerprint: input.cadGeometryFingerprint?.trim(),
     sourceSpecificationId: input.sourceSpecificationId.trim(),
     sourceSpecificationRevisionId: input.sourceSpecificationRevisionId.trim(),
     sourceSpecificationFingerprint: input.sourceSpecificationFingerprint.trim(),
@@ -1755,6 +1801,7 @@ export function verifyGradingArtifactIntegrity(
   readonly isSizeRangeIncomplete: boolean;
   readonly isValidationFailed: boolean;
   readonly reason?: string;
+  readonly errors: readonly string[];
 } {
   if (!artifact || typeof artifact !== 'object') {
     return {
@@ -1762,17 +1809,20 @@ export function verifyGradingArtifactIntegrity(
       isTampered: false,
       isSizeRangeIncomplete: false,
       isValidationFailed: false,
-      reason: 'AuthoritativeGradingArtifact is missing.'
+      reason: 'AuthoritativeGradingArtifact is missing.',
+      errors: ['AuthoritativeGradingArtifact is missing.']
     };
   }
 
   if ((artifact as unknown as { isProductionReady: boolean }).isProductionReady !== false) {
+    const reason = 'Industrial safety violation: grading artifact asserts isProductionReady !== false.';
     return {
       isValid: false,
       isTampered: true,
       isSizeRangeIncomplete: false,
       isValidationFailed: false,
-      reason: 'Industrial safety violation: grading artifact asserts isProductionReady !== false.'
+      reason,
+      errors: [reason]
     };
   }
 
@@ -1792,73 +1842,155 @@ export function verifyGradingArtifactIntegrity(
     !artifact.createdAt ||
     !isValidIsoDate(artifact.createdAt)
   ) {
+    const reason = 'Grading artifact is missing one or more mandatory lineage identifiers or timestamps.';
     return {
       isValid: false,
       isTampered: false,
       isSizeRangeIncomplete: false,
       isValidationFailed: true,
-      reason: 'Grading artifact is missing one or more mandatory lineage identifiers or timestamps.'
+      reason,
+      errors: [reason]
+    };
+  }
+
+  // Verify alias consistency (FINDING-12)
+  const rawAliases = artifact as unknown as {
+    artifactId?: string;
+    revisionId?: string;
+    fingerprint?: string;
+  };
+  if (rawAliases.artifactId !== undefined && rawAliases.artifactId !== artifact.gradingArtifactId) {
+    const reason = `Grading artifact alias inconsistency: artifactId ('${rawAliases.artifactId}') diverges from gradingArtifactId ('${artifact.gradingArtifactId}').`;
+    return {
+      isValid: false,
+      isTampered: true,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason,
+      errors: [reason]
+    };
+  }
+  if (rawAliases.revisionId !== undefined && rawAliases.revisionId !== artifact.gradingRevisionId) {
+    const reason = `Grading artifact alias inconsistency: revisionId ('${rawAliases.revisionId}') diverges from gradingRevisionId ('${artifact.gradingRevisionId}').`;
+    return {
+      isValid: false,
+      isTampered: true,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason,
+      errors: [reason]
+    };
+  }
+  if (rawAliases.fingerprint !== undefined && rawAliases.fingerprint !== artifact.canonicalFingerprint) {
+    const reason = 'Grading artifact alias inconsistency: fingerprint diverges from canonicalFingerprint.';
+    return {
+      isValid: false,
+      isTampered: true,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason,
+      errors: [reason]
+    };
+  }
+  if (
+    artifact.perSizeGeometryValidation &&
+    canonicalizeJson(artifact.perSizeGeometryValidation) !== canonicalizeJson(artifact.geometryValidationResult)
+  ) {
+    const reason = 'Grading artifact alias inconsistency: perSizeGeometryValidation diverges from geometryValidationResult.';
+    return {
+      isValid: false,
+      isTampered: true,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason,
+      errors: [reason]
+    };
+  }
+  if (
+    artifact.crossSizeIntegrityReport &&
+    canonicalizeJson(artifact.crossSizeIntegrityReport) !== canonicalizeJson(artifact.gradingValidationResult)
+  ) {
+    const reason = 'Grading artifact alias inconsistency: crossSizeIntegrityReport diverges from gradingValidationResult.';
+    return {
+      isValid: false,
+      isTampered: true,
+      isSizeRangeIncomplete: false,
+      isValidationFailed: false,
+      reason,
+      errors: [reason]
     };
   }
 
   try {
     const recomputedFp = computeCanonicalGradingArtifactFingerprint(artifact);
     if (recomputedFp !== artifact.canonicalFingerprint) {
+      const reason = 'Grading artifact canonicalFingerprint mismatch; grading geometry or metadata was tampered with.';
       return {
         isValid: false,
         isTampered: true,
         isSizeRangeIncomplete: false,
         isValidationFailed: false,
-        reason: 'Grading artifact canonicalFingerprint mismatch; grading geometry or metadata was tampered with.'
+        reason,
+        errors: [reason]
       };
     }
   } catch (err) {
+    const reason = `Unable to recompute grading artifact fingerprint: ${err instanceof Error ? err.message : String(err)}`;
     return {
       isValid: false,
       isTampered: true,
       isSizeRangeIncomplete: false,
       isValidationFailed: false,
-      reason: `Unable to recompute grading artifact fingerprint: ${err instanceof Error ? err.message : String(err)}`
+      reason,
+      errors: [reason]
     };
   }
 
   if (artifact.lifecycleState === 'revoked' || Boolean(artifact.revocationReason)) {
+    const reason = `Grading artifact '${artifact.gradingArtifactId}' has been revoked${artifact.revocationReason ? `: ${artifact.revocationReason}` : ''}.`;
     return {
       isValid: false,
       isTampered: false,
       isSizeRangeIncomplete: false,
       isValidationFailed: false,
-      reason: `Grading artifact '${artifact.gradingArtifactId}' has been revoked${artifact.revocationReason ? `: ${artifact.revocationReason}` : ''}.`
+      reason,
+      errors: [reason]
     };
   }
 
   if (artifact.lifecycleState === 'superseded' || Boolean(artifact.supersededByRevisionId)) {
+    const reason = `Grading artifact '${artifact.gradingArtifactId}' has been superseded by '${artifact.supersededByRevisionId ?? 'newer revision'}'.`;
     return {
       isValid: false,
       isTampered: false,
       isSizeRangeIncomplete: false,
       isValidationFailed: false,
-      reason: `Grading artifact '${artifact.gradingArtifactId}' has been superseded by '${artifact.supersededByRevisionId ?? 'newer revision'}'.`
+      reason,
+      errors: [reason]
     };
   }
 
   if (artifact.lifecycleState !== 'active') {
+    const reason = `Grading artifact lifecycleState '${artifact.lifecycleState}' is not active.`;
     return {
       isValid: false,
       isTampered: false,
       isSizeRangeIncomplete: false,
       isValidationFailed: false,
-      reason: `Grading artifact lifecycleState '${artifact.lifecycleState}' is not active.`
+      reason,
+      errors: [reason]
     };
   }
 
   if (!Array.isArray(artifact.sizeRange) || artifact.sizeRange.length < 2 || !artifact.sizeRange.includes(artifact.baseSize)) {
+    const reason = `Grading artifact sizeRange [${(artifact.sizeRange ?? []).join(', ')}] is incomplete or missing baseSize '${artifact.baseSize}'.`;
     return {
       isValid: false,
       isTampered: false,
       isSizeRangeIncomplete: true,
       isValidationFailed: false,
-      reason: `Grading artifact sizeRange [${(artifact.sizeRange ?? []).join(', ')}] is incomplete or missing baseSize '${artifact.baseSize}'.`
+      reason,
+      errors: [reason]
     };
   }
 
@@ -1866,12 +1998,14 @@ export function verifyGradingArtifactIntegrity(
     const szPieces = artifact.perSizePatternGeometry?.[sz];
     const szVal = artifact.geometryValidationResult?.[sz];
     if (!Array.isArray(szPieces) || szPieces.length === 0 || !szVal) {
+      const reason = `Grading artifact is missing pattern geometry or geometry validation record for declared size '${sz}'.`;
       return {
         isValid: false,
         isTampered: false,
         isSizeRangeIncomplete: true,
         isValidationFailed: false,
-        reason: `Grading artifact is missing pattern geometry or geometry validation record for declared size '${sz}'.`
+        reason,
+        errors: [reason]
       };
     }
     for (const p of szPieces) {
@@ -1885,22 +2019,26 @@ export function verifyGradingArtifactIntegrity(
         !Number.isFinite(p.boundingBox.heightCm) ||
         p.boundingBox.heightCm <= 0
       ) {
+        const reason = `Graded piece '${p?.pieceCode ?? 'unknown'}' in size '${sz}' has invalid or empty geometry.`;
         return {
           isValid: false,
           isTampered: false,
           isSizeRangeIncomplete: true,
           isValidationFailed: true,
-          reason: `Graded piece '${p?.pieceCode ?? 'unknown'}' in size '${sz}' has invalid or empty geometry.`
+          reason,
+          errors: [reason]
         };
       }
     }
     if (!szVal.isValid || szVal.status === 'invalid' || szVal.status === 'unassessed-missing-data' || (szVal.errors && szVal.errors.length > 0)) {
+      const reason = `Grading geometry validation failed for size '${sz}': ${(szVal.errors ?? []).join('; ') || szVal.status}`;
       return {
         isValid: false,
         isTampered: false,
         isSizeRangeIncomplete: false,
         isValidationFailed: true,
-        reason: `Grading geometry validation failed for size '${sz}': ${(szVal.errors ?? []).join('; ') || szVal.status}`
+        reason,
+        errors: [reason]
       };
     }
   }
@@ -1914,12 +2052,14 @@ export function verifyGradingArtifactIntegrity(
     gvr.validSizeCount !== artifact.sizeRange.length ||
     (Array.isArray(gvr.checks) && gvr.checks.some(c => c.status === 'fail'))
   ) {
+    const reason = 'Cross-size grading integrity report indicates failed or unassessed sizes.';
     return {
       isValid: false,
       isTampered: false,
       isSizeRangeIncomplete: false,
       isValidationFailed: true,
-      reason: 'Cross-size grading integrity report indicates failed or unassessed sizes.'
+      reason,
+      errors: [reason]
     };
   }
 
@@ -1927,6 +2067,7 @@ export function verifyGradingArtifactIntegrity(
     isValid: true,
     isTampered: false,
     isSizeRangeIncomplete: false,
-    isValidationFailed: false
+    isValidationFailed: false,
+    errors: []
   };
 }

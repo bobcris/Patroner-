@@ -109,6 +109,7 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
   const canApproveMeasurements =
     validation.isValid &&
     measurementProvenance !== 'ai-estimated' &&
+    measurementProvenance !== 'synthetic-fixture' &&
     measurementProvenance !== 'unknown';
 
   return (
@@ -169,7 +170,7 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
               onChange={e => {
                 const nextOrigin = e.target.value as MeasurementOrigin;
                 onUpdateMeasurementProvenance?.(nextOrigin);
-                if (nextOrigin === 'ai-estimated' || nextOrigin === 'unknown') {
+                if (nextOrigin === 'ai-estimated' || nextOrigin === 'synthetic-fixture' || nextOrigin === 'unknown') {
                   onUpdateMeasurementApproval?.('unverified');
                 }
               }}
@@ -177,8 +178,11 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
             >
               <option value="standard-chart">standard-chart (ISO 13402)</option>
               <option value="user-entered">user-entered (Bespoke Operator)</option>
+              <option value="operator-confirmed">operator-confirmed (Confirmed Profile)</option>
               <option value="physically-measured">physically-measured (Direct Tape)</option>
+              <option value="imported">imported (External Profile)</option>
               <option value="ai-estimated">ai-estimated (Non-Authoritative)</option>
+              <option value="synthetic-fixture">synthetic-fixture (Test Fixture Only)</option>
               <option value="unknown">unknown (Unverified Origin)</option>
             </select>
 

@@ -11,3 +11,6 @@ export * from './garment-specification-types';
 export * from './garment-specification';
 export * from './dependency-types';
 export * from './dependency-invalidation';
+
+export { canonicalizeJson } from './pattern-revision-snapshot';
+export type { OidcJwtHeader, OidcJwtPayload } from './garment-specification-types';

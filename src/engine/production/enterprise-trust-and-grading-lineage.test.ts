@@ -29,6 +29,7 @@ import {
   verifySpecificationApproval,
   convertToDesignSpecification,
   deriveEd25519SigningKeyPair,
+  createControlledPublicKeyRegistration,
   createOidcPublicJwk,
   issueVerifiableIdentityCredential,
   createTrustedIdentityVerifier,
@@ -865,7 +866,10 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
           issuedAt: '2026-11-10T09:30:00.000Z',
           notBefore: '2026-11-10T09:30:00.000Z',
           expiresAt: '2026-11-10T11:30:00.000Z',
-          claims: ['specification:approve']
+          claims: ['specification:approve'],
+          specificationId: draft.garmentId,
+          targetRevisionId: draft.specificationRevisionId,
+          targetSpecificationFingerprint: computeSpecificationFingerprint(draft)
         },
         idpSeed
       );
@@ -1347,9 +1351,33 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
   describe('Phase 3 & 4: Complete Grading Export Lineage & Mandatory Export Verification', () => {
     function buildCompleteExportPipelineFixture() {
       const draft = createDraftSkirtSpec();
+      const signingKey = deriveEd25519SigningKeyPair(
+        'ed25519-key-export-pipeline-01',
+        'enterprise-export-pipeline-seed-2026'
+      );
+      const cryptographicVerifier = createTrustedCryptographicVerifier({
+        publicKeyRegistry: [
+          createControlledPublicKeyRegistration({
+            keyId: signingKey.keyId,
+            publicKeyHex: signingKey.publicKeyHex,
+            principalId: 'principal-master-tailor-01',
+            tenantId: 'tenant-atelier-01',
+            allowedScopes: ['specification:approve'],
+            activatedAt: '2026-01-01T00:00:00.000Z',
+            expiresAt: '2027-01-01T00:00:00.000Z'
+          })
+        ]
+      });
+
       const spec = approveAuthoritativeGarmentSpecification(draft, 'Certified Master Tailor', {
-        authorityTier: 'unauthenticated_local_session',
-        approvedAt: '2026-11-10T09:00:00.000Z'
+        authorityTier: 'cryptographic_principal',
+        approverId: 'principal-master-tailor-01',
+        approvedAt: '2026-11-10T09:00:00.000Z',
+        cryptographicKeyConfig: {
+          keyId: signingKey.keyId,
+          privateKeyHex: signingKey.privateKeyHex
+        },
+        cryptographicVerifier
       });
       const designSpec = convertToDesignSpecification(spec);
       const pieces = draftSkirtBlock(sizeM, designSpec);
@@ -1413,6 +1441,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         sourceSpecificationRevisionId: spec.specificationRevisionId,
         sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
         sourcePatternRevisionId: snapshot.revisionId,
+        sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,
@@ -1430,14 +1459,27 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         patternPieces: pieces,
         validationReport: validReport,
         productionSnapshot: snapshot,
-        gradingArtifact
+        gradingArtifact,
+        verificationContext: { cryptographicVerifier }
       });
 
-      return { spec, designSpec, pieces, graded, snapshot, gradingArtifact, report, measFp, gradingRulesFp };
+      return {
+        spec,
+        designSpec,
+        pieces,
+        graded,
+        snapshot,
+        gradingArtifact,
+        report,
+        measFp,
+        gradingRulesFp,
+        cryptographicVerifier
+      };
     }
 
     it('Grading 1: graded export succeeds when specification, measurements, fabric, base draft, geometry validation, grading artifact, and production snapshot are all current and valid', () => {
-      const { spec, pieces, snapshot, gradingArtifact, report } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, snapshot, gradingArtifact, report, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       assert.equal(gradingArtifact.isProductionReady, false);
       assert.equal(report.artifacts.grading.status, 'current');
@@ -1450,6 +1492,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         patternPieces: pieces,
         validationReport: validReport,
         gradingArtifact,
+        verificationContext: { cryptographicVerifier },
         exportGradingPolicy: {
           mode: 'graded-multi-size',
           requiredSizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
@@ -1464,7 +1507,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 2: graded export fails when gradingArtifact is omitted (never infers grading applicability from omission)', () => {
-      const { spec, pieces, snapshot } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, snapshot, cryptographicVerifier } = buildCompleteExportPipelineFixture();
 
       const reportWithoutGrading = evaluatePipelineDependencyIntegrity({
         specification: spec,
@@ -1473,7 +1516,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        verificationContext: { cryptographicVerifier }
       });
 
       const exportRes = validateProductionExportPrerequisites(reportWithoutGrading, snapshot, {
@@ -1481,7 +1525,11 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
-        validationReport: validReport
+        validationReport: validReport,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: {
+          mode: 'graded-multi-size'
+        }
         // gradingArtifact intentionally omitted!
       });
 
@@ -1490,7 +1538,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 3: graded export fails when gradingArtifact fingerprint is tampered', () => {
-      const { spec, pieces, snapshot, gradingArtifact, report } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, snapshot, gradingArtifact, report, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const tamperedGrading = {
         ...gradingArtifact,
@@ -1503,7 +1552,9 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: tamperedGrading
+        gradingArtifact: tamperedGrading,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
 
       assert.equal(exportRes.isExportPermitted, false);
@@ -1520,7 +1571,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        verificationContext: { cryptographicVerifier }
       });
       const directRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
         specification: spec,
@@ -1528,14 +1580,17 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: tamperedGrading
+        gradingArtifact: tamperedGrading,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
       assert.equal(directRes.isExportPermitted, false);
       assert.equal(directRes.rejectionCode, 'GRADING_ARTIFACT_TAMPERED');
     });
 
     it('Grading 4: graded export fails when gradingArtifact.sourceSpecificationRevisionId is stale', () => {
-      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const staleRevGrading = createAuthoritativeGradingArtifact({
         projectId: 'tenant-atelier-01',
@@ -1544,6 +1599,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         sourceSpecificationRevisionId: 'spec-skirt-enterprise-01-v0-stale',
         sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
         sourcePatternRevisionId: snapshot.revisionId,
+        sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,
@@ -1553,23 +1609,27 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         basePatternPieces: pieces
       });
 
-      const reportNoGa = evaluatePipelineDependencyIntegrity({
+      const reportStale = evaluatePipelineDependencyIntegrity({
         specification: spec,
         measurements: sizeM,
         activeSize: 'M',
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        gradingArtifact: staleRevGrading,
+        verificationContext: { cryptographicVerifier }
       });
 
-      const exportRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const exportRes = validateProductionExportPrerequisites(reportStale, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: staleRevGrading
+        gradingArtifact: staleRevGrading,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
 
       assert.equal(exportRes.isExportPermitted, false);
@@ -1577,7 +1637,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 5: graded export fails when gradingArtifact.sourceSpecificationFingerprint is stale', () => {
-      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const staleSpecFpGrading = createAuthoritativeGradingArtifact({
         projectId: 'tenant-atelier-01',
@@ -1586,6 +1647,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         sourceSpecificationRevisionId: spec.specificationRevisionId,
         sourceSpecificationFingerprint: 'a'.repeat(64), // Stale specification fingerprint
         sourcePatternRevisionId: snapshot.revisionId,
+        sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,
@@ -1595,23 +1657,27 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         basePatternPieces: pieces
       });
 
-      const reportNoGa = evaluatePipelineDependencyIntegrity({
+      const reportStale = evaluatePipelineDependencyIntegrity({
         specification: spec,
         measurements: sizeM,
         activeSize: 'M',
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        gradingArtifact: staleSpecFpGrading,
+        verificationContext: { cryptographicVerifier }
       });
 
-      const exportRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const exportRes = validateProductionExportPrerequisites(reportStale, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: staleSpecFpGrading
+        gradingArtifact: staleSpecFpGrading,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
 
       assert.equal(exportRes.isExportPermitted, false);
@@ -1619,7 +1685,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 6: graded export fails when gradingArtifact.sourcePatternRevisionId is stale', () => {
-      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const stalePatRevGrading = createAuthoritativeGradingArtifact({
         projectId: 'tenant-atelier-01',
@@ -1628,6 +1695,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         sourceSpecificationRevisionId: spec.specificationRevisionId,
         sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
         sourcePatternRevisionId: 'rev-obsolete-pattern-000',
+        sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,
@@ -1637,23 +1705,27 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         basePatternPieces: pieces
       });
 
-      const reportNoGa = evaluatePipelineDependencyIntegrity({
+      const reportStale = evaluatePipelineDependencyIntegrity({
         specification: spec,
         measurements: sizeM,
         activeSize: 'M',
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        gradingArtifact: stalePatRevGrading,
+        verificationContext: { cryptographicVerifier }
       });
 
-      const exportRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const exportRes = validateProductionExportPrerequisites(reportStale, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: stalePatRevGrading
+        gradingArtifact: stalePatRevGrading,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
 
       assert.equal(exportRes.isExportPermitted, false);
@@ -1661,7 +1733,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 7: graded export fails when gradingArtifact.sourceMeasurementSetFingerprint is stale', () => {
-      const { spec, pieces, graded, snapshot, gradingRulesFp } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, graded, snapshot, gradingRulesFp, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const staleMeasFpGrading = createAuthoritativeGradingArtifact({
         projectId: 'tenant-atelier-01',
@@ -1670,6 +1743,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         sourceSpecificationRevisionId: spec.specificationRevisionId,
         sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
         sourcePatternRevisionId: snapshot.revisionId,
+        sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: 'b'.repeat(64), // Stale measurement set fingerprint
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,
@@ -1679,23 +1753,27 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         basePatternPieces: pieces
       });
 
-      const reportNoGa = evaluatePipelineDependencyIntegrity({
+      const reportStale = evaluatePipelineDependencyIntegrity({
         specification: spec,
         measurements: sizeM,
         activeSize: 'M',
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        gradingArtifact: staleMeasFpGrading,
+        verificationContext: { cryptographicVerifier }
       });
 
-      const exportRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const exportRes = validateProductionExportPrerequisites(reportStale, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: staleMeasFpGrading
+        gradingArtifact: staleMeasFpGrading,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
 
       assert.equal(exportRes.isExportPermitted, false);
@@ -1703,7 +1781,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 8: graded export fails when gradingArtifact.gradingRuleSetFingerprint is stale', () => {
-      const { spec, pieces, graded, snapshot, measFp } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, graded, snapshot, measFp, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const staleRuleFpGrading = createAuthoritativeGradingArtifact({
         projectId: 'tenant-atelier-01',
@@ -1712,6 +1791,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         sourceSpecificationRevisionId: spec.specificationRevisionId,
         sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
         sourcePatternRevisionId: snapshot.revisionId,
+        sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: 'c'.repeat(64), // Stale grading rules fingerprint
@@ -1721,23 +1801,27 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         basePatternPieces: pieces
       });
 
-      const reportNoGa = evaluatePipelineDependencyIntegrity({
+      const reportStale = evaluatePipelineDependencyIntegrity({
         specification: spec,
         measurements: sizeM,
         activeSize: 'M',
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        gradingArtifact: staleRuleFpGrading,
+        verificationContext: { cryptographicVerifier }
       });
 
-      const exportRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const exportRes = validateProductionExportPrerequisites(reportStale, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: staleRuleFpGrading
+        gradingArtifact: staleRuleFpGrading,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
 
       assert.equal(exportRes.isExportPermitted, false);
@@ -1745,7 +1829,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 9: graded export fails when any required size is missing from perSizePatternGeometry or sizeRange', () => {
-      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       // Create artifact with only S, M, L but require XS, S, M, L, XL, XXL at export
       const partialSizeGrading = createAuthoritativeGradingArtifact({
@@ -1755,6 +1840,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         sourceSpecificationRevisionId: spec.specificationRevisionId,
         sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
         sourcePatternRevisionId: snapshot.revisionId,
+        sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,
@@ -1764,23 +1850,26 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         basePatternPieces: pieces
       });
 
-      const reportNoGa = evaluatePipelineDependencyIntegrity({
+      const reportPartial = evaluatePipelineDependencyIntegrity({
         specification: spec,
         measurements: sizeM,
         activeSize: 'M',
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        gradingArtifact: partialSizeGrading,
+        verificationContext: { cryptographicVerifier }
       });
 
-      const exportRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const exportRes = validateProductionExportPrerequisites(reportPartial, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
         gradingArtifact: partialSizeGrading,
+        verificationContext: { cryptographicVerifier },
         exportGradingPolicy: {
           mode: 'graded-multi-size',
           requiredSizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
@@ -1792,7 +1881,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 10: graded export fails when any size fails perSizeGeometryValidation', () => {
-      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const failedSizeValidationGrading = createAuthoritativeGradingArtifact({
         projectId: 'tenant-atelier-01',
@@ -1801,6 +1891,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         sourceSpecificationRevisionId: spec.specificationRevisionId,
         sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
         sourcePatternRevisionId: snapshot.revisionId,
+        sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,
@@ -1813,23 +1904,27 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         }
       });
 
-      const reportNoGa = evaluatePipelineDependencyIntegrity({
+      const reportFailedSize = evaluatePipelineDependencyIntegrity({
         specification: spec,
         measurements: sizeM,
         activeSize: 'M',
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        gradingArtifact: failedSizeValidationGrading,
+        verificationContext: { cryptographicVerifier }
       });
 
-      const exportRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const exportRes = validateProductionExportPrerequisites(reportFailedSize, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: failedSizeValidationGrading
+        gradingArtifact: failedSizeValidationGrading,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
 
       assert.equal(exportRes.isExportPermitted, false);
@@ -1837,7 +1932,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 11: graded export fails when crossSizeIntegrityReport is invalid', () => {
-      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, graded, snapshot, measFp, gradingRulesFp, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const failedCrossSizeGrading = createAuthoritativeGradingArtifact({
         projectId: 'tenant-atelier-01',
@@ -1846,6 +1942,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         sourceSpecificationRevisionId: spec.specificationRevisionId,
         sourceSpecificationFingerprint: computeSpecificationFingerprint(spec),
         sourcePatternRevisionId: snapshot.revisionId,
+        sourcePatternSnapshotFingerprint: snapshot.canonicalFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,
@@ -1860,23 +1957,27 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         }
       });
 
-      const reportNoGa = evaluatePipelineDependencyIntegrity({
+      const reportFailedCross = evaluatePipelineDependencyIntegrity({
         specification: spec,
         measurements: sizeM,
         activeSize: 'M',
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        gradingArtifact: failedCrossSizeGrading,
+        verificationContext: { cryptographicVerifier }
       });
 
-      const exportRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const exportRes = validateProductionExportPrerequisites(reportFailedCross, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: failedCrossSizeGrading
+        gradingArtifact: failedCrossSizeGrading,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
 
       assert.equal(exportRes.isExportPermitted, false);
@@ -1884,7 +1985,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 12: graded export fails when grading artifact is superseded or revoked', () => {
-      const { spec, pieces, snapshot, gradingArtifact } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, snapshot, gradingArtifact, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const supersededGa = supersedeAuthoritativeGradingArtifact(gradingArtifact, 'grade-rev-next-02');
       const revokedGa = revokeAuthoritativeGradingArtifact(gradingArtifact, 'Grading curve distortion in XL');
@@ -1892,41 +1994,59 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
       assert.equal(verifyGradingArtifactIntegrity(supersededGa).isValid, false);
       assert.equal(verifyGradingArtifactIntegrity(revokedGa).isValid, false);
 
-      const reportNoGa = evaluatePipelineDependencyIntegrity({
+      const reportSuperseded = evaluatePipelineDependencyIntegrity({
         specification: spec,
         measurements: sizeM,
         activeSize: 'M',
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        gradingArtifact: supersededGa,
+        verificationContext: { cryptographicVerifier }
       });
 
-      const supersededRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const supersededRes = validateProductionExportPrerequisites(reportSuperseded, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: supersededGa
+        gradingArtifact: supersededGa,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
       assert.equal(supersededRes.isExportPermitted, false);
       assert.equal(supersededRes.rejectionCode, 'GRADING_ARTIFACT_SUPERSEDED');
 
-      const revokedRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
+      const reportRevoked = evaluatePipelineDependencyIntegrity({
+        specification: spec,
+        measurements: sizeM,
+        activeSize: 'M',
+        fabric: standardFabric,
+        patternPieces: pieces,
+        validationReport: validReport,
+        productionSnapshot: snapshot,
+        gradingArtifact: revokedGa,
+        verificationContext: { cryptographicVerifier }
+      });
+
+      const revokedRes = validateProductionExportPrerequisites(reportRevoked, snapshot, {
         specification: spec,
         measurements: sizeM,
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        gradingArtifact: revokedGa
+        gradingArtifact: revokedGa,
+        verificationContext: { cryptographicVerifier },
+        exportGradingPolicy: { mode: 'graded-multi-size' }
       });
       assert.equal(revokedRes.isExportPermitted, false);
       assert.equal(revokedRes.rejectionCode, 'GRADING_ARTIFACT_REVOKED');
     });
 
     it('Grading 13: single-size ungraded export succeeds ONLY when exportGradingPolicy.mode === "single-size-ungraded" and nonGradingReason are explicitly declared', () => {
-      const { spec, pieces, snapshot } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, snapshot, cryptographicVerifier } = buildCompleteExportPipelineFixture();
 
       const reportNoGa = evaluatePipelineDependencyIntegrity({
         specification: spec,
@@ -1935,7 +2055,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        verificationContext: { cryptographicVerifier }
       });
 
       const exportRes = validateProductionExportPrerequisites(reportNoGa, snapshot, {
@@ -1944,6 +2065,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
+        verificationContext: { cryptographicVerifier },
         exportGradingPolicy: {
           mode: 'single-size-ungraded',
           nonGradingReason: 'Bespoke couture single-client atelier toile (Size M only)'
@@ -1960,7 +2082,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
     });
 
     it('Grading 14: single-size ungraded export fails when nonGradingReason is missing or when graded export data is attached/requested', () => {
-      const { spec, pieces, snapshot, gradingArtifact } = buildCompleteExportPipelineFixture();
+      const { spec, pieces, snapshot, gradingArtifact, cryptographicVerifier } =
+        buildCompleteExportPipelineFixture();
 
       const reportNoGa = evaluatePipelineDependencyIntegrity({
         specification: spec,
@@ -1969,7 +2092,8 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
-        productionSnapshot: snapshot
+        productionSnapshot: snapshot,
+        verificationContext: { cryptographicVerifier }
       });
 
       // Missing nonGradingReason -> GRADING_APPLICABILITY_UNDECLARED
@@ -1979,6 +2103,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         fabric: standardFabric,
         patternPieces: pieces,
         validationReport: validReport,
+        verificationContext: { cryptographicVerifier },
         exportGradingPolicy: {
           mode: 'single-size-ungraded',
           nonGradingReason: '   '
@@ -1995,6 +2120,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         patternPieces: pieces,
         validationReport: validReport,
         gradingArtifact,
+        verificationContext: { cryptographicVerifier },
         exportGradingPolicy: {
           mode: 'single-size-ungraded',
           nonGradingReason: 'Claiming single size while attaching multi-size grading artifact',

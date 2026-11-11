@@ -284,6 +284,12 @@ export function evaluatePipelineDependencyIntegrity(
     (inputs.measurementSet?.perMeasurementOrigin &&
       Object.values(inputs.measurementSet.perMeasurementOrigin).includes('ai-estimated'));
 
+  const isSyntheticMeasurement =
+    measProvenance === 'synthetic-fixture' ||
+    (inputs.measurementSet && 'source' in inputs.measurementSet && inputs.measurementSet.source === 'synthetic-fixture') ||
+    (inputs.measurementSet?.perMeasurementOrigin &&
+      Object.values(inputs.measurementSet.perMeasurementOrigin).includes('synthetic-fixture'));
+
   const isMeasSuperseded =
     measApprovalState === 'superseded' ||
     Boolean(inputs.measurementSet && 'supersededByRevisionId' in inputs.measurementSet && inputs.measurementSet.supersededByRevisionId);
@@ -309,6 +315,10 @@ export function evaluatePipelineDependencyIntegrity(
     measStatus = 'invalid';
     measStaleReason = 'AI-estimated measurements cannot be used as approved physical measurements.';
     staleReasons.push(measStaleReason);
+  } else if (isSyntheticMeasurement) {
+    measStatus = 'invalid';
+    measStaleReason = 'Synthetic fixture measurements cannot be used as approved production measurements.';
+    staleReasons.push(measStaleReason);
   } else if (isMeasSuperseded) {
     measStatus = 'stale';
     measStaleReason = 'Measurement set revision has been superseded by a newer measurement revision.';
@@ -322,6 +332,7 @@ export function evaluatePipelineDependencyIntegrity(
     isMeasAnatomicallyValid &&
     measApprovalState === 'approved' &&
     !isAiMeasurement &&
+    !isSyntheticMeasurement &&
     !isMeasSuperseded &&
     measProvenance !== 'unknown';
 
@@ -862,6 +873,15 @@ export function evaluatePipelineDependencyIntegrity(
       gradingStaleReason = `Grading artifact sourcePatternRevisionId ('${ga.sourcePatternRevisionId}') does not match active snapshot ('${inputs.productionSnapshot.revisionId}').`;
       staleReasons.push(gradingStaleReason);
     } else if (
+      inputs.productionSnapshot &&
+      ga.sourcePatternSnapshotFingerprint &&
+      ga.sourcePatternSnapshotFingerprint !== inputs.productionSnapshot.canonicalFingerprint
+    ) {
+      gradingStatus = 'stale';
+      gradingValidationStatus = 'stale-pattern-snapshot';
+      gradingStaleReason = 'Grading artifact sourcePatternSnapshotFingerprint does not match active snapshot canonicalFingerprint.';
+      staleReasons.push(gradingStaleReason);
+    } else if (
       ga.sourceMeasurementSetFingerprint !== measFingerprint &&
       ga.sourceMeasurementSetFingerprint !== expectedMeasFp
     ) {
@@ -887,6 +907,36 @@ export function evaluatePipelineDependencyIntegrity(
       gradingValidationStatus = 'base-size-mismatch';
       gradingStaleReason = `Grading artifact baseSize ('${ga.baseSize}') does not match active size ('${inputs.activeSize}').`;
       staleReasons.push(gradingStaleReason);
+    } else if (inputs.productionSnapshot) {
+      const basePieces = ga.perSizePatternGeometry?.[ga.baseSize];
+      const snapPieces = inputs.productionSnapshot.patternPieces;
+      if (!basePieces || basePieces.length !== snapPieces.length) {
+        gradingStatus = 'stale';
+        gradingValidationStatus = 'stale-base-geometry';
+        gradingStaleReason = 'Grading artifact base-size piece count does not match snapshot pattern pieces.';
+        staleReasons.push(gradingStaleReason);
+      } else {
+        const snapMap = new Map(snapPieces.map(p => [p.pieceCode, p]));
+        for (const bp of basePieces) {
+          const sp = snapMap.get(bp.pieceCode);
+          if (
+            !sp ||
+            bp.cutPathData !== sp.cutPathData ||
+            bp.sewPathData !== sp.sewPathData ||
+            Math.abs(bp.boundingBox.widthCm - sp.boundingBox.widthCm) > 0.05 ||
+            Math.abs(bp.boundingBox.heightCm - sp.boundingBox.heightCm) > 0.05 ||
+            Math.abs(bp.seamAllowanceWidthCm - sp.seamAllowanceWidthCm) > 0.01 ||
+            canonicalizeJson(bp.notches) !== canonicalizeJson(sp.notches) ||
+            canonicalizeJson(bp.grainline) !== canonicalizeJson(sp.grainline)
+          ) {
+            gradingStatus = 'stale';
+            gradingValidationStatus = 'stale-base-geometry';
+            gradingStaleReason = `Grading artifact base-size piece '${bp.pieceCode}' geometry does not match snapshot pattern piece.`;
+            staleReasons.push(gradingStaleReason);
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -1306,7 +1356,12 @@ export function validateProductionExportPrerequisites(
 
   // 2. Verify Pipeline Artifact Stages from report (fail closed on stale/invalid/unapproved measurements)
   for (const [type, art] of Object.entries(report.artifacts)) {
-    if (type !== 'specification' && type !== 'production-snapshot' && type !== 'production-export') {
+    if (
+      type !== 'specification' &&
+      type !== 'production-snapshot' &&
+      type !== 'production-export' &&
+      !(type === 'grading' && activeInputs?.gradingArtifact)
+    ) {
       if (art.status === 'stale') {
         blockingArtifacts.push(`${type} (stale: ${art.staleReason ?? 'regeneration required'})`);
         if (!rejectionCode || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
@@ -1331,7 +1386,9 @@ export function validateProductionExportPrerequisites(
 
   // 3. Independent Snapshot Verification
   if (!snapshot) {
-    blockingArtifacts.push('production-snapshot (missing: Authoritative snapshot required for export)');
+    blockingArtifacts.push(
+      'production-snapshot (missing: Production export requires an authoritative ProductionPatternRevisionSnapshot)'
+    );
     if (!rejectionCode || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
       rejectionCode = 'SNAPSHOT_MISSING';
     }
@@ -1380,6 +1437,8 @@ export function validateProductionExportPrerequisites(
     }
   }
 
+  let unauthenticatedApprovalBlockingArtifact: string | undefined = undefined;
+
   // 4. Independent Active Specification Verification (Corrections A, B, C, E, G)
   if (activeInputs?.specification) {
     const activeSpecVerification = verifySpecificationApproval(
@@ -1401,6 +1460,15 @@ export function validateProductionExportPrerequisites(
           : 'SPECIFICATION_INVALID';
       } else {
         rejectionCode = 'SPECIFICATION_UNAPPROVED';
+      }
+    } else {
+      // Phase 5 (FINDING-15): Enforce Tier 3 (authenticated_designer) or Tier 4 (cryptographic_principal) authority for production export
+      const hasVerifiedProductionAuthority =
+        (activeSpecVerification.isApprovalAuthenticated && Boolean(activeInputs.verificationContext?.identityVerifier)) ||
+        (activeSpecVerification.isApprovalCryptographicallySigned && Boolean(activeInputs.verificationContext?.cryptographicVerifier));
+      if (!hasVerifiedProductionAuthority) {
+        unauthenticatedApprovalBlockingArtifact =
+          `active-specification (unauthenticated: Production export requires verified Tier 3 authenticated_designer or Tier 4 cryptographic_principal approval; authority '${activeSpecVerification.authorityClassification ?? 'unauthenticated_local_session'}' is not permitted for manufacturing export)`;
       }
     }
 
@@ -1494,8 +1562,14 @@ export function validateProductionExportPrerequisites(
         if (!rejectionCode || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
           rejectionCode = 'AI_MEASUREMENT_NOT_PERMITTED';
         }
-      } else if (ms.source === 'unknown' || ms.provenance === 'unknown') {
-        blockingArtifacts.push('measurements (missing-provenance: Measurement set provenance is unknown)');
+      } else if (
+        ms.source === 'unknown' ||
+        ms.provenance === 'unknown' ||
+        ms.source === 'synthetic-fixture' ||
+        ms.provenance === 'synthetic-fixture' ||
+        (ms.perMeasurementOrigin && Object.values(ms.perMeasurementOrigin).includes('synthetic-fixture'))
+      ) {
+        blockingArtifacts.push(`measurements (invalid-provenance: Measurement set provenance '${ms.provenance}' is not valid for production export)`);
         if (!rejectionCode || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
           rejectionCode = 'MISSING_MEASUREMENT_PROVENANCE';
         }
@@ -1522,8 +1596,12 @@ export function validateProductionExportPrerequisites(
       if (!rejectionCode || rejectionCode === 'MEASUREMENT_UNAPPROVED' || rejectionCode === 'STALE_SOURCE_FINGERPRINT') {
         rejectionCode = 'AI_MEASUREMENT_NOT_PERMITTED';
       }
-    } else if (effectiveOrigin === 'unknown') {
-      blockingArtifacts.push('measurements (missing-provenance: Measurement origin is unknown)');
+    } else if (
+      effectiveOrigin === 'unknown' ||
+      effectiveOrigin === 'synthetic-fixture' ||
+      (snapMs.perMeasurementOrigin && Object.values(snapMs.perMeasurementOrigin).includes('synthetic-fixture'))
+    ) {
+      blockingArtifacts.push(`measurements (invalid-provenance: Measurement origin '${effectiveOrigin}' is not permitted for production export)`);
       if (!rejectionCode || rejectionCode === 'MEASUREMENT_UNAPPROVED' || rejectionCode === 'STALE_SOURCE_FINGERPRINT') {
         rejectionCode = 'MISSING_MEASUREMENT_PROVENANCE';
       }
@@ -1736,10 +1814,6 @@ export function validateProductionExportPrerequisites(
       }
 
       for (const stage of requiredStages) {
-        if (stage === 'grading' && reportUsedGradingArtifact && activeInputs.gradingArtifact) {
-          // Grading artifact lineage/tampering is verified with specific error codes in Step 9b
-          continue;
-        }
         const suppliedArt = report.artifacts[stage];
         const recomputedArt = recomputedReport.artifacts[stage];
         if (!suppliedArt) {
@@ -1766,15 +1840,15 @@ export function validateProductionExportPrerequisites(
     }
   }
 
-  // 9b. Complete Grading Export Lineage Verification (Milestone 04.6.2.3.2 Phase 3 & Phase 4)
-  // Grading applicability must NEVER be inferred from the omission of a grading input.
+  // 9b. Complete Grading Export Lineage Verification (Milestone 04.6.2.3.4 Phase 4 & Phase 7)
+  // Grading applicability must NEVER be inferred from the omission of exportGradingPolicy or gradingArtifact.
   if (missingActiveInputNames.length === 0) {
     const policy = activeInputs?.exportGradingPolicy;
     const policyMode = policy?.mode;
 
-    if (policy !== undefined && policyMode !== 'graded-multi-size' && policyMode !== 'single-size-ungraded') {
+    if (!policy || (policyMode !== 'graded-multi-size' && policyMode !== 'single-size-ungraded')) {
       blockingArtifacts.push(
-        `grading-policy (undeclared: Invalid or undeclared exportGradingPolicy.mode '${String(policyMode)}')`
+        `grading-policy (undeclared: Missing or invalid exportGradingPolicy.mode '${String(policyMode ?? 'undefined')}'; exportGradingPolicy must be explicitly declared)`
       );
       if (!rejectionCode) {
         rejectionCode = 'GRADING_APPLICABILITY_UNDECLARED';
@@ -1907,11 +1981,17 @@ export function validateProductionExportPrerequisites(
           }
         }
 
-        // 6. Pattern revision lineage & base-size geometry verification
+        // 6. Pattern revision lineage & base-size geometry verification (FINDING-17)
         if (snapshot) {
           if (ga.sourcePatternRevisionId !== snapshot.revisionId) {
             blockingArtifacts.push(
               `grading-artifact (stale-pattern-revision: Grading artifact sourcePatternRevisionId '${ga.sourcePatternRevisionId}' does not match snapshot revisionId '${snapshot.revisionId}')`
+            );
+            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+          }
+          if (ga.sourcePatternSnapshotFingerprint && ga.sourcePatternSnapshotFingerprint !== snapshot.canonicalFingerprint) {
+            blockingArtifacts.push(
+              'grading-artifact (stale-pattern-snapshot: Grading artifact sourcePatternSnapshotFingerprint does not match snapshot canonicalFingerprint)'
             );
             if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
           }
@@ -1928,12 +2008,25 @@ export function validateProductionExportPrerequisites(
             );
             if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
           } else {
-            const snapPieceCodes = new Set(snapshot.patternPieces.map(p => p.pieceCode));
-            if (basePieces.some(bp => !snapPieceCodes.has(bp.pieceCode))) {
-              blockingArtifacts.push(
-                'grading-artifact (stale-geometry: Base-size graded pattern piece codes do not match snapshot pattern pieces)'
-              );
-              if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+            const snapPieceMap = new Map(snapshot.patternPieces.map(p => [p.pieceCode, p]));
+            for (const bp of basePieces) {
+              const sp = snapPieceMap.get(bp.pieceCode);
+              if (
+                !sp ||
+                bp.cutPathData !== sp.cutPathData ||
+                bp.sewPathData !== sp.sewPathData ||
+                Math.abs(bp.boundingBox.widthCm - sp.boundingBox.widthCm) > 0.05 ||
+                Math.abs(bp.boundingBox.heightCm - sp.boundingBox.heightCm) > 0.05 ||
+                Math.abs(bp.seamAllowanceWidthCm - sp.seamAllowanceWidthCm) > 0.01 ||
+                canonicalizeJson(bp.notches) !== canonicalizeJson(sp.notches) ||
+                canonicalizeJson(bp.grainline) !== canonicalizeJson(sp.grainline)
+              ) {
+                blockingArtifacts.push(
+                  `grading-artifact (stale-geometry: Base-size graded pattern piece '${bp.pieceCode}' geometry does not match snapshot pattern piece)`
+                );
+                if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+                break;
+              }
             }
           }
         }
@@ -2002,6 +2095,14 @@ export function validateProductionExportPrerequisites(
     }
   }
 
+  // 9c. Enforce Tier 3 / Tier 4 Production Approval Authority (FINDING-15)
+  if (unauthenticatedApprovalBlockingArtifact) {
+    blockingArtifacts.push(unauthenticatedApprovalBlockingArtifact);
+    if (!rejectionCode || rejectionCode === 'STALE_SOURCE_FINGERPRINT') {
+      rejectionCode = 'SPECIFICATION_APPROVAL_UNAUTHENTICATED';
+    }
+  }
+
   // 10. Result Construction
   if (blockingArtifacts.length > 0) {
     let rejectionReason = `Production export blocked by unapproved or out-of-sync pipeline stages: ${blockingArtifacts.join('; ')}`;
@@ -2036,7 +2137,7 @@ export function validateProductionExportPrerequisites(
     };
   }
 
-  const effectiveMode = activeInputs?.exportGradingPolicy?.mode ?? 'graded-multi-size';
+  const effectiveMode = activeInputs!.exportGradingPolicy!.mode;
 
   return {
     isExportPermitted: true,
