@@ -12,7 +12,11 @@ import {
   MeasurementOrigin
 } from './production-types';
 
-export type ExportGradingPolicyMode = 'graded-multi-size' | 'single-size-ungraded';
+export type ExportGradingPolicyMode =
+  | 'graded-multi-size'
+  | 'multi-size-graded'
+  | 'single-size-ungraded'
+  | 'base-size-only';
 export type ExportGradingMode = ExportGradingPolicyMode;
 
 export interface ExportGradingPolicy {

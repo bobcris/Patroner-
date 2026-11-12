@@ -20,7 +20,10 @@ import { ProductionOverview } from './features/production/ProductionOverview';
 import {
   evaluatePipelineDependencyIntegrity,
   MeasurementApprovalStatus,
-  MeasurementOrigin
+  MeasurementOrigin,
+  MeasurementProvenanceEvidence,
+  NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS,
+  transitionMeasurementProvenance
 } from './engine/production';
 
 export default function App() {
@@ -33,6 +36,7 @@ export default function App() {
   });
   const [measurementProvenance, setMeasurementProvenance] = useState<MeasurementOrigin>('standard-chart');
   const [measurementApprovalState, setMeasurementApprovalState] = useState<MeasurementApprovalStatus>('unverified');
+  const [measurementProvenanceEvidence, setMeasurementProvenanceEvidence] = useState<MeasurementProvenanceEvidence | undefined>(undefined);
   const [measurementRevisionCount, setMeasurementRevisionCount] = useState<number>(1);
 
   // Compute live validation status for current draft
@@ -59,10 +63,37 @@ export default function App() {
   ) => {
     setMeasurements(m);
     setActiveSize(sizeLabel);
-    setMeasurementProvenance(provenance ?? (sizeLabel === 'custom' ? 'user-entered' : 'standard-chart'));
+    const nextProvenance = provenance ?? (sizeLabel === 'custom' ? 'user-entered' : 'standard-chart');
+    setMeasurementProvenance(nextProvenance);
+    if (nextProvenance === 'standard-chart') {
+      setMeasurementProvenanceEvidence(undefined);
+    }
     // Changing any measurement invalidates prior measurement approval and requires explicit re-approval
     setMeasurementApprovalState('unverified');
     setMeasurementRevisionCount(prev => prev + 1);
+  };
+
+  const handleUpdateMeasurementProvenance = (
+    nextOrigin: MeasurementOrigin,
+    evidence?: MeasurementProvenanceEvidence
+  ) => {
+    const transition = transitionMeasurementProvenance(measurementProvenance, nextOrigin, evidence);
+    if (!transition.isValid) {
+      return;
+    }
+    setMeasurementProvenance(transition.nextOrigin);
+    setMeasurementProvenanceEvidence(transition.evidence);
+    if (NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(transition.nextOrigin)) {
+      setMeasurementApprovalState('unverified');
+    }
+    setMeasurementRevisionCount(prev => prev + 1);
+  };
+
+  const handleUpdateMeasurementApproval = (nextState: MeasurementApprovalStatus) => {
+    if (nextState === 'approved' && NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(measurementProvenance)) {
+      return;
+    }
+    setMeasurementApprovalState(nextState);
   };
 
   return (
@@ -104,10 +135,11 @@ export default function App() {
             currentSpec={currentSpec}
             measurementProvenance={measurementProvenance}
             measurementApprovalState={measurementApprovalState}
+            measurementProvenanceEvidence={measurementProvenanceEvidence}
             measurementRevisionId={`meas-rev-${measurementRevisionCount}`}
             onUpdateMeasurements={handleUpdateMeasurements}
-            onUpdateMeasurementApproval={setMeasurementApprovalState}
-            onUpdateMeasurementProvenance={setMeasurementProvenance}
+            onUpdateMeasurementApproval={handleUpdateMeasurementApproval}
+            onUpdateMeasurementProvenance={handleUpdateMeasurementProvenance}
             onNavigateToCAD={() => setActiveTab('pattern-cad')}
           />
         )}
@@ -129,6 +161,7 @@ export default function App() {
             activeSize={activeSize}
             measurementProvenance={measurementProvenance}
             measurementApprovalState={measurementApprovalState}
+            measurementProvenanceEvidence={measurementProvenanceEvidence}
             onNavigateToCAD={() => setActiveTab('pattern-cad')}
           />
         )}

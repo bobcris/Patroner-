@@ -40,6 +40,9 @@ import {
   evaluatePipelineDependencyIntegrity,
   MeasurementApprovalStatus,
   MeasurementOrigin,
+  MeasurementProvenanceEvidence,
+  NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS,
+  validateMeasurementProvenanceEvidence,
   validateProductionExportPrerequisites
 } from '../../engine/production';
 
@@ -49,6 +52,7 @@ interface ProductionOverviewProps {
   activeSize: string;
   measurementProvenance?: MeasurementOrigin;
   measurementApprovalState?: MeasurementApprovalStatus;
+  measurementProvenanceEvidence?: MeasurementProvenanceEvidence;
   onNavigateToCAD: () => void;
 }
 
@@ -57,7 +61,8 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   measurements,
   activeSize,
   measurementProvenance = 'standard-chart',
-  measurementApprovalState = 'approved',
+  measurementApprovalState = 'unverified',
+  measurementProvenanceEvidence,
   onNavigateToCAD
 }) => {
   let pieces: PatternPiece[] = [];
@@ -216,20 +221,31 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
   const liveSnapshot = React.useMemo(() => {
     try {
+      const evidenceCheck = validateMeasurementProvenanceEvidence(
+        measurementProvenance,
+        measurementProvenanceEvidence
+      );
+      const isApprovableProvenance =
+        !NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(measurementProvenance) &&
+        evidenceCheck.isValid;
+
+      const effectiveApprovalState: MeasurementApprovalStatus =
+        measurementApprovalState === 'approved' && isApprovableProvenance
+          ? 'approved'
+          : 'unverified';
+
+      const operatorIdentity = measurementProvenanceEvidence?.operatorName?.trim();
       const measurementApproverLabel =
-        measurementApprovalState !== 'approved'
+        effectiveApprovalState !== 'approved'
           ? undefined
-          : measurementProvenance === 'operator-confirmed'
-            ? 'Local Operator Confirmation (Unauthenticated)'
-            : measurementProvenance === 'physically-measured'
-              ? 'Physical Tape Measurement Record'
-              : measurementProvenance === 'user-entered'
-                ? 'User-Entered Measurement Record'
-                : measurementProvenance === 'standard-chart'
-                  ? 'ISO 13402 Standard Reference Chart'
-                  : measurementProvenance === 'imported'
-                    ? 'Imported Measurement Profile'
-                    : undefined;
+          : operatorIdentity
+            ? `${operatorIdentity} (${measurementProvenance})`
+            : measurementProvenance === 'user-entered'
+              ? 'User-Entered Measurement Record'
+              : measurementProvenance === 'imported'
+                ? 'Imported Measurement Profile'
+                : undefined;
+
       return createProductionPatternRevision({
         projectId: 'project-patroner-default',
         revisionId: `rev-${currentSpec.id}-v${currentSpec.version}-${activeSize}`,
@@ -239,9 +255,12 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
           values: ({ ...measurements } as unknown) as Record<string, number>,
           defaultOrigin: measurementProvenance,
           approval: {
-            state: measurementApprovalState,
+            state: effectiveApprovalState,
             approvedBy: measurementApproverLabel,
-            approvedAt: measurementApprovalState === 'approved' ? '2026-11-09T08:00:00.000Z' : undefined
+            approvedAt:
+              effectiveApprovalState === 'approved'
+                ? measurementProvenanceEvidence?.recordedAt ?? '2026-11-09T08:00:00.000Z'
+                : undefined
           }
         },
         fabric: enhancedFabric,
@@ -252,7 +271,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     } catch {
       return null;
     }
-  }, [currentSpec, measurements, activeSize, measurementProvenance, measurementApprovalState, enhancedFabric, pieces, validation]);
+  }, [currentSpec, measurements, activeSize, measurementProvenance, measurementApprovalState, measurementProvenanceEvidence, enhancedFabric, pieces, validation]);
 
   const liveGradingArtifact = React.useMemo(() => {
     if (!liveSnapshot) return undefined;

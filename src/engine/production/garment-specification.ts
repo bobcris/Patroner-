@@ -39,7 +39,9 @@ import {
   canonicalizeJson,
   computeCanonicalSha256,
   computeEd25519PublicKeyFingerprint,
-  generateEd25519KeyPairFromSeed,
+  Ed25519KeyPair,
+  generateEd25519KeyPairFromPassphrase,
+  generateEd25519KeyPairFromRawSeedHex,
   hexToBytes,
   isValidEd25519PublicKey,
   isValidEd25519PublicKeyBytes,
@@ -93,53 +95,366 @@ import {
 } from './production-types';
 
 // ============================================================================
-// STRICT PUBLIC-KEY-ONLY BOUNDARY GUARD (FINDING-08, FINDING-10)
+// STRICT PUBLIC-KEY-ONLY BOUNDARY GUARD & ALLOWLISTED SCHEMAS (FINDING-08, FINDING-10, AUDIT-04.6.2.3.5-04)
 // ============================================================================
 
 /**
  * Exhaustive list of private-key, seed, and shared-secret field names that MUST NEVER
- * appear in any verification-only configuration, public-key registration, or JWK (`FINDING-10`).
+ * appear at any nesting depth in any verification-only configuration, public-key registration, or JWK (`FINDING-10`, `AUDIT-04.6.2.3.5-04`).
  */
 export const FORBIDDEN_VERIFIER_PRIVATE_KEY_FIELDS = Object.freeze([
   'd',
+  'k',
   'privateKey',
   'privateKeyHex',
+  'privateKeyBytes',
   'privateKeyPem',
+  'privateKeyDer',
+  'privateKeyJwk',
   'privateKeySecret',
   'privateKeySeed',
   'privateKeySeedHex',
+  'privateKeyMaterial',
+  'privateSeed',
+  'privateSeedHex',
+  'rawPrivateSeed',
+  'rawSeed',
+  'rawSeedHex',
   'seed',
   'seedHex',
+  'seedBytes',
+  'seedPhrase',
+  'passphrase',
+  'signingKey',
+  'signingKeyHex',
   'signingKeyMaterial',
+  'signingMaterial',
+  'signingSeed',
   'signingSecret',
+  'signingSecretOrPrivateKeyHex',
   'secret',
   'secretKey',
+  'secretSeed',
+  'secretMaterial',
   'sharedSecret',
-  'providerSecret'
+  'providerSecret',
+  'hmacSecret',
+  'clientSecret',
+  'private_key_seed'
 ] as const);
 
-function assertNoPrivateKeyMaterialInVerifierBoundary(
-  candidate: unknown,
+const NORMALIZED_FORBIDDEN_VERIFIER_FIELDS: ReadonlySet<string> = new Set(
+  FORBIDDEN_VERIFIER_PRIVATE_KEY_FIELDS.map(f =>
+    f.replace(/[_\-\.\s]/g, '').toLowerCase()
+  )
+);
+
+const FORBIDDEN_VERIFIER_FIELD_SUBSTRINGS = [
+  'privatekey',
+  'privateseed',
+  'rawseed',
+  'signingkey',
+  'signingsecret',
+  'signingmaterial',
+  'secretkey',
+  'secretmaterial',
+  'secretseed',
+  'sharedsecret',
+  'providersecret'
+] as const;
+
+export const ALLOWED_PUBLIC_KEY_REGISTRATION_KEYS: ReadonlySet<string> = new Set([
+  'keyId',
+  'publicKeyHex',
+  'publicKeyBase64Url',
+  'publicKeyFingerprint',
+  'algorithm',
+  'principalId',
+  'ownerPrincipal',
+  'issuer',
+  'providerId',
+  'tenantId',
+  'organizationScope',
+  'activatedAt',
+  'expiresAt',
+  'revoked',
+  'compromised',
+  'revokedAt',
+  'revocationReason',
+  'revocationReasonCode',
+  'trustStatus',
+  'registrationProvenance',
+  'allowedPrincipals',
+  'allowedScopes'
+]);
+
+export const ALLOWED_PUBLIC_KEY_REGISTRY_KEYS: ReadonlySet<string> = new Set([
+  'schemaVersion',
+  'entries'
+]);
+
+export const ALLOWED_OIDC_JWK_KEYS: ReadonlySet<string> = new Set([
+  'kty',
+  'crv',
+  'kid',
+  'alg',
+  'use',
+  'x',
+  'publicKeyHex',
+  'issuer',
+  'tenantId',
+  'activatedAt',
+  'expiresAt',
+  'revoked',
+  'compromised',
+  'revokedAt',
+  'revocationReason',
+  'trustStatus'
+]);
+
+export const ALLOWED_CRYPTO_VERIFIER_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  'publicKeyRegistry',
+  'trustedKeys',
+  'trustedIssuers',
+  'expectedTenantId',
+  'referenceTimeIso',
+  'clockSkewToleranceSeconds',
+  'allowDuplicatePublicKeyMaterial'
+]);
+
+export const ALLOWED_IDENTITY_VERIFIER_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  'trustedIssuer',
+  'trustedIssuers',
+  'expectedAudience',
+  'publicJwks',
+  'expectedTenantId',
+  'referenceTimeIso',
+  'clockSkewToleranceSeconds',
+  'replayStore',
+  'requireDurableReplayStore',
+  'requiredAcr',
+  'requiredAmr',
+  'supportedCriticalHeaders'
+]);
+
+export const ALLOWED_REPLAY_STORE_KEYS: ReadonlySet<string> = new Set([
+  'isDurableDistributedStore',
+  'storeType',
+  'consumeJti',
+  'getConsumedRecord',
+  'purgeExpired'
+]);
+
+function isPlainRecordObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isForbiddenSecretPropertyName(rawKey: string): boolean {
+  const normalized = rawKey.replace(/[_\-\.\s]/g, '').toLowerCase();
+  if (NORMALIZED_FORBIDDEN_VERIFIER_FIELDS.has(normalized)) {
+    return true;
+  }
+  for (const sub of FORBIDDEN_VERIFIER_FIELD_SUBSTRINGS) {
+    if (normalized.includes(sub)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assertStrictAllowedKeys(
+  obj: Record<string, unknown>,
+  allowedKeys: ReadonlySet<string>,
   boundaryName: string
 ): void {
-  if (!candidate || typeof candidate !== 'object') {
-    return;
+  const ownSymbols = Object.getOwnPropertySymbols(obj);
+  if (ownSymbols.length > 0) {
+    throw new ProductionSnapshotValidationError(
+      `Security boundary violation: ${boundaryName} must not contain Symbol-keyed properties.`,
+      ['verifier-unknown-property-rejected']
+    );
   }
-  const record = candidate as Record<string, unknown>;
-  for (const field of FORBIDDEN_VERIFIER_PRIVATE_KEY_FIELDS) {
-    if (field in record && record[field] !== undefined) {
-      if (field === 'd') {
+  for (const key of Object.keys(obj)) {
+    if (isForbiddenSecretPropertyName(key)) {
+      if (key.trim() === 'd') {
+        const dBoundary =
+          boundaryName.includes('publicJwks') || boundaryName.includes('JWK')
+            ? 'JWK in publicJwks'
+            : boundaryName;
         throw new ProductionSnapshotValidationError(
-          `Security boundary violation: ${boundaryName} must not contain private key parameter "d".`,
+          `Security boundary violation: ${dBoundary} must not contain private key parameter "d".`,
           ['verifier-private-key-material-forbidden']
         );
       }
+      const secretBoundary =
+        boundaryName.includes('publicKeyRegistry') ||
+        boundaryName.includes('ControlledPublicKeyRegistration')
+          ? 'ControlledPublicKeyRegistration'
+          : boundaryName;
       throw new ProductionSnapshotValidationError(
-        `Security boundary violation: ${boundaryName} must contain public-key material only (forbidden private/secret field "${field}" detected).`,
+        `Security boundary violation: ${secretBoundary} must contain public-key material only (forbidden private/secret field "${key}" detected).`,
         ['verifier-private-key-material-forbidden']
       );
     }
+    if (!allowedKeys.has(key)) {
+      throw new ProductionSnapshotValidationError(
+        `Security boundary violation: unknown or unsupported property "${key}" in ${boundaryName} is rejected by strict verifier schema.`,
+        ['verifier-unknown-property-rejected']
+      );
+    }
   }
+}
+
+/**
+ * Recursively inspects any verifier configuration, key registration, or JWK structure
+ * for private-key/seed/secret material, circular references, and non-plain objects (`AUDIT-04.6.2.3.5-04`).
+ */
+export function assertNoPrivateKeyMaterialInVerifierBoundary(
+  candidate: unknown,
+  boundaryName: string,
+  visited: WeakSet<object> = new WeakSet<object>()
+): void {
+  if (candidate === null || candidate === undefined) {
+    return;
+  }
+  const t = typeof candidate;
+  if (t === 'string' || t === 'number' || t === 'boolean') {
+    return;
+  }
+  if (t !== 'object') {
+    throw new ProductionSnapshotValidationError(
+      `Security boundary violation: ${boundaryName} contains unsupported value of type "${t}".`,
+      ['verifier-non-plain-object-rejected']
+    );
+  }
+
+  const obj = candidate as object;
+  if (visited.has(obj)) {
+    throw new ProductionSnapshotValidationError(
+      `Security boundary violation: circular reference detected in ${boundaryName}.`,
+      ['verifier-circular-reference-forbidden']
+    );
+  }
+
+  if (
+    ArrayBuffer.isView(obj) ||
+    obj instanceof ArrayBuffer ||
+    obj instanceof Date ||
+    obj instanceof Map ||
+    obj instanceof Set ||
+    obj instanceof RegExp ||
+    obj instanceof WeakMap ||
+    obj instanceof WeakSet ||
+    obj instanceof Promise
+  ) {
+    throw new ProductionSnapshotValidationError(
+      `Security boundary violation: ${boundaryName} must not contain raw byte buffers, TypedArrays, or non-plain built-in instances (${obj.constructor?.name ?? 'Object'}).`,
+      ['verifier-non-plain-object-rejected']
+    );
+  }
+
+  if (Array.isArray(obj)) {
+    visited.add(obj);
+    for (let i = 0; i < obj.length; i++) {
+      assertNoPrivateKeyMaterialInVerifierBoundary(
+        obj[i],
+        `${boundaryName}[${i}]`,
+        visited
+      );
+    }
+    return;
+  }
+
+  if (!isPlainRecordObject(obj)) {
+    throw new ProductionSnapshotValidationError(
+      `Security boundary violation: ${boundaryName} must be a plain object with a standard prototype (custom class instance "${obj.constructor?.name ?? 'unknown'}" rejected).`,
+      ['verifier-non-plain-object-rejected']
+    );
+  }
+
+  visited.add(obj);
+
+  const ownSymbols = Object.getOwnPropertySymbols(obj);
+  if (ownSymbols.length > 0) {
+    throw new ProductionSnapshotValidationError(
+      `Security boundary violation: ${boundaryName} must not contain Symbol-keyed properties.`,
+      ['verifier-unknown-property-rejected']
+    );
+  }
+
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (isForbiddenSecretPropertyName(key) && val !== undefined) {
+      if (key.trim() === 'd') {
+        const dBoundary =
+          boundaryName.includes('publicJwks') || boundaryName.includes('JWK')
+            ? 'JWK in publicJwks'
+            : boundaryName;
+        throw new ProductionSnapshotValidationError(
+          `Security boundary violation: ${dBoundary} must not contain private key parameter "d".`,
+          ['verifier-private-key-material-forbidden']
+        );
+      }
+      const secretBoundary =
+        boundaryName.includes('publicKeyRegistry') ||
+        boundaryName.includes('ControlledPublicKeyRegistration')
+          ? 'ControlledPublicKeyRegistration'
+          : boundaryName;
+      throw new ProductionSnapshotValidationError(
+        `Security boundary violation: ${secretBoundary} must contain public-key material only (forbidden private/secret field "${key}" detected).`,
+        ['verifier-private-key-material-forbidden']
+      );
+    }
+    if (key === 'replayStore' && val && typeof val === 'object' && !Array.isArray(val)) {
+      if (visited.has(val as object)) {
+        throw new ProductionSnapshotValidationError(
+          `Security boundary violation: circular reference detected in ${boundaryName}.replayStore.`,
+          ['verifier-circular-reference-forbidden']
+        );
+      }
+      if (!isPlainRecordObject(val)) {
+        throw new ProductionSnapshotValidationError(
+          `Security boundary violation: ${boundaryName}.replayStore must be a plain JtiReplayStore object.`,
+          ['verifier-non-plain-object-rejected']
+        );
+      }
+      visited.add(val as object);
+      assertStrictAllowedKeys(val, ALLOWED_REPLAY_STORE_KEYS, `${boundaryName}.replayStore`);
+      continue;
+    }
+    assertNoPrivateKeyMaterialInVerifierBoundary(
+      val,
+      `${boundaryName}.${key}`,
+      visited
+    );
+  }
+}
+
+function resolveSigningKeyPairInternal(
+  seedOrHex: string,
+  options?: { inputFormat?: 'raw-seed-hex' | 'passphrase' }
+): Ed25519KeyPair {
+  if (typeof seedOrHex !== 'string' || seedOrHex.trim().length === 0) {
+    throw new Error('Ed25519 signing seed cannot be empty.');
+  }
+  if (options?.inputFormat === 'raw-seed-hex') {
+    return generateEd25519KeyPairFromRawSeedHex(seedOrHex);
+  }
+  if (options?.inputFormat === 'passphrase') {
+    return generateEd25519KeyPairFromPassphrase(seedOrHex);
+  }
+  const trimmed = seedOrHex.trim();
+  if (trimmed.length === 64 && /^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return generateEd25519KeyPairFromRawSeedHex(trimmed);
+  }
+  return generateEd25519KeyPairFromPassphrase(seedOrHex);
 }
 
 // ============================================================================
@@ -192,7 +507,7 @@ export function deriveEd25519SigningKeyPair(
 } {
   const hasExplicitKeyId = typeof secondArg === 'string' && secondArg.trim().length > 0;
   const seedOrHex = hasExplicitKeyId ? secondArg! : firstArg;
-  const kp = generateEd25519KeyPairFromSeed(seedOrHex);
+  const kp = resolveSigningKeyPairInternal(seedOrHex);
   const keyId = hasExplicitKeyId
     ? firstArg.trim()
     : options?.keyId?.trim() || `ed25519-key-${kp.publicKeyFingerprint.slice(0, 12)}`;
@@ -243,7 +558,7 @@ export function createControlledPublicKeyRegistry(
 
 /**
  * Validates a `ControlledPublicKeyRegistration` entry to ensure it contains only
- * valid, canonical, non-torsion Ed25519 public-key material (`FINDING-02`, `FINDING-08`, `FINDING-10`).
+ * valid, canonical, non-torsion Ed25519 public-key material (`FINDING-02`, `FINDING-08`, `FINDING-10`, `AUDIT-04.6.2.3.5-04`).
  */
 export function validateControlledPublicKeyRegistration(
   registration: ControlledPublicKeyRegistration
@@ -255,9 +570,14 @@ export function validateControlledPublicKeyRegistration(
     );
   }
 
-  // Strictly forbid any private-key or seed fields (FINDING-08, FINDING-10)
+  // Strictly forbid any private-key, seed, circular reference, non-plain object, or unknown property (FINDING-08, FINDING-10, AUDIT-04.6.2.3.5-04)
   assertNoPrivateKeyMaterialInVerifierBoundary(
     registration,
+    'ControlledPublicKeyRegistration'
+  );
+  assertStrictAllowedKeys(
+    registration as unknown as Record<string, unknown>,
+    ALLOWED_PUBLIC_KEY_REGISTRATION_KEYS,
     'ControlledPublicKeyRegistration'
   );
 
@@ -1126,7 +1446,7 @@ export function createOidcPublicJwk(
     pubHex = directPubHex;
     pubB64Url = base64UrlEncodeBytes(hexToBytes(pubHex));
   } else {
-    const kp = generateEd25519KeyPairFromSeed(seed);
+    const kp = resolveSigningKeyPairInternal(seed);
     pubHex = kp.publicKeyHex;
     pubB64Url = kp.publicKeyBase64Url;
   }
@@ -1227,8 +1547,10 @@ export function issueVerifiableIdentityCredential(
   const encodedPayload = base64UrlEncodeUtf8(canonicalizeJson(payload));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
 
-  const kp = generateEd25519KeyPairFromSeed(signingPrivateKeyOrSeed);
-  const signatureHex = signEd25519Bytes(utf8ToBytes(signingInput), kp.privateKeyHex);
+  const kp = resolveSigningKeyPairInternal(signingPrivateKeyOrSeed);
+  const signatureHex = signEd25519Bytes(utf8ToBytes(signingInput), kp.privateKeyHex, {
+    inputFormat: 'raw-seed-hex'
+  });
   const signatureBytes = new Uint8Array(64);
   for (let i = 0; i < 64; i++) {
     signatureBytes[i] = parseInt(signatureHex.slice(i * 2, i * 2 + 2), 16);
@@ -1288,7 +1610,7 @@ export interface TrustedIdentityVerifierConfig {
 }
 
 /**
- * Validates an `OidcJwkPublicKey` entry at registration/configuration time (`FINDING-08`, `FINDING-09`, `FINDING-10`, `FINDING-11`).
+ * Validates an `OidcJwkPublicKey` entry at registration/configuration time (`FINDING-08`, `FINDING-09`, `FINDING-10`, `FINDING-11`, `AUDIT-04.6.2.3.5-04`).
  * Returns the validated 64-character lowercase hex Ed25519 public key.
  */
 export function validateOidcPublicJwk(jwk: OidcJwkPublicKey): string {
@@ -1299,8 +1621,13 @@ export function validateOidcPublicJwk(jwk: OidcJwkPublicKey): string {
     );
   }
 
-  // Reject any private-key or seed parameter (including "d")
+  // Reject any private-key or seed parameter (including "d"), nested secrets, or unknown properties
   assertNoPrivateKeyMaterialInVerifierBoundary(jwk, 'JWK in publicJwks');
+  assertStrictAllowedKeys(
+    jwk as unknown as Record<string, unknown>,
+    ALLOWED_OIDC_JWK_KEYS,
+    'JWK in publicJwks'
+  );
 
   if (jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519') {
     throw new ProductionSnapshotValidationError(
@@ -1395,8 +1722,13 @@ export function createTrustedIdentityVerifier(
     );
   }
 
-  // Strictly forbid private keys, seeds, sharedSecret, providerSecret on the verifier config (FINDING-10)
+  // Strictly forbid private keys, seeds, sharedSecret, providerSecret, circular refs, or unknown properties on the verifier config (FINDING-10, AUDIT-04.6.2.3.5-04)
   assertNoPrivateKeyMaterialInVerifierBoundary(config, 'TrustedIdentityVerifierConfig');
+  assertStrictAllowedKeys(
+    config as unknown as Record<string, unknown>,
+    ALLOWED_IDENTITY_VERIFIER_CONFIG_KEYS,
+    'TrustedIdentityVerifierConfig'
+  );
 
   const trustedIssuersList = [
     ...(config.trustedIssuer ? [config.trustedIssuer.trim()] : []),
@@ -1777,7 +2109,13 @@ export function createTrustedIdentityVerifier(
       }
     }
 
-    // 8. Validate target specification / revision / fingerprint binding (FINDING-06)
+    // 8. Validate mandatory signed target specification / revision / fingerprint binding (FINDING-06, AUDIT-04.6.2.3.5-02)
+    if (options?.requireTargetBinding === false) {
+      return fail(
+        'Security policy violation: disabling JWT target binding (requireTargetBinding: false) is strictly forbidden.'
+      );
+    }
+
     const tokenSpecId =
       typeof payloadObj.spec_id === 'string' && payloadObj.spec_id.trim().length > 0
         ? payloadObj.spec_id.trim()
@@ -1793,9 +2131,24 @@ export function createTrustedIdentityVerifier(
         ? payloadObj.target_specification_fingerprint.trim().toLowerCase()
         : undefined;
 
-    if (credential.specificationId !== undefined && credential.specificationId.trim() !== tokenSpecId) {
+    const wrapperSpecId =
+      credential.specificationId !== undefined
+        ? credential.specificationId.trim()
+        : credential.targetSpecificationId !== undefined
+          ? credential.targetSpecificationId.trim()
+          : undefined;
+    if (
+      credential.specificationId !== undefined &&
+      credential.targetSpecificationId !== undefined &&
+      credential.specificationId.trim() !== credential.targetSpecificationId.trim()
+    ) {
       return fail(
-        `Credential wrapper specificationId "${credential.specificationId}" does not match signed JWT spec_id claim "${String(tokenSpecId)}".`
+        `Credential wrapper specificationId "${credential.specificationId}" disagrees with wrapper targetSpecificationId "${credential.targetSpecificationId}".`
+      );
+    }
+    if (wrapperSpecId !== undefined && wrapperSpecId !== tokenSpecId) {
+      return fail(
+        `Credential wrapper specificationId "${wrapperSpecId}" does not match signed JWT spec_id claim "${String(tokenSpecId)}".`
       );
     }
     if (credential.targetRevisionId !== undefined && credential.targetRevisionId.trim() !== tokenTargetRevId) {
@@ -1812,43 +2165,50 @@ export function createTrustedIdentityVerifier(
       );
     }
 
-    if (options?.requireTargetBinding) {
-      if (!tokenSpecId || !tokenTargetRevId || !tokenTargetFp) {
-        return fail(
-          'OIDC/JWT approval credential is missing required target-binding claims ("spec_id", "target_revision_id", and "target_specification_fingerprint"). Unbound tokens cannot approve a garment specification.'
-        );
-      }
+    // Signed JWT target-binding claims ("spec_id", "target_revision_id", "target_specification_fingerprint")
+    // are mandatory across ALL identity verification entry points (AUDIT-04.6.2.3.5-02).
+    if (!tokenSpecId || !tokenTargetRevId || !tokenTargetFp) {
+      return fail(
+        'OIDC/JWT approval credential is missing required target-binding claims ("spec_id", "target_revision_id", and "target_specification_fingerprint"). Unbound tokens cannot approve a garment specification.'
+      );
     }
 
-    if (options?.expectedSpecificationId) {
-      const expectedSpecId = options.expectedSpecificationId.trim();
-      if ((options.requireTargetBinding || tokenSpecId !== undefined) && tokenSpecId !== expectedSpecId) {
+    if (options !== undefined) {
+      if (!options || typeof options !== 'object') {
+        return fail('Invalid identity credential verification options.');
+      }
+      const expectedSpecId =
+        typeof options.expectedSpecificationId === 'string'
+          ? options.expectedSpecificationId.trim()
+          : '';
+      const expectedRevId =
+        typeof options.expectedRevisionId === 'string'
+          ? options.expectedRevisionId.trim()
+          : '';
+      const expectedFp =
+        typeof options.expectedSpecificationFingerprint === 'string'
+          ? options.expectedSpecificationFingerprint.trim().toLowerCase()
+          : '';
+
+      if (!expectedSpecId || !expectedRevId || !expectedFp) {
         return fail(
-          `OIDC/JWT target specificationId mismatch: token is bound to spec_id="${String(tokenSpecId)}", but target specification is "${expectedSpecId}".`
+          'OIDC/JWT verification context is incomplete: expectedSpecificationId, expectedRevisionId, and expectedSpecificationFingerprint are all mandatory.'
         );
       }
-    }
 
-    if (options?.expectedRevisionId) {
-      const expectedRevId = options.expectedRevisionId.trim();
-      if (
-        (options.requireTargetBinding || tokenTargetRevId !== undefined) &&
-        tokenTargetRevId !== expectedRevId
-      ) {
+      if (tokenSpecId !== expectedSpecId) {
         return fail(
-          `OIDC/JWT targetRevisionId mismatch: token is bound to target_revision_id="${String(tokenTargetRevId)}", but target revision is "${expectedRevId}".`
+          `OIDC/JWT target specificationId mismatch: token is bound to spec_id="${tokenSpecId}", but target specification is "${expectedSpecId}".`
         );
       }
-    }
-
-    if (options?.expectedSpecificationFingerprint) {
-      const expectedFp = options.expectedSpecificationFingerprint.trim().toLowerCase();
-      if (
-        (options.requireTargetBinding || tokenTargetFp !== undefined) &&
-        tokenTargetFp !== expectedFp
-      ) {
+      if (tokenTargetRevId !== expectedRevId) {
         return fail(
-          `OIDC/JWT targetSpecificationFingerprint mismatch: token is bound to fingerprint "${String(tokenTargetFp)}", but target specification fingerprint is "${expectedFp}".`
+          `OIDC/JWT targetRevisionId mismatch: token is bound to target_revision_id="${tokenTargetRevId}", but target revision is "${expectedRevId}".`
+        );
+      }
+      if (tokenTargetFp !== expectedFp) {
+        return fail(
+          `OIDC/JWT targetSpecificationFingerprint mismatch: token is bound to fingerprint "${tokenTargetFp}", but target specification fingerprint is "${expectedFp}".`
         );
       }
     }
@@ -1859,6 +2219,14 @@ export function createTrustedIdentityVerifier(
 
     if (options?.reverifyRecordedApproval) {
       const reverify = options.reverifyRecordedApproval;
+      if (
+        !reverify.recordedTokenDigest ||
+        !reverify.recordedSpecificationId ||
+        !reverify.recordedRevisionId ||
+        !reverify.recordedSpecificationFingerprint
+      ) {
+        return fail('Incomplete recorded approval binding context for credential re-verification.');
+      }
       if (tokenDigest !== reverify.recordedTokenDigest) {
         return fail('Identity credential token digest does not match the recorded approval tokenDigest.');
       }
@@ -1867,17 +2235,23 @@ export function createTrustedIdentityVerifier(
           `Identity credential jti "${jti}" does not match the recorded approval jti "${reverify.recordedJti}".`
         );
       }
+      if (
+        tokenSpecId !== reverify.recordedSpecificationId.trim() ||
+        tokenTargetRevId !== reverify.recordedRevisionId.trim() ||
+        tokenTargetFp !== reverify.recordedSpecificationFingerprint.trim().toLowerCase()
+      ) {
+        return fail(
+          'Identity credential target binding does not match the recorded approval target binding.'
+        );
+      }
       const existingRecord = replayStore.getConsumedRecord(jti, iss);
       if (existingRecord) {
         if (
           existingRecord.tokenDigest !== reverify.recordedTokenDigest ||
-          (existingRecord.targetRevisionId &&
-            existingRecord.targetRevisionId !== reverify.recordedRevisionId) ||
-          (existingRecord.targetSpecificationFingerprint &&
-            existingRecord.targetSpecificationFingerprint !==
-              reverify.recordedSpecificationFingerprint.toLowerCase()) ||
-          (existingRecord.specificationId &&
-            existingRecord.specificationId !== reverify.recordedSpecificationId)
+          existingRecord.targetRevisionId !== reverify.recordedRevisionId ||
+          existingRecord.targetSpecificationFingerprint !==
+            reverify.recordedSpecificationFingerprint.toLowerCase() ||
+          existingRecord.specificationId !== reverify.recordedSpecificationId
         ) {
           return fail(
             `Replay detected during approval re-verification: JWT jti "${jti}" was originally consumed for a different specification or revision.`
@@ -1893,10 +2267,9 @@ export function createTrustedIdentityVerifier(
             subjectId: sub,
             consumedAtIso: verifiedAtIso,
             expiresAtEpochSeconds: exp,
-            specificationId: tokenSpecId ?? options?.expectedSpecificationId,
-            targetRevisionId: tokenTargetRevId ?? options?.expectedRevisionId,
-            targetSpecificationFingerprint:
-              tokenTargetFp ?? options?.expectedSpecificationFingerprint?.toLowerCase(),
+            specificationId: tokenSpecId,
+            targetRevisionId: tokenTargetRevId,
+            targetSpecificationFingerprint: tokenTargetFp,
             tokenDigest
           },
           nowSec
@@ -1981,21 +2354,58 @@ export function createTrustedIdentityVerifier(
     verifyIdentityCredential(
       credential: VerifiableIdentityCredential,
       context: {
-        readonly targetRevisionId: string;
-        readonly targetSpecificationFingerprint: string;
-        readonly expectedApprover: string;
-        readonly approvalTimestamp: string;
+        readonly targetRevisionId?: string;
+        readonly expectedRevisionId?: string;
+        readonly targetSpecificationFingerprint?: string;
+        readonly expectedSpecificationFingerprint?: string;
+        readonly expectedApprover?: string;
+        readonly approvalTimestamp?: string;
         readonly expectedTenantId?: string;
         readonly expectedSpecificationId?: string;
+        readonly reverifyRecordedApproval?: IdentityCredentialVerificationOptions['reverifyRecordedApproval'];
       }
     ): IdentityVerificationResult {
+      if (!context || typeof context !== 'object') {
+        return {
+          verified: false,
+          isValid: false,
+          reason: 'verifyIdentityCredential requires a non-empty verification context.'
+        };
+      }
+      const expectedSpecificationId =
+        typeof context.expectedSpecificationId === 'string'
+          ? context.expectedSpecificationId.trim()
+          : '';
+      const rawRevId = context.targetRevisionId ?? context.expectedRevisionId;
+      const targetRevisionId =
+        typeof rawRevId === 'string'
+          ? rawRevId.trim()
+          : '';
+      const rawFp =
+        context.targetSpecificationFingerprint ?? context.expectedSpecificationFingerprint;
+      const targetSpecificationFingerprint =
+        typeof rawFp === 'string'
+          ? rawFp.trim()
+          : '';
+
+      if (!expectedSpecificationId || !targetRevisionId || !targetSpecificationFingerprint) {
+        return {
+          verified: false,
+          isValid: false,
+          reason:
+            'verifyIdentityCredential context is missing required target binding parameters (expectedSpecificationId, targetRevisionId, and targetSpecificationFingerprint are all mandatory).'
+        };
+      }
+
       return evaluateCredential(credential, {
-        expectedSpecificationId: context.expectedSpecificationId,
-        expectedRevisionId: context.targetRevisionId,
-        expectedSpecificationFingerprint: context.targetSpecificationFingerprint,
+        expectedSpecificationId,
+        expectedRevisionId: targetRevisionId,
+        expectedSpecificationFingerprint: targetSpecificationFingerprint,
         expectedApprover: context.expectedApprover,
         approvalTimestamp: context.approvalTimestamp,
-        expectedTenantId: context.expectedTenantId
+        expectedTenantId: context.expectedTenantId,
+        requireTargetBinding: true,
+        reverifyRecordedApproval: context.reverifyRecordedApproval
       });
     }
   };
@@ -2082,8 +2492,10 @@ export function signSpecificationApprovalPayload(
   const canonicalJson = canonicalizeApprovalSigningPayload(fullPayload);
   const payloadFp = sha256Hex(canonicalJson);
 
-  const kp = generateEd25519KeyPairFromSeed(secretSeed);
-  const sigObj = signEd25519Message(canonicalJson, kp.privateKeyHex);
+  const kp = resolveSigningKeyPairInternal(secretSeed);
+  const sigObj = signEd25519Message(canonicalJson, kp.privateKeyHex, {
+    inputFormat: 'raw-seed-hex'
+  });
 
   return {
     keyId: fullPayload.keyId!,
@@ -2138,8 +2550,13 @@ export function createTrustedCryptographicVerifier(
     );
   }
 
-  // Strictly forbid private keys or seeds on the top-level config (FINDING-08, FINDING-10)
+  // Strictly forbid private keys, seeds, circular refs, non-plain objects, or unknown properties on the config (FINDING-08, FINDING-10, AUDIT-04.6.2.3.5-04)
   assertNoPrivateKeyMaterialInVerifierBoundary(config, 'TrustedCryptographicVerifierConfig');
+  assertStrictAllowedKeys(
+    config as unknown as Record<string, unknown>,
+    ALLOWED_CRYPTO_VERIFIER_CONFIG_KEYS,
+    'TrustedCryptographicVerifierConfig'
+  );
 
   const registryMap = new Map<string, ControlledPublicKeyRegistration>();
 
@@ -2187,6 +2604,11 @@ export function createTrustedCryptographicVerifier(
     ) {
       assertNoPrivateKeyMaterialInVerifierBoundary(
         config.publicKeyRegistry,
+        'ControlledPublicKeyRegistry'
+      );
+      assertStrictAllowedKeys(
+        config.publicKeyRegistry as unknown as Record<string, unknown>,
+        ALLOWED_PUBLIC_KEY_REGISTRY_KEYS,
         'ControlledPublicKeyRegistry'
       );
       for (const entry of Object.values(config.publicKeyRegistry.entries)) {
@@ -2908,10 +3330,13 @@ export function approveAuthoritativeGarmentSpecification(
       } else {
         idResult = options.identityVerifier.verifyIdentityCredential!(options.identityCredential, {
           expectedSpecificationId: spec.garmentId,
+          expectedRevisionId: spec.specificationRevisionId,
           targetRevisionId: spec.specificationRevisionId,
+          expectedSpecificationFingerprint: canonicalFingerprint,
           targetSpecificationFingerprint: canonicalFingerprint,
           expectedApprover: trimmedApprover,
-          approvalTimestamp: approvedAt
+          approvalTimestamp: approvedAt,
+          requireTargetBinding: true
         });
       }
     } catch (err) {
@@ -2922,10 +3347,126 @@ export function approveAuthoritativeGarmentSpecification(
     }
 
     const isIdValid = idResult && (idResult.isValid || idResult.verified);
-    const verifiedSub = idResult?.verifiedSubjectId ?? idResult?.provenance?.subjectId;
-    if (!isIdValid || !verifiedSub) {
+    if (!isIdValid) {
       throw new ProductionSnapshotValidationError(
         `Specification approval rejected by TrustedIdentityVerifier: ${idResult?.reason ?? 'invalid identity credential'}.`,
+        ['identityCredential']
+      );
+    }
+
+    // Independently verify signed JWT target-binding claims on the credential so even a custom
+    // verifier implementing only verifyIdentityCredential can never accept an unbound or mismatched JWT (AUDIT-04.6.2.3.5-02).
+    const rawTokenForBindingCheck = (
+      options.identityCredential.credentialToken ??
+      options.identityCredential.token ??
+      ''
+    ).trim();
+    const jwtSegments = rawTokenForBindingCheck.split('.');
+    if (jwtSegments.length !== 3 || !jwtSegments[0] || !jwtSegments[1] || !jwtSegments[2]) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: malformed OIDC/JWT compact token.',
+        ['identityCredential']
+      );
+    }
+    let decodedSignedPayload: Record<string, unknown>;
+    try {
+      decodedSignedPayload = JSON.parse(
+        base64UrlDecodeToUtf8(jwtSegments[1])
+      ) as Record<string, unknown>;
+    } catch {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: failed to decode OIDC/JWT payload.',
+        ['identityCredential']
+      );
+    }
+    const signedSpecId =
+      typeof decodedSignedPayload.spec_id === 'string' ? decodedSignedPayload.spec_id.trim() : '';
+    const signedTargetRevId =
+      typeof decodedSignedPayload.target_revision_id === 'string'
+        ? decodedSignedPayload.target_revision_id.trim()
+        : '';
+    const signedTargetFp =
+      typeof decodedSignedPayload.target_specification_fingerprint === 'string'
+        ? decodedSignedPayload.target_specification_fingerprint.trim().toLowerCase()
+        : '';
+
+    if (!signedSpecId || !signedTargetRevId || !signedTargetFp) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: OIDC/JWT approval credential is missing required signed target-binding claims ("spec_id", "target_revision_id", and "target_specification_fingerprint").',
+        ['identityCredential']
+      );
+    }
+    if (signedSpecId !== spec.garmentId) {
+      throw new ProductionSnapshotValidationError(
+        `Specification approval rejected: JWT target specificationId mismatch (token bound to "${signedSpecId}", expected "${spec.garmentId}").`,
+        ['identityCredential']
+      );
+    }
+    if (
+      signedTargetRevId !== spec.specificationRevisionId ||
+      signedTargetFp !== canonicalFingerprint.toLowerCase()
+    ) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: OIDC/JWT signed target-binding claims do not match target specification garmentId, specificationRevisionId, or canonical fingerprint.',
+        ['identityCredential']
+      );
+    }
+    const wrapperSpec =
+      options.identityCredential.specificationId ?? options.identityCredential.targetSpecificationId;
+    if (wrapperSpec !== undefined && wrapperSpec.trim() !== signedSpecId) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: credential wrapper specificationId disagrees with signed JWT spec_id claim.',
+        ['identityCredential']
+      );
+    }
+    if (
+      options.identityCredential.targetRevisionId !== undefined &&
+      options.identityCredential.targetRevisionId.trim() !== signedTargetRevId
+    ) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: credential wrapper targetRevisionId disagrees with signed JWT target_revision_id claim.',
+        ['identityCredential']
+      );
+    }
+    if (
+      options.identityCredential.targetSpecificationFingerprint !== undefined &&
+      options.identityCredential.targetSpecificationFingerprint.trim().toLowerCase() !==
+        signedTargetFp
+    ) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: credential wrapper targetSpecificationFingerprint disagrees with signed JWT target_specification_fingerprint claim.',
+        ['identityCredential']
+      );
+    }
+
+    const verifiedSub =
+      idResult?.verifiedSubjectId ??
+      idResult?.provenance?.subjectId ??
+      (typeof decodedSignedPayload.sub === 'string' ? decodedSignedPayload.sub.trim() : '');
+    if (!verifiedSub) {
+      throw new ProductionSnapshotValidationError(
+        `Specification approval rejected by TrustedIdentityVerifier: ${idResult?.reason ?? 'invalid identity credential'}.`,
+        ['identityCredential']
+      );
+    }
+
+    const verifiedSpecId =
+      idResult.verifiedSpecificationId ?? idResult.provenance?.targetSpecificationId ?? signedSpecId;
+    const verifiedRevId =
+      idResult.verifiedTargetRevisionId ?? idResult.provenance?.targetRevisionId ?? signedTargetRevId;
+    const verifiedFp = (
+      idResult.verifiedTargetSpecificationFingerprint ??
+      idResult.provenance?.targetSpecificationFingerprint ??
+      signedTargetFp
+    ).toLowerCase();
+
+    if (
+      verifiedSpecId !== spec.garmentId ||
+      verifiedRevId !== spec.specificationRevisionId ||
+      verifiedFp !== canonicalFingerprint.toLowerCase()
+    ) {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: verified identity target binding does not match active specification.',
         ['identityCredential']
       );
     }
@@ -2949,7 +3490,7 @@ export function approveAuthoritativeGarmentSpecification(
     }
 
     resolvedApproverId = verifiedSub;
-    const rawTokenStr = (options.identityCredential.credentialToken ?? options.identityCredential.token ?? '').trim();
+    const rawTokenStr = rawTokenForBindingCheck;
     const claimsArr = idResult.verifiedClaims ?? options.identityCredential.claims ?? options.identityCredential.authorizationClaims ?? [];
 
     verifiedIdentity = idResult.provenance ?? {
@@ -2971,10 +3512,9 @@ export function approveAuthoritativeGarmentSpecification(
       tokenDigest: sha256Hex(rawTokenStr),
       keyId: idResult.verifiedKeyId ?? options.identityCredential.keyId,
       tenantId: idResult.verifiedTenantId ?? options.identityCredential.tenantId,
-      targetSpecificationId: idResult.verifiedSpecificationId ?? spec.garmentId,
-      targetRevisionId: idResult.verifiedTargetRevisionId ?? spec.specificationRevisionId,
-      targetSpecificationFingerprint:
-        idResult.verifiedTargetSpecificationFingerprint ?? canonicalFingerprint,
+      targetSpecificationId: signedSpecId,
+      targetRevisionId: signedTargetRevId,
+      targetSpecificationFingerprint: signedTargetFp,
       acr: idResult.verifiedAcr ?? options.identityCredential.acr,
       amr: idResult.verifiedAmr ?? options.identityCredential.amr,
       verificationMethod: 'OIDC-JWT-EdDSA'
@@ -3343,7 +3883,7 @@ export function verifySpecificationApproval(
     }
 
     if (
-      idProv.targetSpecificationId !== undefined &&
+      !idProv.targetSpecificationId ||
       idProv.targetSpecificationId !== spec.garmentId
     ) {
       return {
@@ -3355,11 +3895,11 @@ export function verifySpecificationApproval(
         isApprovalCryptographicallySigned: false,
         canonicalFingerprint,
         recordedFingerprint: recordedFp,
-        reason: 'Verified identity provenance targetSpecificationId does not match specification garmentId.'
+        reason: 'Verified identity provenance targetSpecificationId is missing or does not match specification garmentId.'
       };
     }
     if (
-      idProv.targetRevisionId !== undefined &&
+      !idProv.targetRevisionId ||
       idProv.targetRevisionId !== spec.specificationRevisionId
     ) {
       return {
@@ -3371,11 +3911,11 @@ export function verifySpecificationApproval(
         isApprovalCryptographicallySigned: false,
         canonicalFingerprint,
         recordedFingerprint: recordedFp,
-        reason: 'Verified identity provenance targetRevisionId does not match specificationRevisionId.'
+        reason: 'Verified identity provenance targetRevisionId is missing or does not match specificationRevisionId.'
       };
     }
     if (
-      idProv.targetSpecificationFingerprint !== undefined &&
+      !idProv.targetSpecificationFingerprint ||
       idProv.targetSpecificationFingerprint.toLowerCase() !== canonicalFingerprint.toLowerCase()
     ) {
       return {
@@ -3387,11 +3927,15 @@ export function verifySpecificationApproval(
         isApprovalCryptographicallySigned: false,
         canonicalFingerprint,
         recordedFingerprint: recordedFp,
-        reason: 'Verified identity provenance targetSpecificationFingerprint does not match canonical specification fingerprint.'
+        reason: 'Verified identity provenance targetSpecificationFingerprint is missing or does not match canonical specification fingerprint.'
       };
     }
 
-    if (!verificationContext?.identityVerifier) {
+    if (
+      !verificationContext?.identityVerifier ||
+      (typeof verificationContext.identityVerifier.verifyCredential !== 'function' &&
+        typeof verificationContext.identityVerifier.verifyIdentityCredential !== 'function')
+    ) {
       return {
         isValid: false,
         state: 'invalid',
@@ -3407,24 +3951,41 @@ export function verifySpecificationApproval(
     }
 
     if (verificationContext.identityCredential) {
+      const reverifyBinding = {
+        recordedTokenDigest: idProv.tokenDigest,
+        recordedJti: idProv.jti ?? idProv.tokenId,
+        recordedSpecificationId: spec.garmentId,
+        recordedRevisionId: spec.specificationRevisionId,
+        recordedSpecificationFingerprint: canonicalFingerprint
+      };
       let reverify: IdentityVerificationResult;
       try {
-        reverify = verificationContext.identityVerifier.verifyCredential(
-          verificationContext.identityCredential,
-          {
-            expectedSpecificationId: spec.garmentId,
-            expectedRevisionId: spec.specificationRevisionId,
-            expectedSpecificationFingerprint: canonicalFingerprint,
-            requireTargetBinding: true,
-            reverifyRecordedApproval: {
-              recordedTokenDigest: idProv.tokenDigest,
-              recordedJti: idProv.jti ?? idProv.tokenId,
-              recordedSpecificationId: spec.garmentId,
-              recordedRevisionId: spec.specificationRevisionId,
-              recordedSpecificationFingerprint: canonicalFingerprint
+        if (typeof verificationContext.identityVerifier.verifyCredential === 'function') {
+          reverify = verificationContext.identityVerifier.verifyCredential(
+            verificationContext.identityCredential,
+            {
+              expectedSpecificationId: spec.garmentId,
+              expectedRevisionId: spec.specificationRevisionId,
+              expectedSpecificationFingerprint: canonicalFingerprint,
+              expectedApprover: record.approverName,
+              approvalTimestamp: record.approvedAt,
+              requireTargetBinding: true,
+              reverifyRecordedApproval: reverifyBinding
             }
-          }
-        );
+          );
+        } else {
+          reverify = verificationContext.identityVerifier.verifyIdentityCredential!(
+            verificationContext.identityCredential,
+            {
+              expectedSpecificationId: spec.garmentId,
+              targetRevisionId: spec.specificationRevisionId,
+              targetSpecificationFingerprint: canonicalFingerprint,
+              expectedApprover: record.approverName,
+              approvalTimestamp: record.approvedAt,
+              reverifyRecordedApproval: reverifyBinding
+            }
+          );
+        }
       } catch (err) {
         return {
           isValid: false,

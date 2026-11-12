@@ -129,6 +129,7 @@ export type MeasurementOrigin =
   | 'imported'
   | 'ai-estimated'
   | 'synthetic-fixture'
+  | 'synthetic-persona'
   | 'unknown';
 
 export type MeasurementApprovalStatus =
@@ -138,12 +139,32 @@ export type MeasurementApprovalStatus =
   | 'rejected'
   | 'superseded';
 
+/**
+ * Verifiable evidence metadata required when transitioning measurement provenance
+ * from reference presets (`'standard-chart'`) to `'physically-measured'` or `'operator-confirmed'`
+ * (`AUDIT-04.6.2.3.5-05`).
+ */
+export interface MeasurementProvenanceEvidence {
+  readonly measurementSource:
+    | 'physical-tape-measure'
+    | 'atelier-fit-session'
+    | '3d-body-scanner'
+    | 'customer-supplied-verified'
+    | 'operator-verified-bespoke'
+    | string;
+  readonly operatorName: string;
+  readonly recordedAt: string;
+  readonly sessionReference?: string;
+  readonly notes?: string;
+}
+
 export interface MeasurementApprovalRecord {
   readonly state: MeasurementApprovalStatus;
   readonly approvedBy?: string;
   readonly approvedAt?: string;
   readonly notes?: string;
   readonly measurementRevisionReference?: string;
+  readonly evidence?: MeasurementProvenanceEvidence;
 }
 
 export type MeasurementApprovalState = MeasurementApprovalStatus;
@@ -158,11 +179,12 @@ export interface MeasurementSetSnapshot {
   readonly defaultOrigin: MeasurementOrigin;
   readonly perMeasurementOrigin?: Readonly<Record<string, MeasurementOrigin>>;
   readonly approval: MeasurementApprovalRecord;
+  readonly evidence?: MeasurementProvenanceEvidence;
   readonly notes?: readonly string[];
 }
 
 /**
- * Authoritative Measurement Set Record (Milestone 04.6.2.3.1 / 04.6.2.3.4)
+ * Authoritative Measurement Set Record (Milestone 04.6.2.3.1 / 04.6.2.3.4 / 04.6.2.3.6)
  */
 export interface AuthoritativeMeasurementSetRecord {
   readonly measurementSetId: string;
@@ -178,6 +200,7 @@ export interface AuthoritativeMeasurementSetRecord {
   readonly approvalState: MeasurementApprovalStatus;
   readonly approvingAuthority?: string;
   readonly approvedAt?: string;
+  readonly evidence?: MeasurementProvenanceEvidence;
   readonly supersededByRevisionId?: string;
   readonly notes?: readonly string[];
   readonly canonicalFingerprint: string;
@@ -197,6 +220,7 @@ export interface CreateAuthoritativeMeasurementSetInput {
   readonly approvalState?: MeasurementApprovalStatus;
   readonly approvingAuthority?: string;
   readonly approvedAt?: string;
+  readonly evidence?: MeasurementProvenanceEvidence;
   readonly notes?: string[];
 }
 

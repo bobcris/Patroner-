@@ -43,6 +43,7 @@ import {
   MeasurementApprovalRecord,
   MeasurementApprovalStatus,
   MeasurementOrigin,
+  MeasurementProvenanceEvidence,
   MeasurementSetSnapshot,
   PatternPieceSnapshot,
   PerSizeGeometryValidationRecord,
@@ -67,6 +68,7 @@ export const VALID_MEASUREMENT_ORIGINS: readonly MeasurementOrigin[] = [
   'imported',
   'ai-estimated',
   'synthetic-fixture',
+  'synthetic-persona',
   'unknown'
 ] as const;
 
@@ -78,10 +80,186 @@ export const VALID_MEASUREMENT_APPROVAL_STATES: readonly MeasurementApprovalStat
   'superseded'
 ] as const;
 
+export const NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS: ReadonlySet<MeasurementOrigin> = new Set([
+  'standard-chart',
+  'synthetic-fixture',
+  'synthetic-persona',
+  'ai-estimated',
+  'unknown'
+]);
+
+const FORBIDDEN_CHART_APPROVER_PATTERNS: readonly RegExp[] = [
+  /iso\s*13402/i,
+  /standard\s+reference\s+chart/i,
+  /^standard[\s\-_]*chart$/i,
+  /^reference[\s\-_]*chart$/i,
+  /^default[\s\-_]*chart$/i
+];
+
+export function isMisleadingChartApproverIdentity(identity: string | undefined): boolean {
+  if (typeof identity !== 'string' || identity.trim().length === 0) {
+    return false;
+  }
+  const trimmed = identity.trim();
+  return FORBIDDEN_CHART_APPROVER_PATTERNS.some(re => re.test(trimmed));
+}
+
 function isValidIsoDate(dateStr: unknown): boolean {
   if (typeof dateStr !== 'string' || dateStr.trim() === '') return false;
   const epoch = Date.parse(dateStr);
   return Number.isFinite(epoch);
+}
+
+/**
+ * Validates that explicit measurement-source evidence is present and valid when
+ * measurements are classified as `'physically-measured'` or `'operator-confirmed'` (`AUDIT-04.6.2.3.5-05`).
+ */
+export function validateMeasurementProvenanceEvidence(
+  provenance: MeasurementOrigin,
+  evidence?: MeasurementProvenanceEvidence
+): {
+  readonly isValid: boolean;
+  readonly reason?: string;
+} {
+  if (!VALID_MEASUREMENT_ORIGINS.includes(provenance)) {
+    return {
+      isValid: false,
+      reason: `Invalid measurement provenance '${String(provenance)}'.`
+    };
+  }
+  if (provenance === 'physically-measured' || provenance === 'operator-confirmed') {
+    if (!evidence || typeof evidence !== 'object') {
+      return {
+        isValid: false,
+        reason: `Measurement provenance '${provenance}' requires explicit MeasurementProvenanceEvidence (operatorName, measurementSource, and recordedAt).`
+      };
+    }
+    const operatorName =
+      typeof evidence.operatorName === 'string' ? evidence.operatorName.trim() : '';
+    if (!operatorName) {
+      return {
+        isValid: false,
+        reason: `Measurement provenance '${provenance}' requires a non-empty evidence.operatorName.`
+      };
+    }
+    if (isMisleadingChartApproverIdentity(operatorName)) {
+      return {
+        isValid: false,
+        reason: `Measurement provenance '${provenance}' cannot use a standard reference chart label ('${operatorName}') as operatorName.`
+      };
+    }
+    const measurementSource =
+      typeof evidence.measurementSource === 'string' ? evidence.measurementSource.trim() : '';
+    if (
+      !measurementSource ||
+      measurementSource === 'standard-chart' ||
+      measurementSource === 'synthetic-fixture' ||
+      measurementSource === 'synthetic-persona' ||
+      measurementSource === 'ai-estimated' ||
+      measurementSource === 'unknown' ||
+      isMisleadingChartApproverIdentity(measurementSource)
+    ) {
+      return {
+        isValid: false,
+        reason: `Measurement provenance '${provenance}' requires a verifiable physical or operator measurementSource (received '${String(evidence.measurementSource)}').`
+      };
+    }
+    if (!isValidIsoDate(evidence.recordedAt)) {
+      return {
+        isValid: false,
+        reason: `Measurement provenance '${provenance}' requires a valid ISO 8601 evidence.recordedAt timestamp.`
+      };
+    }
+  }
+  return { isValid: true };
+}
+
+function assertValidMeasurementProvenanceEvidence(
+  provenance: MeasurementOrigin,
+  evidence: MeasurementProvenanceEvidence | undefined
+): void {
+  const res = validateMeasurementProvenanceEvidence(provenance, evidence);
+  if (!res.isValid) {
+    throw new ProductionSnapshotMeasurementError(
+      res.reason ?? `Invalid measurement provenance evidence for '${provenance}'.`
+    );
+  }
+}
+
+/**
+ * Transitions measurement provenance only when backed by verifiable evidence (`AUDIT-04.6.2.3.5-05`).
+ * Prevents promoting `'standard-chart'`, `'synthetic-fixture'`, `'synthetic-persona'`, or `'ai-estimated'`
+ * to `'physically-measured'` or `'operator-confirmed'` without explicit operator/source evidence.
+ */
+export function transitionMeasurementProvenance(
+  currentProvenance: MeasurementOrigin,
+  targetProvenance: MeasurementOrigin,
+  evidence?: MeasurementProvenanceEvidence
+): {
+  readonly isValid: boolean;
+  readonly provenance: MeasurementOrigin;
+  readonly nextOrigin: MeasurementOrigin;
+  readonly evidence?: MeasurementProvenanceEvidence;
+  readonly reason?: string;
+} {
+  if (!VALID_MEASUREMENT_ORIGINS.includes(currentProvenance)) {
+    return {
+      isValid: false,
+      provenance: currentProvenance,
+      nextOrigin: currentProvenance,
+      reason: `Invalid current measurement provenance '${String(currentProvenance)}'.`
+    };
+  }
+  if (!VALID_MEASUREMENT_ORIGINS.includes(targetProvenance) || targetProvenance === 'unknown') {
+    return {
+      isValid: false,
+      provenance: currentProvenance,
+      nextOrigin: currentProvenance,
+      reason: `Cannot transition measurement provenance to '${String(targetProvenance)}'.`
+    };
+  }
+  if (targetProvenance === 'physically-measured' || targetProvenance === 'operator-confirmed') {
+    const check = validateMeasurementProvenanceEvidence(targetProvenance, evidence);
+    if (!check.isValid) {
+      return {
+        isValid: false,
+        provenance: currentProvenance,
+        nextOrigin: currentProvenance,
+        reason: check.reason
+      };
+    }
+    const normalizedEvidence: MeasurementProvenanceEvidence | undefined = evidence
+      ? {
+          measurementSource: evidence.measurementSource.trim(),
+          operatorName: evidence.operatorName.trim(),
+          recordedAt: evidence.recordedAt.trim(),
+          sessionReference: evidence.sessionReference?.trim(),
+          notes: evidence.notes?.trim()
+        }
+      : undefined;
+    return {
+      isValid: true,
+      provenance: targetProvenance,
+      nextOrigin: targetProvenance,
+      evidence: normalizedEvidence
+    };
+  }
+  if (targetProvenance === 'user-entered' || targetProvenance === 'imported') {
+    if (evidence?.operatorName && isMisleadingChartApproverIdentity(evidence.operatorName)) {
+      return {
+        isValid: false,
+        provenance: currentProvenance,
+        nextOrigin: currentProvenance,
+        reason: `Standard reference chart label '${evidence.operatorName}' cannot be recorded as operatorName.`
+      };
+    }
+  }
+  return {
+    isValid: true,
+    provenance: targetProvenance,
+    nextOrigin: targetProvenance,
+    evidence
+  };
 }
 
 /**
@@ -370,13 +548,15 @@ export function serializePatternPieceSnapshot(
 /**
  * Creates an immutable snapshot of body measurements with explicit provenance and approval.
  *
- * Strict Architectural Rules:
+ * Strict Architectural Rules (`AUDIT-04.6.2.3.5-05`):
  * - Missing provenance defaults to 'unknown', NEVER 'user-entered'.
  * - Empty measurement names are rejected.
  * - Non-finite, zero, or negative measurement values are rejected.
  * - Exact finite values are preserved without silent rounding.
  * - Invalid origin enum values are rejected.
- * - AI-estimated measurements remain pending unless explicit human approval metadata is supplied.
+ * - Standard reference chart ('standard-chart') and synthetic ('synthetic-fixture', 'synthetic-persona')
+ *   measurements cannot be marked as approved for production.
+ * - Misleading chart labels ('ISO 13402 Standard Reference Chart') cannot act as approvedBy.
  */
 export function createMeasurementSetSnapshot(
   values: Readonly<Record<string, number>>,
@@ -384,6 +564,7 @@ export function createMeasurementSetSnapshot(
     defaultOrigin?: MeasurementOrigin;
     perMeasurementOrigin?: Readonly<Record<string, MeasurementOrigin>>;
     approval?: Partial<MeasurementApprovalRecord>;
+    evidence?: MeasurementProvenanceEvidence;
     notes?: readonly string[];
   } = {}
 ): MeasurementSetSnapshot {
@@ -430,7 +611,12 @@ export function createMeasurementSetSnapshot(
     }
   }
 
-  // Safety rule: AI-estimated measurements cannot be approved without explicit approval metadata
+  const resolvedEvidence = options.evidence ?? options.approval?.evidence;
+  if (resolvedEvidence !== undefined) {
+    assertValidMeasurementProvenanceEvidence(defaultOrigin, resolvedEvidence);
+  }
+
+  // Safety rules for measurement approval
   const requestedState = options.approval?.state ?? 'pending';
   let approvalState = requestedState;
   const isAiOrigin =
@@ -438,11 +624,28 @@ export function createMeasurementSetSnapshot(
     Object.values(perMeasurementOrigin).includes('ai-estimated');
   const isSyntheticOrigin =
     defaultOrigin === 'synthetic-fixture' ||
-    Object.values(perMeasurementOrigin).includes('synthetic-fixture');
+    defaultOrigin === 'synthetic-persona' ||
+    Object.values(perMeasurementOrigin).includes('synthetic-fixture') ||
+    Object.values(perMeasurementOrigin).includes('synthetic-persona');
+  const isStandardChartOrigin =
+    defaultOrigin === 'standard-chart' ||
+    Object.values(perMeasurementOrigin).includes('standard-chart');
 
   if (isSyntheticOrigin && requestedState === 'approved') {
     throw new ProductionSnapshotMeasurementError(
-      'Synthetic fixture measurements cannot be marked as approved for production.'
+      'Synthetic fixture or persona measurements cannot be marked as approved for production.'
+    );
+  }
+
+  if (isStandardChartOrigin && requestedState === 'approved') {
+    throw new ProductionSnapshotMeasurementError(
+      'Standard reference chart measurements cannot be marked as approved physical or production measurements without recorded measurement evidence.'
+    );
+  }
+
+  if (isMisleadingChartApproverIdentity(options.approval?.approvedBy)) {
+    throw new ProductionSnapshotMeasurementError(
+      `Standard reference chart label '${options.approval?.approvedBy}' cannot be used as an approving human authority for measurements.`
     );
   }
 
@@ -464,7 +667,8 @@ export function createMeasurementSetSnapshot(
     approvedBy: options.approval?.approvedBy,
     approvedAt: options.approval?.approvedAt,
     notes: options.approval?.notes,
-    measurementRevisionReference: options.approval?.measurementRevisionReference
+    measurementRevisionReference: options.approval?.measurementRevisionReference,
+    evidence: resolvedEvidence
   };
 
   return {
@@ -473,13 +677,14 @@ export function createMeasurementSetSnapshot(
     defaultOrigin,
     perMeasurementOrigin: Object.keys(perMeasurementOrigin).length > 0 ? perMeasurementOrigin : undefined,
     approval,
+    evidence: resolvedEvidence,
     notes: options.notes ? [...options.notes] : undefined
   };
 }
 
 /**
  * Creates an AuthoritativeMeasurementSetRecord with explicit provenance, separated AI estimates,
- * and strict default-unverified approval state.
+ * and strict default-unverified approval state (`AUDIT-04.6.2.3.5-05`).
  */
 export function createAuthoritativeMeasurementSet(
   input: CreateAuthoritativeMeasurementSetInput
@@ -544,6 +749,10 @@ export function createAuthoritativeMeasurementSet(
     }
   }
 
+  if (input.evidence !== undefined) {
+    assertValidMeasurementProvenanceEvidence(provenance, input.evidence);
+  }
+
   // Missing approval defaults to 'unverified', NEVER 'approved'
   const approvalState: MeasurementApprovalStatus = input.approvalState ?? 'unverified';
   if (!VALID_MEASUREMENT_APPROVAL_STATES.includes(approvalState)) {
@@ -567,7 +776,15 @@ export function createAuthoritativeMeasurementSet(
   const hasSyntheticValues =
     source === 'synthetic-fixture' ||
     provenance === 'synthetic-fixture' ||
-    Object.values(perMeasurementOrigin).includes('synthetic-fixture');
+    source === 'synthetic-persona' ||
+    provenance === 'synthetic-persona' ||
+    Object.values(perMeasurementOrigin).includes('synthetic-fixture') ||
+    Object.values(perMeasurementOrigin).includes('synthetic-persona');
+
+  const hasStandardChartValues =
+    source === 'standard-chart' ||
+    provenance === 'standard-chart' ||
+    Object.values(perMeasurementOrigin).includes('standard-chart');
 
   if (approvalState === 'approved') {
     if (hasAiInActiveValues) {
@@ -577,7 +794,12 @@ export function createAuthoritativeMeasurementSet(
     }
     if (hasSyntheticValues) {
       throw new ProductionSnapshotMeasurementError(
-        'Synthetic fixture measurements cannot be marked as approved authoritative measurements.'
+        'Synthetic fixture or persona measurements cannot be marked as approved authoritative measurements.'
+      );
+    }
+    if (hasStandardChartValues) {
+      throw new ProductionSnapshotMeasurementError(
+        'Standard reference chart measurements cannot be marked as approved physical or authoritative measurements without recorded measurement evidence.'
       );
     }
     if (source === 'unknown' || provenance === 'unknown') {
@@ -588,6 +810,11 @@ export function createAuthoritativeMeasurementSet(
     if (!input.approvingAuthority || typeof input.approvingAuthority !== 'string' || input.approvingAuthority.trim() === '') {
       throw new ProductionSnapshotMeasurementError(
         'Approved measurement set requires a non-empty approvingAuthority.'
+      );
+    }
+    if (isMisleadingChartApproverIdentity(input.approvingAuthority)) {
+      throw new ProductionSnapshotMeasurementError(
+        `Standard reference chart label '${input.approvingAuthority}' cannot be used as an approvingAuthority for measurements.`
       );
     }
     if (!input.approvedAt || !isValidIsoDate(input.approvedAt)) {
@@ -634,6 +861,7 @@ export function createAuthoritativeMeasurementSet(
     approvalState,
     approvingAuthority: input.approvingAuthority?.trim(),
     approvedAt: input.approvedAt,
+    evidence: input.evidence,
     notes: input.notes ? [...input.notes] : undefined,
     canonicalFingerprint
   });
@@ -647,6 +875,7 @@ export function approveAuthoritativeMeasurementSet(
   options: {
     readonly approvingAuthority: string;
     readonly approvedAt?: string;
+    readonly evidence?: MeasurementProvenanceEvidence;
     readonly notes?: string[];
   }
 ): AuthoritativeMeasurementSetRecord {
@@ -668,6 +897,7 @@ export function approveAuthoritativeMeasurementSet(
     approvalState: 'approved',
     approvingAuthority: options.approvingAuthority,
     approvedAt,
+    evidence: options.evidence ?? record.evidence,
     notes: options.notes ?? (record.notes ? [...record.notes] : undefined)
   });
 }
@@ -758,12 +988,16 @@ export function verifyMeasurementSetIntegrity(
   if (
     record.source === 'synthetic-fixture' ||
     record.provenance === 'synthetic-fixture' ||
-    (record.perMeasurementOrigin && Object.values(record.perMeasurementOrigin).includes('synthetic-fixture'))
+    record.source === 'synthetic-persona' ||
+    record.provenance === 'synthetic-persona' ||
+    (record.perMeasurementOrigin &&
+      (Object.values(record.perMeasurementOrigin).includes('synthetic-fixture') ||
+        Object.values(record.perMeasurementOrigin).includes('synthetic-persona')))
   ) {
     return {
       isValid: false,
       isApproved: false,
-      reason: 'Synthetic fixture measurements are not permitted as authoritative production measurements.'
+      reason: 'Synthetic fixture or persona measurements are not permitted as authoritative production measurements.'
     };
   }
   if (record.source === 'unknown' || record.provenance === 'unknown') {
@@ -771,6 +1005,18 @@ export function verifyMeasurementSetIntegrity(
       isValid: false,
       isApproved: false,
       reason: 'Measurement set is missing explicit provenance (origin is unknown).'
+    };
+  }
+  if (
+    record.source === 'standard-chart' ||
+    record.provenance === 'standard-chart' ||
+    (record.perMeasurementOrigin && Object.values(record.perMeasurementOrigin).includes('standard-chart'))
+  ) {
+    return {
+      isValid: record.approvalState !== 'approved',
+      isApproved: false,
+      reason:
+        'Standard reference chart measurements are unverified reference presets and cannot be approved as physical or production measurements.'
     };
   }
   if (record.approvalState !== 'approved') {
@@ -785,6 +1031,13 @@ export function verifyMeasurementSetIntegrity(
       isValid: false,
       isApproved: false,
       reason: 'Measurement set is marked approved but missing approvingAuthority.'
+    };
+  }
+  if (isMisleadingChartApproverIdentity(record.approvingAuthority)) {
+    return {
+      isValid: false,
+      isApproved: false,
+      reason: `Standard reference chart label '${record.approvingAuthority}' is not a valid approvingAuthority for measurements.`
     };
   }
   if (!record.approvedAt || !isValidIsoDate(record.approvedAt)) {

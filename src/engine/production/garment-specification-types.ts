@@ -192,6 +192,7 @@ export interface VerifiableIdentityCredential {
   readonly keyId?: string;
   readonly jti?: string;
   readonly specificationId?: string;
+  readonly targetSpecificationId?: string;
   readonly targetRevisionId?: string;
   readonly targetSpecificationFingerprint?: string;
   readonly acr?: string;
@@ -329,11 +330,15 @@ export interface TrustedIdentityVerifier {
     credential: VerifiableIdentityCredential,
     context: {
       readonly targetRevisionId: string;
+      readonly expectedRevisionId?: string;
       readonly targetSpecificationFingerprint: string;
+      readonly expectedSpecificationFingerprint?: string;
       readonly expectedApprover: string;
       readonly approvalTimestamp: string;
       readonly expectedTenantId?: string;
       readonly expectedSpecificationId?: string;
+      readonly requireTargetBinding?: boolean;
+      readonly reverifyRecordedApproval?: IdentityCredentialVerificationOptions['reverifyRecordedApproval'];
     }
   ): TrustedIdentityVerificationResult;
   verifyCredential(

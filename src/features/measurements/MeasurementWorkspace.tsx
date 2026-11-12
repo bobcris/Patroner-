@@ -19,7 +19,11 @@ import { Badge } from '../../components/ui/Badge';
 import { Compass, CheckCircle2, AlertTriangle, ArrowRight, Scissors, ShieldCheck } from 'lucide-react';
 import {
   MeasurementApprovalStatus,
-  MeasurementOrigin
+  MeasurementOrigin,
+  MeasurementProvenanceEvidence,
+  NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS,
+  transitionMeasurementProvenance,
+  validateMeasurementProvenanceEvidence
 } from '../../engine/production';
 
 interface MeasurementWorkspaceProps {
@@ -28,6 +32,7 @@ interface MeasurementWorkspaceProps {
   currentSpec: DesignSpecification;
   measurementProvenance?: MeasurementOrigin;
   measurementApprovalState?: MeasurementApprovalStatus;
+  measurementProvenanceEvidence?: MeasurementProvenanceEvidence;
   measurementRevisionId?: string;
   onUpdateMeasurements: (
     m: BodyMeasurements,
@@ -35,7 +40,10 @@ interface MeasurementWorkspaceProps {
     provenance?: MeasurementOrigin
   ) => void;
   onUpdateMeasurementApproval?: (state: MeasurementApprovalStatus) => void;
-  onUpdateMeasurementProvenance?: (origin: MeasurementOrigin) => void;
+  onUpdateMeasurementProvenance?: (
+    origin: MeasurementOrigin,
+    evidence?: MeasurementProvenanceEvidence
+  ) => void;
   onNavigateToCAD: () => void;
 }
 
@@ -45,6 +53,7 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
   currentSpec,
   measurementProvenance = 'standard-chart',
   measurementApprovalState = 'unverified',
+  measurementProvenanceEvidence,
   measurementRevisionId = 'meas-rev-1',
   onUpdateMeasurements,
   onUpdateMeasurementApproval,
@@ -53,6 +62,24 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
 }) => {
   const [selectedSize, setSelectedSize] = useState<StandardSize | 'custom'>(activeSize);
   const [measurements, setMeasurements] = useState<BodyMeasurements>(currentMeasurements);
+  const [targetVerifiedOrigin, setTargetVerifiedOrigin] = useState<MeasurementOrigin>(
+    measurementProvenance === 'physically-measured' ||
+      measurementProvenance === 'operator-confirmed' ||
+      measurementProvenance === 'user-entered' ||
+      measurementProvenance === 'imported'
+      ? measurementProvenance
+      : 'physically-measured'
+  );
+  const [operatorNameInput, setOperatorNameInput] = useState<string>(
+    measurementProvenanceEvidence?.operatorName ?? ''
+  );
+  const [measurementSourceInput, setMeasurementSourceInput] = useState<string>(
+    measurementProvenanceEvidence?.measurementSource ?? ''
+  );
+  const [sessionReferenceInput, setSessionReferenceInput] = useState<string>(
+    measurementProvenanceEvidence?.sessionReference ?? ''
+  );
+  const [provenanceError, setProvenanceError] = useState<string | null>(null);
 
   const isBodice = currentSpec.garmentCategory === 'bodice';
   const bodiceValidation = isBodice ? validateBodiceMeasurements(measurements) : { isValid: true, errors: [], warnings: [] };
@@ -93,6 +120,7 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
       skirtLength: currentSpec.lengthCm || STANDARD_SIZING_SYSTEM.sizes[size].skirtLength
     };
     setMeasurements(standardValues);
+    setProvenanceError(null);
     onUpdateMeasurements(standardValues, size, 'standard-chart');
   };
 
@@ -103,14 +131,52 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
     };
     setSelectedSize('custom');
     setMeasurements(updated);
+    setProvenanceError(null);
+    // Editing a numeric field on standard-chart transitions to 'user-entered' (unverified bespoke draft),
+    // never automatically to 'physically-measured'.
     onUpdateMeasurements(updated, 'custom', 'user-entered');
   };
 
+  const activeEvidence: MeasurementProvenanceEvidence | undefined =
+    measurementProvenanceEvidence ??
+    (operatorNameInput.trim() || measurementSourceInput.trim()
+      ? {
+          operatorName: operatorNameInput.trim(),
+          measurementSource: measurementSourceInput.trim(),
+          sessionReference: sessionReferenceInput.trim() || undefined,
+          recordedAt: new Date().toISOString()
+        }
+      : undefined);
+
+  const evidenceValidation = validateMeasurementProvenanceEvidence(
+    measurementProvenance,
+    activeEvidence
+  );
+
   const canApproveMeasurements =
     validation.isValid &&
-    measurementProvenance !== 'ai-estimated' &&
-    measurementProvenance !== 'synthetic-fixture' &&
-    measurementProvenance !== 'unknown';
+    !NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(measurementProvenance) &&
+    evidenceValidation.isValid;
+
+  const handleRecordProvenanceEvidence = () => {
+    const candidateEvidence: MeasurementProvenanceEvidence = {
+      operatorName: operatorNameInput.trim(),
+      measurementSource: measurementSourceInput.trim(),
+      sessionReference: sessionReferenceInput.trim() || undefined,
+      recordedAt: new Date().toISOString()
+    };
+    const transitionResult = transitionMeasurementProvenance(
+      measurementProvenance,
+      targetVerifiedOrigin,
+      candidateEvidence
+    );
+    if (!transitionResult.isValid) {
+      setProvenanceError(transitionResult.reason ?? 'Invalid provenance transition.');
+      return;
+    }
+    setProvenanceError(null);
+    onUpdateMeasurementProvenance?.(transitionResult.nextOrigin, transitionResult.evidence);
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-8">
@@ -163,28 +229,23 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
 
         <div className="pt-3 border-t border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-3 font-mono">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-neutral-500">PROVENANCE:</span>
-            <select
-              aria-label="Measurement Provenance"
-              value={measurementProvenance}
-              onChange={e => {
-                const nextOrigin = e.target.value as MeasurementOrigin;
-                onUpdateMeasurementProvenance?.(nextOrigin);
-                if (nextOrigin === 'ai-estimated' || nextOrigin === 'synthetic-fixture' || nextOrigin === 'unknown') {
-                  onUpdateMeasurementApproval?.('unverified');
-                }
-              }}
-              className="text-xs px-2 py-1 border border-stone-300 rounded bg-white text-neutral-900 font-semibold"
+            <span className="text-neutral-500">ACTIVE PROVENANCE:</span>
+            <Badge
+              variant={
+                NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(measurementProvenance)
+                  ? 'neutral'
+                  : 'dark'
+              }
+              size="sm"
             >
-              <option value="standard-chart">standard-chart (ISO 13402)</option>
-              <option value="user-entered">user-entered (Bespoke Operator)</option>
-              <option value="operator-confirmed">operator-confirmed (Confirmed Profile)</option>
-              <option value="physically-measured">physically-measured (Direct Tape)</option>
-              <option value="imported">imported (External Profile)</option>
-              <option value="ai-estimated">ai-estimated (Non-Authoritative)</option>
-              <option value="synthetic-fixture">synthetic-fixture (Test Fixture Only)</option>
-              <option value="unknown">unknown (Unverified Origin)</option>
-            </select>
+              {measurementProvenance}
+            </Badge>
+
+            {measurementProvenanceEvidence?.operatorName && (
+              <span className="text-[11px] text-neutral-700">
+                OPERATOR: <strong>{measurementProvenanceEvidence.operatorName}</strong> ({measurementProvenanceEvidence.measurementSource})
+              </span>
+            )}
 
             <span className="text-neutral-400">|</span>
             <span className="text-neutral-500">APPROVAL STATE:</span>
@@ -229,6 +290,85 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
               </Button>
             )}
           </div>
+        </div>
+
+        {/* Evidence-Based Provenance Declaration & Upgrade Control (AUDIT-04.6.2.3.5-05) */}
+        <div className="pt-3 border-t border-stone-200 bg-white/80 p-3 rounded border border-stone-200/80 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="font-mono text-[11px] font-semibold text-neutral-900">
+              MEASUREMENT PROVENANCE &amp; OPERATOR EVIDENCE DECLARATION
+            </div>
+            <span className="text-[11px] text-neutral-500 font-mono">
+              {NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(measurementProvenance)
+                ? `Approval blocked for '${measurementProvenance}' — record verified measurement source & operator evidence below`
+                : 'Verified measurement provenance active'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs font-mono">
+            <div>
+              <label htmlFor="select-target-provenance" className="block text-[10px] text-neutral-500 mb-1">
+                VERIFIED ORIGIN TYPE
+              </label>
+              <select
+                id="select-target-provenance"
+                aria-label="Target Verified Measurement Provenance"
+                value={targetVerifiedOrigin}
+                onChange={e => setTargetVerifiedOrigin(e.target.value as MeasurementOrigin)}
+                className="w-full text-xs px-2 py-1.5 border border-stone-300 rounded bg-white text-neutral-900 font-semibold"
+              >
+                <option value="physically-measured">physically-measured (Direct Tape)</option>
+                <option value="operator-confirmed">operator-confirmed (Confirmed Fit)</option>
+                <option value="user-entered">user-entered (Bespoke Operator)</option>
+                <option value="imported">imported (External Body Scan)</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="input-operator-name" className="block text-[10px] text-neutral-500 mb-1">
+                OPERATOR / PATTERNMAKER NAME
+              </label>
+              <input
+                id="input-operator-name"
+                type="text"
+                placeholder="e.g. E. Rostova (Atelier Lead)"
+                value={operatorNameInput}
+                onChange={e => setOperatorNameInput(e.target.value)}
+                className="w-full text-xs px-2 py-1.5 border border-stone-300 rounded bg-white text-neutral-900"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="input-measurement-source" className="block text-[10px] text-neutral-500 mb-1">
+                MEASUREMENT SOURCE / METHOD
+              </label>
+              <input
+                id="input-measurement-source"
+                type="text"
+                placeholder="e.g. Direct tape on client / dress form"
+                value={measurementSourceInput}
+                onChange={e => setMeasurementSourceInput(e.target.value)}
+                className="w-full text-xs px-2 py-1.5 border border-stone-300 rounded bg-white text-neutral-900"
+              />
+            </div>
+
+            <div className="flex flex-col justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRecordProvenanceEvidence}
+                className="w-full text-xs font-mono"
+              >
+                Record Evidence &amp; Set Provenance
+              </Button>
+            </div>
+          </div>
+
+          {provenanceError && (
+            <div className="text-[11px] font-mono text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded">
+              {provenanceError}
+            </div>
+          )}
         </div>
       </div>
 

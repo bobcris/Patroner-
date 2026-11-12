@@ -16,6 +16,8 @@ import {
   computeCanonicalRevisionFingerprint,
   CURRENT_ENGINE_VERSION,
   deepFreeze,
+  isMisleadingChartApproverIdentity,
+  NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS,
   verifyGradingArtifactIntegrity,
   verifyMeasurementSetIntegrity
 } from './pattern-revision-snapshot';
@@ -286,9 +288,29 @@ export function evaluatePipelineDependencyIntegrity(
 
   const isSyntheticMeasurement =
     measProvenance === 'synthetic-fixture' ||
-    (inputs.measurementSet && 'source' in inputs.measurementSet && inputs.measurementSet.source === 'synthetic-fixture') ||
+    measProvenance === 'synthetic-persona' ||
+    (inputs.measurementSet &&
+      'source' in inputs.measurementSet &&
+      (inputs.measurementSet.source === 'synthetic-fixture' || inputs.measurementSet.source === 'synthetic-persona')) ||
     (inputs.measurementSet?.perMeasurementOrigin &&
-      Object.values(inputs.measurementSet.perMeasurementOrigin).includes('synthetic-fixture'));
+      (Object.values(inputs.measurementSet.perMeasurementOrigin).includes('synthetic-fixture') ||
+        Object.values(inputs.measurementSet.perMeasurementOrigin).includes('synthetic-persona')));
+
+  const isStandardChartMeasurement =
+    measProvenance === 'standard-chart' ||
+    (inputs.measurementSet && 'source' in inputs.measurementSet && inputs.measurementSet.source === 'standard-chart');
+
+  const hasMisleadingChartApprover =
+    (inputs.measurementSet &&
+      'approvedBy' in inputs.measurementSet &&
+      isMisleadingChartApproverIdentity(inputs.measurementSet.approvedBy as string | undefined)) ||
+    (inputs.measurementSet &&
+      'approvingAuthority' in inputs.measurementSet &&
+      isMisleadingChartApproverIdentity(inputs.measurementSet.approvingAuthority)) ||
+    (inputs.measurementSet &&
+      'approval' in inputs.measurementSet &&
+      isMisleadingChartApproverIdentity(inputs.measurementSet.approval?.approvedBy)) ||
+    isMisleadingChartApproverIdentity(inputs.productionSnapshot?.measurementSet?.approval?.approvedBy);
 
   const isMeasSuperseded =
     measApprovalState === 'superseded' ||
@@ -317,12 +339,19 @@ export function evaluatePipelineDependencyIntegrity(
     staleReasons.push(measStaleReason);
   } else if (isSyntheticMeasurement) {
     measStatus = 'invalid';
-    measStaleReason = 'Synthetic fixture measurements cannot be used as approved production measurements.';
+    measStaleReason = 'Synthetic fixture or persona measurements cannot be used as approved production measurements.';
+    staleReasons.push(measStaleReason);
+  } else if (hasMisleadingChartApprover) {
+    measStatus = 'invalid';
+    measStaleReason = 'Standard sizing chart reference cannot be recorded as an approving human authority.';
     staleReasons.push(measStaleReason);
   } else if (isMeasSuperseded) {
     measStatus = 'stale';
     measStaleReason = 'Measurement set revision has been superseded by a newer measurement revision.';
     staleReasons.push(measStaleReason);
+  } else if (isStandardChartMeasurement && measApprovalState === 'approved') {
+    measStatus = 'pending';
+    measStaleReason = 'Standard sizing chart measurements are unverified reference presets and cannot be approved for production without operator measurement evidence.';
   } else if (explicitUnapprovedFlag) {
     measStatus = 'pending';
     measStaleReason = `Anatomical measurements are ${measApprovalState} and require explicit verification.`;
@@ -333,14 +362,18 @@ export function evaluatePipelineDependencyIntegrity(
     measApprovalState === 'approved' &&
     !isAiMeasurement &&
     !isSyntheticMeasurement &&
+    !isStandardChartMeasurement &&
+    !hasMisleadingChartApprover &&
     !isMeasSuperseded &&
-    measProvenance !== 'unknown';
+    !NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(measProvenance);
 
   const measValidationStatus = !isMeasAnatomicallyValid || measStatus === 'invalid'
     ? 'invalid'
     : isMeasExplicitlyApproved
       ? 'approved'
-      : measApprovalState;
+      : isStandardChartMeasurement && measApprovalState === 'approved'
+        ? 'unverified'
+        : measApprovalState;
 
   const measArtifact: PipelineArtifactRecord = {
     artifactId: 'art-measurements',
@@ -1567,11 +1600,25 @@ export function validateProductionExportPrerequisites(
         ms.provenance === 'unknown' ||
         ms.source === 'synthetic-fixture' ||
         ms.provenance === 'synthetic-fixture' ||
-        (ms.perMeasurementOrigin && Object.values(ms.perMeasurementOrigin).includes('synthetic-fixture'))
+        ms.source === 'synthetic-persona' ||
+        ms.provenance === 'synthetic-persona' ||
+        ms.source === 'standard-chart' ||
+        ms.provenance === 'standard-chart' ||
+        (ms.perMeasurementOrigin &&
+          (Object.values(ms.perMeasurementOrigin).includes('synthetic-fixture') ||
+            Object.values(ms.perMeasurementOrigin).includes('synthetic-persona')))
       ) {
         blockingArtifacts.push(`measurements (invalid-provenance: Measurement set provenance '${ms.provenance}' is not valid for production export)`);
         if (!rejectionCode || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
           rejectionCode = 'MISSING_MEASUREMENT_PROVENANCE';
+        }
+      } else if (
+        isMisleadingChartApproverIdentity((ms as { readonly approvedBy?: string }).approvedBy) ||
+        isMisleadingChartApproverIdentity(ms.approvingAuthority)
+      ) {
+        blockingArtifacts.push(`measurements (invalid-approver: Standard chart reference '${(ms as { readonly approvedBy?: string }).approvedBy ?? ms.approvingAuthority}' cannot act as an approving human authority)`);
+        if (!rejectionCode || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
+          rejectionCode = 'MEASUREMENT_UNAPPROVED';
         }
       } else {
         const msIntegrity = verifyMeasurementSetIntegrity(ms);
@@ -1599,7 +1646,11 @@ export function validateProductionExportPrerequisites(
     } else if (
       effectiveOrigin === 'unknown' ||
       effectiveOrigin === 'synthetic-fixture' ||
-      (snapMs.perMeasurementOrigin && Object.values(snapMs.perMeasurementOrigin).includes('synthetic-fixture'))
+      effectiveOrigin === 'synthetic-persona' ||
+      effectiveOrigin === 'standard-chart' ||
+      (snapMs.perMeasurementOrigin &&
+        (Object.values(snapMs.perMeasurementOrigin).includes('synthetic-fixture') ||
+          Object.values(snapMs.perMeasurementOrigin).includes('synthetic-persona')))
     ) {
       blockingArtifacts.push(`measurements (invalid-provenance: Measurement origin '${effectiveOrigin}' is not permitted for production export)`);
       if (!rejectionCode || rejectionCode === 'MEASUREMENT_UNAPPROVED' || rejectionCode === 'STALE_SOURCE_FINGERPRINT') {
@@ -1610,6 +1661,7 @@ export function validateProductionExportPrerequisites(
       snapMs.approval?.state !== 'approved' ||
       !snapMs.approval.approvedBy ||
       !snapMs.approval.approvedAt ||
+      isMisleadingChartApproverIdentity(snapMs.approval.approvedBy) ||
       activeInputs?.isMeasurementApproved === false ||
       (activeInputs?.measurementApprovalState && activeInputs.measurementApprovalState !== 'approved')
     ) {
@@ -1753,14 +1805,17 @@ export function validateProductionExportPrerequisites(
     }
   }
 
-  // 9. Full Report Recomputation & 11-Field Artifact Comparison (Correction F)
+  // 9. Full Report Recomputation & 11-Field Artifact Comparison (Correction F / AUDIT-04.6.2.3.5-03)
+  // Always recompute with gradingArtifact: activeInputs.gradingArtifact unconditionally.
+  // Never infer whether gradingArtifact was used from caller-supplied report.artifacts.grading fingerprints.
+  let reportOnlyMismatchedGradingStage = false;
   if (
     activeInputs?.specification &&
     activeInputs?.measurements &&
     (missingActiveInputNames.length === 0 || (activeInputs.patternPieces && activeInputs.validationReport))
   ) {
     try {
-      const baselineRecomputedReport = evaluatePipelineDependencyIntegrity({
+      const recomputedReport = evaluatePipelineDependencyIntegrity({
         specification: activeInputs.specification,
         measurements: activeInputs.measurements,
         measurementSet: activeInputs.measurementSet,
@@ -1775,36 +1830,12 @@ export function validateProductionExportPrerequisites(
         engineVersion: activeInputs.engineVersion,
         gradingRulesVersion: activeInputs.gradingRulesVersion,
         verificationContext: activeInputs.verificationContext,
-        gradingSummary: activeInputs.gradingResult
+        gradingSummary: activeInputs.gradingResult,
+        gradingArtifact: activeInputs.gradingArtifact
       });
 
-      const reportUsedGradingArtifact =
-        Boolean(activeInputs.gradingArtifact) &&
-        report.artifacts.grading?.generatedContentFingerprint !==
-          baselineRecomputedReport.artifacts.grading?.generatedContentFingerprint;
-
-      const recomputedReport = reportUsedGradingArtifact
-        ? evaluatePipelineDependencyIntegrity({
-            specification: activeInputs.specification,
-            measurements: activeInputs.measurements,
-            measurementSet: activeInputs.measurementSet,
-            measurementApprovalState: activeInputs.measurementApprovalState,
-            measurementProvenance: activeInputs.measurementProvenance,
-            isMeasurementApproved: activeInputs.isMeasurementApproved,
-            activeSize: snapshot?.targetSize ?? 'M',
-            fabric: activeInputs.fabric,
-            patternPieces: activeInputs.patternPieces,
-            validationReport: activeInputs.validationReport,
-            productionSnapshot: snapshot,
-            engineVersion: activeInputs.engineVersion,
-            gradingRulesVersion: activeInputs.gradingRulesVersion,
-            verificationContext: activeInputs.verificationContext,
-            gradingSummary: activeInputs.gradingResult,
-            gradingArtifact: activeInputs.gradingArtifact
-          })
-        : baselineRecomputedReport;
-
       const reportMismatches: string[] = [];
+      const mismatchedStages: string[] = [];
 
       if (Boolean(report.hasStaleArtifacts) !== Boolean(recomputedReport.hasStaleArtifacts)) {
         reportMismatches.push(`hasStaleArtifacts (${report.hasStaleArtifacts} !== ${recomputedReport.hasStaleArtifacts})`);
@@ -1818,15 +1849,21 @@ export function validateProductionExportPrerequisites(
         const recomputedArt = recomputedReport.artifacts[stage];
         if (!suppliedArt) {
           reportMismatches.push(`missing artifact record for stage '${stage}'`);
+          mismatchedStages.push(stage);
           continue;
         }
         const fieldDiffs = compareArtifactRecords(suppliedArt, recomputedArt);
         if (fieldDiffs.length > 0) {
           reportMismatches.push(`stage '${stage}' mismatch: ${fieldDiffs.join(', ')}`);
+          mismatchedStages.push(stage);
         }
       }
 
       if (reportMismatches.length > 0) {
+        reportOnlyMismatchedGradingStage =
+          Boolean(activeInputs.gradingArtifact) &&
+          mismatchedStages.length === 1 &&
+          mismatchedStages[0] === 'grading';
         blockingArtifacts.push(
           `pipeline-integrity-report (forged: Report contradicts recomputed active dependency evaluation — ${reportMismatches.join('; ')})`
         );
@@ -1840,29 +1877,36 @@ export function validateProductionExportPrerequisites(
     }
   }
 
-  // 9b. Complete Grading Export Lineage Verification (Milestone 04.6.2.3.4 Phase 4 & Phase 7)
+  // 9b. Complete Grading Export Lineage Verification (Milestone 04.6.2.3.4 Phase 4 & Phase 7 / AUDIT-04.6.2.3.5-03)
   // Grading applicability must NEVER be inferred from the omission of exportGradingPolicy or gradingArtifact.
   if (missingActiveInputNames.length === 0) {
     const policy = activeInputs?.exportGradingPolicy;
-    const policyMode = policy?.mode;
+    const rawPolicyMode = policy?.mode as string | undefined;
+    const isGradedMode = rawPolicyMode === 'graded-multi-size' || rawPolicyMode === 'multi-size-graded';
+    const isSingleSizeMode = rawPolicyMode === 'single-size-ungraded' || rawPolicyMode === 'base-size-only';
 
-    if (!policy || (policyMode !== 'graded-multi-size' && policyMode !== 'single-size-ungraded')) {
-      blockingArtifacts.push(
-        `grading-policy (undeclared: Missing or invalid exportGradingPolicy.mode '${String(policyMode ?? 'undefined')}'; exportGradingPolicy must be explicitly declared)`
-      );
-      if (!rejectionCode) {
-        rejectionCode = 'GRADING_APPLICABILITY_UNDECLARED';
+    const setGradingRejectionCode = (code: ProductionExportRejectionCode) => {
+      if (
+        !rejectionCode ||
+        (rejectionCode === 'FORGED_REPORT_DETECTED' && reportOnlyMismatchedGradingStage)
+      ) {
+        rejectionCode = code;
       }
-    } else if (policyMode === 'single-size-ungraded') {
+    };
+
+    if (!policy || (!isGradedMode && !isSingleSizeMode)) {
+      blockingArtifacts.push(
+        `grading-policy (undeclared: Missing or invalid exportGradingPolicy.mode '${String(rawPolicyMode ?? 'undefined')}'; exportGradingPolicy must be explicitly declared)`
+      );
+      setGradingRejectionCode('GRADING_APPLICABILITY_UNDECLARED');
+    } else if (isSingleSizeMode) {
       // Single-size ungraded export requires an explicit non-empty nonGradingReason
       const reason = typeof policy?.nonGradingReason === 'string' ? policy.nonGradingReason.trim() : '';
       if (!reason) {
         blockingArtifacts.push(
           'grading-policy (undeclared: Single-size ungraded export requires an explicit non-empty nonGradingReason)'
         );
-        if (!rejectionCode) {
-          rejectionCode = 'GRADING_APPLICABILITY_UNDECLARED';
-        }
+        setGradingRejectionCode('GRADING_APPLICABILITY_UNDECLARED');
       }
 
       // Single-size ungraded claim must not contradict attached graded pattern data or multi-size requirements
@@ -1875,20 +1919,16 @@ export function validateProductionExportPrerequisites(
         blockingArtifacts.push(
           'grading-scope-mismatch (contradictory: Single-size ungraded export policy declared, but graded pattern artifact or multi-size requirements are present)'
         );
-        if (!rejectionCode) {
-          rejectionCode = 'GRADING_SCOPE_MISMATCH';
-        }
+        setGradingRejectionCode('GRADING_SCOPE_MISMATCH');
       }
     } else {
-      // Default and explicit 'graded-multi-size' mode: AuthoritativeGradingArtifact is mandatory
+      // Default and explicit 'graded-multi-size' / 'multi-size-graded' mode: AuthoritativeGradingArtifact is mandatory
       const ga = activeInputs?.gradingArtifact;
       if (!ga) {
         blockingArtifacts.push(
           'grading-artifact (missing: AuthoritativeGradingArtifact is mandatory for graded production export; grading applicability is never inferred from omission)'
         );
-        if (!rejectionCode) {
-          rejectionCode = 'GRADING_ARTIFACT_MISSING';
-        }
+        setGradingRejectionCode('GRADING_ARTIFACT_MISSING');
       } else {
         // 1. Industrial safety invariant on grading artifact
         if ((ga as unknown as { isProductionReady?: boolean }).isProductionReady !== false) {
@@ -1904,27 +1944,27 @@ export function validateProductionExportPrerequisites(
           blockingArtifacts.push(
             `grading-artifact (tampered: ${gaIntegrity.reason ?? 'Grading artifact canonical fingerprint mismatch'})`
           );
-          if (!rejectionCode) rejectionCode = 'GRADING_ARTIFACT_TAMPERED';
+          setGradingRejectionCode('GRADING_ARTIFACT_TAMPERED');
         } else if (ga.lifecycleState === 'revoked' || Boolean(ga.revocationReason)) {
           blockingArtifacts.push(
             `grading-artifact (revoked: ${gaIntegrity.reason ?? 'Grading artifact has been revoked'})`
           );
-          if (!rejectionCode) rejectionCode = 'GRADING_ARTIFACT_REVOKED';
+          setGradingRejectionCode('GRADING_ARTIFACT_REVOKED');
         } else if (ga.lifecycleState === 'superseded' || Boolean(ga.supersededByRevisionId)) {
           blockingArtifacts.push(
             `grading-artifact (superseded: ${gaIntegrity.reason ?? 'Grading artifact has been superseded'})`
           );
-          if (!rejectionCode) rejectionCode = 'GRADING_ARTIFACT_SUPERSEDED';
+          setGradingRejectionCode('GRADING_ARTIFACT_SUPERSEDED');
         } else if (gaIntegrity.isSizeRangeIncomplete) {
           blockingArtifacts.push(
             `grading-artifact (size-range-incomplete: ${gaIntegrity.reason ?? 'Grading artifact size range is incomplete'})`
           );
-          if (!rejectionCode) rejectionCode = 'GRADING_SIZE_RANGE_INCOMPLETE';
+          setGradingRejectionCode('GRADING_SIZE_RANGE_INCOMPLETE');
         } else if (gaIntegrity.isValidationFailed) {
           blockingArtifacts.push(
             `grading-artifact (validation-failed: ${gaIntegrity.reason ?? 'Grading artifact validation failed'})`
           );
-          if (!rejectionCode) rejectionCode = 'GRADING_VALIDATION_FAILED';
+          setGradingRejectionCode('GRADING_VALIDATION_FAILED');
         }
 
         // 3. Required sizes completeness check when exportGradingPolicy.requiredSizes is specified
@@ -1940,7 +1980,7 @@ export function validateProductionExportPrerequisites(
             blockingArtifacts.push(
               `grading-artifact (size-range-incomplete: Grading artifact is missing required export sizes [${missingReqSizes.join(', ')}])`
             );
-            if (!rejectionCode) rejectionCode = 'GRADING_SIZE_RANGE_INCOMPLETE';
+            setGradingRejectionCode('GRADING_SIZE_RANGE_INCOMPLETE');
           }
         }
 
@@ -1953,7 +1993,7 @@ export function validateProductionExportPrerequisites(
           blockingArtifacts.push(
             `grading-artifact (scope-mismatch: Grading artifact projectId/tenantId '${ga.projectId}'/'${ga.tenantId}' does not match active scope '${expectedScope}')`
           );
-          if (!rejectionCode) rejectionCode = 'GRADING_SCOPE_MISMATCH';
+          setGradingRejectionCode('GRADING_SCOPE_MISMATCH');
         }
 
         // 5. Specification lineage verification
@@ -1977,7 +2017,7 @@ export function validateProductionExportPrerequisites(
             blockingArtifacts.push(
               `grading-artifact (stale-specification: Grading artifact specification lineage '${ga.sourceSpecificationRevisionId}' / '${ga.sourceSpecificationFingerprint.slice(0, 12)}' does not match active specification '${activeSpecRevId}' / '${activeSpecFp.slice(0, 12)}')`
             );
-            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+            setGradingRejectionCode('STALE_GRADING_RESULT');
           }
         }
 
@@ -1987,26 +2027,26 @@ export function validateProductionExportPrerequisites(
             blockingArtifacts.push(
               `grading-artifact (stale-pattern-revision: Grading artifact sourcePatternRevisionId '${ga.sourcePatternRevisionId}' does not match snapshot revisionId '${snapshot.revisionId}')`
             );
-            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+            setGradingRejectionCode('STALE_GRADING_RESULT');
           }
           if (ga.sourcePatternSnapshotFingerprint && ga.sourcePatternSnapshotFingerprint !== snapshot.canonicalFingerprint) {
             blockingArtifacts.push(
               'grading-artifact (stale-pattern-snapshot: Grading artifact sourcePatternSnapshotFingerprint does not match snapshot canonicalFingerprint)'
             );
-            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+            setGradingRejectionCode('STALE_GRADING_RESULT');
           }
           if (ga.baseSize !== snapshot.targetSize) {
             blockingArtifacts.push(
               `grading-artifact (base-size-mismatch: Grading artifact baseSize '${ga.baseSize}' does not match snapshot targetSize '${snapshot.targetSize}')`
             );
-            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+            setGradingRejectionCode('STALE_GRADING_RESULT');
           }
           const basePieces = ga.perSizePatternGeometry?.[ga.baseSize];
           if (!basePieces || basePieces.length !== snapshot.patternPieces.length) {
             blockingArtifacts.push(
               'grading-artifact (stale-geometry: Base-size graded pattern piece count does not match snapshot pattern pieces)'
             );
-            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+            setGradingRejectionCode('STALE_GRADING_RESULT');
           } else {
             const snapPieceMap = new Map(snapshot.patternPieces.map(p => [p.pieceCode, p]));
             for (const bp of basePieces) {
@@ -2024,7 +2064,7 @@ export function validateProductionExportPrerequisites(
                 blockingArtifacts.push(
                   `grading-artifact (stale-geometry: Base-size graded pattern piece '${bp.pieceCode}' geometry does not match snapshot pattern piece)`
                 );
-                if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+                setGradingRejectionCode('STALE_GRADING_RESULT');
                 break;
               }
             }
@@ -2068,7 +2108,7 @@ export function validateProductionExportPrerequisites(
             blockingArtifacts.push(
               'grading-artifact (stale-measurements: Grading artifact sourceMeasurementSetFingerprint does not match active measurements)'
             );
-            if (!rejectionCode) rejectionCode = 'STALE_GRADING_RESULT';
+            setGradingRejectionCode('STALE_GRADING_RESULT');
           }
         }
 
@@ -2089,7 +2129,7 @@ export function validateProductionExportPrerequisites(
           blockingArtifacts.push(
             `grading-artifact (rules-mismatch: Grading artifact rule set '${ga.gradingRuleSetRevision}' or fingerprint does not match active grading rules '${expectedRulesVer}')`
           );
-          if (!rejectionCode) rejectionCode = 'GRADING_RULES_MISMATCH';
+          setGradingRejectionCode('GRADING_RULES_MISMATCH');
         }
       }
     }
@@ -2137,7 +2177,11 @@ export function validateProductionExportPrerequisites(
     };
   }
 
-  const effectiveMode = activeInputs!.exportGradingPolicy!.mode;
+  const rawEffectiveMode = activeInputs!.exportGradingPolicy!.mode as string;
+  const effectiveMode: 'graded-multi-size' | 'single-size-ungraded' =
+    rawEffectiveMode === 'single-size-ungraded' || rawEffectiveMode === 'base-size-only'
+      ? 'single-size-ungraded'
+      : 'graded-multi-size';
 
   return {
     isExportPermitted: true,

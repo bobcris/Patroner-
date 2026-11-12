@@ -200,27 +200,58 @@ export function generateEd25519KeyPairFromPassphrase(passphrase: string): Ed2551
 }
 
 /**
- * Derives an RFC 8032 Ed25519 keypair from either a 64-char hex private seed or a string seed phrase.
- * Supports explicit `options.inputFormat` (`'raw-seed-hex' | 'passphrase' | 'auto'`) to prevent ambiguity (FINDING-05).
+ * Derives an RFC 8032 Ed25519 keypair from either an explicit `'raw-seed-hex'` or `'passphrase'`.
+ *
+ * Security rule (`AUDIT-04.6.2.3.5-04`):
+ * - Ambiguous `inputFormat: 'auto'` is prohibited and rejected.
+ * - Never branches to raw-seed derivation based on string shape (`seedOrHex.length === 64`).
+ * - If a 64-character hex string is passed without an explicit `options.inputFormat`
+ *   (`'raw-seed-hex'` or `'passphrase'`), this function fails closed rather than guessing
+ *   whether the caller intended a raw 32-byte seed or a 64-character hexadecimal passphrase.
  */
 export function generateEd25519KeyPairFromSeed(
   seedOrHex: string,
-  options?: { inputFormat?: 'raw-seed-hex' | 'passphrase' | 'auto' }
+  options?: { inputFormat?: 'raw-seed-hex' | 'passphrase' }
 ): Ed25519KeyPair {
   if (!seedOrHex || typeof seedOrHex !== 'string' || seedOrHex.trim() === '') {
     throw new Error('Ed25519 private key seed must be a non-empty string.');
   }
-  const mode = options?.inputFormat ?? 'auto';
+  const mode = options?.inputFormat as string | undefined;
+  if (mode !== undefined && mode !== 'raw-seed-hex' && mode !== 'passphrase') {
+    throw new Error(
+      `Invalid or unsupported Ed25519 seed inputFormat "${String(mode)}": explicit "raw-seed-hex" or "passphrase" is required ("auto" is forbidden).`
+    );
+  }
   if (mode === 'raw-seed-hex') {
     return generateEd25519KeyPairFromRawSeedHex(seedOrHex);
   }
   if (mode === 'passphrase') {
     return generateEd25519KeyPairFromPassphrase(seedOrHex);
   }
-  if (seedOrHex.length === 64 && /^[0-9a-fA-F]{64}$/.test(seedOrHex)) {
-    return generateEd25519KeyPairFromRawSeedHex(seedOrHex);
+  const trimmed = seedOrHex.trim();
+  if (trimmed.length === 64 && /^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    throw new Error(
+      'Ambiguous 64-character hex input to generateEd25519KeyPairFromSeed: explicit inputFormat ("raw-seed-hex" or "passphrase") is required. Use generateEd25519KeyPairFromRawSeedHex() or generateEd25519KeyPairFromPassphrase().'
+    );
   }
   return generateEd25519KeyPairFromPassphrase(seedOrHex);
+}
+
+function resolveSigningSeedBytes(
+  privateKeySeedOrHex: string,
+  options?: { inputFormat?: 'raw-seed-hex' | 'passphrase' }
+): Ed25519KeyPair {
+  if (!privateKeySeedOrHex || typeof privateKeySeedOrHex !== 'string' || privateKeySeedOrHex.trim() === '') {
+    throw new Error('Ed25519 signing seed must be a non-empty string.');
+  }
+  if (options?.inputFormat !== undefined) {
+    return generateEd25519KeyPairFromSeed(privateKeySeedOrHex, options);
+  }
+  const trimmed = privateKeySeedOrHex.trim();
+  if (trimmed.length === 64 && /^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return generateEd25519KeyPairFromRawSeedHex(trimmed);
+  }
+  return generateEd25519KeyPairFromPassphrase(privateKeySeedOrHex);
 }
 
 /**
@@ -229,12 +260,13 @@ export function generateEd25519KeyPairFromSeed(
  */
 export function signEd25519Bytes(
   messageBytes: Uint8Array,
-  privateKeySeedOrHex: string
+  privateKeySeedOrHex: string,
+  options?: { inputFormat?: 'raw-seed-hex' | 'passphrase' }
 ): string {
   if (!(messageBytes instanceof Uint8Array)) {
     throw new Error('signEd25519Bytes requires a Uint8Array message.');
   }
-  const keyPair = generateEd25519KeyPairFromSeed(privateKeySeedOrHex);
+  const keyPair = resolveSigningSeedBytes(privateKeySeedOrHex, options);
   const seedBytes = hexToBytes(keyPair.privateKeyHex);
   const sigBytes = ed.sign(messageBytes, seedBytes);
   return bytesToHex(sigBytes);
@@ -246,13 +278,14 @@ export function signEd25519Bytes(
  */
 export function signEd25519Message(
   message: string | Uint8Array,
-  privateKeySeedOrHex: string
+  privateKeySeedOrHex: string,
+  options?: { inputFormat?: 'raw-seed-hex' | 'passphrase' }
 ): {
   readonly signatureHex: string;
   readonly publicKeyHex: string;
   readonly publicKeyFingerprint: string;
 } {
-  const keyPair = generateEd25519KeyPairFromSeed(privateKeySeedOrHex);
+  const keyPair = resolveSigningSeedBytes(privateKeySeedOrHex, options);
   const seedBytes = hexToBytes(keyPair.privateKeyHex);
   const msgBytes = typeof message === 'string' ? encodeUtf8Bytes(message) : message;
   const sigBytes = ed.sign(msgBytes, seedBytes);
