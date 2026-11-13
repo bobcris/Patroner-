@@ -43,6 +43,7 @@ import {
   MeasurementProvenanceEvidence,
   NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS,
   validateMeasurementProvenanceEvidence,
+  validatePatternRevision,
   validateProductionExportPrerequisites
 } from '../../engine/production';
 
@@ -246,7 +247,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                 ? 'Imported Measurement Profile'
                 : undefined;
 
-      return createProductionPatternRevision({
+      const draftRev = createProductionPatternRevision({
         projectId: 'project-patroner-default',
         revisionId: `rev-${currentSpec.id}-v${currentSpec.version}-${activeSize}`,
         targetSize: activeSize,
@@ -268,6 +269,15 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         validation,
         physicalValidationStatus: 'not-assessed'
       });
+
+      if (validation.isValid && validation.failureCount === 0) {
+        return validatePatternRevision(draftRev, {
+          actorId: 'pattern-validation-engine',
+          actorRole: 'validation-engine',
+          validatedAt: draftRev.createdAt
+        });
+      }
+      return draftRev;
     } catch {
       return null;
     }
@@ -316,6 +326,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         sourceSpecificationFingerprint: specFp,
         sourcePatternRevisionId: liveSnapshot.revisionId,
         sourcePatternSnapshotFingerprint: liveSnapshot.canonicalFingerprint,
+        sourceBasePatternFingerprint: liveSnapshot.basePatternFingerprint,
         sourceMeasurementSetFingerprint: measFp,
         gradingRuleSetRevision: 'rules-grading-iso8559-standard',
         gradingRuleSetFingerprint: gradingRulesFp,
@@ -438,6 +449,68 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         </div>
         <Badge variant="neutral" size="sm">isProductionReady: false</Badge>
       </div>
+
+      {/* Milestone 05.1: Authoritative Pattern Revision Lifecycle & Acyclic Fingerprint Hierarchy */}
+      {liveSnapshot && (
+        <div className="bg-white border border-neutral-200 rounded-sm p-4 shadow-xs space-y-3 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-2">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-neutral-700" />
+              <span className="font-mono text-xs font-bold uppercase tracking-wider text-neutral-900">
+                Authoritative Pattern Revision Lifecycle (M05.1)
+              </span>
+              <Badge
+                variant={liveSnapshot.currentLifecycleState === 'validated' ? 'accent' : 'warning'}
+                size="sm"
+              >
+                STATE: {(liveSnapshot.currentLifecycleState ?? 'draft').toUpperCase()}
+              </Badge>
+            </div>
+            <span className="font-mono text-[11px] text-neutral-500">
+              REV ID: {liveSnapshot.revisionId} • EVENTS: {liveSnapshot.lifecycleHistory?.length ?? 1}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 font-mono text-[11px]">
+            <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
+              <div className="text-neutral-500 uppercase text-[10px]">1. Geometry Fingerprint</div>
+              <div className="font-bold text-neutral-900 truncate" title={liveSnapshot.geometryFingerprint}>
+                {liveSnapshot.geometryFingerprint?.slice(0, 16)}…
+              </div>
+              <div className="text-neutral-500 text-[10px] mt-0.5">
+                Drafting Config: {liveSnapshot.draftingConfigFingerprint?.slice(0, 10)}…
+              </div>
+            </div>
+            <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
+              <div className="text-neutral-500 uppercase text-[10px]">2. Base Pattern Content FP</div>
+              <div className="font-bold text-neutral-900 truncate" title={liveSnapshot.basePatternFingerprint}>
+                {liveSnapshot.basePatternFingerprint?.slice(0, 16)}…
+              </div>
+              <div className="text-neutral-500 text-[10px] mt-0.5">
+                Immutable across lifecycle (Acyclic)
+              </div>
+            </div>
+            <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
+              <div className="text-neutral-500 uppercase text-[10px]">3. Grading Content FP</div>
+              <div className="font-bold text-neutral-900 truncate" title={liveGradingArtifact?.contentFingerprint}>
+                {liveGradingArtifact?.contentFingerprint ? `${liveGradingArtifact.contentFingerprint.slice(0, 16)}…` : 'N/A'}
+              </div>
+              <div className="text-neutral-500 text-[10px] mt-0.5">
+                Binds upstream to Base Pattern FP
+              </div>
+            </div>
+            <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
+              <div className="text-neutral-500 uppercase text-[10px]">4. Derived Lifecycle State FP</div>
+              <div className="font-bold text-neutral-900 truncate" title={liveSnapshot.currentStateFingerprint}>
+                {liveSnapshot.currentStateFingerprint?.slice(0, 16)}…
+              </div>
+              <div className="text-neutral-500 text-[10px] mt-0.5">
+                Tier 3/4 Authority Required for Approval
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Production Certification Banner */}
       <div className="bg-neutral-900 text-white rounded-sm p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

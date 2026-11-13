@@ -362,7 +362,7 @@ export interface PerSizeGeometryValidationRecord {
 }
 
 /**
- * Authoritative Grading Artifact (Milestone 04.6.2.3.2 / 04.6.2.3.4)
+ * Authoritative Grading Artifact (Milestone 04.6.2.3.2 / 04.6.2.3.4 / 05.1)
  */
 export interface AuthoritativeGradingArtifact {
   readonly gradingArtifactId: string;
@@ -372,6 +372,8 @@ export interface AuthoritativeGradingArtifact {
   readonly organizationScope?: string;
   readonly sourcePatternRevisionId: string;
   readonly sourcePatternSnapshotFingerprint?: string;
+  /** Acyclic binding to the base pattern revision's immutable contentFingerprint / basePatternFingerprint (Milestone 05.1 Amendment 1) */
+  readonly sourceBasePatternFingerprint?: string;
   readonly draftingFingerprint?: string;
   readonly cadGeometryFingerprint?: string;
   readonly sourceSpecificationId: string;
@@ -394,6 +396,8 @@ export interface AuthoritativeGradingArtifact {
   readonly supersededByRevisionId?: string;
   readonly revocationReason?: string;
   readonly revokedAt?: string;
+  /** Immutable SHA-256 digest over grading engineering content, unaffected by lifecycle transitions (Milestone 05.1 Amendment 1 & 2) */
+  readonly contentFingerprint?: string;
   readonly canonicalFingerprint: string;
   readonly isProductionReady: false;
 }
@@ -406,6 +410,7 @@ export interface CreateAuthoritativeGradingArtifactInput {
   readonly organizationScope?: string;
   readonly sourcePatternRevisionId: string;
   readonly sourcePatternSnapshotFingerprint?: string;
+  readonly sourceBasePatternFingerprint?: string;
   readonly draftingFingerprint?: string;
   readonly cadGeometryFingerprint?: string;
   readonly sourceSpecificationId: string;
@@ -438,9 +443,151 @@ export type {
   GradingSummarySnapshot
 } from './dependency-types';
 
+// ============================================================================
+// MILESTONE 05.1 — AUTHORITATIVE PATTERN REVISION LIFECYCLE & PACKAGE TYPES
+// ============================================================================
+
 /**
- * Immutable Production Pattern Revision Snapshot (Milestone 04.6.1.1).
- * Captures the complete engineering state of a garment pattern at a specific revision.
+ * Canonical lifecycle states for an AuthoritativePatternRevision (Milestone 05.1).
+ */
+export type PatternRevisionLifecycleState =
+  | 'draft'
+  | 'validated'
+  | 'approved'
+  | 'superseded'
+  | 'invalidated'
+  | 'archived';
+
+/**
+ * Structured invalidation cause classification for pattern revisions and packages.
+ */
+export type PatternInvalidationCause =
+  | 'specification_changed'
+  | 'specification-modified'
+  | 'specification-revoked'
+  | 'specification-superseded'
+  | 'measurement_changed'
+  | 'measurement-set-modified'
+  | 'measurement-approval-revoked'
+  | 'drafting_configuration_changed'
+  | 'drafting-configuration-modified'
+  | 'fabric-specification-modified'
+  | 'engine_version_changed'
+  | 'engine-version-modified'
+  | 'grading_rule_changed'
+  | 'grading-rules-modified'
+  | 'grading-artifact-invalidated'
+  | 'manual-engineering-invalidation';
+
+/**
+ * Structured record capturing why an upstream change invalidated a pattern revision or package.
+ */
+export interface PatternInvalidationRecord {
+  readonly invalidationId: string;
+  readonly cause: PatternInvalidationCause;
+  readonly reason: string;
+  readonly invalidatedAt: string;
+  readonly invalidatedBy: string;
+  readonly upstreamArtifactId?: string;
+  readonly recordedUpstreamFingerprint?: string;
+  readonly activeUpstreamFingerprint?: string;
+}
+
+/**
+ * Canonical signing payload for Tier 4 (`cryptographic_principal`) pattern revision approval.
+ * Binds exclusively to the immutable `contentFingerprint` (`basePatternFingerprint`) and `geometryFingerprint`
+ * (`Milestone 05.1 Amendment 1, 2, 3`).
+ */
+export interface CanonicalPatternApprovalSigningPayload {
+  readonly schemaVersion: string;
+  readonly projectId: string;
+  readonly tenantId: string;
+  readonly garmentId: string;
+  readonly patternRevisionId: string;
+  readonly patternRevisionNumber: number;
+  readonly basePatternFingerprint: string;
+  readonly geometryFingerprint: string;
+  readonly sourceSpecificationFingerprint: string;
+  readonly sourceMeasurementSetFingerprint: string;
+  readonly approvalEventId: string;
+  readonly approverPrincipal: string;
+  readonly authorityTier: 'cryptographic_principal';
+  readonly approvalScope: 'pattern:approve' | 'specification:approve';
+  readonly approvalTimestamp: string;
+  readonly keyId?: string;
+  readonly algorithm?: 'Ed25519';
+}
+
+/**
+ * Verified approval record bound to an AuthoritativePatternRevision's immutable `contentFingerprint`.
+ */
+export interface PatternRevisionApprovalRecord {
+  readonly approvalEventId: string;
+  readonly patternRevisionId: string;
+  readonly boundBasePatternFingerprint: string;
+  readonly boundSpecificationFingerprint?: string;
+  readonly boundMeasurementSetFingerprint?: string;
+  readonly approverName: string;
+  readonly approverRole: string;
+  readonly approvedAt: string;
+  readonly authorityTier: 'authenticated_designer' | 'cryptographic_principal';
+  readonly isApprovalAuthenticated: boolean;
+  readonly isApprovalCryptographicallySigned: boolean;
+  readonly verifiedIdentity?: {
+    readonly subjectId: string;
+    readonly displayName?: string;
+    readonly issuer: string;
+    readonly audience: string;
+    readonly jti: string;
+    readonly tokenDigest: string;
+    readonly keyId?: string;
+    readonly tenantId?: string;
+    readonly [key: string]: unknown;
+  };
+  readonly cryptographicSignature?: {
+    readonly keyId: string;
+    readonly publicKeyHex: string;
+    readonly publicKeyFingerprint: string;
+    readonly algorithm: 'Ed25519';
+    readonly signatureHex: string;
+    readonly [key: string]: unknown;
+  };
+}
+
+/**
+ * Append-only lifecycle event on a pattern revision (`Milestone 05.1 Amendment 2`).
+ * Chained via `previousEventFingerprint` and sealed by `lifecycleEventFingerprint`.
+ */
+export interface PatternRevisionLifecycleEvent {
+  readonly eventId: string;
+  readonly eventIndex: number;
+  readonly eventType:
+    | 'draft-created'
+    | 'draft-updated'
+    | 'validated'
+    | 'approved'
+    | 'superseded'
+    | 'invalidated'
+    | 'archived';
+  readonly fromState: PatternRevisionLifecycleState | null;
+  readonly toState: PatternRevisionLifecycleState;
+  readonly targetRevisionId: string;
+  readonly targetContentFingerprint: string;
+  readonly timestamp: string;
+  readonly actor: string;
+  readonly reason?: string;
+  readonly supersededByRevisionId?: string;
+  readonly invalidationRecord?: PatternInvalidationRecord;
+  readonly approvalRecord?: PatternRevisionApprovalRecord;
+  readonly previousEventFingerprint: string | null;
+  readonly lifecycleEventFingerprint: string;
+}
+
+/**
+ * Immutable Production Pattern Revision Snapshot & Authoritative Pattern Revision (Milestone 04.6.1.1 / 05.1).
+ * Captures the complete engineering state of a garment pattern at a specific revision,
+ * with strict separation between immutable engineering content (`contentFingerprint` / `basePatternFingerprint`)
+ * and append-only lifecycle history (`lifecycleHistory` / `currentStateFingerprint`).
  */
 export interface ProductionPatternRevisionSnapshot {
   readonly schemaVersion: typeof PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION;
@@ -481,12 +628,41 @@ export interface ProductionPatternRevisionSnapshot {
   readonly approvalState: ApprovalStateSummary;
   readonly canonicalFingerprint: string;
   /**
+   * Acyclic Source & Engineering Content Fingerprints (Milestone 05.1 Amendment 1 & 2):
+   * - `geometryFingerprint`: SHA-256 over serialized `patternPieces` alone.
+   * - `draftingConfigFingerprint`: SHA-256 over `draftingConfiguration`, `fabricSpecification`, and `engineProvenance`.
+   * - `basePatternFingerprint` / `contentFingerprint`: Immutable SHA-256 over source specification, measurements,
+   *   drafting configuration, geometry, and validation evidence. Excludes downstream grading artifacts and lifecycle events.
+   */
+  readonly sourceSpecificationId?: string;
+  readonly sourceSpecificationRevisionId?: string;
+  readonly sourceSpecificationFingerprint?: string;
+  readonly sourceMeasurementSetId?: string;
+  readonly sourceMeasurementRevisionId?: string;
+  readonly sourceMeasurementSetFingerprint?: string;
+  readonly draftingConfigFingerprint?: string;
+  readonly geometryFingerprint?: string;
+  readonly basePatternFingerprint?: string;
+  readonly contentFingerprint?: string;
+  /**
+   * Lifecycle Integrity Envelope (Milestone 05.1 Amendment 2):
+   * Separated from `contentFingerprint` so supersession, invalidation, or archival never mutates content hashes.
+   */
+  readonly lifecycleHistory?: readonly PatternRevisionLifecycleEvent[];
+  readonly currentLifecycleState?: PatternRevisionLifecycleState;
+  readonly currentStateFingerprint?: string;
+  readonly patternApprovalRecord?: PatternRevisionApprovalRecord;
+  readonly supersededByRevisionId?: string;
+  readonly invalidationRecords?: readonly PatternInvalidationRecord[];
+  /**
    * Non-negotiable industrial safety invariant:
    * Must remain strictly and literally `false` until physical garment validation,
    * industrial marker generation, and factory cutting validation are complete.
    */
   readonly isProductionReady: false;
 }
+
+export type AuthoritativePatternRevision = ProductionPatternRevisionSnapshot;
 
 export interface CreateProductionPatternRevisionInput {
   readonly projectId?: string;
@@ -497,11 +673,16 @@ export interface CreateProductionPatternRevisionInput {
   readonly createdBy?: string;
   readonly targetSize: SizeCode | string;
   readonly designSpecification: DesignSpecification;
+  readonly sourceSpecificationFingerprint?: string;
+  readonly sourceMeasurementSetId?: string;
+  readonly sourceMeasurementRevisionId?: string;
+  readonly sourceMeasurementSetFingerprint?: string;
   readonly measurements: {
     readonly values: Readonly<Record<string, number>>;
     readonly defaultOrigin?: MeasurementOrigin;
     readonly perMeasurementOrigin?: Readonly<Record<string, MeasurementOrigin>>;
     readonly approval?: Partial<MeasurementApprovalRecord>;
+    readonly evidence?: MeasurementProvenanceEvidence;
     readonly notes?: readonly string[];
   };
   readonly fabric: FabricProperty | EnhancedFabricProperty;
@@ -512,6 +693,7 @@ export interface CreateProductionPatternRevisionInput {
   readonly gradingSummary?: Record<string, unknown> & { readonly isOverallGradingValid: boolean };
   readonly physicalValidationStatus?: string;
   readonly engineProvenance?: Partial<EngineProvenanceRecord>;
+  readonly initialLifecycleState?: 'draft' | 'validated';
 }
 
 export interface CurrentRevisionInputs {
@@ -549,6 +731,175 @@ export interface RevisionValidationResult {
   readonly validatedAt: string;
 }
 
+// ============================================================================
+// MILESTONE 05.1 — LEGACY PATTERN DRAFT COMPATIBILITY ADAPTER TYPES (AMENDMENT 5)
+// ============================================================================
+
+export type LegacyPatternDraftStatusInput =
+  | 'draft'
+  | 'validated'
+  | 'graded'
+  | 'production-ready'
+  | 'approved'
+  | string;
+
+export interface LegacyPatternDraftAdaptationResult {
+  readonly patternRevision: AuthoritativePatternRevision;
+  readonly legacyStatusReceived: string;
+  readonly mappedLifecycleState: 'draft' | 'validated';
+  readonly isAuthoritativeApprovalGranted: false;
+  readonly isProductionAuthorized: false;
+  readonly rejectedUnsafeElevationClaims: readonly string[];
+  readonly adaptationWarnings: readonly string[];
+}
+
+// ============================================================================
+// MILESTONE 05.1 — AUTHORITATIVE PRODUCTION PACKAGE MANIFEST & LIFECYCLE
+// ============================================================================
+
+export const PRODUCTION_PACKAGE_SCHEMA_VERSION = '1.0.0-m05.1' as const;
+
+export type ProductionPackageLifecycleState =
+  | 'active'
+  | 'superseded'
+  | 'invalidated'
+  | 'revoked'
+  | 'archived';
+
+export interface ProductionPackagePieceEntry {
+  readonly pieceId: string;
+  readonly pieceCode: string;
+  readonly pieceName: string;
+  readonly sizeCode: string;
+  readonly pieceGeometryFingerprint: string;
+  readonly widthCm: number;
+  readonly heightCm: number;
+  readonly seamAllowanceWidthCm: number;
+  readonly notchCount: number;
+  readonly dartCount: number;
+}
+
+/**
+ * Immutable ProductionPackageManifest (`Milestone 05.1 Amendment 1 & 2`).
+ * Binds `basePatternFingerprint` (`patternContentFingerprint`), `geometryFingerprint`,
+ * `specificationFingerprint`, `measurementSetFingerprint`, and optional `gradingArtifactFingerprint`
+ * into an acyclic, independently verifiable manifest digest (`manifestFingerprint`).
+ */
+export interface ProductionPackageManifest {
+  readonly schemaVersion: typeof PRODUCTION_PACKAGE_SCHEMA_VERSION;
+  readonly packageId: string;
+  readonly packageRevisionId: string;
+  readonly projectId: string;
+  readonly tenantId: string;
+  readonly garmentId: string;
+  readonly createdAt: string;
+  readonly createdBy: string;
+  readonly sourceSpecificationId: string;
+  readonly sourceSpecificationRevisionId: string;
+  readonly sourceSpecificationFingerprint: string;
+  readonly sourceMeasurementSetId: string;
+  readonly sourceMeasurementRevisionId: string;
+  readonly sourceMeasurementSetFingerprint: string;
+  readonly sourcePatternRevisionId: string;
+  readonly sourcePatternRevisionNumber: number;
+  readonly basePatternFingerprint: string;
+  readonly geometryFingerprint: string;
+  readonly draftingConfigFingerprint: string;
+  readonly gradingMode: 'graded-multi-size' | 'single-size-ungraded';
+  readonly nonGradingReason?: string;
+  readonly sourceGradingArtifactId?: string;
+  readonly sourceGradingRevisionId?: string;
+  readonly gradingArtifactFingerprint?: string;
+  readonly includedSizes: readonly string[];
+  readonly baseSize: string;
+  readonly pieceInventory: readonly ProductionPackagePieceEntry[];
+  readonly pieceCount: number;
+  readonly totalPieceInstancesAcrossSizes: number;
+  readonly validationDigest: string;
+  readonly approvalDigest: string;
+  readonly isProductionReady: false;
+}
+
+export interface ProductionPackageLifecycleEvent {
+  readonly eventId: string;
+  readonly packageId: string;
+  readonly fromState: ProductionPackageLifecycleState | null;
+  readonly toState: ProductionPackageLifecycleState;
+  readonly timestamp: string;
+  readonly actorId: string;
+  readonly actorRole: string;
+  readonly reason: string;
+  readonly manifestFingerprint: string;
+  readonly previousEventFingerprint?: string;
+  readonly invalidationRecord?: PatternInvalidationRecord;
+  readonly supersededByPackageId?: string;
+  readonly lifecycleEventFingerprint: string;
+}
+
+/**
+ * Authoritative Production Package (`Milestone 05.1 Amendment 1 & 2`).
+ * Separates the immutable `manifest` + `manifestFingerprint` from the append-only `lifecycleHistory`
+ * and derived `currentPackageState` + `currentStateFingerprint`.
+ */
+export interface AuthoritativeProductionPackage {
+  readonly schemaVersion: typeof PRODUCTION_PACKAGE_SCHEMA_VERSION;
+  readonly packageId: string;
+  readonly packageRevisionId: string;
+  readonly projectId: string;
+  readonly tenantId: string;
+  readonly garmentId: string;
+  readonly manifest: ProductionPackageManifest;
+  readonly manifestFingerprint: string;
+  readonly lifecycleHistory: readonly ProductionPackageLifecycleEvent[];
+  readonly currentPackageState: ProductionPackageLifecycleState;
+  readonly currentStateFingerprint: string;
+  readonly supersededByPackageId?: string;
+  readonly invalidationRecords: readonly PatternInvalidationRecord[];
+  readonly revocationReason?: string;
+  readonly revokedAt?: string;
+  readonly isProductionReady: false;
+}
+
+export type ProductionPackageRejectionCode =
+  | 'INDUSTRIAL_SAFETY_VIOLATION'
+  | 'PATTERN_REVISION_MISSING'
+  | 'PATTERN_REVISION_NOT_APPROVED'
+  | 'PATTERN_REVISION_SUPERSEDED'
+  | 'PATTERN_REVISION_INVALIDATED'
+  | 'PATTERN_REVISION_ARCHIVED'
+  | 'PATTERN_REVISION_CONTENT_TAMPERED'
+  | 'PATTERN_REVISION_LIFECYCLE_TAMPERED'
+  | 'PATTERN_REVISION_APPROVAL_INVALID'
+  | 'PATTERN_VALIDATION_FAILED'
+  | 'AUTHORIZATION_PROVIDER_UNAVAILABLE'
+  | 'SPECIFICATION_UNAPPROVED'
+  | 'SPECIFICATION_STALE_MISMATCH'
+  | 'MEASUREMENT_UNAPPROVED'
+  | 'MEASUREMENT_AI_PROHIBITED'
+  | 'MEASUREMENT_STALE_MISMATCH'
+  | 'GRADING_POLICY_UNDECLARED'
+  | 'GRADING_ARTIFACT_MISSING'
+  | 'GRADING_ARTIFACT_INVALID'
+  | 'GRADING_ARTIFACT_STALE_MISMATCH';
+
+export interface ProductionPackageCreationResult {
+  readonly isPackageCreated: boolean;
+  readonly package?: AuthoritativeProductionPackage;
+  readonly rejectionCode?: ProductionPackageRejectionCode;
+  readonly rejectionReason?: string;
+  readonly blockingReasons: readonly string[];
+}
+
+export interface ProductionPackageVerificationResult {
+  readonly isValid: boolean;
+  readonly isManifestTampered: boolean;
+  readonly isLifecycleTampered: boolean;
+  readonly recomputedManifestFingerprint?: string;
+  readonly recomputedCurrentStateFingerprint?: string;
+  readonly reason?: string;
+  readonly errors: readonly string[];
+}
+
 export class ProductionSnapshotValidationError extends Error {
   readonly errors?: readonly string[];
   constructor(message: string, errors?: readonly string[]) {
@@ -580,3 +931,4 @@ export class ProductionSnapshotFabricError extends ProductionSnapshotValidationE
     this.name = 'ProductionSnapshotFabricError';
   }
 }
+
