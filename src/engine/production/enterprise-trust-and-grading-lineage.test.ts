@@ -1384,11 +1384,26 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
       });
       const designSpec = convertToDesignSpecification(spec);
       const pieces = draftSkirtBlock(sizeM, designSpec);
-      const graded = gradePattern(designSpec);
+      const rawGraded = gradePattern(designSpec);
+      const graded = {
+        ...rawGraded,
+        sizeResults: Object.fromEntries(
+          Object.entries(rawGraded.sizeResults).map(([sz, res]) => [
+            sz,
+            {
+              ...res,
+              bodicePieces: [],
+              sleevePiece: undefined,
+              skirtPieces: draftSkirtBlock(res.measurements, designSpec)
+            }
+          ])
+        ) as typeof rawGraded.sizeResults
+      };
 
       const draftSnapshot = createProductionPatternRevision({
         projectId: 'tenant-atelier-01',
         revisionId: 'rev-enterprise-skirt-01-M',
+        createdAt: '2026-11-10T09:01:00.000Z',
         targetSize: 'M',
         designSpecification: designSpec,
         measurements: {

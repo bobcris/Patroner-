@@ -840,6 +840,7 @@ export interface ProductionPackageManifest {
 
 export interface ProductionPackageLifecycleEvent {
   readonly eventId: string;
+  readonly eventIndex?: number;
   readonly packageId: string;
   readonly fromState: ProductionPackageLifecycleState | null;
   readonly toState: ProductionPackageLifecycleState;

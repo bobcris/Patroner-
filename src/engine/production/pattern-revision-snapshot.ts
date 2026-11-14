@@ -24,6 +24,7 @@ import {
   LineSegment
 } from '../geometry/primitives';
 import { EnhancedFabricProperty } from '../fabric/fabric-types';
+import { CrossSizeIntegrityReport } from '../grading/grading-types';
 import {
   base64UrlDecodeToUtf8,
   computeEd25519PublicKeyFingerprint,
@@ -139,7 +140,11 @@ export function isMisleadingChartApproverIdentity(identity: string | undefined):
 
 function isValidIsoDate(dateStr: unknown): boolean {
   if (typeof dateStr !== 'string' || dateStr.trim() === '') return false;
-  const epoch = Date.parse(dateStr);
+  const trimmed = dateStr.trim();
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))$/.test(trimmed)) {
+    return false;
+  }
+  const epoch = Date.parse(trimmed);
   return Number.isFinite(epoch);
 }
 
@@ -2209,9 +2214,281 @@ export function computeCanonicalGradingArtifactFingerprint(
   return computeCanonicalFingerprint(payload);
 }
 
+function validateGradedPieceSnapshotGeometry(
+  piece: PatternPieceSnapshot,
+  expectedSizeCode: string
+): string[] {
+  const errs: string[] = [];
+  if (!piece || typeof piece !== 'object') {
+    return [`Graded piece in size '${expectedSizeCode}' is missing or malformed.`];
+  }
+  const label = piece.pieceCode || piece.id || 'unknown';
+  if (typeof piece.id !== 'string' || piece.id.trim() === '') {
+    errs.push(`Graded piece '${label}' in size '${expectedSizeCode}' is missing non-empty id.`);
+  }
+  if (typeof piece.pieceCode !== 'string' || piece.pieceCode.trim() === '') {
+    errs.push(`Graded piece '${label}' in size '${expectedSizeCode}' is missing non-empty pieceCode.`);
+  }
+  if (typeof piece.name !== 'string' || piece.name.trim() === '') {
+    errs.push(`Graded piece '${label}' in size '${expectedSizeCode}' is missing non-empty name.`);
+  }
+  if (typeof piece.sizeCode !== 'string' || piece.sizeCode.trim() !== expectedSizeCode) {
+    errs.push(
+      `Graded piece '${label}' in size '${expectedSizeCode}' has mismatched sizeCode '${String(piece.sizeCode)}'.`
+    );
+  }
+  if (typeof piece.cutPathData !== 'string' || piece.cutPathData.trim() === '') {
+    errs.push(`Graded piece '${label}' in size '${expectedSizeCode}' has empty cutPathData.`);
+  }
+  if (typeof piece.sewPathData !== 'string' || piece.sewPathData.trim() === '') {
+    errs.push(`Graded piece '${label}' in size '${expectedSizeCode}' has empty sewPathData.`);
+  }
+  if (typeof piece.material !== 'string' || piece.material.trim() === '') {
+    errs.push(`Graded piece '${label}' in size '${expectedSizeCode}' has empty material.`);
+  }
+  if (!Number.isInteger(piece.cutCount) || piece.cutCount < 1) {
+    errs.push(
+      `Graded piece '${label}' in size '${expectedSizeCode}' has invalid cutCount (${String(piece.cutCount)}).`
+    );
+  }
+  if (!Number.isFinite(piece.seamAllowanceWidthCm) || piece.seamAllowanceWidthCm < 0) {
+    errs.push(
+      `Graded piece '${label}' in size '${expectedSizeCode}' has invalid seamAllowanceWidthCm (${String(piece.seamAllowanceWidthCm)}).`
+    );
+  }
+  const bb = piece.boundingBox;
+  if (
+    !bb ||
+    !Number.isFinite(bb.minX) ||
+    !Number.isFinite(bb.maxX) ||
+    !Number.isFinite(bb.minY) ||
+    !Number.isFinite(bb.maxY) ||
+    !Number.isFinite(bb.widthCm) ||
+    bb.widthCm <= 0 ||
+    !Number.isFinite(bb.heightCm) ||
+    bb.heightCm <= 0 ||
+    bb.maxX < bb.minX ||
+    bb.maxY < bb.minY
+  ) {
+    errs.push(`Graded piece '${label}' in size '${expectedSizeCode}' has invalid boundingBox dimensions.`);
+  }
+  const gl = piece.grainline;
+  if (
+    !gl ||
+    typeof gl.direction !== 'string' ||
+    gl.direction.trim() === '' ||
+    !gl.start ||
+    !gl.end ||
+    !Number.isFinite(gl.start.x) ||
+    !Number.isFinite(gl.start.y) ||
+    !Number.isFinite(gl.end.x) ||
+    !Number.isFinite(gl.end.y)
+  ) {
+    errs.push(`Graded piece '${label}' in size '${expectedSizeCode}' has invalid grainline coordinates.`);
+  }
+
+  const checkContour = (contour: GeometricContourSnapshot | undefined, contourName: string) => {
+    if (!contour) return;
+    if (!Array.isArray(contour.segments) || contour.segments.length === 0) {
+      errs.push(`Graded piece '${label}' (${expectedSizeCode}) ${contourName} has no segments.`);
+      return;
+    }
+    const cbb = contour.boundingBox;
+    if (
+      !cbb ||
+      !Number.isFinite(cbb.minX) ||
+      !Number.isFinite(cbb.maxX) ||
+      !Number.isFinite(cbb.minY) ||
+      !Number.isFinite(cbb.maxY) ||
+      !Number.isFinite(cbb.widthCm) ||
+      cbb.widthCm <= 0 ||
+      !Number.isFinite(cbb.heightCm) ||
+      cbb.heightCm <= 0
+    ) {
+      errs.push(`Graded piece '${label}' (${expectedSizeCode}) ${contourName} has invalid boundingBox.`);
+    }
+    for (const seg of contour.segments) {
+      if (
+        !seg ||
+        !seg.start ||
+        !seg.end ||
+        !Number.isFinite(seg.start.x) ||
+        !Number.isFinite(seg.start.y) ||
+        !Number.isFinite(seg.end.x) ||
+        !Number.isFinite(seg.end.y) ||
+        !Number.isFinite(seg.lengthCm) ||
+        seg.lengthCm < 0 ||
+        (seg.control1 && (!Number.isFinite(seg.control1.x) || !Number.isFinite(seg.control1.y))) ||
+        (seg.control2 && (!Number.isFinite(seg.control2.x) || !Number.isFinite(seg.control2.y)))
+      ) {
+        errs.push(`Graded piece '${label}' (${expectedSizeCode}) ${contourName} has non-finite segment coordinates.`);
+        break;
+      }
+    }
+  };
+  checkContour(piece.stitchingContour, 'stitchingContour');
+  checkContour(piece.cuttingContour, 'cuttingContour');
+
+  if (Array.isArray(piece.notches)) {
+    for (const n of piece.notches) {
+      if (!n?.position || !Number.isFinite(n.position.x) || !Number.isFinite(n.position.y) || !Number.isFinite(n.normalAngleDeg)) {
+        errs.push(`Graded piece '${label}' (${expectedSizeCode}) has non-finite notch coordinates.`);
+        break;
+      }
+    }
+  }
+  if (Array.isArray(piece.darts)) {
+    for (const d of piece.darts) {
+      if (
+        !d?.apex ||
+        !d?.legLeft ||
+        !d?.legRight ||
+        !Number.isFinite(d.apex.x) ||
+        !Number.isFinite(d.apex.y) ||
+        !Number.isFinite(d.legLeft.x) ||
+        !Number.isFinite(d.legLeft.y) ||
+        !Number.isFinite(d.legRight.x) ||
+        !Number.isFinite(d.legRight.y) ||
+        !Number.isFinite(d.widthCm) ||
+        d.widthCm < 0 ||
+        !Number.isFinite(d.lengthCm) ||
+        d.lengthCm < 0
+      ) {
+        errs.push(`Graded piece '${label}' (${expectedSizeCode}) has non-finite dart geometry.`);
+        break;
+      }
+    }
+  }
+  if (Array.isArray(piece.seams)) {
+    for (const s of piece.seams) {
+      if (
+        !s?.startPoint ||
+        !s?.endPoint ||
+        !Number.isFinite(s.startPoint.x) ||
+        !Number.isFinite(s.startPoint.y) ||
+        !Number.isFinite(s.endPoint.x) ||
+        !Number.isFinite(s.endPoint.y) ||
+        !Number.isFinite(s.lengthCm) ||
+        s.lengthCm < 0
+      ) {
+        errs.push(`Graded piece '${label}' (${expectedSizeCode}) has non-finite seam geometry.`);
+        break;
+      }
+    }
+  }
+  if (Array.isArray(piece.drillHoles)) {
+    for (const pt of piece.drillHoles) {
+      if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) {
+        errs.push(`Graded piece '${label}' (${expectedSizeCode}) has non-finite drillHole coordinates.`);
+        break;
+      }
+    }
+  }
+
+  return errs;
+}
+
+function validateGradingSizesAndParity(
+  perSizePatternGeometry: Readonly<Record<string, readonly PatternPieceSnapshot[]>>,
+  sizeRange: readonly string[],
+  baseSize: string
+): {
+  readonly isSizeRangeIncomplete: boolean;
+  readonly isValidationFailed: boolean;
+  readonly errors: readonly string[];
+} {
+  const errors: string[] = [];
+  let isSizeRangeIncomplete = false;
+  let isValidationFailed = false;
+
+  if (!Array.isArray(sizeRange) || sizeRange.length < 2 || !sizeRange.includes(baseSize)) {
+    isSizeRangeIncomplete = true;
+    errors.push(
+      `Grading artifact sizeRange [${(sizeRange ?? []).join(', ')}] is incomplete or missing baseSize '${baseSize}'.`
+    );
+    return { isSizeRangeIncomplete, isValidationFailed, errors };
+  }
+
+  if (new Set(sizeRange).size !== sizeRange.length) {
+    isValidationFailed = true;
+    errors.push(`Grading artifact sizeRange [${sizeRange.join(', ')}] contains duplicate size entries.`);
+  }
+
+  const sizeSet = new Set(sizeRange);
+  for (const extraSize of Object.keys(perSizePatternGeometry ?? {})) {
+    if (!sizeSet.has(extraSize)) {
+      isValidationFailed = true;
+      errors.push(`Grading artifact contains undeclared size '${extraSize}' outside declared sizeRange.`);
+    }
+  }
+
+  const perSizePieceSignatures = new Map<string, string>();
+  for (const sz of sizeRange) {
+    const szPieces = perSizePatternGeometry?.[sz];
+    if (!Array.isArray(szPieces) || szPieces.length === 0) {
+      isSizeRangeIncomplete = true;
+      errors.push(`Grading artifact is missing pattern geometry for declared size '${sz}'.`);
+      continue;
+    }
+
+    const seenIds = new Set<string>();
+    const seenCodes = new Set<string>();
+    const sigEntries: Array<{ readonly pieceCode: string; readonly cutCount: number }> = [];
+
+    for (const p of szPieces) {
+      const pieceErrs = validateGradedPieceSnapshotGeometry(p, sz);
+      if (pieceErrs.length > 0) {
+        isValidationFailed = true;
+        errors.push(...pieceErrs);
+      }
+      const normId = typeof p?.id === 'string' ? p.id.trim() : '';
+      const normCode = typeof p?.pieceCode === 'string' ? p.pieceCode.trim() : '';
+      if (normId) {
+        if (seenIds.has(normId)) {
+          isValidationFailed = true;
+          errors.push(`Duplicate pattern piece id '${normId}' detected in graded size '${sz}'.`);
+        }
+        seenIds.add(normId);
+      }
+      if (normCode) {
+        if (seenCodes.has(normCode)) {
+          isValidationFailed = true;
+          errors.push(`Duplicate pattern pieceCode '${normCode}' detected in graded size '${sz}'.`);
+        }
+        seenCodes.add(normCode);
+      }
+      sigEntries.push({ pieceCode: normCode, cutCount: p?.cutCount ?? 0 });
+    }
+
+    sigEntries.sort((a, b) => a.pieceCode.localeCompare(b.pieceCode));
+    perSizePieceSignatures.set(sz, canonicalizeJson(sigEntries));
+  }
+
+  const baseSig = perSizePieceSignatures.get(baseSize);
+  if (baseSig) {
+    for (const sz of sizeRange) {
+      const szSig = perSizePieceSignatures.get(sz);
+      if (szSig && szSig !== baseSig) {
+        isValidationFailed = true;
+        errors.push(
+          `Cross-size piece inventory parity mismatch between baseSize '${baseSize}' and size '${sz}'.`
+        );
+      }
+    }
+  }
+
+  return {
+    isSizeRangeIncomplete,
+    isValidationFailed,
+    errors
+  };
+}
+
 /**
- * Creates a complete, immutable AuthoritativeGradingArtifact binding multi-size graded
- * pattern geometry and cross-size validation results to exact upstream specification,
+ * Authoritative Pattern Grading Artifact creation (`FINDING-17` & `Milestone 05.1 Amendment 1 & 2`).
+ * Explicitly separates `contentFingerprint` (immutable grading lineage/geometry) from lifecycle fields
+ * (`lifecycleState`, `supersededByRevisionId`, `revokedAt`, `revocationReason`) while also binding
+ * complete structural integrity in `canonicalFingerprint` against `sourcePatternRevisionId`,
  * pattern revision, measurement set, and grading ruleset fingerprints.
  */
 export function createAuthoritativeGradingArtifact(
@@ -2244,13 +2521,20 @@ export function createAuthoritativeGradingArtifact(
   const projectId = (input.projectId ?? input.tenantId ?? 'project-patroner-default').trim();
   const tenantId = (input.tenantId ?? projectId).trim();
   const baseSize = (input.baseSize ?? input.gradedPatternSet?.baseSize ?? 'M').trim();
-  const sizeRange = input.sizeRange
-    ? [...input.sizeRange]
-    : (input.gradedPatternSet?.supportedSizes ? [...input.gradedPatternSet.supportedSizes] : ['XS', 'S', 'M', 'L', 'XL', 'XXL']);
+  const sizeRange = (
+    input.sizeRange
+      ? [...input.sizeRange]
+      : (input.gradedPatternSet?.supportedSizes ? [...input.gradedPatternSet.supportedSizes] : ['XS', 'S', 'M', 'L', 'XL', 'XXL'])
+  ).map(s => String(s).trim());
 
-  if (sizeRange.length === 0 || !sizeRange.includes(baseSize)) {
+  if (sizeRange.length < 2 || !sizeRange.includes(baseSize)) {
     throw new ProductionSnapshotValidationError(
-      `Grading artifact sizeRange [${sizeRange.join(', ')}] must be non-empty and include baseSize '${baseSize}'.`
+      `Grading artifact sizeRange [${sizeRange.join(', ')}] must contain at least 2 sizes and include baseSize '${baseSize}'.`
+    );
+  }
+  if (new Set(sizeRange).size !== sizeRange.length) {
+    throw new ProductionSnapshotValidationError(
+      `Grading artifact sizeRange [${sizeRange.join(', ')}] contains duplicate size entries.`
     );
   }
 
@@ -2271,17 +2555,38 @@ export function createAuthoritativeGradingArtifact(
   const rawGeomValInput = input.geometryValidationResult ?? input.perSizeGeometryValidation;
 
   if (input.perSizePatternGeometry && rawGeomValInput) {
-    for (const [sz, pieces] of Object.entries(input.perSizePatternGeometry)) {
-      if (!Array.isArray(pieces)) continue;
+    const sizeSet = new Set(sizeRange);
+    for (const extraSz of Object.keys(input.perSizePatternGeometry)) {
+      if (!sizeSet.has(extraSz)) {
+        throw new ProductionSnapshotValidationError(
+          `Grading artifact creation failed (fail-closed): perSizePatternGeometry contains undeclared size '${extraSz}' outside sizeRange.`
+        );
+      }
+    }
+    for (const sz of sizeRange) {
+      const pieces = input.perSizePatternGeometry[sz];
+      if (!Array.isArray(pieces) || pieces.length === 0) {
+        throw new ProductionSnapshotValidationError(
+          `Grading artifact creation failed (fail-closed): missing or empty pattern geometry for declared size '${sz}'.`
+        );
+      }
       perSizePatternGeometry[sz] = pieces.map(p =>
         'stitchingContour' in p && p.boundingBox && 'basis' in p.boundingBox
           ? ({ ...(p as PatternPieceSnapshot) })
           : serializePatternPieceSnapshot(p as PatternPiece, sz)
       );
-    }
-    for (const [sz, val] of Object.entries(rawGeomValInput)) {
-      if (!val) continue;
-      const isValid = Boolean(val.isValid) && (val.failureCount ?? 0) === 0 && (!val.errors || val.errors.length === 0);
+      const val = rawGeomValInput[sz];
+      if (!val) {
+        throw new ProductionSnapshotValidationError(
+          `Grading artifact creation failed (fail-closed): missing geometryValidationResult for declared size '${sz}'.`
+        );
+      }
+      const isValid =
+        Boolean(val.isValid) &&
+        (val.failureCount ?? 0) === 0 &&
+        (!val.errors || val.errors.length === 0) &&
+        val.status !== 'invalid' &&
+        val.status !== 'unassessed-missing-data';
       const errors = val.errors
         ? [...val.errors]
         : !isValid
@@ -2292,7 +2597,7 @@ export function createAuthoritativeGradingArtifact(
         size: val.size ?? val.sizeId ?? sz,
         status: val.status ?? (isValid ? 'validated' : 'invalid'),
         isValid,
-        pieceCount: val.pieceCount ?? (perSizePatternGeometry[sz]?.length ?? 0),
+        pieceCount: perSizePatternGeometry[sz].length,
         passedCount: val.passedCount,
         warningCount: val.warningCount,
         failureCount: val.failureCount ?? errors.length,
@@ -2324,28 +2629,40 @@ export function createAuthoritativeGradingArtifact(
           readonly trouserPieces?: readonly PatternPiece[];
         };
         const collected: PatternPiece[] = [];
-        const seenKeys = new Set<string>();
-        const pushUniquePiece = (p: PatternPiece | undefined) => {
+        const seenIds = new Set<string>();
+        const seenCodes = new Set<string>();
+        const pushStrictUniquePiece = (p: PatternPiece | undefined) => {
           if (!p || typeof p !== 'object') return;
-          const key = p.id || p.pieceCode;
-          if (key && seenKeys.has(key)) return;
-          if (key) seenKeys.add(key);
+          const idKey = typeof p.id === 'string' ? p.id.trim() : '';
+          const codeKey = typeof p.pieceCode === 'string' ? p.pieceCode.trim() : '';
+          if (idKey && seenIds.has(idKey)) {
+            throw new ProductionSnapshotValidationError(
+              `Grading artifact creation failed (fail-closed): duplicate pattern piece id '${idKey}' in graded size '${sz}'.`
+            );
+          }
+          if (codeKey && seenCodes.has(codeKey)) {
+            throw new ProductionSnapshotValidationError(
+              `Grading artifact creation failed (fail-closed): duplicate pattern pieceCode '${codeKey}' in graded size '${sz}'.`
+            );
+          }
+          if (idKey) seenIds.add(idKey);
+          if (codeKey) seenCodes.add(codeKey);
           collected.push(p);
         };
         if (Array.isArray(ext.pieces)) {
-          for (const p of ext.pieces) pushUniquePiece(p);
+          for (const p of ext.pieces) pushStrictUniquePiece(p);
         }
         if (Array.isArray(ext.bodicePieces)) {
-          for (const p of ext.bodicePieces) pushUniquePiece(p);
+          for (const p of ext.bodicePieces) pushStrictUniquePiece(p);
         }
         if (ext.sleevePiece) {
-          pushUniquePiece(ext.sleevePiece);
+          pushStrictUniquePiece(ext.sleevePiece);
         }
         if (Array.isArray(ext.skirtPieces)) {
-          for (const p of ext.skirtPieces) pushUniquePiece(p);
+          for (const p of ext.skirtPieces) pushStrictUniquePiece(p);
         }
         if (Array.isArray(ext.trouserPieces)) {
-          for (const p of ext.trouserPieces) pushUniquePiece(p);
+          for (const p of ext.trouserPieces) pushStrictUniquePiece(p);
         }
         if (collected.length === 0) {
           throw new ProductionSnapshotValidationError(
@@ -2354,18 +2671,24 @@ export function createAuthoritativeGradingArtifact(
         }
         perSizePatternGeometry[sz] = collected.map(p => serializePatternPieceSnapshot(p, sz));
       }
+      const rawErrors = Array.isArray(szRes.errors) ? szRes.errors : [];
+      const rawWarnings = Array.isArray(szRes.warnings) ? szRes.warnings : [];
       const ovVal = rawGeomValInput?.[sz];
       const isValid = ovVal !== undefined
-        ? Boolean(ovVal.isValid) && (ovVal.failureCount ?? 0) === 0
-        : szRes.isValid && szRes.errors.length === 0;
+        ? Boolean(ovVal.isValid) &&
+          (ovVal.failureCount ?? 0) === 0 &&
+          (!ovVal.errors || ovVal.errors.length === 0) &&
+          ovVal.status !== 'invalid' &&
+          ovVal.status !== 'unassessed-missing-data'
+        : Boolean(szRes.isValid) && rawErrors.length === 0;
       geometryValidationResult[sz] = {
         sizeId: sz,
         size: sz,
-        status: ovVal?.status ?? szRes.status,
+        status: ovVal?.status ?? szRes.status ?? (isValid ? 'verified-valid' : 'invalid'),
         isValid,
         pieceCount: perSizePatternGeometry[sz].length,
-        errors: ovVal?.errors ? [...ovVal.errors] : (!isValid && szRes.errors.length === 0 ? [`Size ${sz} validation failed`] : [...szRes.errors]),
-        warnings: ovVal?.warnings ? [...ovVal.warnings] : [...szRes.warnings]
+        errors: ovVal?.errors ? [...ovVal.errors] : (!isValid && rawErrors.length === 0 ? [`Size ${sz} validation failed`] : [...rawErrors]),
+        warnings: ovVal?.warnings ? [...ovVal.warnings] : [...rawWarnings]
       };
     }
   } else if (input.basePatternPieces && input.basePatternPieces.length > 0) {
@@ -2376,7 +2699,13 @@ export function createAuthoritativeGradingArtifact(
           : serializePatternPieceSnapshot(p as PatternPiece, sz)
       );
       const ovVal = rawGeomValInput?.[sz];
-      const isValid = ovVal !== undefined ? Boolean(ovVal.isValid) && (ovVal.failureCount ?? 0) === 0 : true;
+      const isValid = ovVal !== undefined
+        ? Boolean(ovVal.isValid) &&
+          (ovVal.failureCount ?? 0) === 0 &&
+          (!ovVal.errors || ovVal.errors.length === 0) &&
+          ovVal.status !== 'invalid' &&
+          ovVal.status !== 'unassessed-missing-data'
+        : true;
       geometryValidationResult[sz] = {
         sizeId: sz,
         size: sz,
@@ -2393,40 +2722,60 @@ export function createAuthoritativeGradingArtifact(
     );
   }
 
-  const validSizesInRange = Object.values(geometryValidationResult).filter(v => v.isValid).length;
-  const failedSizesInRange = Object.values(geometryValidationResult).filter(v => !v.isValid).length;
-  const unassessedSizesInRange = Math.max(0, sizeRange.length - Object.keys(geometryValidationResult).length);
-  const allSizesValidInRange =
-    Object.keys(geometryValidationResult).length === sizeRange.length &&
-    Object.values(geometryValidationResult).every(v => v.isValid);
+  // Enforce strict per-piece geometry bounds, duplicate rejection, sizeRange completeness, and cross-size parity
+  const parityCheck = validateGradingSizesAndParity(perSizePatternGeometry, sizeRange, baseSize);
+  if (parityCheck.isSizeRangeIncomplete || parityCheck.isValidationFailed || parityCheck.errors.length > 0) {
+    throw new ProductionSnapshotValidationError(
+      `Grading artifact creation failed (fail-closed): ${parityCheck.errors[0]}`,
+      parityCheck.errors
+    );
+  }
 
-  const gradingValidationResult =
+  const validSizesInRange = sizeRange.filter(sz => Boolean(geometryValidationResult[sz]?.isValid)).length;
+  const failedSizesInRange = sizeRange.filter(sz => geometryValidationResult[sz] && !geometryValidationResult[sz].isValid).length;
+  const unassessedSizesInRange = sizeRange.filter(sz => !geometryValidationResult[sz]).length;
+  const allSizesValidInRange =
+    unassessedSizesInRange === 0 &&
+    failedSizesInRange === 0 &&
+    validSizesInRange === sizeRange.length;
+
+  const callerReport =
     input.gradingValidationResult ??
     input.crossSizeIntegrityReport ??
-    (input.gradedPatternSet?.integrityReport
-      ? {
-          ...input.gradedPatternSet.integrityReport,
-          baseSize,
-          evaluatedSizes: [...sizeRange],
-          validSizeCount: validSizesInRange,
-          failedSizeCount: failedSizesInRange,
-          unassessedSizeCount: unassessedSizesInRange,
-          isOverallGradingValid:
-            Boolean(input.gradedPatternSet.integrityReport.isOverallGradingValid) && allSizesValidInRange
-        }
-      : {
-          timestamp: createdAt,
-          baseSize,
-          evaluatedSizes: [...sizeRange],
-          validSizeCount: validSizesInRange,
-          failedSizeCount: failedSizesInRange,
-          unassessedSizeCount: unassessedSizesInRange,
-          isOverallGradingValid: allSizesValidInRange,
-          checks: [],
-          comparisonTable: [],
-          summaryMessage: 'Cross-size grading geometry and seam integrity verified.',
-          unassessedConditions: []
-        });
+    input.gradedPatternSet?.integrityReport;
+
+  const callerReportValid = callerReport
+    ? Boolean(callerReport.isOverallGradingValid) &&
+      (callerReport.failedSizeCount ?? 0) === 0 &&
+      (callerReport.unassessedSizeCount ?? 0) === 0 &&
+      !(Array.isArray(callerReport.checks) && callerReport.checks.some(c => c.status === 'fail'))
+    : true;
+
+  const gradingValidationResult: CrossSizeIntegrityReport = callerReport
+    ? {
+        ...callerReport,
+        baseSize,
+        evaluatedSizes: [...sizeRange],
+        validSizeCount: validSizesInRange,
+        failedSizeCount: failedSizesInRange,
+        unassessedSizeCount: unassessedSizesInRange,
+        isOverallGradingValid: allSizesValidInRange && callerReportValid
+      }
+    : {
+        timestamp: createdAt,
+        baseSize,
+        evaluatedSizes: [...sizeRange],
+        validSizeCount: validSizesInRange,
+        failedSizeCount: failedSizesInRange,
+        unassessedSizeCount: unassessedSizesInRange,
+        isOverallGradingValid: allSizesValidInRange,
+        checks: [],
+        comparisonTable: [],
+        summaryMessage: allSizesValidInRange
+          ? 'Cross-size grading geometry and seam integrity verified.'
+          : 'Cross-size grading validation detected failed or unassessed sizes.',
+        unassessedConditions: []
+      };
 
   const gradingArtifactId =
     (input.gradingArtifactId ?? '').trim() ||
@@ -2745,55 +3094,57 @@ export function verifyGradingArtifactIntegrity(
     };
   }
 
-  if (!Array.isArray(artifact.sizeRange) || artifact.sizeRange.length < 2 || !artifact.sizeRange.includes(artifact.baseSize)) {
-    const reason = `Grading artifact sizeRange [${(artifact.sizeRange ?? []).join(', ')}] is incomplete or missing baseSize '${artifact.baseSize}'.`;
+  const parityCheck = validateGradingSizesAndParity(
+    artifact.perSizePatternGeometry ?? {},
+    artifact.sizeRange,
+    artifact.baseSize
+  );
+  if (parityCheck.errors.length > 0) {
     return {
       isValid: false,
       isTampered: false,
-      isSizeRangeIncomplete: true,
-      isValidationFailed: false,
-      reason,
-      errors: [reason]
+      isSizeRangeIncomplete: parityCheck.isSizeRangeIncomplete,
+      isValidationFailed: parityCheck.isValidationFailed || !parityCheck.isSizeRangeIncomplete,
+      reason: parityCheck.errors[0],
+      errors: parityCheck.errors
     };
   }
 
+  let recomputedValidCount = 0;
+  let recomputedFailedCount = 0;
   for (const sz of artifact.sizeRange) {
-    const szPieces = artifact.perSizePatternGeometry?.[sz];
+    const szPieces = artifact.perSizePatternGeometry[sz];
     const szVal = artifact.geometryValidationResult?.[sz];
-    if (!Array.isArray(szPieces) || szPieces.length === 0 || !szVal) {
-      const reason = `Grading artifact is missing pattern geometry or geometry validation record for declared size '${sz}'.`;
+    if (!szVal) {
+      const reason = `Grading artifact is missing geometry validation record for declared size '${sz}'.`;
       return {
         isValid: false,
         isTampered: false,
         isSizeRangeIncomplete: true,
-        isValidationFailed: false,
+        isValidationFailed: true,
         reason,
         errors: [reason]
       };
     }
-    for (const p of szPieces) {
-      if (
-        !p.pieceCode ||
-        !p.cutPathData ||
-        !p.sewPathData ||
-        !p.boundingBox ||
-        !Number.isFinite(p.boundingBox.widthCm) ||
-        p.boundingBox.widthCm <= 0 ||
-        !Number.isFinite(p.boundingBox.heightCm) ||
-        p.boundingBox.heightCm <= 0
-      ) {
-        const reason = `Graded piece '${p?.pieceCode ?? 'unknown'}' in size '${sz}' has invalid or empty geometry.`;
-        return {
-          isValid: false,
-          isTampered: false,
-          isSizeRangeIncomplete: true,
-          isValidationFailed: true,
-          reason,
-          errors: [reason]
-        };
-      }
+    if (szVal.pieceCount !== undefined && szVal.pieceCount !== szPieces.length) {
+      const reason = `Grading size '${sz}' validation pieceCount (${szVal.pieceCount}) disagrees with perSizePatternGeometry piece count (${szPieces.length}).`;
+      return {
+        isValid: false,
+        isTampered: true,
+        isSizeRangeIncomplete: false,
+        isValidationFailed: true,
+        reason,
+        errors: [reason]
+      };
     }
-    if (!szVal.isValid || szVal.status === 'invalid' || szVal.status === 'unassessed-missing-data' || (szVal.errors && szVal.errors.length > 0)) {
+    const szActuallyValid =
+      Boolean(szVal.isValid) &&
+      (szVal.failureCount ?? 0) === 0 &&
+      szVal.status !== 'invalid' &&
+      szVal.status !== 'unassessed-missing-data' &&
+      (!szVal.errors || szVal.errors.length === 0);
+    if (!szActuallyValid) {
+      recomputedFailedCount += 1;
       const reason = `Grading geometry validation failed for size '${sz}': ${(szVal.errors ?? []).join('; ') || szVal.status}`;
       return {
         isValid: false,
@@ -2804,18 +3155,21 @@ export function verifyGradingArtifactIntegrity(
         errors: [reason]
       };
     }
+    recomputedValidCount += 1;
   }
 
   const gvr = artifact.gradingValidationResult;
   if (
     !gvr ||
     !gvr.isOverallGradingValid ||
-    gvr.failedSizeCount > 0 ||
-    gvr.unassessedSizeCount > 0 ||
-    gvr.validSizeCount !== artifact.sizeRange.length ||
+    gvr.baseSize !== artifact.baseSize ||
+    canonicalizeJson([...(gvr.evaluatedSizes ?? [])]) !== canonicalizeJson([...artifact.sizeRange]) ||
+    gvr.failedSizeCount !== recomputedFailedCount ||
+    gvr.unassessedSizeCount !== 0 ||
+    gvr.validSizeCount !== recomputedValidCount ||
     (Array.isArray(gvr.checks) && gvr.checks.some(c => c.status === 'fail'))
   ) {
-    const reason = 'Cross-size grading integrity report indicates failed or unassessed sizes.';
+    const reason = 'Cross-size grading integrity report indicates failed, inconsistent, or unassessed sizes.';
     return {
       isValid: false,
       isTampered: false,
@@ -2987,6 +3341,8 @@ export function verifyPatternRevisionLifecycleIntegrity(
     let expectedPreviousEventFp: string | null = null;
     let expectedFromState: PatternRevisionLifecycleState | null = null;
     let latestApprovedRecord: PatternRevisionApprovalRecord | undefined;
+    let prevTimestampMs: number | undefined;
+    const eventInvalidationRecords: PatternInvalidationRecord[] = [];
 
     for (let i = 0; i < history.length; i++) {
       const ev = history[i];
@@ -2994,6 +3350,28 @@ export function verifyPatternRevisionLifecycleIntegrity(
         isLifecycleTampered = true;
         errors.push(`Lifecycle event at index ${i} is malformed.`);
         continue;
+      }
+      if (ev.eventIndex !== i) {
+        isLifecycleTampered = true;
+        errors.push(
+          `Lifecycle event '${ev.eventId}' at array index ${i} has non-contiguous eventIndex '${String(ev.eventIndex)}' (expected ${i}).`
+        );
+      }
+      if (!isValidIsoDate(ev.timestamp)) {
+        isLifecycleTampered = true;
+        errors.push(
+          `Lifecycle event '${ev.eventId}' at index ${i} has invalid ISO timestamp '${String(ev.timestamp)}'.`
+        );
+      } else {
+        const evTsMs = Date.parse(ev.timestamp);
+        if (prevTimestampMs !== undefined && evTsMs < prevTimestampMs) {
+          isLifecycleTampered = true;
+          errors.push(
+            `Lifecycle event '${ev.eventId}' at index ${i} has decreasing timestamp '${ev.timestamp}' earlier than predecessor event.`
+          );
+        }
+        // Equal timestamps are explicitly permitted for deterministic same-instant multi-step flows.
+        prevTimestampMs = evTsMs;
       }
       if (ev.targetRevisionId !== revision.revisionId) {
         isLifecycleTampered = true;
@@ -3112,6 +3490,8 @@ export function verifyPatternRevisionLifecycleIntegrity(
         ) {
           isLifecycleTampered = true;
           errors.push(`Invalidated lifecycle event '${ev.eventId}' is missing a complete PatternInvalidationRecord.`);
+        } else {
+          eventInvalidationRecords.push(inv);
         }
       }
 
@@ -3127,11 +3507,31 @@ export function verifyPatternRevisionLifecycleIntegrity(
       expectedFromState = ev.toState;
     }
 
+    if (revision.invalidationRecords !== undefined && !Array.isArray(revision.invalidationRecords)) {
+      isLifecycleTampered = true;
+      errors.push(`Pattern revision '${revision.revisionId}' invalidationRecords is malformed.`);
+    } else {
+      const topLevelInvalidations = revision.invalidationRecords ?? [];
+      if (canonicalizeJson(topLevelInvalidations) !== canonicalizeJson(eventInvalidationRecords)) {
+        isLifecycleTampered = true;
+        errors.push(
+          `Pattern revision '${revision.revisionId}' top-level invalidationRecords (${topLevelInvalidations.length}) diverge from 'invalidated' lifecycle events (${eventInvalidationRecords.length}).`
+        );
+      }
+    }
+
     const derivedState = derivePatternRevisionLifecycleState(history);
     if (revision.currentLifecycleState !== undefined && revision.currentLifecycleState !== derivedState) {
       isLifecycleTampered = true;
       errors.push(
         `Pattern revision currentLifecycleState '${revision.currentLifecycleState}' disagrees with derived lifecycleHistory state '${derivedState}'.`
+      );
+    }
+
+    if (derivedState === 'invalidated' && eventInvalidationRecords.length === 0) {
+      isLifecycleTampered = true;
+      errors.push(
+        `Pattern revision '${revision.revisionId}' claims derived state 'invalidated' without a valid invalidation record.`
       );
     }
 
@@ -3232,6 +3632,11 @@ function appendPatternRevisionLifecycleEvent(
 
   const existingHistory = revision.lifecycleHistory ?? [];
   const latestEvent = existingHistory[existingHistory.length - 1];
+  if (latestEvent && Date.parse(timestamp) < Date.parse(latestEvent.timestamp)) {
+    throw new ProductionSnapshotValidationError(
+      `Illegal lifecycle timestamp '${timestamp}': cannot precede previous lifecycle event timestamp '${latestEvent.timestamp}'.`
+    );
+  }
   const fromState = revision.currentLifecycleState ?? derivePatternRevisionLifecycleState(existingHistory);
   const eventType = expectedPatternEventTypeForTransition(fromState, params.toState);
   if (!eventType) {
@@ -3827,6 +4232,11 @@ export function approvePatternRevision(
         `Pattern revision approval failed (fail-closed): Tier 3 ('authenticated_designer') requires an active TrustedIdentityVerifier, but none was provided.`
       );
     }
+    if (options.identityVerifier.verificationMode === 'historical') {
+      throw new ProductionSnapshotValidationError(
+        `Pattern revision approval failed (fail-closed): historical verificationMode TrustedIdentityVerifier cannot authorize live pattern approvals.`
+      );
+    }
     if (!options.identityVerifier.replayStore || typeof options.identityVerifier.replayStore.consumeJti !== 'function') {
       throw new ProductionSnapshotValidationError(
         `Pattern revision approval failed (fail-closed): Tier 3 ('authenticated_designer') requires an active JtiReplayStore on the TrustedIdentityVerifier.`
@@ -3882,6 +4292,11 @@ export function approvePatternRevision(
     ) {
       throw new ProductionSnapshotValidationError(
         `Pattern revision approval failed (fail-closed): Tier 4 ('cryptographic_principal') requires an active TrustedCryptographicVerifier with verifyPatternApprovalSignature(), but none was provided.`
+      );
+    }
+    if (options.cryptographicVerifier.verificationMode === 'historical') {
+      throw new ProductionSnapshotValidationError(
+        `Pattern revision approval failed (fail-closed): historical verificationMode TrustedCryptographicVerifier cannot authorize live pattern approvals.`
       );
     }
     if (!options.cryptographicSignature) {

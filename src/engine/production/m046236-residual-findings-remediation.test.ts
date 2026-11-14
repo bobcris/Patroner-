@@ -508,11 +508,26 @@ describe('Milestone 04.6.2.3.6 — Residual Security Findings Remediation', () =
 
       const pieces = draftSkirtBlock(measurements, designSpec);
       const validation = validatePatternDraft(pieces);
-      const gradedPatternSet = gradePattern(designSpec);
+      const rawGradedPatternSet = gradePattern(designSpec);
+      const gradedPatternSet = {
+        ...rawGradedPatternSet,
+        sizeResults: Object.fromEntries(
+          Object.entries(rawGradedPatternSet.sizeResults).map(([sz, res]) => [
+            sz,
+            {
+              ...res,
+              bodicePieces: [],
+              sleevePiece: undefined,
+              skirtPieces: draftSkirtBlock(res.measurements, designSpec)
+            }
+          ])
+        ) as typeof rawGradedPatternSet.sizeResults
+      };
 
       const draftSnapshot = createProductionPatternRevision({
         projectId: 'tenant-m046236-01',
         revisionId: 'rev-f03-v1-M',
+        createdAt: '2026-11-12T10:01:00.000Z',
         targetSize: 'M',
         designSpecification: designSpec,
         measurements: {

@@ -220,6 +220,7 @@ export const ALLOWED_CRYPTO_VERIFIER_CONFIG_KEYS: ReadonlySet<string> = new Set(
   'trustedIssuers',
   'expectedTenantId',
   'referenceTimeIso',
+  'verificationMode',
   'clockSkewToleranceSeconds',
   'allowDuplicatePublicKeyMaterial'
 ]);
@@ -231,6 +232,7 @@ export const ALLOWED_IDENTITY_VERIFIER_CONFIG_KEYS: ReadonlySet<string> = new Se
   'publicJwks',
   'expectedTenantId',
   'referenceTimeIso',
+  'verificationMode',
   'clockSkewToleranceSeconds',
   'replayStore',
   'requireDurableReplayStore',
@@ -246,6 +248,18 @@ export const ALLOWED_REPLAY_STORE_KEYS: ReadonlySet<string> = new Set([
   'getConsumedRecord',
   'purgeExpired'
 ]);
+
+function isStrictValidIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return false;
+  }
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(trimmed)) {
+    return false;
+  }
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed);
+}
 
 function isPlainRecordObject(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -649,12 +663,24 @@ export function validateControlledPublicKeyRegistration(
 
   const activatedAt = registration.activatedAt ?? '2020-01-01T00:00:00.000Z';
   const expiresAt = registration.expiresAt ?? '2035-01-01T00:00:00.000Z';
+  if (!isStrictValidIsoTimestamp(activatedAt) || !isStrictValidIsoTimestamp(expiresAt)) {
+    throw new ProductionSnapshotValidationError(
+      `Public-key registration "${registration.keyId}" has malformed activatedAt/expiresAt ISO timestamp.`,
+      ['invalid-key-validity-window']
+    );
+  }
   const activatedMs = Date.parse(activatedAt);
   const expiresMs = Date.parse(expiresAt);
   if (Number.isNaN(activatedMs) || Number.isNaN(expiresMs) || expiresMs <= activatedMs) {
     throw new ProductionSnapshotValidationError(
       `Public-key registration "${registration.keyId}" has invalid activatedAt/expiresAt window.`,
       ['invalid-key-validity-window']
+    );
+  }
+  if (registration.revokedAt !== undefined && !isStrictValidIsoTimestamp(registration.revokedAt)) {
+    throw new ProductionSnapshotValidationError(
+      `Public-key registration "${registration.keyId}" has malformed revokedAt ISO timestamp.`,
+      ['invalid-key-revoked-at']
     );
   }
 
@@ -1632,8 +1658,10 @@ export interface TrustedIdentityVerifierConfig {
   publicJwks: readonly OidcJwkPublicKey[];
   /** Optional expected organization/project/tenant identifier (`tid`) */
   expectedTenantId?: string;
-  /** Optional reference time for deterministic testing; defaults to current system clock */
+  /** Optional reference time for deterministic/historical evaluation; omitted defaults strictly to current wall-clock Date.now() in live mode */
   referenceTimeIso?: string;
+  /** Explicit verification mode ('live' default, or 'historical' requiring valid referenceTimeIso) */
+  verificationMode?: 'live' | 'historical';
   /** Optional clock skew tolerance in seconds (default: 60s) */
   clockSkewToleranceSeconds?: number;
   /** Optional atomic JTI replay store (`FINDING-06`); defaults to an internal process-local store */
@@ -1732,6 +1760,24 @@ export function validateOidcPublicJwk(jwk: OidcJwkPublicKey): string {
     }
   }
 
+  if (jwk.activatedAt !== undefined && !isStrictValidIsoTimestamp(jwk.activatedAt)) {
+    throw new ProductionSnapshotValidationError(
+      `JWK "${jwk.kid}" has malformed activatedAt ISO timestamp.`,
+      ['invalid-jwk-validity-window']
+    );
+  }
+  if (jwk.expiresAt !== undefined && !isStrictValidIsoTimestamp(jwk.expiresAt)) {
+    throw new ProductionSnapshotValidationError(
+      `JWK "${jwk.kid}" has malformed expiresAt ISO timestamp.`,
+      ['invalid-jwk-validity-window']
+    );
+  }
+  if (jwk.revokedAt !== undefined && !isStrictValidIsoTimestamp(jwk.revokedAt)) {
+    throw new ProductionSnapshotValidationError(
+      `JWK "${jwk.kid}" has malformed revokedAt ISO timestamp.`,
+      ['invalid-jwk-revoked-at']
+    );
+  }
   if (jwk.activatedAt !== undefined && jwk.expiresAt !== undefined) {
     const actMs = Date.parse(jwk.activatedAt);
     const expMs = Date.parse(jwk.expiresAt);
@@ -1828,6 +1874,20 @@ export function createTrustedIdentityVerifier(
     throw new ProductionSnapshotValidationError(
       'TrustedIdentityVerifier configuration error: requireDurableReplayStore is true, but the provided JtiReplayStore is a process-local in-memory store (isDurableDistributedStore === false).',
       ['non-durable-replay-store-rejected']
+    );
+  }
+
+  const verificationMode: 'live' | 'historical' = config.verificationMode ?? 'live';
+  if (verificationMode !== 'live' && verificationMode !== 'historical') {
+    throw new ProductionSnapshotValidationError(
+      `TrustedIdentityVerifier configuration error: unsupported verificationMode "${String(config.verificationMode)}".`,
+      ['invalid-verification-mode']
+    );
+  }
+  if (verificationMode === 'historical' && !isStrictValidIsoTimestamp(config.referenceTimeIso)) {
+    throw new ProductionSnapshotValidationError(
+      'TrustedIdentityVerifier in historical verificationMode requires an explicit valid ISO-8601 referenceTimeIso.',
+      ['missing-historical-reference-time']
     );
   }
 
@@ -1951,16 +2011,42 @@ export function createTrustedIdentityVerifier(
       );
     }
 
-    const nowMs = config.referenceTimeIso
-      ? Date.parse(config.referenceTimeIso)
-      : options?.approvalTimestamp
-        ? Date.parse(options.approvalTimestamp)
-        : Date.now();
+    // Strictly determine evaluation clock time (AUDIT-05.1-05 / Safeguard 1):
+    // Live mode defaults omitted referenceTimeIso to Date.now() and NEVER falls back to options.approvalTimestamp.
+    let nowMs: number;
+    if (verificationMode === 'historical') {
+      if (!isStrictValidIsoTimestamp(config.referenceTimeIso)) {
+        return fail('Invalid or missing referenceTimeIso for historical verification.');
+      }
+      nowMs = Date.parse(config.referenceTimeIso);
+    } else if (config.referenceTimeIso !== undefined) {
+      if (!isStrictValidIsoTimestamp(config.referenceTimeIso)) {
+        return fail('Invalid verifier referenceTimeIso.');
+      }
+      nowMs = Date.parse(config.referenceTimeIso);
+    } else {
+      nowMs = Date.now();
+    }
     if (Number.isNaN(nowMs)) {
       return fail('Invalid verifier referenceTimeIso.');
     }
 
-    if (matchedJwk.revokedAt) {
+    if (options?.approvalTimestamp !== undefined) {
+      if (!isStrictValidIsoTimestamp(options.approvalTimestamp)) {
+        return fail('Invalid approvalTimestamp passed to identity verification.');
+      }
+      const approvalMs = Date.parse(options.approvalTimestamp);
+      if (approvalMs > nowMs + skewSec * 1000) {
+        return fail(
+          `Approval timestamp "${options.approvalTimestamp}" is in the future relative to trusted evaluation time.`
+        );
+      }
+    }
+
+    if (matchedJwk.revokedAt !== undefined) {
+      if (!isStrictValidIsoTimestamp(matchedJwk.revokedAt)) {
+        return fail(`OIDC JWK "${kid}" contains an invalid revokedAt timestamp.`);
+      }
       const revMs = Date.parse(matchedJwk.revokedAt);
       if (Number.isNaN(revMs) || nowMs >= revMs) {
         return fail(
@@ -1969,18 +2055,24 @@ export function createTrustedIdentityVerifier(
       }
     }
 
-    if (matchedJwk.activatedAt) {
+    if (matchedJwk.activatedAt !== undefined) {
+      if (!isStrictValidIsoTimestamp(matchedJwk.activatedAt)) {
+        return fail(`OIDC JWK "${kid}" contains an invalid activatedAt timestamp.`);
+      }
       const actMs = Date.parse(matchedJwk.activatedAt);
-      if (!Number.isNaN(actMs) && nowMs + skewSec * 1000 < actMs) {
+      if (Number.isNaN(actMs) || nowMs + skewSec * 1000 < actMs) {
         return fail(
           `OIDC JWK "${kid}" is not yet active (activatedAt: ${matchedJwk.activatedAt}).`
         );
       }
     }
 
-    if (matchedJwk.expiresAt) {
+    if (matchedJwk.expiresAt !== undefined) {
+      if (!isStrictValidIsoTimestamp(matchedJwk.expiresAt)) {
+        return fail(`OIDC JWK "${kid}" contains an invalid expiresAt timestamp.`);
+      }
       const expKeyMs = Date.parse(matchedJwk.expiresAt);
-      if (!Number.isNaN(expKeyMs) && nowMs - skewSec * 1000 >= expKeyMs) {
+      if (Number.isNaN(expKeyMs) || nowMs - skewSec * 1000 >= expKeyMs) {
         return fail(
           `OIDC JWK "${kid}" has expired (expiresAt: ${matchedJwk.expiresAt}).`
         );
@@ -2583,6 +2675,7 @@ export function createTrustedIdentityVerifier(
 
   return {
     verifierId: `oidc-verifier-${trustedIssuersList[0]}`,
+    verificationMode,
     trustedIssuers: trustedIssuersList,
     expectedAudience: config.expectedAudience.trim(),
     expectedTenantId: config.expectedTenantId?.trim(),
@@ -2802,8 +2895,10 @@ export interface TrustedCryptographicVerifierConfig {
   trustedIssuers?: readonly string[];
   /** Optional expected tenant/project scope */
   expectedTenantId?: string;
-  /** Optional trusted reference time for key lifecycle checks (`FINDING-11`) */
+  /** Optional trusted reference time for deterministic/historical checks (`FINDING-11`); omitted defaults strictly to Date.now() in live mode */
   referenceTimeIso?: string;
+  /** Explicit verification mode ('live' default, or 'historical' requiring valid referenceTimeIso) */
+  verificationMode?: 'live' | 'historical';
   /** Optional clock skew tolerance in seconds for approvalTimestamp vs referenceTimeIso (default: 300s) */
   clockSkewToleranceSeconds?: number;
   /** Optional flag to allow multiple keyIds to share the same publicKeyHex (default: false, `FINDING-09`) */
@@ -2942,6 +3037,20 @@ export function createTrustedCryptographicVerifier(
     );
   }
 
+  const verificationMode: 'live' | 'historical' = config.verificationMode ?? 'live';
+  if (verificationMode !== 'live' && verificationMode !== 'historical') {
+    throw new ProductionSnapshotValidationError(
+      `TrustedCryptographicVerifier configuration error: unsupported verificationMode "${String(config.verificationMode)}".`,
+      ['invalid-verification-mode']
+    );
+  }
+  if (verificationMode === 'historical' && !isStrictValidIsoTimestamp(config.referenceTimeIso)) {
+    throw new ProductionSnapshotValidationError(
+      'TrustedCryptographicVerifier in historical verificationMode requires an explicit valid ISO-8601 referenceTimeIso.',
+      ['missing-historical-reference-time']
+    );
+  }
+
   const skewMs = (config.clockSkewToleranceSeconds ?? 300) * 1000;
   const trustedIssuersSet =
     Array.isArray(config.trustedIssuers) && config.trustedIssuers.length > 0
@@ -3010,17 +3119,41 @@ export function createTrustedCryptographicVerifier(
       };
     }
 
+    if (!isStrictValidIsoTimestamp(approvalTimestamp)) {
+      return { ok: false, result: fail('Invalid approvalTimestamp in expected signing payload.') };
+    }
     const signedTimeMs = Date.parse(approvalTimestamp);
     if (Number.isNaN(signedTimeMs)) {
       return { ok: false, result: fail('Invalid approvalTimestamp in expected signing payload.') };
     }
 
-    const refTimeMs = config.referenceTimeIso ? Date.parse(config.referenceTimeIso) : signedTimeMs;
+    // Strictly evaluate against trusted wall-clock Date.now() (live mode default) or explicit referenceTimeIso.
+    // NEVER default refTimeMs to signedTimeMs (AUDIT-05.1-05 / Safeguard 1).
+    let refTimeMs: number;
+    if (verificationMode === 'historical') {
+      if (!isStrictValidIsoTimestamp(config.referenceTimeIso)) {
+        return { ok: false, result: fail('Invalid or missing referenceTimeIso in historical TrustedCryptographicVerifier.') };
+      }
+      refTimeMs = Date.parse(config.referenceTimeIso);
+    } else if (config.referenceTimeIso !== undefined) {
+      if (!isStrictValidIsoTimestamp(config.referenceTimeIso)) {
+        return { ok: false, result: fail('Invalid referenceTimeIso in TrustedCryptographicVerifier.') };
+      }
+      refTimeMs = Date.parse(config.referenceTimeIso);
+    } else {
+      refTimeMs = Date.now();
+    }
     if (Number.isNaN(refTimeMs)) {
       return { ok: false, result: fail('Invalid referenceTimeIso in TrustedCryptographicVerifier.') };
     }
 
-    if (keyEntry.revokedAt) {
+    if (keyEntry.revokedAt !== undefined) {
+      if (!isStrictValidIsoTimestamp(keyEntry.revokedAt)) {
+        return {
+          ok: false,
+          result: fail(`Public key "${keyId}" contains a malformed revokedAt timestamp.`, 'revoked_key')
+        };
+      }
       const revokedAtMs = Date.parse(keyEntry.revokedAt);
       if (Number.isNaN(revokedAtMs) || signedTimeMs >= revokedAtMs || refTimeMs >= revokedAtMs) {
         return {
@@ -3033,8 +3166,22 @@ export function createTrustedCryptographicVerifier(
       }
     }
 
-    const keyActivatedMs = Date.parse(keyEntry.activatedAt ?? '2020-01-01T00:00:00.000Z');
-    const keyExpiresMs = Date.parse(keyEntry.expiresAt ?? '2035-01-01T00:00:00.000Z');
+    const activatedIso = keyEntry.activatedAt ?? '2020-01-01T00:00:00.000Z';
+    const expiresIso = keyEntry.expiresAt ?? '2035-01-01T00:00:00.000Z';
+    if (!isStrictValidIsoTimestamp(activatedIso) || !isStrictValidIsoTimestamp(expiresIso)) {
+      return {
+        ok: false,
+        result: fail(`Public key "${keyId}" has malformed activatedAt or expiresAt timestamp.`)
+      };
+    }
+    const keyActivatedMs = Date.parse(activatedIso);
+    const keyExpiresMs = Date.parse(expiresIso);
+    if (Number.isNaN(keyActivatedMs) || Number.isNaN(keyExpiresMs) || keyExpiresMs <= keyActivatedMs) {
+      return {
+        ok: false,
+        result: fail(`Public key "${keyId}" has invalid activatedAt/expiresAt window.`)
+      };
+    }
     if (signedTimeMs < keyActivatedMs || refTimeMs + skewMs < keyActivatedMs) {
       return {
         ok: false,
@@ -3058,11 +3205,11 @@ export function createTrustedCryptographicVerifier(
       };
     }
 
-    if (config.referenceTimeIso && signedTimeMs > refTimeMs + skewMs) {
+    if (signedTimeMs > refTimeMs + skewMs) {
       return {
         ok: false,
         result: fail(
-          `Approval timestamp "${approvalTimestamp}" is in the future relative to trusted evaluation time "${config.referenceTimeIso}".`
+          `Approval timestamp "${approvalTimestamp}" is in the future relative to trusted evaluation time.`
         )
       };
     }
@@ -3410,6 +3557,7 @@ export function createTrustedCryptographicVerifier(
 
   return {
     verifierId: `crypto-verifier-${allEntries.map(e => e.keyId).join(',')}`,
+    verificationMode,
     trustedPublicKeyFingerprints: allEntries.map(
       e => e.publicKeyFingerprint ?? computeEd25519PublicKeyFingerprint(e.publicKeyHex)
     ),
@@ -3839,6 +3987,12 @@ export function approveAuthoritativeGarmentSpecification(
         ['identityVerifier']
       );
     }
+    if (options.identityVerifier.verificationMode === 'historical') {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: historical verificationMode TrustedIdentityVerifier cannot authorize live approvals.',
+        ['identityVerifier']
+      );
+    }
     if (!options.identityCredential) {
       throw new ProductionSnapshotValidationError(
         'Specification approval rejected: authenticated_designer authority tier requires a VerifiableIdentityCredential.',
@@ -4057,6 +4211,12 @@ export function approveAuthoritativeGarmentSpecification(
     ) {
       throw new ProductionSnapshotValidationError(
         'Specification approval rejected: cryptographic_principal authority tier is unavailable without cryptographic provider configuration (TrustedCryptographicVerifier).',
+        ['cryptographicVerifier']
+      );
+    }
+    if (options.cryptographicVerifier.verificationMode === 'historical') {
+      throw new ProductionSnapshotValidationError(
+        'Specification approval rejected: historical verificationMode TrustedCryptographicVerifier cannot authorize live approvals.',
         ['cryptographicVerifier']
       );
     }
@@ -4479,6 +4639,23 @@ export function verifySpecificationApproval(
           'authenticated_designer approval cannot be verified without an active TrustedIdentityVerifier in verificationContext.'
       };
     }
+    if (
+      verificationContext.verificationMode !== 'historical' &&
+      verificationContext.identityVerifier.verificationMode === 'historical'
+    ) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason:
+          'Historical verificationMode TrustedIdentityVerifier cannot satisfy live specification authorization.'
+      };
+    }
 
     if (verificationContext.identityCredential) {
       const reverifyBinding = {
@@ -4571,6 +4748,23 @@ export function verifySpecificationApproval(
         recordedFingerprint: recordedFp,
         reason:
           'cryptographic_principal authority tier is unavailable without an active TrustedCryptographicVerifier in verificationContext.'
+      };
+    }
+    if (
+      verificationContext.verificationMode !== 'historical' &&
+      verificationContext.cryptographicVerifier.verificationMode === 'historical'
+    ) {
+      return {
+        isValid: false,
+        state: 'invalid',
+        authorityTier: tier,
+        authorityClassification: tier,
+        isApprovalAuthenticated: false,
+        isApprovalCryptographicallySigned: false,
+        canonicalFingerprint,
+        recordedFingerprint: recordedFp,
+        reason:
+          'Historical verificationMode TrustedCryptographicVerifier cannot satisfy live specification authorization.'
       };
     }
 

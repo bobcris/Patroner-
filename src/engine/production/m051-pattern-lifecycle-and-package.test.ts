@@ -90,7 +90,8 @@ function buildAuthInfrastructure() {
     expectedAudience: AUDIENCE,
     expectedTenantId: PROJECT_ID,
     publicJwks: [publicJwk],
-    replayStore
+    replayStore,
+    referenceTimeIso: '2026-11-12T10:15:00.000Z'
   });
 
   const cryptoKey = deriveEd25519SigningKeyPair(CRYPTO_KEY_ID, CRYPTO_SEED, {
@@ -101,7 +102,8 @@ function buildAuthInfrastructure() {
   let registry = createControlledPublicKeyRegistry();
   registry = registerPublicKeyInRegistry(registry, cryptoKey.publicKeyRegistration);
   const cryptographicVerifier = createTrustedCryptographicVerifier({
-    publicKeyRegistry: Object.values(registry.entries)
+    publicKeyRegistry: Object.values(registry.entries),
+    referenceTimeIso: '2026-11-12T10:15:00.000Z'
   });
 
   return {
@@ -110,6 +112,23 @@ function buildAuthInfrastructure() {
     identityVerifier,
     cryptoKey,
     cryptographicVerifier
+  };
+}
+
+function toGradedSkirtSet(graded: ReturnType<typeof gradePattern>, designSpec: DesignSpecification) {
+  return {
+    ...graded,
+    sizeResults: Object.fromEntries(
+      Object.entries(graded.sizeResults).map(([sz, res]) => [
+        sz,
+        {
+          ...res,
+          bodicePieces: [],
+          sleevePiece: undefined,
+          skirtPieces: draftSkirtBlock(res.measurements, designSpec)
+        }
+      ])
+    ) as typeof graded.sizeResults
   };
 }
 
@@ -293,7 +312,7 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
       assert.notEqual(revWithoutGrading.draftingConfigFingerprint, revWithoutGrading.basePatternFingerprint);
 
       // Downstream grading artifact binds upstream to basePatternFingerprint
-      const gradedSet = gradePattern(designSpecForDrafting);
+      const gradedSet = toGradedSkirtSet(gradePattern(designSpecForDrafting), designSpecForDrafting);
       const gradingArtifact = createAuthoritativeGradingArtifact({
         projectId: PROJECT_ID,
         tenantId: PROJECT_ID,
@@ -563,7 +582,7 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
         fabricSource: 'verified-preset'
       });
 
-      const gradedSet = gradePattern(designSpecForDrafting);
+      const gradedSet = toGradedSkirtSet(gradePattern(designSpecForDrafting), designSpecForDrafting);
       const ga = createAuthoritativeGradingArtifact({
         projectId: PROJECT_ID,
         tenantId: PROJECT_ID,
@@ -845,7 +864,7 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
         cryptographicSignature: sig
       });
 
-      const gradedSet = gradePattern(designSpecForDrafting);
+      const gradedSet = toGradedSkirtSet(gradePattern(designSpecForDrafting), designSpecForDrafting);
       const gradingArtifact = createAuthoritativeGradingArtifact({
         projectId: PROJECT_ID,
         tenantId: PROJECT_ID,
@@ -1155,7 +1174,7 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
         cryptographicSignature: sig
       });
 
-      const gradedSet = gradePattern(designSpecForDrafting);
+      const gradedSet = toGradedSkirtSet(gradePattern(designSpecForDrafting), designSpecForDrafting);
       const gradingArtifact = createAuthoritativeGradingArtifact({
         projectId: PROJECT_ID,
         tenantId: PROJECT_ID,

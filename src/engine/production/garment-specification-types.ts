@@ -353,6 +353,7 @@ export type IdentityVerificationResult = TrustedIdentityVerificationResult;
  */
 export interface TrustedIdentityVerifier {
   readonly verifierId?: string;
+  readonly verificationMode?: 'live' | 'historical';
   readonly trustedIssuers?: readonly string[];
   readonly expectedAudience?: string;
   readonly expectedTenantId?: string;
@@ -447,6 +448,7 @@ export type CryptographicVerificationResult = TrustedCryptographicVerificationRe
  */
 export interface TrustedCryptographicVerifier {
   readonly verifierId: string;
+  readonly verificationMode?: 'live' | 'historical';
   readonly trustedPublicKeyFingerprints: readonly string[];
   readonly publicKeyRegistry?: readonly ControlledPublicKeyRegistration[];
   verifyApprovalSignature(
@@ -479,6 +481,7 @@ export interface ApprovalVerificationContext {
   readonly cryptographicVerifier?: TrustedCryptographicVerifier;
   readonly cryptographicSignature?: VerifiableCryptographicSignature;
   readonly currentTimestamp?: string;
+  readonly verificationMode?: 'live' | 'historical';
 }
 
 export type SpecificationApprovalVerificationContext = ApprovalVerificationContext;

@@ -142,6 +142,7 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
     const draftSnapshot = createProductionPatternRevision({
       projectId: 'project-adversarial-v2',
       revisionId: 'rev-adv-skirt-v2-M',
+      createdAt: '2026-11-09T10:01:00.000Z',
       targetSize: 'M',
       designSpecification: designSpec,
       measurements: {
@@ -202,7 +203,21 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       cryptographicSignature: patSig
     });
 
-    const graded = gradePattern(designSpec);
+    const rawGraded = gradePattern(designSpec);
+    const graded = {
+      ...rawGraded,
+      sizeResults: Object.fromEntries(
+        Object.entries(rawGraded.sizeResults).map(([sz, res]) => [
+          sz,
+          {
+            ...res,
+            bodicePieces: [],
+            sleevePiece: undefined,
+            skirtPieces: draftSkirtBlock(res.measurements, designSpec)
+          }
+        ])
+      ) as typeof rawGraded.sizeResults
+    };
     const measFp = computeArtifactInputFingerprint({
       unit: sizeM.unit,
       waist: sizeM.waist,
@@ -995,6 +1010,7 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
     const draftSnapshot = createProductionPatternRevision({
       projectId: 'project-adversarial-v2',
       revisionId: 'rev-adv-skirt-v2-M',
+      createdAt: '2026-11-09T10:01:00.000Z',
       targetSize: 'M',
       designSpecification: designSpec,
       measurements: {
@@ -1042,7 +1058,21 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       cryptographicVerifier: cryptoVerifier,
       cryptographicSignature: patSig
     });
-    const graded = gradePattern(designSpec);
+    const rawGraded = gradePattern(designSpec);
+    const graded = {
+      ...rawGraded,
+      sizeResults: Object.fromEntries(
+        Object.entries(rawGraded.sizeResults).map(([sz, res]) => [
+          sz,
+          {
+            ...res,
+            bodicePieces: [],
+            sleevePiece: undefined,
+            skirtPieces: draftSkirtBlock(res.measurements, designSpec)
+          }
+        ])
+      ) as typeof rawGraded.sizeResults
+    };
     const measFp = computeArtifactInputFingerprint({
       unit: sizeM.unit,
       waist: sizeM.waist,

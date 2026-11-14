@@ -91,7 +91,8 @@ function buildBaseFixture() {
     expectedAudience: AUDIENCE,
     expectedTenantId: PROJECT_ID,
     publicJwks: [publicJwk],
-    replayStore
+    replayStore,
+    referenceTimeIso: '2026-11-13T10:15:00.000Z'
   });
 
   const specOnlyKey = deriveEd25519SigningKeyPair('key-spec-only-01', 'seed-spec-only-01', {
@@ -116,7 +117,8 @@ function buildBaseFixture() {
   registry = registerPublicKeyInRegistry(registry, dualKey.publicKeyRegistration);
 
   const cryptographicVerifier = createTrustedCryptographicVerifier({
-    publicKeyRegistry: Object.values(registry.entries)
+    publicKeyRegistry: Object.values(registry.entries),
+    referenceTimeIso: '2026-11-13T10:15:00.000Z'
   });
 
   const enhancedLookup = getEnhancedFabricById(ENHANCED_PRESET_FABRICS[0].id);
@@ -196,7 +198,21 @@ function buildBaseFixture() {
   const designSpec: DesignSpecification = convertToDesignSpecification(approvedSpec);
   const pieces = draftSkirtBlock(SIZE_M, designSpec);
   const validationReport = validatePatternDraft(pieces);
-  const gradedSet = gradePattern(designSpec);
+  const rawGradedSet = gradePattern(designSpec);
+  const gradedSet = {
+    ...rawGradedSet,
+    sizeResults: Object.fromEntries(
+      Object.entries(rawGradedSet.sizeResults).map(([sz, res]) => [
+        sz,
+        {
+          ...res,
+          bodicePieces: [],
+          sleevePiece: undefined,
+          skirtPieces: draftSkirtBlock(res.measurements, designSpec)
+        }
+      ])
+    ) as typeof rawGradedSet.sizeResults
+  };
 
   const draftRev = createDraftPatternRevision({
     revisionId: 'pat-rev-m0511-1',
@@ -284,6 +300,7 @@ function buildBaseFixture() {
     designSpec,
     pieces,
     validationReport,
+    rawGradedSet,
     gradedSet,
     draftRev,
     validatedRev,
@@ -1162,7 +1179,8 @@ describe('Milestone 05.1.1 — Critical Remediation & Mandatory Safeguards', () 
         XL: {
           ...f.gradedSet.sizeResults.XL,
           bodicePieces: [],
-          sleevePiece: undefined
+          sleevePiece: undefined,
+          skirtPieces: []
         }
       };
       assert.throws(
@@ -1191,7 +1209,7 @@ describe('Milestone 05.1.1 — Critical Remediation & Mandatory Safeguards', () 
 
       // 3. Generalized extraction via skirtPieces / pieces arrays without bodicePieces
       const generalizedResults = Object.fromEntries(
-        Object.entries(f.gradedSet.sizeResults).map(([sz, res]) => [
+        Object.entries(f.rawGradedSet.sizeResults).map(([sz, res]) => [
           sz,
           {
             ...res,
@@ -1214,13 +1232,13 @@ describe('Milestone 05.1.1 — Critical Remediation & Mandatory Safeguards', () 
         baseSize: 'M',
         sizeRange: [...DEFAULT_SIZE_RANGE],
         gradedPatternSet: {
-          ...f.gradedSet,
-          sizeResults: generalizedResults as typeof f.gradedSet.sizeResults
+          ...f.rawGradedSet,
+          sizeResults: generalizedResults as typeof f.rawGradedSet.sizeResults
         },
-        basePatternPieces: f.pieces,
+        basePatternPieces: f.rawGradedSet.sizeResults.M.bodicePieces,
         createdAt: TS
       });
-      assert.equal(genArtifact.perSizePatternGeometry.M.length, f.gradedSet.sizeResults.M.bodicePieces.length);
+      assert.equal(genArtifact.perSizePatternGeometry.M.length, f.rawGradedSet.sizeResults.M.bodicePieces.length);
     });
   });
 

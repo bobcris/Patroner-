@@ -266,6 +266,13 @@ export function verifyPatternRevisionApprovalLive(params: {
       reason: `Pattern revision '${rev.revisionId}' live approval verification failed (fail-closed): verification context is unavailable.`
     };
   }
+  if (ctx.verificationMode === 'historical') {
+    return {
+      isAuthorized: false,
+      failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+      reason: `Pattern revision '${rev.revisionId}' live approval verification rejected (fail-closed): historical verificationMode context cannot authorize live operations.`
+    };
+  }
 
   if (appRec.authorityTier === 'authenticated_designer') {
     if (!ctx.identityVerifier || typeof ctx.identityVerifier.verifyCredential !== 'function' || !ctx.identityVerifier.replayStore) {
@@ -274,6 +281,13 @@ export function verifyPatternRevisionApprovalLive(params: {
         failureCode: 'AUTHORIZATION_PROVIDER_UNAVAILABLE',
         isProviderUnavailable: true,
         reason: `Pattern revision '${rev.revisionId}' Tier 3 verification failed (fail-closed): active TrustedIdentityVerifier and JtiReplayStore are required.`
+      };
+    }
+    if (ctx.identityVerifier.verificationMode === 'historical') {
+      return {
+        isAuthorized: false,
+        failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+        reason: `Pattern revision '${rev.revisionId}' live approval verification rejected (fail-closed): historical verificationMode TrustedIdentityVerifier cannot authorize live operations.`
       };
     }
     const credToVerify = ctx.identityCredential;
@@ -328,6 +342,13 @@ export function verifyPatternRevisionApprovalLive(params: {
       failureCode: 'AUTHORIZATION_PROVIDER_UNAVAILABLE',
       isProviderUnavailable: true,
       reason: `Pattern revision '${rev.revisionId}' Tier 4 verification failed (fail-closed): active TrustedCryptographicVerifier with verifyPatternApprovalSignature() is required.`
+    };
+  }
+  if (ctx.cryptographicVerifier.verificationMode === 'historical') {
+    return {
+      isAuthorized: false,
+      failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+      reason: `Pattern revision '${rev.revisionId}' live approval verification rejected (fail-closed): historical verificationMode TrustedCryptographicVerifier cannot authorize live operations.`
     };
   }
   const sigToVerify =
@@ -416,7 +437,16 @@ export function evaluatePipelineDependencyIntegrity(
   // 1. INDEPENDENT SOURCE INPUT: Design Specification
   // =========================================================================
   const specFingerprint = computeSpecificationFingerprint(spec);
-  const approvalVerification = verifySpecificationApproval(spec, inputs.verificationContext);
+  const approvalVerification =
+    inputs.verificationContext?.verificationMode === 'historical'
+      ? {
+          isValid: false,
+          state: 'invalid' as const,
+          canonicalFingerprint: specFingerprint,
+          reason:
+            'Historical verificationMode TrustedIdentityVerifier/context cannot satisfy live pipeline specification authorization.'
+        }
+      : verifySpecificationApproval(spec, inputs.verificationContext);
 
   let specStatus: PipelineArtifactStatus = 'approved';
   let specValidationStatus = 'approved';
@@ -1180,12 +1210,32 @@ export function evaluatePipelineDependencyIntegrity(
       staleReasons.push(gradingStaleReason);
     } else if (
       inputs.productionSnapshot &&
-      ga.sourcePatternSnapshotFingerprint &&
-      ga.sourcePatternSnapshotFingerprint !== inputs.productionSnapshot.canonicalFingerprint
+      (() => {
+        const validSnapshotFps = new Set<string>(
+          [
+            inputs.productionSnapshot.canonicalFingerprint,
+            inputs.productionSnapshot.basePatternFingerprint,
+            inputs.productionSnapshot.contentFingerprint
+          ].filter((fp): fp is string => typeof fp === 'string' && fp.length > 0)
+        );
+        const gaSourceFp = ga.sourceBasePatternFingerprint ?? ga.sourcePatternSnapshotFingerprint;
+        if (!gaSourceFp || !validSnapshotFps.has(gaSourceFp)) {
+          return true;
+        }
+        if (
+          ga.sourceBasePatternFingerprint &&
+          ga.sourcePatternSnapshotFingerprint &&
+          ga.sourceBasePatternFingerprint !== ga.sourcePatternSnapshotFingerprint
+        ) {
+          return true;
+        }
+        return false;
+      })()
     ) {
       gradingStatus = 'stale';
       gradingValidationStatus = 'stale-pattern-snapshot';
-      gradingStaleReason = 'Grading artifact sourcePatternSnapshotFingerprint does not match active snapshot canonicalFingerprint.';
+      gradingStaleReason =
+        'Grading artifact sourceBasePatternFingerprint/sourcePatternSnapshotFingerprint does not match active snapshot basePatternFingerprint or canonicalFingerprint.';
       staleReasons.push(gradingStaleReason);
     } else if (
       ga.sourceMeasurementSetFingerprint !== measFingerprint &&
@@ -1859,10 +1909,19 @@ export function validateProductionExportPrerequisites(
 
   // 4. Independent Active Specification Verification (Corrections A, B, C, E, G)
   if (activeInputs?.specification) {
-    const activeSpecVerification = verifySpecificationApproval(
-      activeInputs.specification,
-      activeInputs.verificationContext
-    );
+    const activeSpecVerification =
+      activeInputs.verificationContext?.verificationMode === 'historical'
+        ? {
+            isValid: false,
+            state: 'invalid' as const,
+            canonicalFingerprint: computeSpecificationFingerprint(activeInputs.specification),
+            reason:
+              'Historical verificationMode verificationContext cannot satisfy live production export authority.'
+          }
+        : verifySpecificationApproval(
+            activeInputs.specification,
+            activeInputs.verificationContext
+          );
     if (!activeSpecVerification.isValid) {
       blockingArtifacts.push(`active-specification (${activeSpecVerification.state}: ${activeSpecVerification.reason})`);
       if (activeSpecVerification.state === 'revoked') {
@@ -2434,7 +2493,13 @@ export function validateProductionExportPrerequisites(
             ].filter((fp): fp is string => typeof fp === 'string' && fp.length > 0)
           );
           const gaSourceFp = ga.sourceBasePatternFingerprint ?? ga.sourcePatternSnapshotFingerprint;
-          if (gaSourceFp && !validSnapshotFps.has(gaSourceFp)) {
+          if (
+            !gaSourceFp ||
+            !validSnapshotFps.has(gaSourceFp) ||
+            (ga.sourceBasePatternFingerprint &&
+              ga.sourcePatternSnapshotFingerprint &&
+              ga.sourceBasePatternFingerprint !== ga.sourcePatternSnapshotFingerprint)
+          ) {
             blockingArtifacts.push(
               'grading-artifact (stale-pattern-snapshot: Grading artifact sourceBasePatternFingerprint/sourcePatternSnapshotFingerprint does not match snapshot basePatternFingerprint or canonicalFingerprint)'
             );
@@ -3059,6 +3124,7 @@ export function computeProductionPackageLifecycleEventFingerprint(
   const payload = {
     schemaVersion: 'm05.1-package-lifecycle-event-v1',
     eventId: event.eventId,
+    ...(event.eventIndex !== undefined ? { eventIndex: event.eventIndex } : {}),
     packageId: event.packageId,
     fromState: event.fromState ?? null,
     toState: event.toState,
@@ -3072,6 +3138,225 @@ export function computeProductionPackageLifecycleEventFingerprint(
     supersededByPackageId: event.supersededByPackageId ?? null
   };
   return computeCanonicalFingerprint(payload);
+}
+
+function isValidPackageIsoDate(dateStr: unknown): boolean {
+  if (typeof dateStr !== 'string' || dateStr.trim() === '') return false;
+  const trimmed = dateStr.trim();
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))$/.test(trimmed)) {
+    return false;
+  }
+  return Number.isFinite(Date.parse(trimmed));
+}
+
+export function toCanonicalProductionPackagePieceEntry(
+  p: PatternPieceSnapshot,
+  expectedSizeCode: string
+): ProductionPackagePieceEntry {
+  if (!p || typeof p !== 'object') {
+    throw new ProductionSnapshotValidationError(`Pattern piece in size '${expectedSizeCode}' is missing or malformed.`);
+  }
+  const pieceId = typeof p.id === 'string' ? p.id.trim() : '';
+  const pieceCode = typeof p.pieceCode === 'string' ? p.pieceCode.trim() : '';
+  const pieceName = typeof p.name === 'string' ? p.name.trim() : '';
+  const sizeCode = typeof p.sizeCode === 'string' && p.sizeCode.trim() !== '' ? p.sizeCode.trim() : expectedSizeCode;
+
+  if (!pieceId || !pieceCode || !pieceName) {
+    throw new ProductionSnapshotValidationError(
+      `Pattern piece '${pieceCode || pieceId || 'unknown'}' in size '${expectedSizeCode}' is missing required identity fields (pieceId, pieceCode, pieceName).`
+    );
+  }
+  if (sizeCode !== expectedSizeCode) {
+    throw new ProductionSnapshotValidationError(
+      `Pattern piece '${pieceCode}' declares sizeCode '${sizeCode}' which disagrees with expected size '${expectedSizeCode}'.`
+    );
+  }
+  if (!Number.isInteger(p.cutCount) || p.cutCount < 1) {
+    throw new ProductionSnapshotValidationError(
+      `Pattern piece '${pieceCode}' (${expectedSizeCode}) has invalid cutCount '${String(p.cutCount)}' (must be finite integer >= 1).`
+    );
+  }
+  if (!Number.isFinite(p.seamAllowanceWidthCm) || p.seamAllowanceWidthCm < 0) {
+    throw new ProductionSnapshotValidationError(
+      `Pattern piece '${pieceCode}' (${expectedSizeCode}) has invalid seamAllowanceWidthCm '${String(p.seamAllowanceWidthCm)}'.`
+    );
+  }
+  const widthCm = p.stitchingContour?.boundingBox.widthCm ?? p.boundingBox?.widthCm;
+  const heightCm = p.stitchingContour?.boundingBox.heightCm ?? p.boundingBox?.heightCm;
+  if (!Number.isFinite(widthCm) || (widthCm as number) <= 0 || !Number.isFinite(heightCm) || (heightCm as number) <= 0) {
+    throw new ProductionSnapshotValidationError(
+      `Pattern piece '${pieceCode}' (${expectedSizeCode}) has invalid bounding dimensions (widthCm=${String(widthCm)}, heightCm=${String(heightCm)}).`
+    );
+  }
+  const material = typeof p.material === 'string' ? p.material.trim() : '';
+  if (!material) {
+    throw new ProductionSnapshotValidationError(
+      `Pattern piece '${pieceCode}' (${expectedSizeCode}) is missing a non-empty material specification.`
+    );
+  }
+  if (
+    !p.grainline ||
+    typeof p.grainline.direction !== 'string' ||
+    p.grainline.direction.trim() === '' ||
+    !p.grainline.start ||
+    !p.grainline.end ||
+    !Number.isFinite(p.grainline.start.x) ||
+    !Number.isFinite(p.grainline.start.y) ||
+    !Number.isFinite(p.grainline.end.x) ||
+    !Number.isFinite(p.grainline.end.y)
+  ) {
+    throw new ProductionSnapshotValidationError(
+      `Pattern piece '${pieceCode}' (${expectedSizeCode}) has invalid or missing grainline definition.`
+    );
+  }
+  if (!Array.isArray(p.notches) || !Array.isArray(p.darts)) {
+    throw new ProductionSnapshotValidationError(
+      `Pattern piece '${pieceCode}' (${expectedSizeCode}) must specify notches and darts arrays.`
+    );
+  }
+  const drillHoleCount = Array.isArray(p.drillHoles) ? p.drillHoles.length : 0;
+
+  return {
+    pieceId,
+    pieceCode,
+    pieceName,
+    sizeCode,
+    pieceGeometryFingerprint: computePieceGeometryFingerprint(p),
+    widthCm: widthCm as number,
+    heightCm: heightCm as number,
+    seamAllowanceWidthCm: p.seamAllowanceWidthCm,
+    cutCount: p.cutCount,
+    onFold: Boolean(p.onFold),
+    material,
+    grainline: p.grainline,
+    notchCount: p.notches.length,
+    dartCount: p.darts.length,
+    drillHoleCount
+  };
+}
+
+export function buildCanonicalProductionPackageInventory(params: {
+  readonly patternRevision: AuthoritativePatternRevision;
+  readonly gradingMode: 'graded-multi-size' | 'single-size-ungraded';
+  readonly gradingArtifact?: AuthoritativeGradingArtifact;
+}): {
+  readonly includedSizes: readonly string[];
+  readonly baseSize: string;
+  readonly pieceInventory: readonly ProductionPackagePieceEntry[];
+  readonly pieceCount: number;
+  readonly totalPieceInstancesAcrossSizes: number;
+} {
+  const rev = params.patternRevision;
+  if (!rev || !Array.isArray(rev.patternPieces) || rev.patternPieces.length === 0) {
+    throw new ProductionSnapshotValidationError('Pattern revision has no pattern pieces to build package inventory.');
+  }
+  const baseSize = String(rev.targetSize).trim();
+  if (!baseSize) {
+    throw new ProductionSnapshotValidationError('Pattern revision targetSize is missing.');
+  }
+
+  // Validate base pattern pieces and detect duplicates
+  const seenRevIds = new Set<string>();
+  const seenRevCodes = new Set<string>();
+  const basePieceEntries: ProductionPackagePieceEntry[] = [];
+  for (const p of rev.patternPieces) {
+    const entry = toCanonicalProductionPackagePieceEntry(p, baseSize);
+    if (seenRevIds.has(entry.pieceId)) {
+      throw new ProductionSnapshotValidationError(`Duplicate pattern pieceId '${entry.pieceId}' in pattern revision '${rev.revisionId}'.`);
+    }
+    if (seenRevCodes.has(entry.pieceCode)) {
+      throw new ProductionSnapshotValidationError(`Duplicate pattern pieceCode '${entry.pieceCode}' in pattern revision '${rev.revisionId}'.`);
+    }
+    seenRevIds.add(entry.pieceId);
+    seenRevCodes.add(entry.pieceCode);
+    basePieceEntries.push(entry);
+  }
+
+  if (params.gradingMode === 'single-size-ungraded') {
+    if (params.gradingArtifact) {
+      throw new ProductionSnapshotValidationError('Contradictory gradingArtifact provided for single-size-ungraded inventory reconstruction.');
+    }
+    const totalPieceInstancesAcrossSizes = basePieceEntries.reduce((sum, e) => sum + e.cutCount, 0);
+    return {
+      includedSizes: [baseSize],
+      baseSize,
+      pieceInventory: basePieceEntries,
+      pieceCount: basePieceEntries.length,
+      totalPieceInstancesAcrossSizes
+    };
+  }
+
+  const ga = params.gradingArtifact;
+  if (!ga) {
+    throw new ProductionSnapshotValidationError('AuthoritativeGradingArtifact is required to build graded-multi-size package inventory.');
+  }
+  if (!Array.isArray(ga.sizeRange) || ga.sizeRange.length < 2 || new Set(ga.sizeRange).size !== ga.sizeRange.length) {
+    throw new ProductionSnapshotValidationError('Grading artifact sizeRange is incomplete or contains duplicate sizes.');
+  }
+  if (ga.baseSize !== baseSize || !ga.sizeRange.includes(baseSize)) {
+    throw new ProductionSnapshotValidationError(
+      `Grading artifact baseSize '${ga.baseSize}' disagrees with pattern revision targetSize '${baseSize}'.`
+    );
+  }
+
+  // Ensure base-size graded geometry matches authoritative patternRevision pieces
+  const gaBasePieces = ga.perSizePatternGeometry?.[baseSize];
+  if (!Array.isArray(gaBasePieces) || gaBasePieces.length !== basePieceEntries.length) {
+    throw new ProductionSnapshotValidationError(
+      `Grading artifact base-size '${baseSize}' piece count (${gaBasePieces?.length ?? 0}) disagrees with pattern revision piece count (${basePieceEntries.length}).`
+    );
+  }
+  const revBaseMap = new Map(basePieceEntries.map(e => [e.pieceCode, e]));
+  for (const gp of gaBasePieces) {
+    const gEntry = toCanonicalProductionPackagePieceEntry(gp, baseSize);
+    const revEntry = revBaseMap.get(gEntry.pieceCode);
+    if (!revEntry || gEntry.pieceGeometryFingerprint !== revEntry.pieceGeometryFingerprint) {
+      throw new ProductionSnapshotValidationError(
+        `Grading artifact base-size '${baseSize}' piece '${gEntry.pieceCode}' diverges from authoritative pattern revision piece geometry.`
+      );
+    }
+  }
+
+  const includedSizes = [...ga.sizeRange];
+  const pieceInventory: ProductionPackagePieceEntry[] = [];
+
+  for (const sz of includedSizes) {
+    const szPieces = ga.perSizePatternGeometry?.[sz];
+    if (!Array.isArray(szPieces) || szPieces.length !== basePieceEntries.length) {
+      throw new ProductionSnapshotValidationError(
+        `Grading artifact size '${sz}' piece count (${szPieces?.length ?? 0}) disagrees with base-size piece count (${basePieceEntries.length}).`
+      );
+    }
+    const seenIds = new Set<string>();
+    const seenCodes = new Set<string>();
+    for (const p of szPieces) {
+      const entry = toCanonicalProductionPackagePieceEntry(p, sz);
+      if (seenIds.has(entry.pieceId)) {
+        throw new ProductionSnapshotValidationError(`Duplicate graded pieceId '${entry.pieceId}' in size '${sz}'.`);
+      }
+      if (seenCodes.has(entry.pieceCode)) {
+        throw new ProductionSnapshotValidationError(`Duplicate graded pieceCode '${entry.pieceCode}' in size '${sz}'.`);
+      }
+      const expectedBase = revBaseMap.get(entry.pieceCode);
+      if (!expectedBase || expectedBase.cutCount !== entry.cutCount) {
+        throw new ProductionSnapshotValidationError(
+          `Graded size '${sz}' piece '${entry.pieceCode}' breaks base-size piece parity or cutCount.`
+        );
+      }
+      seenIds.add(entry.pieceId);
+      seenCodes.add(entry.pieceCode);
+      pieceInventory.push(entry);
+    }
+  }
+
+  const totalPieceInstancesAcrossSizes = pieceInventory.reduce((sum, entry) => sum + entry.cutCount, 0);
+  return {
+    includedSizes,
+    baseSize,
+    pieceInventory,
+    pieceCount: basePieceEntries.length,
+    totalPieceInstancesAcrossSizes
+  };
 }
 
 /**
@@ -3243,6 +3528,12 @@ export function createAuthoritativeProductionPackage(
     );
   }
 
+  if (input.specificationVerificationContext?.verificationMode === 'historical') {
+    return reject(
+      'SPECIFICATION_UNAPPROVED',
+      'Historical verificationMode specificationVerificationContext cannot authorize live production package creation.'
+    );
+  }
   const specApprovalRes = verifySpecificationApproval(
     input.specification,
     input.specificationVerificationContext
@@ -3323,27 +3614,11 @@ export function createAuthoritativeProductionPackage(
     );
   }
 
-  const toPackagePieceEntry = (p: PatternPieceSnapshot, sizeCode: string): ProductionPackagePieceEntry => ({
-    pieceId: p.id,
-    pieceCode: p.pieceCode,
-    pieceName: p.name,
-    sizeCode,
-    pieceGeometryFingerprint: computePieceGeometryFingerprint(p),
-    widthCm: p.stitchingContour?.boundingBox.widthCm ?? p.boundingBox?.widthCm ?? 0,
-    heightCm: p.stitchingContour?.boundingBox.heightCm ?? p.boundingBox?.heightCm ?? 0,
-    seamAllowanceWidthCm: p.seamAllowanceWidthCm,
-    cutCount: Number.isInteger(p.cutCount) && p.cutCount >= 1 ? p.cutCount : 1,
-    onFold: Boolean(p.onFold),
-    material: typeof p.material === 'string' && p.material.trim() !== '' ? p.material.trim() : 'self',
-    grainline: p.grainline,
-    notchCount: p.notches.length,
-    dartCount: p.darts.length,
-    drillHoleCount: p.drillHoles?.length ?? 0
-  });
-
   let effectiveGradingMode: 'graded-multi-size' | 'single-size-ungraded';
   let includedSizes: readonly string[];
-  let pieceInventory: ProductionPackagePieceEntry[] = [];
+  let pieceInventory: readonly ProductionPackagePieceEntry[] = [];
+  let pieceCount = 0;
+  let totalPieceInstancesAcrossSizes = 0;
   let gradingArtifactFp: string | undefined = undefined;
   let sourceGradingArtifactId: string | undefined = undefined;
   let sourceGradingRevisionId: string | undefined = undefined;
@@ -3364,8 +3639,21 @@ export function createAuthoritativeProductionPackage(
         'Contradictory grading scope: single-size-ungraded policy declared, but a multi-size gradingArtifact or multi-size requiredSizes list was supplied.'
       );
     }
-    includedSizes = [String(rev.targetSize)];
-    pieceInventory = rev.patternPieces.map(p => toPackagePieceEntry(p, String(p.sizeCode)));
+    try {
+      const builtInv = buildCanonicalProductionPackageInventory({
+        patternRevision: rev,
+        gradingMode: 'single-size-ungraded'
+      });
+      includedSizes = builtInv.includedSizes;
+      pieceInventory = builtInv.pieceInventory;
+      pieceCount = builtInv.pieceCount;
+      totalPieceInstancesAcrossSizes = builtInv.totalPieceInstancesAcrossSizes;
+    } catch (err) {
+      return reject(
+        'PATTERN_VALIDATION_FAILED',
+        `Single-size production package inventory validation failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   } else {
     effectiveGradingMode = 'graded-multi-size';
     const ga = input.gradingArtifact;
@@ -3386,9 +3674,14 @@ export function createAuthoritativeProductionPackage(
 
     // Verify acyclic upstream binding from gradingArtifact -> basePatternFingerprint (Amendment 1)
     const gaBoundBaseFp = ga.sourceBasePatternFingerprint ?? ga.sourcePatternSnapshotFingerprint;
+    const hasConflictingGaBaseFps =
+      Boolean(ga.sourceBasePatternFingerprint) &&
+      Boolean(ga.sourcePatternSnapshotFingerprint) &&
+      ga.sourceBasePatternFingerprint !== ga.sourcePatternSnapshotFingerprint;
     if (
       ga.sourcePatternRevisionId !== rev.revisionId ||
       !gaBoundBaseFp ||
+      hasConflictingGaBaseFps ||
       (gaBoundBaseFp !== basePatternFingerprint && gaBoundBaseFp !== rev.canonicalFingerprint) ||
       ga.sourceSpecificationId !== revGarmentId ||
       ga.sourceSpecificationRevisionId !== rev.sourceSpecificationRevisionId ||
@@ -3402,25 +3695,45 @@ export function createAuthoritativeProductionPackage(
       );
     }
 
-    includedSizes = [...ga.sizeRange];
+    if (policy.requiredSizes && policy.requiredSizes.length > 0) {
+      const missingReq = policy.requiredSizes.filter(sz => !ga.sizeRange.includes(sz));
+      if (missingReq.length > 0) {
+        return reject(
+          'GRADING_ARTIFACT_INVALID',
+          `Grading artifact '${ga.gradingArtifactId}' is missing required package sizes [${missingReq.join(', ')}].`
+        );
+      }
+    }
+
     sourceGradingArtifactId = ga.gradingArtifactId;
     sourceGradingRevisionId = ga.gradingRevisionId;
     gradingArtifactFp = ga.contentFingerprint ?? computeGradingArtifactContentFingerprint(ga);
 
-    for (const sz of includedSizes) {
-      const szPieces = ga.perSizePatternGeometry[sz] ?? [];
-      for (const p of szPieces) {
-        pieceInventory.push(toPackagePieceEntry(p, sz));
-      }
+    try {
+      const builtInv = buildCanonicalProductionPackageInventory({
+        patternRevision: rev,
+        gradingMode: 'graded-multi-size',
+        gradingArtifact: ga
+      });
+      includedSizes = builtInv.includedSizes;
+      pieceInventory = builtInv.pieceInventory;
+      pieceCount = builtInv.pieceCount;
+      totalPieceInstancesAcrossSizes = builtInv.totalPieceInstancesAcrossSizes;
+    } catch (err) {
+      return reject(
+        'GRADING_ARTIFACT_STALE_MISMATCH',
+        `Graded production package inventory validation failed: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   }
 
-  const totalPieceInstancesAcrossSizes = pieceInventory.reduce(
-    (sum, entry) => sum + entry.cutCount,
-    0
-  );
-
   const createdAt = input.createdAt ?? new Date().toISOString();
+  if (!isValidPackageIsoDate(createdAt)) {
+    return reject(
+      'PATTERN_VALIDATION_FAILED',
+      `Invalid production package createdAt timestamp '${String(createdAt)}'.`
+    );
+  }
   const createdBy = (input.createdBy ?? appRec.approverName).trim();
   const projectId = (input.projectId ?? rev.projectId).trim();
   const tenantId = (input.tenantId ?? projectId).trim();
@@ -3473,7 +3786,7 @@ export function createAuthoritativeProductionPackage(
     includedSizes,
     baseSize: String(rev.targetSize),
     pieceInventory,
-    pieceCount: rev.patternPieces.length,
+    pieceCount,
     totalPieceInstancesAcrossSizes,
     validationDigest,
     approvalDigest,
@@ -3484,6 +3797,7 @@ export function createAuthoritativeProductionPackage(
 
   const genesisEventPrelim: Omit<ProductionPackageLifecycleEvent, 'lifecycleEventFingerprint'> = {
     eventId: `pkg-evt-${packageId}-1-active`,
+    eventIndex: 0,
     packageId,
     fromState: null,
     toState: 'active',
@@ -3624,16 +3938,36 @@ export function verifyProductionPackageIntegrity(
 
   // Structural pieceInventory & manifest checks (AUDIT-05.1-03)
   const manifest = pkg.manifest;
-  if (!Array.isArray(manifest.pieceInventory) || manifest.pieceInventory.length === 0 || manifest.pieceCount <= 0) {
+  if (
+    !Array.isArray(manifest.includedSizes) ||
+    manifest.includedSizes.length === 0 ||
+    new Set(manifest.includedSizes).size !== manifest.includedSizes.length ||
+    !manifest.includedSizes.includes(manifest.baseSize) ||
+    !Array.isArray(manifest.pieceInventory) ||
+    manifest.pieceInventory.length === 0 ||
+    !Number.isInteger(manifest.pieceCount) ||
+    manifest.pieceCount <= 0
+  ) {
     isManifestTampered = true;
-    errors.push('Production package manifest pieceInventory or pieceCount is empty or invalid.');
+    errors.push('Production package manifest includedSizes, pieceInventory, or pieceCount is empty or invalid.');
   } else {
     let computedTotalInstances = 0;
+    const sizeSet = new Set(manifest.includedSizes);
+    const perSizeCounts = new Map<string, number>();
+    const seenSizePieceKeys = new Set<string>();
+    const seenSizeCodeKeys = new Set<string>();
+
     for (const entry of manifest.pieceInventory) {
       if (
         !entry ||
-        !entry.pieceId ||
-        !entry.pieceCode ||
+        typeof entry.pieceId !== 'string' ||
+        entry.pieceId.trim() === '' ||
+        typeof entry.pieceCode !== 'string' ||
+        entry.pieceCode.trim() === '' ||
+        typeof entry.pieceName !== 'string' ||
+        entry.pieceName.trim() === '' ||
+        typeof entry.sizeCode !== 'string' ||
+        !sizeSet.has(entry.sizeCode) ||
         !entry.pieceGeometryFingerprint ||
         !Number.isFinite(entry.widthCm) ||
         entry.widthCm <= 0 ||
@@ -3646,7 +3980,18 @@ export function verifyProductionPackageIntegrity(
         typeof entry.material !== 'string' ||
         entry.material.trim() === '' ||
         !entry.grainline ||
-        !entry.grainline.direction ||
+        typeof entry.grainline.direction !== 'string' ||
+        entry.grainline.direction.trim() === '' ||
+        !entry.grainline.start ||
+        !entry.grainline.end ||
+        !Number.isFinite(entry.grainline.start.x) ||
+        !Number.isFinite(entry.grainline.start.y) ||
+        !Number.isFinite(entry.grainline.end.x) ||
+        !Number.isFinite(entry.grainline.end.y) ||
+        !Number.isInteger(entry.notchCount) ||
+        entry.notchCount < 0 ||
+        !Number.isInteger(entry.dartCount) ||
+        entry.dartCount < 0 ||
         !Number.isInteger(entry.drillHoleCount) ||
         entry.drillHoleCount < 0
       ) {
@@ -3654,8 +3999,28 @@ export function verifyProductionPackageIntegrity(
         errors.push(`Production package pieceInventory entry '${entry?.pieceCode ?? 'unknown'}' has invalid manufacturing or geometry fields.`);
         break;
       }
+      const idSizeKey = `${entry.sizeCode}::${entry.pieceId}`;
+      const codeSizeKey = `${entry.sizeCode}::${entry.pieceCode}`;
+      if (seenSizePieceKeys.has(idSizeKey) || seenSizeCodeKeys.has(codeSizeKey)) {
+        isManifestTampered = true;
+        errors.push(`Duplicate production package piece '${entry.pieceCode}' (${entry.sizeCode}) in pieceInventory.`);
+        break;
+      }
+      seenSizePieceKeys.add(idSizeKey);
+      seenSizeCodeKeys.add(codeSizeKey);
+      perSizeCounts.set(entry.sizeCode, (perSizeCounts.get(entry.sizeCode) ?? 0) + 1);
       computedTotalInstances += entry.cutCount;
     }
+
+    for (const sz of manifest.includedSizes) {
+      if ((perSizeCounts.get(sz) ?? 0) !== manifest.pieceCount) {
+        isManifestTampered = true;
+        errors.push(
+          `Production package pieceInventory size '${sz}' piece count (${perSizeCounts.get(sz) ?? 0}) disagrees with manifest.pieceCount (${manifest.pieceCount}).`
+        );
+      }
+    }
+
     if (manifest.totalPieceInstancesAcrossSizes !== computedTotalInstances) {
       isManifestTampered = true;
       errors.push(
@@ -3685,6 +4050,8 @@ export function verifyProductionPackageIntegrity(
   } else {
     let expectedPrevEventFp: string | undefined = undefined;
     let expectedFromState: ProductionPackageLifecycleState | null = null;
+    let prevTimestampMs: number | undefined;
+    const eventInvalidationRecords: PatternInvalidationRecord[] = [];
 
     for (let i = 0; i < history.length; i++) {
       const ev = history[i];
@@ -3692,6 +4059,28 @@ export function verifyProductionPackageIntegrity(
         isLifecycleTampered = true;
         errors.push(`Package lifecycle event at index ${i} is malformed.`);
         continue;
+      }
+      if (ev.eventIndex !== i) {
+        isLifecycleTampered = true;
+        errors.push(
+          `Package lifecycle event '${ev.eventId}' at array index ${i} has non-contiguous eventIndex '${String(ev.eventIndex)}' (expected ${i}).`
+        );
+      }
+      if (!isValidPackageIsoDate(ev.timestamp)) {
+        isLifecycleTampered = true;
+        errors.push(
+          `Package lifecycle event '${ev.eventId}' at index ${i} has invalid ISO timestamp '${String(ev.timestamp)}'.`
+        );
+      } else {
+        const evTsMs = Date.parse(ev.timestamp);
+        if (prevTimestampMs !== undefined && evTsMs < prevTimestampMs) {
+          isLifecycleTampered = true;
+          errors.push(
+            `Package lifecycle event '${ev.eventId}' at index ${i} has decreasing timestamp '${ev.timestamp}' earlier than predecessor event.`
+          );
+        }
+        // Equal timestamps are explicitly permitted for deterministic same-instant multi-step flows.
+        prevTimestampMs = evTsMs;
       }
       if (ev.packageId !== pkg.packageId) {
         isLifecycleTampered = true;
@@ -3736,9 +4125,19 @@ export function verifyProductionPackageIntegrity(
         }
       } else if (ev.toState === 'invalidated') {
         const inv = ev.invalidationRecord;
-        if (!inv || !inv.cause || !inv.reason || inv.reason.trim() === '' || !inv.invalidatedBy || inv.invalidatedBy.trim() === '') {
+        if (
+          !inv ||
+          !inv.cause ||
+          !inv.reason ||
+          inv.reason.trim() === '' ||
+          !inv.invalidatedBy ||
+          inv.invalidatedBy.trim() === '' ||
+          !isValidPackageIsoDate(inv.invalidatedAt)
+        ) {
           isLifecycleTampered = true;
           errors.push(`Invalidated package lifecycle event '${ev.eventId}' is missing a complete invalidationRecord.`);
+        } else {
+          eventInvalidationRecords.push(inv);
         }
       } else if (ev.toState === 'revoked') {
         if (!ev.reason || ev.reason.trim() === '') {
@@ -3759,6 +4158,16 @@ export function verifyProductionPackageIntegrity(
       expectedFromState = ev.toState;
     }
 
+    if (!Array.isArray(pkg.invalidationRecords)) {
+      isLifecycleTampered = true;
+      errors.push(`Package '${pkg.packageId}' invalidationRecords must be an array.`);
+    } else if (canonicalizeJson(pkg.invalidationRecords) !== canonicalizeJson(eventInvalidationRecords)) {
+      isLifecycleTampered = true;
+      errors.push(
+        `Package '${pkg.packageId}' top-level invalidationRecords (${pkg.invalidationRecords.length}) diverge from 'invalidated' lifecycle events (${eventInvalidationRecords.length}).`
+      );
+    }
+
     const latestEvent = history[history.length - 1];
     const latestDerivedState: ProductionPackageLifecycleState = latestEvent.toState;
     derivedState = latestDerivedState;
@@ -3767,6 +4176,18 @@ export function verifyProductionPackageIntegrity(
       errors.push(
         `Package currentPackageState '${pkg.currentPackageState}' disagrees with derived lifecycle state '${latestDerivedState}'.`
       );
+    }
+
+    if (latestDerivedState === 'invalidated' && eventInvalidationRecords.length === 0) {
+      isLifecycleTampered = true;
+      errors.push(`Package '${pkg.packageId}' is in state 'invalidated' without a corresponding invalidationRecord.`);
+    }
+
+    if (latestDerivedState === 'revoked') {
+      if (!pkg.revocationReason || pkg.revocationReason.trim() === '' || !isValidPackageIsoDate(pkg.revokedAt)) {
+        isLifecycleTampered = true;
+        errors.push(`Package '${pkg.packageId}' is in state 'revoked' without valid revocationReason and revokedAt.`);
+      }
     }
 
     recomputedCurrentStateFp = computeProductionPackageCurrentStateFingerprint({
@@ -3802,6 +4223,54 @@ export function verifyProductionPackageIntegrity(
       isUpstreamMismatch = true;
       errors.push(`Package manifest diverges from provided patternRevision '${rev.revisionId}'.`);
       authorizationErrors.push(`Package manifest diverges from provided patternRevision '${rev.revisionId}'.`);
+    } else if (manifest.gradingMode === 'single-size-ungraded') {
+      try {
+        const expectedInv = buildCanonicalProductionPackageInventory({
+          patternRevision: rev,
+          gradingMode: 'single-size-ungraded'
+        });
+        if (
+          manifest.baseSize !== expectedInv.baseSize ||
+          canonicalizeJson([...manifest.includedSizes]) !== canonicalizeJson([...expectedInv.includedSizes]) ||
+          manifest.pieceCount !== expectedInv.pieceCount ||
+          manifest.totalPieceInstancesAcrossSizes !== expectedInv.totalPieceInstancesAcrossSizes ||
+          canonicalizeJson([...manifest.pieceInventory]) !== canonicalizeJson([...expectedInv.pieceInventory])
+        ) {
+          isUpstreamMismatch = true;
+          const msg = `Single-size production package inventory diverges from authoritative patternRevision '${rev.revisionId}'.`;
+          errors.push(msg);
+          authorizationErrors.push(msg);
+        }
+      } catch (err) {
+        isUpstreamMismatch = true;
+        const msg = `Single-size package inventory reconstruction failed against patternRevision '${rev.revisionId}': ${err instanceof Error ? err.message : String(err)}`;
+        errors.push(msg);
+        authorizationErrors.push(msg);
+      }
+    } else if (manifest.gradingMode === 'graded-multi-size') {
+      // Even if gradingArtifact is omitted in partial sourceContext, verify base-size inventory matches patternRevision
+      try {
+        const revExpectedBaseInv = buildCanonicalProductionPackageInventory({
+          patternRevision: rev,
+          gradingMode: 'single-size-ungraded'
+        });
+        const manifestBaseEntries = manifest.pieceInventory.filter(e => e.sizeCode === manifest.baseSize);
+        if (
+          manifest.baseSize !== revExpectedBaseInv.baseSize ||
+          manifest.pieceCount !== revExpectedBaseInv.pieceCount ||
+          canonicalizeJson(manifestBaseEntries) !== canonicalizeJson([...revExpectedBaseInv.pieceInventory])
+        ) {
+          isUpstreamMismatch = true;
+          const msg = `Graded production package base-size inventory diverges from authoritative patternRevision '${rev.revisionId}'.`;
+          errors.push(msg);
+          authorizationErrors.push(msg);
+        }
+      } catch (err) {
+        isUpstreamMismatch = true;
+        const msg = `Graded package base-size inventory verification failed against patternRevision '${rev.revisionId}': ${err instanceof Error ? err.message : String(err)}`;
+        errors.push(msg);
+        authorizationErrors.push(msg);
+      }
     }
   }
 
@@ -3846,6 +4315,58 @@ export function verifyProductionPackageIntegrity(
       isUpstreamMismatch = true;
       errors.push(`Package manifest diverges from provided gradingArtifact '${ga.gradingArtifactId}'.`);
       authorizationErrors.push(`Package manifest diverges from provided gradingArtifact '${ga.gradingArtifactId}'.`);
+    } else if (sourceContext?.patternRevision) {
+      try {
+        const expectedInv = buildCanonicalProductionPackageInventory({
+          patternRevision: sourceContext.patternRevision,
+          gradingMode: 'graded-multi-size',
+          gradingArtifact: ga
+        });
+        if (
+          manifest.baseSize !== expectedInv.baseSize ||
+          canonicalizeJson([...manifest.includedSizes]) !== canonicalizeJson([...expectedInv.includedSizes]) ||
+          manifest.pieceCount !== expectedInv.pieceCount ||
+          manifest.totalPieceInstancesAcrossSizes !== expectedInv.totalPieceInstancesAcrossSizes ||
+          canonicalizeJson([...manifest.pieceInventory]) !== canonicalizeJson([...expectedInv.pieceInventory])
+        ) {
+          isUpstreamMismatch = true;
+          const msg = `Production package pieceInventory, pieceCount, or includedSizes diverges from authoritative gradingArtifact '${ga.gradingArtifactId}' / patternRevision '${sourceContext.patternRevision.revisionId}'.`;
+          errors.push(msg);
+          authorizationErrors.push(msg);
+        }
+      } catch (err) {
+        isUpstreamMismatch = true;
+        const msg = `Production package multi-size inventory reconstruction failed: ${err instanceof Error ? err.message : String(err)}`;
+        errors.push(msg);
+        authorizationErrors.push(msg);
+      }
+    } else {
+      // Verify manifest pieceInventory directly against gradingArtifact even when patternRevision is omitted
+      try {
+        const expectedGaEntries: ProductionPackagePieceEntry[] = [];
+        for (const sz of ga.sizeRange) {
+          const szPieces = ga.perSizePatternGeometry?.[sz] ?? [];
+          for (const p of szPieces) {
+            expectedGaEntries.push(toCanonicalProductionPackagePieceEntry(p, sz));
+          }
+        }
+        const expectedGaTotal = expectedGaEntries.reduce((sum, e) => sum + e.cutCount, 0);
+        if (
+          canonicalizeJson([...manifest.includedSizes]) !== canonicalizeJson([...ga.sizeRange]) ||
+          manifest.totalPieceInstancesAcrossSizes !== expectedGaTotal ||
+          canonicalizeJson([...manifest.pieceInventory]) !== canonicalizeJson(expectedGaEntries)
+        ) {
+          isUpstreamMismatch = true;
+          const msg = `Production package pieceInventory or includedSizes diverges from authoritative gradingArtifact '${ga.gradingArtifactId}'.`;
+          errors.push(msg);
+          authorizationErrors.push(msg);
+        }
+      } catch (err) {
+        isUpstreamMismatch = true;
+        const msg = `Production package inventory validation against gradingArtifact failed: ${err instanceof Error ? err.message : String(err)}`;
+        errors.push(msg);
+        authorizationErrors.push(msg);
+      }
     }
   }
 
@@ -3878,19 +4399,25 @@ export function verifyProductionPackageIntegrity(
 
   let isSpecVerified = false;
   if (sourceContext?.specification && sourceContext?.specificationVerificationContext) {
-    const specCheck = verifySpecificationApproval(
-      sourceContext.specification,
-      sourceContext.specificationVerificationContext
-    );
-    const hasProductionAuthority =
-      (specCheck.isApprovalAuthenticated && Boolean(sourceContext.specificationVerificationContext.identityVerifier)) ||
-      (specCheck.isApprovalCryptographicallySigned && Boolean(sourceContext.specificationVerificationContext.cryptographicVerifier));
-    if (!specCheck.isValid || specCheck.state !== 'approved' || !hasProductionAuthority) {
+    if (sourceContext.specificationVerificationContext.verificationMode === 'historical') {
       authorizationErrors.push(
-        `Upstream specification '${sourceContext.specification.specificationRevisionId}' failed live approval verification: ${specCheck.reason ?? specCheck.state}.`
+        `Upstream specification '${sourceContext.specification.specificationRevisionId}' rejected historical verificationMode context at live package authorization boundary.`
       );
     } else {
-      isSpecVerified = true;
+      const specCheck = verifySpecificationApproval(
+        sourceContext.specification,
+        sourceContext.specificationVerificationContext
+      );
+      const hasProductionAuthority =
+        (specCheck.isApprovalAuthenticated && Boolean(sourceContext.specificationVerificationContext.identityVerifier)) ||
+        (specCheck.isApprovalCryptographicallySigned && Boolean(sourceContext.specificationVerificationContext.cryptographicVerifier));
+      if (!specCheck.isValid || specCheck.state !== 'approved' || !hasProductionAuthority) {
+        authorizationErrors.push(
+          `Upstream specification '${sourceContext.specification.specificationRevisionId}' failed live approval verification: ${specCheck.reason ?? specCheck.state}.`
+        );
+      } else {
+        isSpecVerified = true;
+      }
     }
   }
 
@@ -4002,12 +4529,22 @@ function appendProductionPackageLifecycleEvent(
   }
 
   const timestamp = params.timestamp ?? new Date().toISOString();
+  if (!isValidPackageIsoDate(timestamp)) {
+    throw new ProductionSnapshotValidationError(`Invalid package lifecycle transition timestamp '${String(timestamp)}'.`);
+  }
   const latestEvent = pkg.lifecycleHistory[pkg.lifecycleHistory.length - 1];
-  const eventIndex = pkg.lifecycleHistory.length + 1;
-  const eventId = `pkg-evt-${pkg.packageId}-${eventIndex}-${params.toState}`;
+  if (latestEvent && Date.parse(timestamp) < Date.parse(latestEvent.timestamp)) {
+    throw new ProductionSnapshotValidationError(
+      `Illegal package lifecycle timestamp '${timestamp}': cannot precede previous lifecycle event timestamp '${latestEvent.timestamp}'.`
+    );
+  }
+  const eventIndex = pkg.lifecycleHistory.length;
+  const eventNumberForId = eventIndex + 1;
+  const eventId = `pkg-evt-${pkg.packageId}-${eventNumberForId}-${params.toState}`;
 
   const eventPrelim: Omit<ProductionPackageLifecycleEvent, 'lifecycleEventFingerprint'> = {
     eventId,
+    eventIndex,
     packageId: pkg.packageId,
     fromState: pkg.currentPackageState,
     toState: params.toState,
