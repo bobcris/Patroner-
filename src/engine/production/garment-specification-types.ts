@@ -15,7 +15,11 @@ import {
   Silhouette,
   SleeveEaseStrategy
 } from '../../types';
-import { EngineProvenanceRecord, FabricSnapshotProvenance } from './production-types';
+import {
+  CanonicalPatternApprovalSigningPayload,
+  EngineProvenanceRecord,
+  FabricSnapshotProvenance
+} from './production-types';
 
 /**
  * Origin and trust classification of a specification parameter or entire specification.
@@ -173,6 +177,11 @@ export interface OidcJwtPayload {
   readonly target_specification_fingerprint?: string;
   readonly acr?: string;
   readonly amr?: readonly string[];
+  readonly pattern_revision_id?: string;
+  readonly base_pattern_fingerprint?: string;
+  readonly geometry_fingerprint?: string;
+  readonly source_specification_fingerprint?: string;
+  readonly source_measurement_set_fingerprint?: string;
 }
 
 /**
@@ -195,6 +204,11 @@ export interface VerifiableIdentityCredential {
   readonly targetSpecificationId?: string;
   readonly targetRevisionId?: string;
   readonly targetSpecificationFingerprint?: string;
+  readonly patternRevisionId?: string;
+  readonly basePatternFingerprint?: string;
+  readonly geometryFingerprint?: string;
+  readonly sourceSpecificationFingerprint?: string;
+  readonly sourceMeasurementSetFingerprint?: string;
   readonly acr?: string;
   readonly amr?: readonly string[];
   readonly algorithm?: string;
@@ -232,9 +246,16 @@ export interface VerifiedIdentityProvenance {
   readonly providerId: string;
   readonly verificationMethod: 'OIDC-JWT-EdDSA';
   readonly tokenDigest: string;
+  readonly approvalScope?: string;
+  readonly tokenUse?: string;
   readonly targetSpecificationId?: string;
   readonly targetRevisionId?: string;
   readonly targetSpecificationFingerprint?: string;
+  readonly patternRevisionId?: string;
+  readonly basePatternFingerprint?: string;
+  readonly geometryFingerprint?: string;
+  readonly sourceSpecificationFingerprint?: string;
+  readonly sourceMeasurementSetFingerprint?: string;
   readonly acr?: string;
   readonly amr?: readonly string[];
 }
@@ -248,6 +269,7 @@ export interface JtiReplayRecord {
   readonly subjectId: string;
   readonly consumedAtIso: string;
   readonly expiresAtEpochSeconds: number;
+  readonly approvalScope?: string;
   readonly specificationId?: string;
   readonly targetRevisionId?: string;
   readonly targetSpecificationFingerprint?: string;
@@ -274,9 +296,15 @@ export interface JtiReplayStore {
 }
 
 export interface IdentityCredentialVerificationOptions {
+  readonly expectedScope?: 'specification:approve' | 'pattern:approve' | string;
   readonly expectedSpecificationId?: string;
   readonly expectedRevisionId?: string;
   readonly expectedSpecificationFingerprint?: string;
+  readonly expectedPatternRevisionId?: string;
+  readonly expectedBasePatternFingerprint?: string;
+  readonly expectedGeometryFingerprint?: string;
+  readonly expectedSourceSpecificationFingerprint?: string;
+  readonly expectedSourceMeasurementSetFingerprint?: string;
   readonly expectedApprover?: string;
   readonly approvalTimestamp?: string;
   readonly expectedTenantId?: string;
@@ -284,9 +312,13 @@ export interface IdentityCredentialVerificationOptions {
   readonly reverifyRecordedApproval?: {
     readonly recordedTokenDigest: string;
     readonly recordedJti?: string;
+    readonly recordedScope?: string;
     readonly recordedSpecificationId: string;
     readonly recordedRevisionId: string;
     readonly recordedSpecificationFingerprint: string;
+    readonly recordedGeometryFingerprint?: string;
+    readonly recordedSourceSpecificationFingerprint?: string;
+    readonly recordedSourceMeasurementSetFingerprint?: string;
   };
 }
 
@@ -380,7 +412,7 @@ export interface VerifiableCryptographicSignature {
   readonly signatureHex: string;
   readonly signatureDigest?: string;
   readonly signerPrincipal?: string;
-  readonly signedPayload: CryptographicApprovalBindingPayload;
+  readonly signedPayload: CryptographicApprovalBindingPayload | CanonicalPatternApprovalSigningPayload;
   readonly signedPayloadCanonicalJson?: string;
   readonly signedPayloadFingerprint?: string;
   readonly signedAt?: string;
@@ -398,6 +430,7 @@ export interface TrustedCryptographicVerificationResult {
   readonly verifiedPublicKeyHex?: string;
   readonly verifiedPrincipal?: string;
   readonly verifiedTenantId?: string;
+  readonly verifiedScope?: 'specification:approve' | 'pattern:approve' | string;
   readonly algorithm?: string;
   readonly verifiedAlgorithm?: string;
   readonly publicKeyFingerprint?: string;
@@ -420,9 +453,19 @@ export interface TrustedCryptographicVerifier {
     signature: VerifiableCryptographicSignature,
     expectedPayload: CryptographicApprovalBindingPayload
   ): TrustedCryptographicVerificationResult;
+  verifyPatternApprovalSignature?(
+    signature: VerifiableCryptographicSignature,
+    expectedPayload: CanonicalPatternApprovalSigningPayload
+  ): TrustedCryptographicVerificationResult;
   verifySignature(
-    firstArg: CryptographicApprovalBindingPayload | VerifiableCryptographicSignature,
-    secondArg: VerifiableCryptographicSignature | CryptographicApprovalBindingPayload
+    firstArg:
+      | CryptographicApprovalBindingPayload
+      | CanonicalPatternApprovalSigningPayload
+      | VerifiableCryptographicSignature,
+    secondArg:
+      | VerifiableCryptographicSignature
+      | CryptographicApprovalBindingPayload
+      | CanonicalPatternApprovalSigningPayload
   ): TrustedCryptographicVerificationResult;
 }
 
@@ -434,6 +477,7 @@ export interface ApprovalVerificationContext {
   readonly identityVerifier?: TrustedIdentityVerifier;
   readonly identityCredential?: VerifiableIdentityCredential;
   readonly cryptographicVerifier?: TrustedCryptographicVerifier;
+  readonly cryptographicSignature?: VerifiableCryptographicSignature;
   readonly currentTimestamp?: string;
 }
 

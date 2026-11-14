@@ -96,7 +96,7 @@ function buildAuthInfrastructure() {
   const cryptoKey = deriveEd25519SigningKeyPair(CRYPTO_KEY_ID, CRYPTO_SEED, {
     ownerPrincipal: 'Elena Vance (Principal Pattern Engineer)',
     tenantId: PROJECT_ID,
-    allowedScopes: ['specification:approve']
+    allowedScopes: ['specification:approve', 'pattern:approve']
   });
   let registry = createControlledPublicKeyRegistry();
   registry = registerPublicKeyInRegistry(registry, cryptoKey.publicKeyRegistration);
@@ -628,8 +628,14 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
           issuedAt: '2026-11-12T09:55:00.000Z',
           notBefore: '2026-11-12T09:55:00.000Z',
           expiresAt: '2026-11-12T11:00:00.000Z',
-          claims: ['specification:approve', 'role:lead-designer'],
+          claims: ['pattern:approve', 'role:lead-designer'],
+          use: 'pattern_approval',
           specificationId: GARMENT_A_ID,
+          patternRevisionId: validatedRev.revisionId,
+          basePatternFingerprint: validatedRev.contentFingerprint!,
+          geometryFingerprint: validatedRev.geometryFingerprint!,
+          sourceSpecificationFingerprint: validatedRev.sourceSpecificationFingerprint!,
+          sourceMeasurementSetFingerprint: validatedRev.sourceMeasurementSetFingerprint!,
           targetRevisionId: validatedRev.revisionId,
           targetSpecificationFingerprint: validatedRev.contentFingerprint!
         },
@@ -738,8 +744,14 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
           issuedAt: '2026-11-12T09:55:00.000Z',
           notBefore: '2026-11-12T09:55:00.000Z',
           expiresAt: '2026-11-12T11:00:00.000Z',
-          claims: ['specification:approve'],
+          claims: ['pattern:approve'],
+          use: 'pattern_approval',
           specificationId: GARMENT_A_ID,
+          patternRevisionId: validatedRev.revisionId,
+          basePatternFingerprint: 'f'.repeat(64), // Wrong fingerprint
+          geometryFingerprint: validatedRev.geometryFingerprint!,
+          sourceSpecificationFingerprint: validatedRev.sourceSpecificationFingerprint!,
+          sourceMeasurementSetFingerprint: validatedRev.sourceMeasurementSetFingerprint!,
           targetRevisionId: validatedRev.revisionId,
           targetSpecificationFingerprint: 'f'.repeat(64) // Wrong fingerprint
         },
@@ -755,7 +767,7 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
             identityVerifier: auth.identityVerifier,
             identityCredential: wrongFpCredential
           }),
-        /targetSpecificationFingerprint mismatch/i
+        /basePatternFingerprint mismatch/i
       );
 
       // 4. Attempting to approve a 'draft' revision (skipping 'validated')
@@ -942,6 +954,10 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
         gradingRulesVersion: 'iso8559-petite-v2', // Changed grading rules version!
         verificationContext: {
           cryptographicVerifier: auth.cryptographicVerifier
+        },
+        patternVerificationContext: {
+          cryptographicVerifier: auth.cryptographicVerifier,
+          cryptographicSignature: sig
         }
       });
 
@@ -1218,12 +1234,17 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
       assert.equal(invalidatedPkg.currentPackageState, 'invalidated');
       assert.equal(invalidatedPkg.manifestFingerprint, originalManifestFp);
 
-      // Verify all transitioned packages pass manifest + lifecycle hash-chain verification
-      assert.equal(verifyProductionPackageIntegrity(pkg).isValid, true);
-      assert.equal(verifyProductionPackageIntegrity(supersededPkg).isValid, true);
-      assert.equal(verifyProductionPackageIntegrity(archivedPkg).isValid, true);
-      assert.equal(verifyProductionPackageIntegrity(revokedPkg).isValid, true);
-      assert.equal(verifyProductionPackageIntegrity(invalidatedPkg).isValid, true);
+      // Verify all transitioned packages pass manifest + lifecycle hash-chain verification,
+      // while isCurrentlyAuthorized remains false when sourceContext is omitted (Safeguard 3)
+      for (const candidate of [pkg, supersededPkg, archivedPkg, revokedPkg, invalidatedPkg]) {
+        const res = verifyProductionPackageIntegrity(candidate);
+        assert.equal(res.isValid, true);
+        assert.equal(res.isStructurallyValid, true);
+        assert.equal(res.isHistoricallyVerifiable, true);
+        assert.equal(res.isCurrentlyAuthorized, false);
+        assert.equal(res.sourceVerificationStatus, 'partial-unverified-upstream');
+        assert.ok(res.authorizationErrors.length > 0);
+      }
     });
 
     it('rejects package creation when pattern revision is unapproved, superseded, invalidated, or missing trust verifiers', () => {

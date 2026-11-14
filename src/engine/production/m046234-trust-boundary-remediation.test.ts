@@ -35,10 +35,13 @@ import {
   createInMemoryJtiReplayStore
 } from './garment-specification';
 import {
-  createProductionPatternRevision,
+  approvePatternRevision,
+  computeCanonicalGradingArtifactFingerprint,
   createAuthoritativeGradingArtifact,
-  verifyGradingArtifactIntegrity,
-  computeCanonicalGradingArtifactFingerprint
+  createProductionPatternRevision,
+  signPatternRevisionApprovalPayload,
+  validatePatternRevision,
+  verifyGradingArtifactIntegrity
 } from './pattern-revision-snapshot';
 import {
   evaluatePipelineDependencyIntegrity,
@@ -805,7 +808,7 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
             publicKeyHex: signingKey.publicKeyHex,
             principalId: 'principal-tailor-01',
             tenantId: 'tenant-m046234-01',
-            allowedScopes: ['specification:approve'],
+            allowedScopes: ['specification:approve', 'pattern:approve'],
             activatedAt: '2026-01-01T00:00:00.000Z',
             expiresAt: '2027-01-01T00:00:00.000Z'
           })
@@ -827,7 +830,7 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
       const pieces = draftSkirtBlock(sizeM, designSpec);
       const graded = gradePattern(designSpec);
 
-      const snapshot = createProductionPatternRevision({
+      const draftSnapshot = createProductionPatternRevision({
         projectId: 'tenant-m046234-01',
         revisionId: 'rev-m046234-skirt-M',
         targetSize: 'M',
@@ -845,6 +848,41 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
         patternPieces: pieces,
         validation: validGeometryReport,
         physicalValidationStatus: 'not-assessed'
+      });
+      const validatedSnapshot = validatePatternRevision(draftSnapshot, {
+        validatedAt: '2026-11-10T09:05:00.000Z'
+      });
+      const patApprovalSig = signPatternRevisionApprovalPayload(
+        {
+          schemaVersion: 'm05.1-pattern-approval-v1',
+          projectId: 'tenant-m046234-01',
+          tenantId: 'tenant-m046234-01',
+          garmentId: spec.garmentId,
+          patternRevisionId: validatedSnapshot.revisionId,
+          patternRevisionNumber: validatedSnapshot.revisionIndex,
+          basePatternFingerprint: validatedSnapshot.basePatternFingerprint!,
+          geometryFingerprint: validatedSnapshot.geometryFingerprint!,
+          sourceSpecificationFingerprint: validatedSnapshot.sourceSpecificationFingerprint!,
+          sourceMeasurementSetFingerprint: validatedSnapshot.sourceMeasurementSetFingerprint!,
+          approvalEventId: 'pat-app-m046234-01',
+          approverPrincipal: 'principal-tailor-01',
+          authorityTier: 'cryptographic_principal',
+          approvalScope: 'pattern:approve',
+          approvalTimestamp: '2026-11-10T09:10:00.000Z'
+        },
+        {
+          keyId: signingKey.keyId,
+          privateKeyHex: signingKey.privateKeyHex,
+          tenantId: 'tenant-m046234-01'
+        }
+      );
+      const snapshot = approvePatternRevision(validatedSnapshot, {
+        approverName: 'principal-tailor-01',
+        approvedAt: '2026-11-10T09:10:00.000Z',
+        approvalEventId: 'pat-app-m046234-01',
+        authorityTier: 'cryptographic_principal',
+        cryptographicVerifier,
+        cryptographicSignature: patApprovalSig
       });
 
       const measFp = computeArtifactInputFingerprint({
@@ -916,7 +954,8 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
         snapshot,
         gradingArtifact,
         report,
-        cryptographicVerifier
+        cryptographicVerifier,
+        signingKey
       };
     }
 
@@ -940,7 +979,7 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
     });
 
     it('P5-01: rejects demonstration_fixture (Tier 1) and unauthenticated_local_session (Tier 2) at export with SPECIFICATION_APPROVAL_UNAUTHENTICATED', () => {
-      const { draft, pieces, graded, snapshot } = buildAuthenticatedFixture();
+      const { draft, pieces, graded, snapshot, cryptographicVerifier, signingKey } = buildAuthenticatedFixture();
 
       for (const tier of ['demonstration_fixture', 'unauthenticated_local_session'] as const) {
         const unauthSpec = approveAuthoritativeGarmentSpecification(draft, 'Local Operator', {
@@ -948,7 +987,7 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
           approvedAt: '2026-11-10T09:00:00.000Z'
         });
         const unauthDesignSpec = convertToDesignSpecification(unauthSpec);
-        const unauthSnapshot = createProductionPatternRevision({
+        const unauthDraftSnapshot = createProductionPatternRevision({
           projectId: 'tenant-m046234-01',
           revisionId: `rev-${tier}-M`,
           targetSize: 'M',
@@ -959,6 +998,41 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
           validation: validGeometryReport,
           physicalValidationStatus: 'not-assessed'
         });
+        const unauthValSnapshot = validatePatternRevision(unauthDraftSnapshot, {
+          validatedAt: '2026-11-10T09:05:00.000Z'
+        });
+        const unauthPatSig = signPatternRevisionApprovalPayload(
+          {
+            schemaVersion: 'm05.1-pattern-approval-v1',
+            projectId: 'tenant-m046234-01',
+            tenantId: 'tenant-m046234-01',
+            garmentId: unauthSpec.garmentId,
+            patternRevisionId: unauthValSnapshot.revisionId,
+            patternRevisionNumber: unauthValSnapshot.revisionIndex,
+            basePatternFingerprint: unauthValSnapshot.basePatternFingerprint!,
+            geometryFingerprint: unauthValSnapshot.geometryFingerprint!,
+            sourceSpecificationFingerprint: unauthValSnapshot.sourceSpecificationFingerprint!,
+            sourceMeasurementSetFingerprint: unauthValSnapshot.sourceMeasurementSetFingerprint!,
+            approvalEventId: `pat-app-${tier}-01`,
+            approverPrincipal: 'principal-tailor-01',
+            authorityTier: 'cryptographic_principal',
+            approvalScope: 'pattern:approve',
+            approvalTimestamp: '2026-11-10T09:10:00.000Z'
+          },
+          {
+            keyId: signingKey.keyId,
+            privateKeyHex: signingKey.privateKeyHex,
+            tenantId: 'tenant-m046234-01'
+          }
+        );
+        const unauthSnapshot = approvePatternRevision(unauthValSnapshot, {
+          approverName: 'principal-tailor-01',
+          approvedAt: '2026-11-10T09:10:00.000Z',
+          approvalEventId: `pat-app-${tier}-01`,
+          authorityTier: 'cryptographic_principal',
+          cryptographicVerifier,
+          cryptographicSignature: unauthPatSig
+        });
 
         const report = evaluatePipelineDependencyIntegrity({
           specification: unauthSpec,
@@ -967,7 +1041,8 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
           fabric: standardFabric,
           patternPieces: pieces,
           validationReport: validGeometryReport,
-          productionSnapshot: unauthSnapshot
+          productionSnapshot: unauthSnapshot,
+          patternVerificationContext: { cryptographicVerifier }
         });
 
         const exportRes = validateProductionExportPrerequisites(report, unauthSnapshot, {
@@ -976,6 +1051,7 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
           fabric: standardFabric,
           patternPieces: pieces,
           validationReport: validGeometryReport,
+          patternVerificationContext: { cryptographicVerifier },
           exportGradingPolicy: {
             mode: 'single-size-ungraded',
             nonGradingReason: 'Single size test'

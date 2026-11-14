@@ -37,10 +37,13 @@ import {
   createTrustedCryptographicVerifier
 } from './garment-specification';
 import {
-  createProductionPatternRevision,
+  approvePatternRevision,
   createAuthoritativeGradingArtifact,
-  supersedeAuthoritativeGradingArtifact,
+  createProductionPatternRevision,
   revokeAuthoritativeGradingArtifact,
+  signPatternRevisionApprovalPayload,
+  supersedeAuthoritativeGradingArtifact,
+  validatePatternRevision,
   verifyGradingArtifactIntegrity
 } from './pattern-revision-snapshot';
 import {
@@ -1362,7 +1365,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
             publicKeyHex: signingKey.publicKeyHex,
             principalId: 'principal-master-tailor-01',
             tenantId: 'tenant-atelier-01',
-            allowedScopes: ['specification:approve'],
+            allowedScopes: ['specification:approve', 'pattern:approve'],
             activatedAt: '2026-01-01T00:00:00.000Z',
             expiresAt: '2027-01-01T00:00:00.000Z'
           })
@@ -1383,7 +1386,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
       const pieces = draftSkirtBlock(sizeM, designSpec);
       const graded = gradePattern(designSpec);
 
-      const snapshot = createProductionPatternRevision({
+      const draftSnapshot = createProductionPatternRevision({
         projectId: 'tenant-atelier-01',
         revisionId: 'rev-enterprise-skirt-01-M',
         targetSize: 'M',
@@ -1401,6 +1404,41 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         patternPieces: pieces,
         validation: validReport,
         physicalValidationStatus: 'not-assessed'
+      });
+      const validatedSnapshot = validatePatternRevision(draftSnapshot, {
+        validatedAt: '2026-11-10T09:05:00.000Z'
+      });
+      const patApprovalSig = signPatternRevisionApprovalPayload(
+        {
+          schemaVersion: 'm05.1-pattern-approval-v1',
+          projectId: 'tenant-atelier-01',
+          tenantId: 'tenant-atelier-01',
+          garmentId: spec.garmentId,
+          patternRevisionId: validatedSnapshot.revisionId,
+          patternRevisionNumber: validatedSnapshot.revisionIndex,
+          basePatternFingerprint: validatedSnapshot.basePatternFingerprint!,
+          geometryFingerprint: validatedSnapshot.geometryFingerprint!,
+          sourceSpecificationFingerprint: validatedSnapshot.sourceSpecificationFingerprint!,
+          sourceMeasurementSetFingerprint: validatedSnapshot.sourceMeasurementSetFingerprint!,
+          approvalEventId: 'pat-app-enterprise-01',
+          approverPrincipal: 'principal-master-tailor-01',
+          authorityTier: 'cryptographic_principal',
+          approvalScope: 'pattern:approve',
+          approvalTimestamp: '2026-11-10T09:10:00.000Z'
+        },
+        {
+          keyId: signingKey.keyId,
+          privateKeyHex: signingKey.privateKeyHex,
+          tenantId: 'tenant-atelier-01'
+        }
+      );
+      const snapshot = approvePatternRevision(validatedSnapshot, {
+        approverName: 'principal-master-tailor-01',
+        approvedAt: '2026-11-10T09:10:00.000Z',
+        approvalEventId: 'pat-app-enterprise-01',
+        authorityTier: 'cryptographic_principal',
+        cryptographicVerifier,
+        cryptographicSignature: patApprovalSig
       });
 
       const measFp = computeArtifactInputFingerprint({

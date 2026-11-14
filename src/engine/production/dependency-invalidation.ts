@@ -16,6 +16,7 @@ import {
   computeCanonicalFingerprint,
   computeCanonicalRevisionFingerprint,
   computeDraftingConfigFingerprint,
+  computeGeometryFingerprint,
   computeGradingArtifactContentFingerprint,
   computePieceGeometryFingerprint,
   CURRENT_ENGINE_VERSION,
@@ -41,6 +42,7 @@ import {
   AuthoritativeMeasurementSetRecord,
   AuthoritativePatternRevision,
   AuthoritativeProductionPackage,
+  CanonicalPatternApprovalSigningPayload,
   DraftingConfigurationSnapshot,
   ExportGradingPolicy,
   GradingSummarySnapshot,
@@ -49,6 +51,8 @@ import {
   MeasurementSetSnapshot,
   PatternInvalidationCause,
   PatternInvalidationRecord,
+  PatternPieceSnapshot,
+  PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION,
   PRODUCTION_PACKAGE_SCHEMA_VERSION,
   ProductionPackageCreationResult,
   ProductionPackageLifecycleEvent,
@@ -62,6 +66,7 @@ import {
 } from './production-types';
 import { EnhancedFabricProperty } from '../fabric/fabric-types';
 import {
+  canonicalizePatternApprovalSigningPayload,
   computeSpecificationFingerprint,
   verifySpecificationApproval
 } from './garment-specification';
@@ -102,6 +107,7 @@ export interface PipelineIntegrityInputs {
   readonly gradingRulesVersion?: string;
   readonly activeDraftingFingerprint?: string;
   readonly verificationContext?: ApprovalVerificationContext;
+  readonly patternVerificationContext?: ApprovalVerificationContext;
   readonly gradingSummary?: Partial<GradingSummarySnapshot>;
   readonly gradingArtifact?: AuthoritativeGradingArtifact;
   readonly exportGradingPolicy?: ExportGradingPolicy;
@@ -126,6 +132,248 @@ export interface ProductionExportActiveInputs {
   readonly engineVersion?: string;
   readonly gradingRulesVersion?: string;
   readonly verificationContext?: ApprovalVerificationContext;
+  readonly patternVerificationContext?: ApprovalVerificationContext;
+}
+
+/**
+ * Safeguard 1: Live verification of a pattern revision's Tier 3 / Tier 4 approval record.
+ * Never treats stored approval metadata (`isApprovalAuthenticated`, `verifiedIdentity`,
+ * `cryptographicSignature`, `boundBasePatternFingerprint`) as authorization evidence.
+ */
+export function verifyPatternRevisionApprovalLive(params: {
+  readonly revision: AuthoritativePatternRevision;
+  readonly verificationContext?: ApprovalVerificationContext;
+  readonly activeSpecification?: DesignSpecification | AuthoritativeGarmentSpecification;
+  readonly activeMeasurementSet?: AuthoritativeMeasurementSetRecord | MeasurementSetSnapshot;
+}): {
+  readonly isAuthorized: boolean;
+  readonly failureCode?: ProductionExportRejectionCode;
+  readonly isProviderUnavailable?: boolean;
+  readonly reason?: string;
+} {
+  const rev = params.revision;
+  const revIntegrity = verifyPatternRevisionLifecycleIntegrity(rev);
+  if (!revIntegrity.isValid) {
+    return {
+      isAuthorized: false,
+      failureCode: revIntegrity.isContentTampered
+        ? 'PATTERN_REVISION_CONTENT_TAMPERED'
+        : 'PATTERN_REVISION_LIFECYCLE_TAMPERED',
+      reason: revIntegrity.reason ?? `Pattern revision '${rev.revisionId}' failed structural integrity verification.`
+    };
+  }
+
+  const lifecycleState = rev.currentLifecycleState ?? 'draft';
+  if (lifecycleState === 'superseded') {
+    return {
+      isAuthorized: false,
+      failureCode: 'PATTERN_REVISION_SUPERSEDED',
+      reason: `Pattern revision '${rev.revisionId}' has been superseded by '${rev.supersededByRevisionId ?? 'newer revision'}'.`
+    };
+  }
+  if (lifecycleState === 'invalidated') {
+    return {
+      isAuthorized: false,
+      failureCode: 'PATTERN_REVISION_INVALIDATED',
+      reason: `Pattern revision '${rev.revisionId}' has been invalidated.`
+    };
+  }
+  if (lifecycleState === 'archived') {
+    return {
+      isAuthorized: false,
+      failureCode: 'PATTERN_REVISION_ARCHIVED',
+      reason: `Pattern revision '${rev.revisionId}' has been archived.`
+    };
+  }
+  if (lifecycleState !== 'approved') {
+    return {
+      isAuthorized: false,
+      failureCode: 'PATTERN_REVISION_NOT_APPROVED',
+      reason: `Pattern revision '${rev.revisionId}' is in lifecycle state '${lifecycleState}'; only formally 'approved' revisions are authorized.`
+    };
+  }
+
+  const recomputedBaseFp =
+    revIntegrity.recomputedBasePatternFingerprint ??
+    rev.contentFingerprint ??
+    rev.basePatternFingerprint!;
+  const recomputedGeomFp =
+    revIntegrity.recomputedGeometryFingerprint ??
+    rev.geometryFingerprint ??
+    computeGeometryFingerprint(rev.patternPieces);
+  const revGarmentId = rev.sourceSpecificationId ?? rev.designSpecification.id;
+
+  const appRec = rev.patternApprovalRecord;
+  if (
+    !appRec ||
+    (appRec.authorityTier !== 'authenticated_designer' && appRec.authorityTier !== 'cryptographic_principal') ||
+    appRec.approvalScope !== 'pattern:approve' ||
+    !appRec.isApprovalAuthenticated ||
+    appRec.patternRevisionId !== rev.revisionId ||
+    appRec.boundBasePatternFingerprint !== recomputedBaseFp ||
+    appRec.boundGeometryFingerprint !== recomputedGeomFp
+  ) {
+    return {
+      isAuthorized: false,
+      failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+      reason: `Pattern revision '${rev.revisionId}' lacks a valid pattern-scoped PatternRevisionApprovalRecord bound to basePatternFingerprint and geometryFingerprint.`
+    };
+  }
+
+  if (params.activeSpecification) {
+    const activeSpecFp = computeSpecificationFingerprint(params.activeSpecification);
+    const activeSpecGarmentId =
+      'garmentId' in params.activeSpecification && params.activeSpecification.garmentId
+        ? params.activeSpecification.garmentId
+        : ('id' in params.activeSpecification ? (params.activeSpecification as DesignSpecification).id : '');
+    const activeSpecRevId =
+      params.activeSpecification.specificationRevisionId ??
+      `spec-${activeSpecGarmentId}-v${params.activeSpecification.version || 1}`;
+    if (
+      activeSpecGarmentId !== revGarmentId ||
+      activeSpecRevId !== rev.sourceSpecificationRevisionId ||
+      activeSpecFp !== rev.sourceSpecificationFingerprint ||
+      appRec.boundSpecificationFingerprint !== activeSpecFp
+    ) {
+      return {
+        isAuthorized: false,
+        failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+        reason: `Pattern revision '${rev.revisionId}' approval binding does not match active garment specification '${activeSpecRevId}'.`
+      };
+    }
+  }
+
+  if (params.activeMeasurementSet && 'canonicalFingerprint' in params.activeMeasurementSet) {
+    if (
+      params.activeMeasurementSet.measurementSetId !== rev.sourceMeasurementSetId ||
+      params.activeMeasurementSet.canonicalFingerprint !== rev.sourceMeasurementSetFingerprint ||
+      appRec.boundMeasurementSetFingerprint !== params.activeMeasurementSet.canonicalFingerprint
+    ) {
+      return {
+        isAuthorized: false,
+        failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+        reason: `Pattern revision '${rev.revisionId}' approval binding does not match active measurement set '${params.activeMeasurementSet.measurementSetId}'.`
+      };
+    }
+  }
+
+  const ctx = params.verificationContext;
+  if (!ctx) {
+    return {
+      isAuthorized: false,
+      failureCode: 'AUTHORIZATION_PROVIDER_UNAVAILABLE',
+      isProviderUnavailable: true,
+      reason: `Pattern revision '${rev.revisionId}' live approval verification failed (fail-closed): verification context is unavailable.`
+    };
+  }
+
+  if (appRec.authorityTier === 'authenticated_designer') {
+    if (!ctx.identityVerifier || typeof ctx.identityVerifier.verifyCredential !== 'function' || !ctx.identityVerifier.replayStore) {
+      return {
+        isAuthorized: false,
+        failureCode: 'AUTHORIZATION_PROVIDER_UNAVAILABLE',
+        isProviderUnavailable: true,
+        reason: `Pattern revision '${rev.revisionId}' Tier 3 verification failed (fail-closed): active TrustedIdentityVerifier and JtiReplayStore are required.`
+      };
+    }
+    const credToVerify = ctx.identityCredential;
+    if (!credToVerify || !appRec.verifiedIdentity) {
+      return {
+        isAuthorized: false,
+        failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+        reason: `Pattern revision '${rev.revisionId}' Tier 3 approval verification failed (fail-closed): signed VerifiableIdentityCredential is required (recorded metadata is insufficient).`
+      };
+    }
+    const idReverify = ctx.identityVerifier.verifyCredential(credToVerify, {
+      expectedScope: 'pattern:approve',
+      expectedSpecificationId: revGarmentId,
+      expectedRevisionId: rev.revisionId,
+      expectedPatternRevisionId: rev.revisionId,
+      expectedBasePatternFingerprint: recomputedBaseFp,
+      expectedGeometryFingerprint: recomputedGeomFp,
+      expectedSourceSpecificationFingerprint: rev.sourceSpecificationFingerprint,
+      expectedSourceMeasurementSetFingerprint: rev.sourceMeasurementSetFingerprint,
+      expectedApprover: appRec.approverName,
+      approvalTimestamp: appRec.approvedAt,
+      expectedTenantId: rev.projectId,
+      requireTargetBinding: true,
+      reverifyRecordedApproval: {
+        recordedScope: 'pattern:approve',
+        recordedTokenDigest: appRec.verifiedIdentity.tokenDigest,
+        recordedJti: appRec.verifiedIdentity.jti,
+        recordedSpecificationId: revGarmentId,
+        recordedRevisionId: rev.revisionId,
+        recordedSpecificationFingerprint: recomputedBaseFp,
+        recordedGeometryFingerprint: recomputedGeomFp,
+        recordedSourceSpecificationFingerprint: rev.sourceSpecificationFingerprint,
+        recordedSourceMeasurementSetFingerprint: rev.sourceMeasurementSetFingerprint
+      }
+    });
+    if (!idReverify.verified || !idReverify.isValid || idReverify.provenance?.approvalScope !== 'pattern:approve') {
+      return {
+        isAuthorized: false,
+        failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+        reason: `Pattern revision Tier 3 approval re-verification failed (fail-closed): ${idReverify.reason ?? 'credential rejected'}.`
+      };
+    }
+    return { isAuthorized: true };
+  }
+
+  if (
+    !ctx.cryptographicVerifier ||
+    typeof ctx.cryptographicVerifier.verifyPatternApprovalSignature !== 'function'
+  ) {
+    return {
+      isAuthorized: false,
+      failureCode: 'AUTHORIZATION_PROVIDER_UNAVAILABLE',
+      isProviderUnavailable: true,
+      reason: `Pattern revision '${rev.revisionId}' Tier 4 verification failed (fail-closed): active TrustedCryptographicVerifier with verifyPatternApprovalSignature() is required.`
+    };
+  }
+  const sigToVerify =
+    ctx.cryptographicSignature ??
+    (appRec.cryptographicSignature as unknown as VerifiableCryptographicSignature | undefined);
+  if (!sigToVerify) {
+    return {
+      isAuthorized: false,
+      failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+      reason: `Pattern revision '${rev.revisionId}' Tier 4 approval verification failed (fail-closed): Ed25519 VerifiableCryptographicSignature is required.`
+    };
+  }
+
+  const expectedBindingPayload: CanonicalPatternApprovalSigningPayload = {
+    schemaVersion: PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION,
+    projectId: rev.projectId,
+    tenantId: rev.projectId,
+    garmentId: revGarmentId,
+    patternRevisionId: rev.revisionId,
+    patternRevisionNumber: rev.revisionIndex,
+    basePatternFingerprint: recomputedBaseFp,
+    geometryFingerprint: recomputedGeomFp,
+    sourceSpecificationFingerprint: rev.sourceSpecificationFingerprint ?? '',
+    sourceMeasurementSetFingerprint: rev.sourceMeasurementSetFingerprint ?? '',
+    approvalEventId: appRec.approvalEventId,
+    approverPrincipal: appRec.approverName,
+    authorityTier: 'cryptographic_principal',
+    approvalScope: 'pattern:approve',
+    approvalTimestamp: appRec.approvedAt,
+    keyId: sigToVerify.keyId,
+    algorithm: 'Ed25519'
+  };
+
+  const cryptoReverify = ctx.cryptographicVerifier.verifyPatternApprovalSignature(
+    sigToVerify,
+    expectedBindingPayload
+  );
+  if (!cryptoReverify.verified || !cryptoReverify.isValid || cryptoReverify.verifiedScope !== 'pattern:approve') {
+    return {
+      isAuthorized: false,
+      failureCode: 'PATTERN_REVISION_APPROVAL_INVALID',
+      reason: `Pattern revision Tier 4 cryptographic approval re-verification failed (fail-closed): ${cryptoReverify.reason ?? 'signature rejected'}.`
+    };
+  }
+
+  return { isAuthorized: true };
 }
 
 /**
@@ -1145,6 +1393,53 @@ export function evaluatePipelineDependencyIntegrity(
         snapStaleReason = 'Underlying pattern drafting or geometry validation is stale.';
         staleReasons.push(snapStaleReason);
       }
+
+      // 3. Enforce structural lifecycle & live cryptographic pattern approval integrity (AUDIT-05.1-02 / Safeguard 1)
+      if (snapStatus === 'current') {
+        const revIntegrity = verifyPatternRevisionLifecycleIntegrity(snap);
+        if (!revIntegrity.isValid) {
+          snapStatus = 'invalid';
+          snapStaleReason = revIntegrity.reason ?? 'Pattern revision content or lifecycle integrity check failed.';
+          staleReasons.push(snapStaleReason);
+          requiredActions.push('Restore untampered pattern revision lifecycle and content integrity.');
+        } else {
+          const revLifecycleState = snap.currentLifecycleState ?? 'draft';
+          if (revLifecycleState === 'superseded') {
+            snapStatus = 'stale';
+            snapStaleReason = `Pattern revision '${snap.revisionId}' has been superseded by '${snap.supersededByRevisionId ?? 'newer revision'}'.`;
+            staleReasons.push(snapStaleReason);
+            requiredActions.push('Select the superseding approved pattern revision.');
+          } else if (revLifecycleState === 'invalidated') {
+            snapStatus = 'invalid';
+            snapStaleReason = `Pattern revision '${snap.revisionId}' has been invalidated.`;
+            staleReasons.push(snapStaleReason);
+            requiredActions.push('Draft, validate, and approve a replacement pattern revision.');
+          } else if (revLifecycleState === 'archived') {
+            snapStatus = 'stale';
+            snapStaleReason = `Pattern revision '${snap.revisionId}' is archived and cannot be exported.`;
+            staleReasons.push(snapStaleReason);
+            requiredActions.push('Select an active approved pattern revision.');
+          } else if (revLifecycleState !== 'approved') {
+            snapStatus = 'pending';
+            snapStaleReason = `Pattern revision '${snap.revisionId}' is in lifecycle state '${revLifecycleState}' and must be formally approved before production export.`;
+            staleReasons.push(snapStaleReason);
+            requiredActions.push('Complete deterministic validation and Tier 3/Tier 4 pattern revision approval.');
+          } else {
+            const patLive = verifyPatternRevisionApprovalLive({
+              revision: snap,
+              verificationContext: inputs.patternVerificationContext ?? inputs.verificationContext,
+              activeSpecification: spec,
+              activeMeasurementSet: inputs.measurementSet
+            });
+            if (!patLive.isAuthorized) {
+              snapStatus = patLive.isProviderUnavailable ? 'pending' : 'invalid';
+              snapStaleReason = patLive.reason ?? 'Pattern revision live approval verification failed.';
+              staleReasons.push(snapStaleReason);
+              requiredActions.push('Provide valid Tier 3/Tier 4 pattern approval verification credentials.');
+            }
+          }
+        }
+      }
     }
   }
 
@@ -1182,9 +1477,11 @@ export function evaluatePipelineDependencyIntegrity(
   let exportStatus: PipelineArtifactStatus = 'current';
   let exportStaleReason: string | undefined = undefined;
 
-  if (draftingStatus === 'stale' || geomValStatus === 'stale' || snapStatus === 'stale' || finishedDimsStatus === 'stale' || gradingStatus === 'stale') {
-    exportStatus = 'stale';
-    exportStaleReason = 'Production export is blocked: one or more dependent engineering stages are stale.';
+  if (draftingStatus === 'stale' || geomValStatus === 'stale' || snapStatus === 'stale' || snapStatus === 'invalid' || finishedDimsStatus === 'stale' || gradingStatus === 'stale') {
+    exportStatus = snapStatus === 'invalid' ? 'invalid' : 'stale';
+    exportStaleReason = snapStatus === 'invalid'
+      ? (snapStaleReason ?? 'Production export is blocked: pattern revision snapshot is invalid.')
+      : 'Production export is blocked: one or more dependent engineering stages are stale.';
   } else if (specStatus !== 'approved') {
     exportStatus = 'pending';
     exportStaleReason = `Production documentation export is blocked: design specification is ${specStatus}.`;
@@ -1193,7 +1490,7 @@ export function evaluatePipelineDependencyIntegrity(
     exportStaleReason = `Production documentation export is blocked: body measurements are ${measApprovalState} (explicit approval and non-AI provenance required).`;
   } else if (geomValStatus !== 'current' || snapStatus !== 'current') {
     exportStatus = 'pending';
-    exportStaleReason = 'Production export is pending completion of geometry validation or revision snapshot.';
+    exportStaleReason = snapStaleReason ?? 'Production export is pending completion of geometry validation or approved pattern revision snapshot.';
   }
 
   const exportContentFingerprint = computeArtifactInputFingerprint({
@@ -1442,6 +1739,7 @@ export function validateProductionExportPrerequisites(
   }
 
   // 3. Independent Snapshot Verification
+  let patternProviderUnavailable = false;
   if (!snapshot) {
     blockingArtifacts.push(
       'production-snapshot (missing: Production export requires an authoritative ProductionPatternRevisionSnapshot)'
@@ -1472,7 +1770,70 @@ export function validateProductionExportPrerequisites(
       }
     }
 
-    // 3c. Verify snapshot design approval flag
+    // 3b-ii. Verify Milestone 05.1 pattern revision content/lifecycle integrity and live Tier 3/Tier 4 approval (AUDIT-05.1-02 & Safeguard 1)
+    const revIntegrity = verifyPatternRevisionLifecycleIntegrity(snapshot);
+    if (!revIntegrity.isValid) {
+      blockingArtifacts.push(
+        `production-snapshot (${revIntegrity.isContentTampered ? 'content-tampered' : 'lifecycle-tampered'}: ${revIntegrity.reason})`
+      );
+      if (!rejectionCode || rejectionCode === 'UPSTREAM_STAGE_INVALID' || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
+        rejectionCode = revIntegrity.isContentTampered
+          ? 'PATTERN_REVISION_CONTENT_TAMPERED'
+          : 'PATTERN_REVISION_LIFECYCLE_TAMPERED';
+      }
+    } else {
+      const revState = snapshot.currentLifecycleState ?? 'draft';
+      if (revState === 'superseded') {
+        blockingArtifacts.push(
+          `production-snapshot (superseded: Pattern revision '${snapshot.revisionId}' has been superseded by '${snapshot.supersededByRevisionId ?? 'newer revision'}')`
+        );
+        if (!rejectionCode || rejectionCode === 'STALE_SOURCE_FINGERPRINT' || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
+          rejectionCode = 'PATTERN_REVISION_SUPERSEDED';
+        }
+      } else if (revState === 'invalidated') {
+        blockingArtifacts.push(
+          `production-snapshot (invalidated: Pattern revision '${snapshot.revisionId}' has been invalidated)`
+        );
+        if (!rejectionCode || rejectionCode === 'UPSTREAM_STAGE_INVALID' || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
+          rejectionCode = 'PATTERN_REVISION_INVALIDATED';
+        }
+      } else if (revState === 'archived') {
+        blockingArtifacts.push(
+          `production-snapshot (archived: Pattern revision '${snapshot.revisionId}' is archived)`
+        );
+        if (!rejectionCode || rejectionCode === 'STALE_SOURCE_FINGERPRINT' || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
+          rejectionCode = 'PATTERN_REVISION_ARCHIVED';
+        }
+      } else if (revState !== 'approved') {
+        blockingArtifacts.push(
+          `production-snapshot (unapproved: Pattern revision '${snapshot.revisionId}' is in lifecycle state '${revState}', expected 'approved')`
+        );
+        if (!rejectionCode || rejectionCode === 'STALE_SOURCE_FINGERPRINT' || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
+          rejectionCode = 'PATTERN_REVISION_NOT_APPROVED';
+        }
+      } else {
+        const patLive = verifyPatternRevisionApprovalLive({
+          revision: snapshot,
+          verificationContext: activeInputs?.patternVerificationContext ?? activeInputs?.verificationContext
+        });
+        if (!patLive.isAuthorized) {
+          blockingArtifacts.push(
+            `pattern-revision-approval (${patLive.isProviderUnavailable ? 'unverified' : 'invalid'}: ${patLive.reason})`
+          );
+          if (patLive.isProviderUnavailable) {
+            patternProviderUnavailable = true;
+          } else if (
+            !rejectionCode ||
+            rejectionCode === 'STALE_SOURCE_FINGERPRINT' ||
+            rejectionCode === 'MEASUREMENT_UNAPPROVED'
+          ) {
+            rejectionCode = patLive.failureCode ?? 'PATTERN_REVISION_APPROVAL_INVALID';
+          }
+        }
+      }
+    }
+
+    // 3c. Verify snapshot design specification approval flag
     if (!snapshot.approvalState || snapshot.approvalState.designApproval !== 'approved' || !snapshot.designSpecification?.isApproved) {
       blockingArtifacts.push('production-snapshot (design approval pending or not approved in snapshot)');
       if (!rejectionCode) rejectionCode = 'SPECIFICATION_UNAPPROVED';
@@ -1650,6 +2011,17 @@ export function validateProductionExportPrerequisites(
           blockingArtifacts.push(`measurements (unapproved: ${msIntegrity.reason ?? 'Measurement set is not approved'})`);
           if (!rejectionCode || rejectionCode === 'STALE_SOURCE_FINGERPRINT') {
             rejectionCode = 'MEASUREMENT_UNAPPROVED';
+          }
+        } else if (
+          snapshot &&
+          snapshot.sourceMeasurementSetFingerprint &&
+          ms.canonicalFingerprint !== snapshot.sourceMeasurementSetFingerprint
+        ) {
+          blockingArtifacts.push(
+            `snapshot-measurements-mismatch (active measurement set '${ms.measurementSetId}' fingerprint '${ms.canonicalFingerprint}' !== snapshot '${snapshot.sourceMeasurementSetFingerprint}')`
+          );
+          if (!rejectionCode || rejectionCode === 'STALE_SOURCE_FINGERPRINT' || rejectionCode === 'MEASUREMENT_UNAPPROVED') {
+            rejectionCode = 'SNAPSHOT_MEASUREMENTS_MISMATCH';
           }
         }
       }
@@ -1854,6 +2226,7 @@ export function validateProductionExportPrerequisites(
         engineVersion: activeInputs.engineVersion,
         gradingRulesVersion: activeInputs.gradingRulesVersion,
         verificationContext: activeInputs.verificationContext,
+        patternVerificationContext: activeInputs.patternVerificationContext,
         gradingSummary: activeInputs.gradingResult,
         gradingArtifact: activeInputs.gradingArtifact
       });
@@ -2167,12 +2540,15 @@ export function validateProductionExportPrerequisites(
     }
   }
 
-  // 9c. Enforce Tier 3 / Tier 4 Production Approval Authority (FINDING-15)
+  // 9c. Enforce Tier 3 / Tier 4 Production Approval Authority (FINDING-15 & Safeguard 1)
   if (unauthenticatedApprovalBlockingArtifact) {
     blockingArtifacts.push(unauthenticatedApprovalBlockingArtifact);
     if (!rejectionCode || rejectionCode === 'STALE_SOURCE_FINGERPRINT') {
       rejectionCode = 'SPECIFICATION_APPROVAL_UNAUTHENTICATED';
     }
+  }
+  if (patternProviderUnavailable && !rejectionCode) {
+    rejectionCode = 'AUTHORIZATION_PROVIDER_UNAVAILABLE';
   }
 
   // 10. Result Construction
@@ -2656,8 +3032,13 @@ export function computeProductionPackageManifestFingerprint(
       widthCm: p.widthCm,
       heightCm: p.heightCm,
       seamAllowanceWidthCm: p.seamAllowanceWidthCm,
+      cutCount: p.cutCount,
+      onFold: p.onFold,
+      material: p.material,
+      grainline: p.grainline,
       notchCount: p.notchCount,
-      dartCount: p.dartCount
+      dartCount: p.dartCount,
+      drillHoleCount: p.drillHoleCount
     })),
     pieceCount: manifest.pieceCount,
     totalPieceInstancesAcrossSizes: manifest.totalPieceInstancesAcrossSizes,
@@ -2907,114 +3288,26 @@ export function createAuthoritativeProductionPackage(
     );
   }
 
-  // 7. Enforce real Tier 3 / Tier 4 pattern revision authorization availability & target binding (Amendment 3)
+  // 7. Enforce real Tier 3 / Tier 4 pattern revision authorization availability & target binding (Amendment 3 & Safeguard 1)
   const appRec = rev.patternApprovalRecord;
-  const basePatternFingerprint = rev.contentFingerprint ?? rev.basePatternFingerprint!;
-  if (
-    !appRec ||
-    (appRec.authorityTier !== 'authenticated_designer' && appRec.authorityTier !== 'cryptographic_principal') ||
-    appRec.patternRevisionId !== rev.revisionId ||
-    appRec.boundBasePatternFingerprint !== basePatternFingerprint
-  ) {
+  const basePatternFingerprint = revIntegrity.recomputedBasePatternFingerprint ?? rev.contentFingerprint ?? rev.basePatternFingerprint!;
+  const patLive = verifyPatternRevisionApprovalLive({
+    revision: rev,
+    verificationContext: input.patternApprovalVerificationContext,
+    activeSpecification: input.specification,
+    activeMeasurementSet: input.measurementSet
+  });
+  if (!patLive.isAuthorized) {
+    return reject(
+      (patLive.failureCode as ProductionPackageRejectionCode) ?? 'PATTERN_REVISION_APPROVAL_INVALID',
+      patLive.reason ?? 'Authorized production package creation failed (fail-closed): pattern revision approval verification failed.'
+    );
+  }
+  if (!appRec) {
     return reject(
       'PATTERN_REVISION_APPROVAL_INVALID',
-      `Pattern revision '${rev.revisionId}' lacks a valid Tier 3 or Tier 4 PatternRevisionApprovalRecord bound to basePatternFingerprint '${basePatternFingerprint}'.`
+      `Pattern revision '${rev.revisionId}' lacks PatternRevisionApprovalRecord.`
     );
-  }
-
-  const patAuthCtx = input.patternApprovalVerificationContext;
-  if (!patAuthCtx) {
-    return reject(
-      'AUTHORIZATION_PROVIDER_UNAVAILABLE',
-      'Authorized production package creation failed (fail-closed): patternApprovalVerificationContext with an active TrustedIdentityVerifier or TrustedCryptographicVerifier is required.'
-    );
-  }
-
-  if (appRec.authorityTier === 'authenticated_designer') {
-    if (
-      !patAuthCtx.identityVerifier ||
-      typeof patAuthCtx.identityVerifier.verifyCredential !== 'function' ||
-      !patAuthCtx.identityVerifier.replayStore
-    ) {
-      return reject(
-        'AUTHORIZATION_PROVIDER_UNAVAILABLE',
-        'Authorized production package creation failed (fail-closed): Tier 3 pattern approval requires an active TrustedIdentityVerifier and JtiReplayStore.'
-      );
-    }
-    const credToVerify = patAuthCtx.identityCredential;
-    if (!credToVerify || !appRec.verifiedIdentity) {
-      return reject(
-        'PATTERN_REVISION_APPROVAL_INVALID',
-        'Authorized production package creation failed (fail-closed): Tier 3 pattern approval requires the signed OIDC/JWT VerifiableIdentityCredential for re-verification.'
-      );
-    }
-    const idReverify = patAuthCtx.identityVerifier.verifyCredential(credToVerify, {
-      expectedSpecificationId: revGarmentId,
-      expectedRevisionId: rev.revisionId,
-      expectedSpecificationFingerprint: basePatternFingerprint,
-      expectedApprover: appRec.approverName,
-      approvalTimestamp: appRec.approvedAt,
-      expectedTenantId: rev.projectId,
-      requireTargetBinding: true,
-      reverifyRecordedApproval: {
-        recordedTokenDigest: appRec.verifiedIdentity.tokenDigest,
-        recordedJti: appRec.verifiedIdentity.jti,
-        recordedSpecificationId: revGarmentId,
-        recordedRevisionId: rev.revisionId,
-        recordedSpecificationFingerprint: basePatternFingerprint
-      }
-    });
-    if (!idReverify.verified || !idReverify.isValid) {
-      return reject(
-        'PATTERN_REVISION_APPROVAL_INVALID',
-        `Pattern revision Tier 3 approval re-verification failed (fail-closed): ${idReverify.reason ?? 'invalid credential'}.`
-      );
-    }
-  } else {
-    if (
-      !patAuthCtx.cryptographicVerifier ||
-      typeof patAuthCtx.cryptographicVerifier.verifyApprovalSignature !== 'function'
-    ) {
-      return reject(
-        'AUTHORIZATION_PROVIDER_UNAVAILABLE',
-        'Authorized production package creation failed (fail-closed): Tier 4 pattern approval requires an active TrustedCryptographicVerifier.'
-      );
-    }
-    const sigToVerify =
-      patAuthCtx.cryptographicSignature ??
-      (appRec.cryptographicSignature as unknown as VerifiableCryptographicSignature | undefined);
-    if (!sigToVerify) {
-      return reject(
-        'PATTERN_REVISION_APPROVAL_INVALID',
-        'Authorized production package creation failed (fail-closed): Tier 4 pattern approval requires a VerifiableCryptographicSignature.'
-      );
-    }
-    const expectedBindingPayload = {
-      schemaVersion: '04.6.2.3.4-canonical-spec-v1',
-      projectId: rev.projectId,
-      tenantId: rev.projectId,
-      garmentId: revGarmentId,
-      specificationRevisionId: rev.revisionId,
-      specificationVersion: rev.revisionIndex,
-      canonicalSpecificationFingerprint: basePatternFingerprint,
-      approvalEventId: appRec.approvalEventId,
-      approverPrincipal: appRec.approverName,
-      authorityTier: 'cryptographic_principal' as const,
-      approvalScope: 'specification:approve',
-      approvalTimestamp: appRec.approvedAt,
-      keyId: sigToVerify.keyId,
-      algorithm: 'Ed25519'
-    };
-    const cryptoReverify = patAuthCtx.cryptographicVerifier.verifyApprovalSignature(
-      sigToVerify,
-      expectedBindingPayload
-    );
-    if (!cryptoReverify.verified || !cryptoReverify.isValid) {
-      return reject(
-        'PATTERN_REVISION_APPROVAL_INVALID',
-        `Pattern revision Tier 4 cryptographic approval re-verification failed (fail-closed): ${cryptoReverify.reason ?? 'signature rejected'}.`
-      );
-    }
   }
 
   // 8. Verify grading policy and grading artifact binding (Amendment 1 & Amendment 4)
@@ -3029,6 +3322,24 @@ export function createAuthoritativeProductionPackage(
       'AuthoritativeProductionPackage requires an explicit exportGradingPolicy (graded-multi-size or single-size-ungraded).'
     );
   }
+
+  const toPackagePieceEntry = (p: PatternPieceSnapshot, sizeCode: string): ProductionPackagePieceEntry => ({
+    pieceId: p.id,
+    pieceCode: p.pieceCode,
+    pieceName: p.name,
+    sizeCode,
+    pieceGeometryFingerprint: computePieceGeometryFingerprint(p),
+    widthCm: p.stitchingContour?.boundingBox.widthCm ?? p.boundingBox?.widthCm ?? 0,
+    heightCm: p.stitchingContour?.boundingBox.heightCm ?? p.boundingBox?.heightCm ?? 0,
+    seamAllowanceWidthCm: p.seamAllowanceWidthCm,
+    cutCount: Number.isInteger(p.cutCount) && p.cutCount >= 1 ? p.cutCount : 1,
+    onFold: Boolean(p.onFold),
+    material: typeof p.material === 'string' && p.material.trim() !== '' ? p.material.trim() : 'self',
+    grainline: p.grainline,
+    notchCount: p.notches.length,
+    dartCount: p.darts.length,
+    drillHoleCount: p.drillHoles?.length ?? 0
+  });
 
   let effectiveGradingMode: 'graded-multi-size' | 'single-size-ungraded';
   let includedSizes: readonly string[];
@@ -3054,18 +3365,7 @@ export function createAuthoritativeProductionPackage(
       );
     }
     includedSizes = [String(rev.targetSize)];
-    pieceInventory = rev.patternPieces.map(p => ({
-      pieceId: p.id,
-      pieceCode: p.pieceCode,
-      pieceName: p.name,
-      sizeCode: String(p.sizeCode),
-      pieceGeometryFingerprint: computePieceGeometryFingerprint(p),
-      widthCm: p.stitchingContour?.boundingBox.widthCm ?? p.boundingBox?.widthCm ?? 0,
-      heightCm: p.stitchingContour?.boundingBox.heightCm ?? p.boundingBox?.heightCm ?? 0,
-      seamAllowanceWidthCm: p.seamAllowanceWidthCm,
-      notchCount: p.notches.length,
-      dartCount: p.darts.length
-    }));
+    pieceInventory = rev.patternPieces.map(p => toPackagePieceEntry(p, String(p.sizeCode)));
   } else {
     effectiveGradingMode = 'graded-multi-size';
     const ga = input.gradingArtifact;
@@ -3110,21 +3410,15 @@ export function createAuthoritativeProductionPackage(
     for (const sz of includedSizes) {
       const szPieces = ga.perSizePatternGeometry[sz] ?? [];
       for (const p of szPieces) {
-        pieceInventory.push({
-          pieceId: p.id,
-          pieceCode: p.pieceCode,
-          pieceName: p.name,
-          sizeCode: sz,
-          pieceGeometryFingerprint: computePieceGeometryFingerprint(p),
-          widthCm: p.stitchingContour?.boundingBox.widthCm ?? p.boundingBox?.widthCm ?? 0,
-          heightCm: p.stitchingContour?.boundingBox.heightCm ?? p.boundingBox?.heightCm ?? 0,
-          seamAllowanceWidthCm: p.seamAllowanceWidthCm,
-          notchCount: p.notches.length,
-          dartCount: p.darts.length
-        });
+        pieceInventory.push(toPackagePieceEntry(p, sz));
       }
     }
   }
+
+  const totalPieceInstancesAcrossSizes = pieceInventory.reduce(
+    (sum, entry) => sum + entry.cutCount,
+    0
+  );
 
   const createdAt = input.createdAt ?? new Date().toISOString();
   const createdBy = (input.createdBy ?? appRec.approverName).trim();
@@ -3169,8 +3463,8 @@ export function createAuthoritativeProductionPackage(
     sourcePatternRevisionId: rev.revisionId,
     sourcePatternRevisionNumber: rev.revisionIndex,
     basePatternFingerprint,
-    geometryFingerprint: rev.geometryFingerprint!,
-    draftingConfigFingerprint: rev.draftingConfigFingerprint!,
+    geometryFingerprint: revIntegrity.recomputedGeometryFingerprint ?? rev.geometryFingerprint!,
+    draftingConfigFingerprint: revIntegrity.recomputedDraftingConfigFingerprint ?? rev.draftingConfigFingerprint!,
     gradingMode: effectiveGradingMode,
     nonGradingReason,
     sourceGradingArtifactId,
@@ -3180,7 +3474,7 @@ export function createAuthoritativeProductionPackage(
     baseSize: String(rev.targetSize),
     pieceInventory,
     pieceCount: rev.patternPieces.length,
-    totalPieceInstancesAcrossSizes: pieceInventory.length,
+    totalPieceInstancesAcrossSizes,
     validationDigest,
     approvalDigest,
     isProductionReady: false
@@ -3237,20 +3531,56 @@ export function createAuthoritativeProductionPackage(
   };
 }
 
+const ALLOWED_PACKAGE_TRANSITIONS: Readonly<
+  Record<ProductionPackageLifecycleState, readonly ProductionPackageLifecycleState[]>
+> = {
+  active: ['superseded', 'invalidated', 'revoked'],
+  superseded: ['invalidated', 'archived'],
+  invalidated: ['archived'],
+  revoked: ['archived'],
+  archived: []
+};
+
+export interface ProductionPackageSourceContext {
+  readonly patternRevision?: AuthoritativePatternRevision;
+  readonly specification?: AuthoritativeGarmentSpecification;
+  readonly measurementSet?: AuthoritativeMeasurementSetRecord;
+  readonly gradingArtifact?: AuthoritativeGradingArtifact;
+  readonly specificationVerificationContext?: ApprovalVerificationContext;
+  readonly patternApprovalVerificationContext?: ApprovalVerificationContext;
+  readonly gradingRulesVersion?: string;
+  readonly engineVersion?: string;
+}
+
+const PACKAGE_LIMITATION_NOTES: readonly string[] = [
+  'Local hash-chain verification proves internal structural consistency of the package artifact but cannot prevent history rewriting or truncation by an attacker with unrestricted write access absent an external append-only ledger or signed identity checkpoint.'
+];
+
 /**
- * Independently verifies the manifest integrity and append-only lifecycle integrity
- * of an `AuthoritativeProductionPackage` (Amendment 1 & Amendment 2).
+ * Independently verifies the structural integrity, append-only lifecycle transition state machine,
+ * historical upstream lineage consistency, and (when full `sourceContext` is provided) live authorization
+ * status of an `AuthoritativeProductionPackage` (`AUDIT-05.1-01, 03`, `Safeguard 2 & 3`).
  */
 export function verifyProductionPackageIntegrity(
-  pkg: AuthoritativeProductionPackage | undefined
+  pkg: AuthoritativeProductionPackage | undefined,
+  sourceContext?: ProductionPackageSourceContext
 ): ProductionPackageVerificationResult {
   if (!pkg || typeof pkg !== 'object' || !pkg.manifest) {
     return {
+      isStructurallyValid: false,
+      isHistoricallyVerifiable: false,
+      isCurrentlyAuthorized: false,
+      sourceVerificationStatus: 'partial-unverified-upstream',
+      missingSourceContextFields: ['package'],
       isValid: false,
       isManifestTampered: false,
       isLifecycleTampered: false,
+      isUpstreamMismatch: false,
+      isApprovalVerified: false,
       reason: 'AuthoritativeProductionPackage or its manifest is missing.',
-      errors: ['AuthoritativeProductionPackage or its manifest is missing.']
+      errors: ['AuthoritativeProductionPackage or its manifest is missing.'],
+      authorizationErrors: ['AuthoritativeProductionPackage or its manifest is missing.'],
+      limitationNotes: PACKAGE_LIMITATION_NOTES
     };
   }
 
@@ -3260,17 +3590,29 @@ export function verifyProductionPackageIntegrity(
   ) {
     const reason = 'Industrial safety violation: production package asserts isProductionReady !== false.';
     return {
+      isStructurallyValid: false,
+      isHistoricallyVerifiable: false,
+      isCurrentlyAuthorized: false,
+      sourceVerificationStatus: 'partial-unverified-upstream',
+      missingSourceContextFields: [],
       isValid: false,
       isManifestTampered: true,
       isLifecycleTampered: false,
+      isUpstreamMismatch: false,
+      isApprovalVerified: false,
+      currentPackageState: pkg.currentPackageState,
       reason,
-      errors: [reason]
+      errors: [reason],
+      authorizationErrors: [reason],
+      limitationNotes: PACKAGE_LIMITATION_NOTES
     };
   }
 
   const errors: string[] = [];
+  const authorizationErrors: string[] = [];
   let isManifestTampered = false;
   let isLifecycleTampered = false;
+  let isUpstreamMismatch = false;
 
   const recomputedManifestFp = computeProductionPackageManifestFingerprint(pkg.manifest);
   if (pkg.manifestFingerprint !== recomputedManifestFp) {
@@ -3279,6 +3621,62 @@ export function verifyProductionPackageIntegrity(
       `Production package manifestFingerprint mismatch: recorded '${pkg.manifestFingerprint}' vs recomputed '${recomputedManifestFp}'.`
     );
   }
+
+  // Structural pieceInventory & manifest checks (AUDIT-05.1-03)
+  const manifest = pkg.manifest;
+  if (!Array.isArray(manifest.pieceInventory) || manifest.pieceInventory.length === 0 || manifest.pieceCount <= 0) {
+    isManifestTampered = true;
+    errors.push('Production package manifest pieceInventory or pieceCount is empty or invalid.');
+  } else {
+    let computedTotalInstances = 0;
+    for (const entry of manifest.pieceInventory) {
+      if (
+        !entry ||
+        !entry.pieceId ||
+        !entry.pieceCode ||
+        !entry.pieceGeometryFingerprint ||
+        !Number.isFinite(entry.widthCm) ||
+        entry.widthCm <= 0 ||
+        !Number.isFinite(entry.heightCm) ||
+        entry.heightCm <= 0 ||
+        !Number.isFinite(entry.seamAllowanceWidthCm) ||
+        entry.seamAllowanceWidthCm < 0 ||
+        !Number.isInteger(entry.cutCount) ||
+        entry.cutCount < 1 ||
+        typeof entry.material !== 'string' ||
+        entry.material.trim() === '' ||
+        !entry.grainline ||
+        !entry.grainline.direction ||
+        !Number.isInteger(entry.drillHoleCount) ||
+        entry.drillHoleCount < 0
+      ) {
+        isManifestTampered = true;
+        errors.push(`Production package pieceInventory entry '${entry?.pieceCode ?? 'unknown'}' has invalid manufacturing or geometry fields.`);
+        break;
+      }
+      computedTotalInstances += entry.cutCount;
+    }
+    if (manifest.totalPieceInstancesAcrossSizes !== computedTotalInstances) {
+      isManifestTampered = true;
+      errors.push(
+        `Production package totalPieceInstancesAcrossSizes (${manifest.totalPieceInstancesAcrossSizes}) disagrees with sum of piece cutCounts (${computedTotalInstances}).`
+      );
+    }
+    if (manifest.gradingMode === 'single-size-ungraded') {
+      if (!manifest.nonGradingReason || manifest.nonGradingReason.trim() === '' || manifest.sourceGradingArtifactId || manifest.includedSizes.length !== 1) {
+        isManifestTampered = true;
+        errors.push('Single-size ungraded package manifest has inconsistent nonGradingReason, sourceGradingArtifactId, or includedSizes.');
+      }
+    } else if (manifest.gradingMode === 'graded-multi-size') {
+      if (!manifest.sourceGradingArtifactId || !manifest.gradingArtifactFingerprint || manifest.includedSizes.length < 2 || !manifest.includedSizes.includes(manifest.baseSize)) {
+        isManifestTampered = true;
+        errors.push('Graded multi-size package manifest is missing gradingArtifact binding or complete includedSizes.');
+      }
+    }
+  }
+
+  let derivedState: ProductionPackageLifecycleState | undefined = pkg.currentPackageState;
+  let recomputedCurrentStateFp: string | undefined;
 
   const history = pkg.lifecycleHistory;
   if (!Array.isArray(history) || history.length === 0) {
@@ -3311,14 +3709,42 @@ export function verifyProductionPackageIntegrity(
           `Package lifecycle event '${ev.eventId}' at index ${i} has broken hash chain: previousEventFingerprint '${String(ev.previousEventFingerprint)}' !== expected '${String(expectedPrevEventFp)}'.`
         );
       }
-      if (i === 0 && ev.fromState !== null) {
-        isLifecycleTampered = true;
-        errors.push(`Genesis package lifecycle event '${ev.eventId}' must have fromState === null.`);
-      } else if (i > 0 && ev.fromState !== expectedFromState) {
+      if (i === 0) {
+        if (ev.fromState !== null || ev.toState !== 'active') {
+          isLifecycleTampered = true;
+          errors.push(`Genesis package lifecycle event '${ev.eventId}' must transition from null to 'active' (found '${String(ev.fromState)}' -> '${String(ev.toState)}').`);
+        }
+      } else if (ev.fromState !== expectedFromState) {
         isLifecycleTampered = true;
         errors.push(
           `Package lifecycle event '${ev.eventId}' at index ${i} has discontinuous state transition: fromState '${String(ev.fromState)}' !== prior toState '${String(expectedFromState)}'.`
         );
+      } else {
+        const fromStateKey: ProductionPackageLifecycleState | null = ev.fromState;
+        if (fromStateKey === null || !ALLOWED_PACKAGE_TRANSITIONS[fromStateKey]?.includes(ev.toState)) {
+          isLifecycleTampered = true;
+          errors.push(
+            `Illegal package lifecycle transition in event '${ev.eventId}' at index ${i}: '${String(ev.fromState)}' -> '${String(ev.toState)}' is not permitted.`
+          );
+        }
+      }
+
+      if (ev.toState === 'superseded') {
+        if (!ev.supersededByPackageId || ev.supersededByPackageId.trim() === '' || ev.supersededByPackageId === pkg.packageId) {
+          isLifecycleTampered = true;
+          errors.push(`Superseded package lifecycle event '${ev.eventId}' is missing a valid distinct supersededByPackageId.`);
+        }
+      } else if (ev.toState === 'invalidated') {
+        const inv = ev.invalidationRecord;
+        if (!inv || !inv.cause || !inv.reason || inv.reason.trim() === '' || !inv.invalidatedBy || inv.invalidatedBy.trim() === '') {
+          isLifecycleTampered = true;
+          errors.push(`Invalidated package lifecycle event '${ev.eventId}' is missing a complete invalidationRecord.`);
+        }
+      } else if (ev.toState === 'revoked') {
+        if (!ev.reason || ev.reason.trim() === '') {
+          isLifecycleTampered = true;
+          errors.push(`Revoked package lifecycle event '${ev.eventId}' is missing a revocation reason.`);
+        }
       }
 
       const recomputedEvFp = computeProductionPackageLifecycleEventFingerprint(ev);
@@ -3334,18 +3760,19 @@ export function verifyProductionPackageIntegrity(
     }
 
     const latestEvent = history[history.length - 1];
-    const derivedState = latestEvent.toState;
-    if (pkg.currentPackageState !== derivedState) {
+    const latestDerivedState: ProductionPackageLifecycleState = latestEvent.toState;
+    derivedState = latestDerivedState;
+    if (pkg.currentPackageState !== latestDerivedState) {
       isLifecycleTampered = true;
       errors.push(
-        `Package currentPackageState '${pkg.currentPackageState}' disagrees with derived lifecycle state '${derivedState}'.`
+        `Package currentPackageState '${pkg.currentPackageState}' disagrees with derived lifecycle state '${latestDerivedState}'.`
       );
     }
 
-    const recomputedCurrentStateFp = computeProductionPackageCurrentStateFingerprint({
+    recomputedCurrentStateFp = computeProductionPackageCurrentStateFingerprint({
       packageId: pkg.packageId,
       manifestFingerprint: recomputedManifestFp,
-      currentPackageState: derivedState,
+      currentPackageState: latestDerivedState,
       latestLifecycleEventFingerprint: latestEvent.lifecycleEventFingerprint,
       eventCount: history.length
     });
@@ -3356,25 +3783,196 @@ export function verifyProductionPackageIntegrity(
         `Package currentStateFingerprint '${pkg.currentStateFingerprint}' disagrees with recomputed '${recomputedCurrentStateFp}'.`
       );
     }
-
-    return {
-      isValid: errors.length === 0,
-      isManifestTampered,
-      isLifecycleTampered,
-      recomputedManifestFingerprint: recomputedManifestFp,
-      recomputedCurrentStateFingerprint: recomputedCurrentStateFp,
-      reason: errors[0],
-      errors
-    };
   }
 
+  const isStructurallyValid = !isManifestTampered && !isLifecycleTampered && errors.length === 0;
+
+  // Historical upstream lineage consistency checks for any provided artifacts in sourceContext
+  if (sourceContext?.patternRevision) {
+    const rev = sourceContext.patternRevision;
+    const revIntegrity = verifyPatternRevisionLifecycleIntegrity(rev);
+    const revBaseFp = rev.contentFingerprint ?? rev.basePatternFingerprint;
+    if (
+      !revIntegrity.isValid ||
+      rev.revisionId !== manifest.sourcePatternRevisionId ||
+      revBaseFp !== manifest.basePatternFingerprint ||
+      rev.geometryFingerprint !== manifest.geometryFingerprint ||
+      rev.draftingConfigFingerprint !== manifest.draftingConfigFingerprint
+    ) {
+      isUpstreamMismatch = true;
+      errors.push(`Package manifest diverges from provided patternRevision '${rev.revisionId}'.`);
+      authorizationErrors.push(`Package manifest diverges from provided patternRevision '${rev.revisionId}'.`);
+    }
+  }
+
+  if (sourceContext?.specification) {
+    const spec = sourceContext.specification;
+    const specFp = computeSpecificationFingerprint(spec);
+    if (
+      spec.garmentId !== manifest.sourceSpecificationId ||
+      spec.specificationRevisionId !== manifest.sourceSpecificationRevisionId ||
+      specFp !== manifest.sourceSpecificationFingerprint
+    ) {
+      isUpstreamMismatch = true;
+      errors.push(`Package manifest diverges from provided specification '${spec.specificationRevisionId}'.`);
+      authorizationErrors.push(`Package manifest diverges from provided specification '${spec.specificationRevisionId}'.`);
+    }
+  }
+
+  if (sourceContext?.measurementSet) {
+    const ms = sourceContext.measurementSet;
+    if (
+      ms.measurementSetId !== manifest.sourceMeasurementSetId ||
+      ms.revisionId !== manifest.sourceMeasurementRevisionId ||
+      ms.canonicalFingerprint !== manifest.sourceMeasurementSetFingerprint
+    ) {
+      isUpstreamMismatch = true;
+      errors.push(`Package manifest diverges from provided measurementSet '${ms.measurementSetId}'.`);
+      authorizationErrors.push(`Package manifest diverges from provided measurementSet '${ms.measurementSetId}'.`);
+    }
+  }
+
+  if (sourceContext?.gradingArtifact) {
+    const ga = sourceContext.gradingArtifact;
+    const gaIntegrity = verifyGradingArtifactIntegrity(ga);
+    const gaContentFp = ga.contentFingerprint ?? computeGradingArtifactContentFingerprint(ga);
+    if (
+      gaIntegrity.isTampered ||
+      manifest.gradingMode !== 'graded-multi-size' ||
+      ga.gradingArtifactId !== manifest.sourceGradingArtifactId ||
+      ga.gradingRevisionId !== manifest.sourceGradingRevisionId ||
+      gaContentFp !== manifest.gradingArtifactFingerprint
+    ) {
+      isUpstreamMismatch = true;
+      errors.push(`Package manifest diverges from provided gradingArtifact '${ga.gradingArtifactId}'.`);
+      authorizationErrors.push(`Package manifest diverges from provided gradingArtifact '${ga.gradingArtifactId}'.`);
+    }
+  }
+
+  const isHistoricallyVerifiable = isStructurallyValid && !isUpstreamMismatch;
+
+  // Safeguard 3: Live authorization completeness & active dependency checks
+  const missingSourceContextFields: string[] = [];
+  if (!sourceContext?.patternRevision) missingSourceContextFields.push('patternRevision');
+  if (!sourceContext?.specification) missingSourceContextFields.push('specification');
+  if (!sourceContext?.measurementSet) missingSourceContextFields.push('measurementSet');
+  if (!sourceContext?.specificationVerificationContext) missingSourceContextFields.push('specificationVerificationContext');
+  if (!sourceContext?.patternApprovalVerificationContext) missingSourceContextFields.push('patternApprovalVerificationContext');
+  if (manifest.gradingMode === 'graded-multi-size' && !sourceContext?.gradingArtifact) {
+    missingSourceContextFields.push('gradingArtifact');
+  }
+
+  const sourceVerificationStatus =
+    missingSourceContextFields.length === 0 ? 'complete' : 'partial-unverified-upstream';
+
+  if (pkg.currentPackageState !== 'active') {
+    authorizationErrors.push(
+      `Package '${pkg.packageId}' is in non-active lifecycle state '${pkg.currentPackageState}'.`
+    );
+  }
+  if (missingSourceContextFields.length > 0) {
+    authorizationErrors.push(
+      `Live authorization cannot be confirmed (fail-closed): missing sourceContext fields [${missingSourceContextFields.join(', ')}].`
+    );
+  }
+
+  let isSpecVerified = false;
+  if (sourceContext?.specification && sourceContext?.specificationVerificationContext) {
+    const specCheck = verifySpecificationApproval(
+      sourceContext.specification,
+      sourceContext.specificationVerificationContext
+    );
+    const hasProductionAuthority =
+      (specCheck.isApprovalAuthenticated && Boolean(sourceContext.specificationVerificationContext.identityVerifier)) ||
+      (specCheck.isApprovalCryptographicallySigned && Boolean(sourceContext.specificationVerificationContext.cryptographicVerifier));
+    if (!specCheck.isValid || specCheck.state !== 'approved' || !hasProductionAuthority) {
+      authorizationErrors.push(
+        `Upstream specification '${sourceContext.specification.specificationRevisionId}' failed live approval verification: ${specCheck.reason ?? specCheck.state}.`
+      );
+    } else {
+      isSpecVerified = true;
+    }
+  }
+
+  if (sourceContext?.measurementSet) {
+    const measCheck = verifyMeasurementSetIntegrity(sourceContext.measurementSet);
+    if (!measCheck.isValid || !measCheck.isApproved) {
+      authorizationErrors.push(
+        `Upstream measurementSet '${sourceContext.measurementSet.measurementSetId}' failed active verification: ${measCheck.reason ?? 'unapproved'}.`
+      );
+    }
+  }
+
+  let isPatternVerified = false;
+  if (sourceContext?.patternRevision) {
+    const patLive = verifyPatternRevisionApprovalLive({
+      revision: sourceContext.patternRevision,
+      verificationContext: sourceContext.patternApprovalVerificationContext,
+      activeSpecification: sourceContext.specification,
+      activeMeasurementSet: sourceContext.measurementSet
+    });
+    if (!patLive.isAuthorized) {
+      authorizationErrors.push(patLive.reason ?? 'Pattern revision live approval verification failed.');
+    } else {
+      isPatternVerified = true;
+    }
+    if (
+      sourceContext.engineVersion &&
+      sourceContext.engineVersion !== sourceContext.patternRevision.engineProvenance.engineVersion
+    ) {
+      authorizationErrors.push(
+        `Engine version '${sourceContext.engineVersion}' disagrees with pattern revision engineProvenance '${sourceContext.patternRevision.engineProvenance.engineVersion}'.`
+      );
+    }
+  }
+
+  if (manifest.gradingMode === 'graded-multi-size' && sourceContext?.gradingArtifact) {
+    const gaCheck = verifyGradingArtifactIntegrity(sourceContext.gradingArtifact);
+    if (!gaCheck.isValid || sourceContext.gradingArtifact.lifecycleState !== 'active') {
+      authorizationErrors.push(
+        `Upstream gradingArtifact '${sourceContext.gradingArtifact.gradingArtifactId}' is not active or failed validation: ${gaCheck.reason ?? sourceContext.gradingArtifact.lifecycleState}.`
+      );
+    }
+    if (
+      sourceContext.gradingRulesVersion &&
+      sourceContext.gradingArtifact.gradingRuleSetRevision !== sourceContext.gradingRulesVersion &&
+      sourceContext.gradingArtifact.gradingRuleSetRevision !== `rules-grading-${sourceContext.gradingRulesVersion}`
+    ) {
+      authorizationErrors.push(
+        `Grading rules version '${sourceContext.gradingRulesVersion}' does not match gradingArtifact '${sourceContext.gradingArtifact.gradingRuleSetRevision}'.`
+      );
+    }
+  }
+
+  const isApprovalVerified =
+    missingSourceContextFields.length === 0 && isSpecVerified && isPatternVerified;
+
+  const isCurrentlyAuthorized =
+    isStructurallyValid &&
+    isHistoricallyVerifiable &&
+    pkg.currentPackageState === 'active' &&
+    missingSourceContextFields.length === 0 &&
+    authorizationErrors.length === 0 &&
+    isApprovalVerified;
+
   return {
-    isValid: false,
+    isStructurallyValid,
+    isHistoricallyVerifiable,
+    isCurrentlyAuthorized,
+    sourceVerificationStatus,
+    missingSourceContextFields,
+    isValid: isStructurallyValid && isHistoricallyVerifiable,
     isManifestTampered,
     isLifecycleTampered,
+    isUpstreamMismatch,
+    isApprovalVerified,
+    currentPackageState: derivedState,
     recomputedManifestFingerprint: recomputedManifestFp,
+    recomputedCurrentStateFingerprint: recomputedCurrentStateFp,
     reason: errors[0],
-    errors
+    errors,
+    authorizationErrors,
+    limitationNotes: PACKAGE_LIMITATION_NOTES
   };
 }
 
@@ -3391,9 +3989,15 @@ function appendProductionPackageLifecycleEvent(
   }
 ): AuthoritativeProductionPackage {
   const integrity = verifyProductionPackageIntegrity(pkg);
-  if (!integrity.isValid) {
+  if (!integrity.isStructurallyValid) {
     throw new ProductionSnapshotValidationError(
-      `Cannot transition production package '${pkg?.packageId ?? 'unknown'}': package failed integrity verification (${integrity.reason}).`
+      `Cannot transition production package '${pkg?.packageId ?? 'unknown'}': package failed structural integrity verification (${integrity.reason}).`
+    );
+  }
+
+  if (!ALLOWED_PACKAGE_TRANSITIONS[pkg.currentPackageState]?.includes(params.toState)) {
+    throw new ProductionSnapshotValidationError(
+      `Illegal package transition: production package '${pkg.packageId}' cannot transition from '${pkg.currentPackageState}' to '${params.toState}'.`
     );
   }
 
@@ -3486,8 +4090,8 @@ export function supersedeProductionPackage(
 }
 
 /**
- * Transitions an `'active'` production package to `'invalidated'` without modifying
- * its `manifest` or `manifestFingerprint` (Amendment 2).
+ * Transitions an `'active'` or `'superseded'` production package to `'invalidated'` without modifying
+ * its `manifest` or `manifestFingerprint` (Amendment 2). Idempotent when already `'invalidated'` (`AUDIT-05.1-04`).
  */
 export function invalidateProductionPackage(
   pkg: AuthoritativeProductionPackage,
@@ -3501,11 +4105,29 @@ export function invalidateProductionPackage(
     readonly activeUpstreamFingerprint?: string;
   }
 ): AuthoritativeProductionPackage {
+  if (!input || !input.cause || !input.reason || input.reason.trim() === '') {
+    throw new ProductionSnapshotValidationError('invalidateProductionPackage requires an explicit cause and non-empty reason.');
+  }
   if (pkg.currentPackageState === 'archived') {
     throw new ProductionSnapshotValidationError(
       `Cannot invalidate production package '${pkg.packageId}': package is already archived.`
     );
   }
+  if (pkg.currentPackageState === 'revoked') {
+    throw new ProductionSnapshotValidationError(
+      `Cannot invalidate production package '${pkg.packageId}': revoked packages cannot transition to 'invalidated'.`
+    );
+  }
+  if (pkg.currentPackageState === 'invalidated') {
+    const integrity = verifyProductionPackageIntegrity(pkg);
+    if (!integrity.isStructurallyValid) {
+      throw new ProductionSnapshotValidationError(
+        `Cannot idempotently invalidate production package '${pkg.packageId}': existing package failed structural integrity verification (${integrity.reason}).`
+      );
+    }
+    return pkg;
+  }
+
   const invalidatedAt = input.invalidatedAt ?? new Date().toISOString();
   const invalidatedBy = (input.invalidatedBy ?? 'dependency-invalidation-engine').trim();
   const invalidationRecord: PatternInvalidationRecord = {
@@ -3531,7 +4153,7 @@ export function invalidateProductionPackage(
 
 /**
  * Transitions an `'active'` production package to `'revoked'` without modifying
- * its `manifest` or `manifestFingerprint` (Amendment 2).
+ * its `manifest` or `manifestFingerprint` (Amendment 2). Idempotent when already `'revoked'` (`AUDIT-05.1-04`).
  */
 export function revokeProductionPackage(
   pkg: AuthoritativeProductionPackage,
@@ -3548,6 +4170,20 @@ export function revokeProductionPackage(
   if (pkg.currentPackageState === 'archived') {
     throw new ProductionSnapshotValidationError(
       `Cannot revoke production package '${pkg.packageId}': package is already archived.`
+    );
+  }
+  if (pkg.currentPackageState === 'revoked') {
+    const integrity = verifyProductionPackageIntegrity(pkg);
+    if (!integrity.isStructurallyValid) {
+      throw new ProductionSnapshotValidationError(
+        `Cannot idempotently revoke production package '${pkg.packageId}': existing package failed structural integrity verification (${integrity.reason}).`
+      );
+    }
+    return pkg;
+  }
+  if (pkg.currentPackageState !== 'active') {
+    throw new ProductionSnapshotValidationError(
+      `Invalid package transition: production package '${pkg.packageId}' in state '${pkg.currentPackageState}' cannot transition to 'revoked'.`
     );
   }
 

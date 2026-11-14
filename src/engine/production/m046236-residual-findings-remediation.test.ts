@@ -16,29 +16,33 @@ import {
   generateEd25519KeyPairFromPassphrase
 } from './crypto';
 import {
-  createAuthoritativeGarmentSpecification,
   approveAuthoritativeGarmentSpecification,
-  verifySpecificationApproval,
   computeSpecificationFingerprint,
-  deriveEd25519SigningKeyPair,
+  convertToDesignSpecification,
+  createAuthoritativeGarmentSpecification,
   createControlledPublicKeyRegistration,
-  createTrustedCryptographicVerifier,
+  createInMemoryJtiReplayStore,
   createOidcPublicJwk,
-  validateOidcPublicJwk,
-  issueVerifiableIdentityCredential,
+  createTrustedCryptographicVerifier,
   createTrustedIdentityVerifier,
-  createInMemoryJtiReplayStore
+  deriveEd25519SigningKeyPair,
+  issueVerifiableIdentityCredential,
+  validateOidcPublicJwk,
+  verifySpecificationApproval
 } from './garment-specification';
 import {
-  createProductionPatternRevision,
-  createAuthoritativeGradingArtifact,
-  createMeasurementSetSnapshot,
-  createAuthoritativeMeasurementSet,
   approveAuthoritativeMeasurementSet,
+  approvePatternRevision,
+  createAuthoritativeGradingArtifact,
+  createAuthoritativeMeasurementSet,
+  createMeasurementSetSnapshot,
+  createProductionPatternRevision,
   isMisleadingChartApproverIdentity,
   NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS,
+  signPatternRevisionApprovalPayload,
   transitionMeasurementProvenance,
-  validateMeasurementProvenanceEvidence
+  validateMeasurementProvenanceEvidence,
+  validatePatternRevision
 } from './pattern-revision-snapshot';
 import {
   evaluatePipelineDependencyIntegrity,
@@ -500,31 +504,13 @@ describe('Milestone 04.6.2.3.6 — Residual Security Findings Remediation', () =
       });
 
       const measurements = { ...sizeM, skirtLength: 65 };
-      const designSpec = {
-        id: approvedSpec.garmentId,
-        name: approvedSpec.name,
-        prompt: 'M046236 F03 test skirt',
-        version: approvedSpec.version,
-        garmentCategory: 'skirt' as const,
-        silhouette: approvedSpec.silhouette,
-        waistband: approvedSpec.waistband,
-        easeProfile: approvedSpec.easeProfile,
-        explicitEaseCm: approvedSpec.explicitEaseCm,
-        lengthCm: approvedSpec.lengthCm,
-        fabric: standardFabric,
-        color: { name: 'Obsidian', hex: '#222222' },
-        constructionFeatures: [],
-        designNotes: ['Test specification'],
-        isApproved: true,
-        approvedBy: 'Elena Rostova',
-        specificationRevisionId: approvedSpec.specificationRevisionId
-      };
+      const designSpec = convertToDesignSpecification(approvedSpec);
 
       const pieces = draftSkirtBlock(measurements, designSpec);
       const validation = validatePatternDraft(pieces);
       const gradedPatternSet = gradePattern(designSpec);
 
-      const snapshot = createProductionPatternRevision({
+      const draftSnapshot = createProductionPatternRevision({
         projectId: 'tenant-m046236-01',
         revisionId: 'rev-f03-v1-M',
         targetSize: 'M',
@@ -542,6 +528,60 @@ describe('Milestone 04.6.2.3.6 — Residual Security Findings Remediation', () =
         patternPieces: pieces,
         validation,
         physicalValidationStatus: 'not-assessed'
+      });
+
+      const patKey = deriveEd25519SigningKeyPair('ed25519-f03-pat-01', 'm046236-f03-pattern-seed-01', {
+        ownerPrincipal: 'Elena Rostova (Principal Patternmaker)',
+        tenantId: 'tenant-m046236-01',
+        allowedScopes: ['pattern:approve']
+      });
+      const patCryptoVerifier = createTrustedCryptographicVerifier({
+        publicKeyRegistry: [
+          createControlledPublicKeyRegistration({
+            keyId: patKey.keyId,
+            publicKeyHex: patKey.publicKeyHex,
+            principalId: 'Elena Rostova (Principal Patternmaker)',
+            tenantId: 'tenant-m046236-01',
+            allowedScopes: ['pattern:approve'],
+            activatedAt: '2026-01-01T00:00:00.000Z',
+            expiresAt: '2027-01-01T00:00:00.000Z'
+          })
+        ]
+      });
+      const validatedSnapshot = validatePatternRevision(draftSnapshot, {
+        validatedAt: '2026-11-12T10:02:00.000Z'
+      });
+      const patSig = signPatternRevisionApprovalPayload(
+        {
+          schemaVersion: 'm05.1-pattern-approval-v1',
+          projectId: 'tenant-m046236-01',
+          tenantId: 'tenant-m046236-01',
+          garmentId: approvedSpec.garmentId,
+          patternRevisionId: validatedSnapshot.revisionId,
+          patternRevisionNumber: validatedSnapshot.revisionIndex,
+          basePatternFingerprint: validatedSnapshot.basePatternFingerprint!,
+          geometryFingerprint: validatedSnapshot.geometryFingerprint!,
+          sourceSpecificationFingerprint: validatedSnapshot.sourceSpecificationFingerprint!,
+          sourceMeasurementSetFingerprint: validatedSnapshot.sourceMeasurementSetFingerprint!,
+          approvalEventId: 'pat-app-f03-01',
+          approverPrincipal: 'Elena Rostova (Principal Patternmaker)',
+          authorityTier: 'cryptographic_principal',
+          approvalScope: 'pattern:approve',
+          approvalTimestamp: '2026-11-12T10:05:00.000Z'
+        },
+        {
+          keyId: patKey.keyId,
+          privateKeyHex: patKey.privateKeyHex,
+          tenantId: 'tenant-m046236-01'
+        }
+      );
+      const snapshot = approvePatternRevision(validatedSnapshot, {
+        approverName: 'Elena Rostova (Principal Patternmaker)',
+        approvedAt: '2026-11-12T10:05:00.000Z',
+        approvalEventId: 'pat-app-f03-01',
+        authorityTier: 'cryptographic_principal',
+        cryptographicVerifier: patCryptoVerifier,
+        cryptographicSignature: patSig
       });
 
       const measFp = computeArtifactInputFingerprint({
@@ -601,7 +641,8 @@ describe('Milestone 04.6.2.3.6 — Residual Security Findings Remediation', () =
         snapshot,
         gradingArtifact,
         verificationContext: {
-          identityVerifier: verifier
+          identityVerifier: verifier,
+          cryptographicVerifier: patCryptoVerifier
         }
       };
     }

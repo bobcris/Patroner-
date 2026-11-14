@@ -42,6 +42,7 @@ import {
   VerifiableIdentityCredential
 } from './garment-specification-types';
 import {
+  canonicalizePatternApprovalSigningPayload,
   computeSpecificationFingerprint,
   verifySpecificationApproval
 } from './garment-specification';
@@ -71,6 +72,7 @@ import {
   MeasurementOrigin,
   MeasurementProvenanceEvidence,
   MeasurementSetSnapshot,
+  PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION,
   PatternInvalidationCause,
   PatternInvalidationRecord,
   PatternPieceSnapshot,
@@ -1393,7 +1395,8 @@ export function computePieceGeometryFingerprint(piece: PatternPieceSnapshot): st
     drillHoles: piece.drillHoles ?? null,
     boundingBox: piece.boundingBox,
     stitchingContour: piece.stitchingContour ?? null,
-    cuttingContour: piece.cuttingContour ?? null
+    cuttingContour: piece.cuttingContour ?? null,
+    offsetDiagnostics: piece.offsetDiagnostics ?? null
   };
   return computeCanonicalFingerprint(payload);
 }
@@ -1419,6 +1422,9 @@ export function computeGeometryFingerprint(
 /**
  * Computes the deterministic SHA-256 `draftingConfigFingerprint` over drafting configuration,
  * fabric specification, and deterministic engine provenance (`Milestone 05.1 Amendment 1`).
+ *
+ * Determinism boundary: includes sub-engine versions (`draftingEngineVersion`, `gradingEngineVersion`,
+ * `validationEngineVersion`, `fabricEngineVersion`) and excludes non-deterministic `buildTimestamp`.
  */
 export function computeDraftingConfigFingerprint(params: {
   readonly draftingConfiguration: DraftingConfigurationSnapshot;
@@ -1430,6 +1436,10 @@ export function computeDraftingConfigFingerprint(params: {
     fabricSpecification: params.fabricSpecification,
     engineProvenance: {
       engineVersion: params.engineProvenance.engineVersion,
+      draftingEngineVersion: params.engineProvenance.draftingEngineVersion ?? null,
+      gradingEngineVersion: params.engineProvenance.gradingEngineVersion ?? null,
+      validationEngineVersion: params.engineProvenance.validationEngineVersion ?? null,
+      fabricEngineVersion: params.engineProvenance.fabricEngineVersion ?? null,
       appVersion: params.engineProvenance.appVersion ?? null,
       gitCommit: params.engineProvenance.gitCommit ?? null,
       snapshotEngine: params.engineProvenance.snapshotEngine ?? null
@@ -1551,6 +1561,10 @@ export function computeBasePatternContentFingerprint(snapshot: {
     assemblySummary: snapshot.assemblySummary ?? null,
     engineProvenance: {
       engineVersion: snapshot.engineProvenance.engineVersion,
+      draftingEngineVersion: snapshot.engineProvenance.draftingEngineVersion ?? null,
+      gradingEngineVersion: snapshot.engineProvenance.gradingEngineVersion ?? null,
+      validationEngineVersion: snapshot.engineProvenance.validationEngineVersion ?? null,
+      fabricEngineVersion: snapshot.engineProvenance.fabricEngineVersion ?? null,
       appVersion: snapshot.engineProvenance.appVersion ?? null,
       gitCommit: snapshot.engineProvenance.gitCommit ?? null,
       snapshotEngine: snapshot.engineProvenance.snapshotEngine ?? null
@@ -1687,6 +1701,10 @@ export function createProductionPatternRevision(
   // 5. Engine Provenance
   const engineProvenance: EngineProvenanceRecord = {
     engineVersion: input.engineProvenance?.engineVersion ?? CURRENT_ENGINE_VERSION,
+    draftingEngineVersion: input.engineProvenance?.draftingEngineVersion,
+    gradingEngineVersion: input.engineProvenance?.gradingEngineVersion,
+    validationEngineVersion: input.engineProvenance?.validationEngineVersion,
+    fabricEngineVersion: input.engineProvenance?.fabricEngineVersion,
     appVersion: input.engineProvenance?.appVersion,
     gitCommit: input.engineProvenance?.gitCommit,
     buildTimestamp: input.engineProvenance?.buildTimestamp ?? new Date().toISOString(),
@@ -2286,7 +2304,11 @@ export function createAuthoritativeGradingArtifact(
     const gps = input.gradedPatternSet;
     for (const sz of sizeRange) {
       const szRes = gps.sizeResults[sz];
-      if (!szRes) continue;
+      if (!szRes) {
+        throw new ProductionSnapshotValidationError(
+          `Grading artifact creation failed (fail-closed): gradedPatternSet is missing sizeResult for declared size '${sz}'.`
+        );
+      }
       if (sz === baseSize && input.basePatternPieces && input.basePatternPieces.length > 0) {
         perSizePatternGeometry[sz] = input.basePatternPieces.map(p =>
           'stitchingContour' in p && p.boundingBox && 'basis' in p.boundingBox
@@ -2294,11 +2316,43 @@ export function createAuthoritativeGradingArtifact(
             : serializePatternPieceSnapshot(p as PatternPiece, sz)
         );
       } else {
-        const rawPieces: PatternPiece[] = [
-          ...szRes.bodicePieces,
-          ...(szRes.sleevePiece ? [szRes.sleevePiece] : [])
-        ];
-        perSizePatternGeometry[sz] = rawPieces.map(p => serializePatternPieceSnapshot(p, sz));
+        const ext = szRes as unknown as {
+          readonly pieces?: readonly PatternPiece[];
+          readonly bodicePieces?: readonly PatternPiece[];
+          readonly sleevePiece?: PatternPiece;
+          readonly skirtPieces?: readonly PatternPiece[];
+          readonly trouserPieces?: readonly PatternPiece[];
+        };
+        const collected: PatternPiece[] = [];
+        const seenKeys = new Set<string>();
+        const pushUniquePiece = (p: PatternPiece | undefined) => {
+          if (!p || typeof p !== 'object') return;
+          const key = p.id || p.pieceCode;
+          if (key && seenKeys.has(key)) return;
+          if (key) seenKeys.add(key);
+          collected.push(p);
+        };
+        if (Array.isArray(ext.pieces)) {
+          for (const p of ext.pieces) pushUniquePiece(p);
+        }
+        if (Array.isArray(ext.bodicePieces)) {
+          for (const p of ext.bodicePieces) pushUniquePiece(p);
+        }
+        if (ext.sleevePiece) {
+          pushUniquePiece(ext.sleevePiece);
+        }
+        if (Array.isArray(ext.skirtPieces)) {
+          for (const p of ext.skirtPieces) pushUniquePiece(p);
+        }
+        if (Array.isArray(ext.trouserPieces)) {
+          for (const p of ext.trouserPieces) pushUniquePiece(p);
+        }
+        if (collected.length === 0) {
+          throw new ProductionSnapshotValidationError(
+            `Grading artifact creation failed (fail-closed): graded size '${sz}' produced zero pattern pieces.`
+          );
+        }
+        perSizePatternGeometry[sz] = collected.map(p => serializePatternPieceSnapshot(p, sz));
       }
       const ovVal = rawGeomValInput?.[sz];
       const isValid = ovVal !== undefined
@@ -2785,9 +2839,52 @@ export function verifyGradingArtifactIntegrity(
 // MILESTONE 05.1: AUTHORITATIVE PATTERN REVISION LIFECYCLE & TRANSITIONS
 // ============================================================================
 
+const ALLOWED_PATTERN_TRANSITIONS: Readonly<
+  Record<PatternRevisionLifecycleState, readonly PatternRevisionLifecycleState[]>
+> = {
+  draft: ['draft', 'validated', 'invalidated'],
+  validated: ['approved', 'superseded', 'invalidated'],
+  approved: ['superseded', 'invalidated'],
+  superseded: ['invalidated', 'archived'],
+  invalidated: ['archived'],
+  archived: []
+};
+
+function expectedPatternEventTypeForTransition(
+  fromState: PatternRevisionLifecycleState | null,
+  toState: PatternRevisionLifecycleState
+): PatternRevisionLifecycleEvent['eventType'] | null {
+  if (fromState === null) {
+    return toState === 'draft' ? 'draft-created' : null;
+  }
+  if (!ALLOWED_PATTERN_TRANSITIONS[fromState]?.includes(toState)) {
+    return null;
+  }
+  switch (toState) {
+    case 'draft':
+      return 'draft-updated';
+    case 'validated':
+      return 'validated';
+    case 'approved':
+      return 'approved';
+    case 'superseded':
+      return 'superseded';
+    case 'invalidated':
+      return 'invalidated';
+    case 'archived':
+      return 'archived';
+    default:
+      return null;
+  }
+}
+
 /**
  * Verifies the content integrity and append-only hash-chained lifecycle integrity
  * of an AuthoritativePatternRevision (Amendment 1 & Amendment 2).
+ *
+ * Strictly structural: enforces transition state machine rules, hash-chain continuity,
+ * and structural presence of transition metadata, while keeping live cryptographic signature/OIDC
+ * authorization verification cleanly separated (`Safeguard 1`).
  */
 export function verifyPatternRevisionLifecycleIntegrity(
   revision: AuthoritativePatternRevision | undefined
@@ -2881,7 +2978,7 @@ export function verifyPatternRevisionLifecycleIntegrity(
     errors.push('Pattern revision basePatternFingerprint and contentFingerprint must be identical.');
   }
 
-  // 2. Verify append-only lifecycleHistory hash chain (Amendment 2)
+  // 2. Verify append-only lifecycleHistory hash chain, transition state machine, and required metadata
   const history = revision.lifecycleHistory;
   if (!Array.isArray(history) || history.length === 0) {
     isLifecycleTampered = true;
@@ -2889,6 +2986,7 @@ export function verifyPatternRevisionLifecycleIntegrity(
   } else {
     let expectedPreviousEventFp: string | null = null;
     let expectedFromState: PatternRevisionLifecycleState | null = null;
+    let latestApprovedRecord: PatternRevisionApprovalRecord | undefined;
 
     for (let i = 0; i < history.length; i++) {
       const ev = history[i];
@@ -2923,6 +3021,98 @@ export function verifyPatternRevisionLifecycleIntegrity(
         errors.push(
           `Lifecycle event '${ev.eventId}' at index ${i} has discontinuous state transition: fromState '${String(ev.fromState)}' !== prior toState '${String(expectedFromState)}'.`
         );
+      } else {
+        const expectedEvType = expectedPatternEventTypeForTransition(ev.fromState, ev.toState);
+        if (!expectedEvType) {
+          isLifecycleTampered = true;
+          errors.push(
+            `Illegal lifecycle transition in event '${ev.eventId}' at index ${i}: '${String(ev.fromState)}' -> '${String(ev.toState)}' is not permitted.`
+          );
+        } else if (ev.eventType !== expectedEvType) {
+          isLifecycleTampered = true;
+          errors.push(
+            `Lifecycle event '${ev.eventId}' at index ${i} has inconsistent eventType '${String(ev.eventType)}' for transition '${String(ev.fromState)}' -> '${String(ev.toState)}' (expected '${expectedEvType}').`
+          );
+        }
+      }
+
+      if (ev.toState === 'approved') {
+        const rec = ev.approvalRecord;
+        if (!rec || typeof rec !== 'object') {
+          isLifecycleTampered = true;
+          errors.push(`Approved lifecycle event '${ev.eventId}' is missing required approvalRecord.`);
+        } else {
+          if (rec.patternRevisionId !== revision.revisionId) {
+            isLifecycleTampered = true;
+            errors.push(`Approved lifecycle event '${ev.eventId}' approvalRecord.patternRevisionId diverges from revisionId.`);
+          }
+          if (rec.boundBasePatternFingerprint !== recomputedBasePatternFp) {
+            isLifecycleTampered = true;
+            errors.push(`Approved lifecycle event '${ev.eventId}' boundBasePatternFingerprint diverges from recomputed basePatternFingerprint.`);
+          }
+          if (rec.boundGeometryFingerprint !== recomputedGeometryFp) {
+            isLifecycleTampered = true;
+            errors.push(`Approved lifecycle event '${ev.eventId}' boundGeometryFingerprint diverges from recomputed geometryFingerprint.`);
+          }
+          if (rec.approvalScope !== 'pattern:approve') {
+            isLifecycleTampered = true;
+            errors.push(
+              `Approved lifecycle event '${ev.eventId}' has invalid approvalScope '${String(rec.approvalScope)}' (must be 'pattern:approve').`
+            );
+          }
+          if (rec.authorityTier !== 'authenticated_designer' && rec.authorityTier !== 'cryptographic_principal') {
+            isLifecycleTampered = true;
+            errors.push(
+              `Approved lifecycle event '${ev.eventId}' has non-authoritative authorityTier '${String(rec.authorityTier)}'.`
+            );
+          }
+          if (!rec.isApprovalAuthenticated) {
+            isLifecycleTampered = true;
+            errors.push(`Approved lifecycle event '${ev.eventId}' is missing isApprovalAuthenticated=true claim.`);
+          }
+          if (rec.authorityTier === 'authenticated_designer') {
+            if (
+              !rec.verifiedIdentity ||
+              rec.verifiedIdentity.verificationMethod !== 'OIDC-JWT-EdDSA' ||
+              !rec.verifiedIdentity.tokenDigest ||
+              !rec.verifiedIdentity.jti ||
+              rec.verifiedIdentity.approvalScope !== 'pattern:approve'
+            ) {
+              isLifecycleTampered = true;
+              errors.push(`Approved lifecycle event '${ev.eventId}' (Tier 3) is missing complete OIDC-JWT-EdDSA verifiedIdentity metadata.`);
+            }
+          } else if (rec.authorityTier === 'cryptographic_principal') {
+            if (
+              !rec.cryptographicSignature ||
+              rec.cryptographicSignature.algorithm !== 'Ed25519' ||
+              !rec.cryptographicSignature.signatureHex ||
+              !rec.cryptographicSignature.keyId
+            ) {
+              isLifecycleTampered = true;
+              errors.push(`Approved lifecycle event '${ev.eventId}' (Tier 4) is missing complete Ed25519 cryptographicSignature metadata.`);
+            }
+          }
+          latestApprovedRecord = rec;
+        }
+      } else if (ev.toState === 'superseded') {
+        if (!ev.supersededByRevisionId || ev.supersededByRevisionId.trim() === '' || ev.supersededByRevisionId === revision.revisionId) {
+          isLifecycleTampered = true;
+          errors.push(`Superseded lifecycle event '${ev.eventId}' is missing a valid distinct supersededByRevisionId.`);
+        }
+      } else if (ev.toState === 'invalidated') {
+        const inv = ev.invalidationRecord;
+        if (
+          !inv ||
+          !inv.cause ||
+          !inv.reason ||
+          inv.reason.trim() === '' ||
+          !inv.invalidatedBy ||
+          inv.invalidatedBy.trim() === '' ||
+          !isValidIsoDate(inv.invalidatedAt)
+        ) {
+          isLifecycleTampered = true;
+          errors.push(`Invalidated lifecycle event '${ev.eventId}' is missing a complete PatternInvalidationRecord.`);
+        }
       }
 
       const recomputedEvFp = computePatternLifecycleEventFingerprint(ev);
@@ -2942,6 +3132,22 @@ export function verifyPatternRevisionLifecycleIntegrity(
       isLifecycleTampered = true;
       errors.push(
         `Pattern revision currentLifecycleState '${revision.currentLifecycleState}' disagrees with derived lifecycleHistory state '${derivedState}'.`
+      );
+    }
+
+    if (derivedState === 'approved' && (!latestApprovedRecord || !revision.patternApprovalRecord)) {
+      isLifecycleTampered = true;
+      errors.push(
+        `Pattern revision '${revision.revisionId}' claims derived state 'approved' without structural approval event/record evidence.`
+      );
+    } else if (
+      latestApprovedRecord &&
+      revision.patternApprovalRecord &&
+      canonicalizeJson(revision.patternApprovalRecord) !== canonicalizeJson(latestApprovedRecord)
+    ) {
+      isLifecycleTampered = true;
+      errors.push(
+        `Pattern revision '${revision.revisionId}' patternApprovalRecord diverges from latest 'approved' lifecycle event.`
       );
     }
 
@@ -3027,22 +3233,16 @@ function appendPatternRevisionLifecycleEvent(
   const existingHistory = revision.lifecycleHistory ?? [];
   const latestEvent = existingHistory[existingHistory.length - 1];
   const fromState = revision.currentLifecycleState ?? derivePatternRevisionLifecycleState(existingHistory);
+  const eventType = expectedPatternEventTypeForTransition(fromState, params.toState);
+  if (!eventType) {
+    throw new ProductionSnapshotValidationError(
+      `Illegal lifecycle transition: pattern revision '${revision.revisionId}' cannot transition from '${fromState}' to '${params.toState}'.`
+    );
+  }
+
   const contentFingerprint = revision.contentFingerprint ?? revision.basePatternFingerprint!;
   const eventIndex = existingHistory.length;
   const eventId = (params.eventId ?? '').trim() || `evt-pat-${revision.revisionId}-${eventIndex}-${params.toState}`;
-
-  const eventType: PatternRevisionLifecycleEvent['eventType'] =
-    params.toState === 'validated'
-      ? 'validated'
-      : params.toState === 'approved'
-        ? 'approved'
-        : params.toState === 'superseded'
-          ? 'superseded'
-          : params.toState === 'invalidated'
-            ? 'invalidated'
-            : params.toState === 'archived'
-              ? 'archived'
-              : 'draft-updated';
 
   const eventPrelim: Omit<PatternRevisionLifecycleEvent, 'lifecycleEventFingerprint'> = {
     eventId,
@@ -3432,26 +3632,27 @@ export function signPatternRevisionApprovalPayload(
       ? generateEd25519KeyPairFromRawSeedHex(secretSeed.trim())
       : generateEd25519KeyPairFromPassphrase(secretSeed);
 
-  // Bind revision.revisionId as specificationRevisionId and revision.contentFingerprint as canonicalSpecificationFingerprint
-  // so TrustedCryptographicVerifier.verifyApprovalSignature enforces exact target binding to the pattern revision
-  const bindingPayload = {
-    schemaVersion: '04.6.2.3.4-canonical-spec-v1',
+  const bindingPayload: CanonicalPatternApprovalSigningPayload = {
+    schemaVersion: PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION,
     projectId: payload.projectId,
     tenantId: payload.tenantId || keyConfig.tenantId || payload.projectId,
     garmentId: payload.garmentId,
-    specificationRevisionId: payload.patternRevisionId,
-    specificationVersion: payload.patternRevisionNumber,
-    canonicalSpecificationFingerprint: payload.basePatternFingerprint,
+    patternRevisionId: payload.patternRevisionId,
+    patternRevisionNumber: payload.patternRevisionNumber,
+    basePatternFingerprint: payload.basePatternFingerprint,
+    geometryFingerprint: payload.geometryFingerprint,
+    sourceSpecificationFingerprint: payload.sourceSpecificationFingerprint,
+    sourceMeasurementSetFingerprint: payload.sourceMeasurementSetFingerprint,
     approvalEventId: payload.approvalEventId,
     approverPrincipal: payload.approverPrincipal,
-    authorityTier: 'cryptographic_principal' as const,
-    approvalScope: 'specification:approve',
+    authorityTier: 'cryptographic_principal',
+    approvalScope: 'pattern:approve',
     approvalTimestamp: payload.approvalTimestamp,
     keyId: keyConfig.keyId.trim(),
     algorithm: 'Ed25519'
   };
 
-  const canonicalJson = canonicalizeJson(bindingPayload);
+  const canonicalJson = canonicalizePatternApprovalSigningPayload(bindingPayload);
   const payloadFp = sha256Hex(canonicalJson);
   const sigObj = signEd25519Message(canonicalJson, kp.privateKeyHex, {
     inputFormat: 'raw-seed-hex'
@@ -3614,7 +3815,8 @@ export function approvePatternRevision(
     throw new ProductionSnapshotValidationError(`Invalid pattern approval timestamp '${approvedAt}'.`);
   }
   const approvalEventId = (options.approvalEventId ?? '').trim() || `pat-app-evt-${revision.revisionId}`;
-  const contentFingerprint = revision.contentFingerprint ?? revision.basePatternFingerprint!;
+  const contentFingerprint = integrity.recomputedBasePatternFingerprint ?? revision.contentFingerprint ?? revision.basePatternFingerprint!;
+  const geometryFingerprint = integrity.recomputedGeometryFingerprint ?? revision.geometryFingerprint ?? computeGeometryFingerprint(revision.patternPieces);
   const garmentId = revision.sourceSpecificationId ?? revision.designSpecification.id;
 
   let approvalRecord: PatternRevisionApprovalRecord;
@@ -3637,16 +3839,21 @@ export function approvePatternRevision(
     }
 
     const idRes = options.identityVerifier.verifyCredential(options.identityCredential, {
+      expectedScope: 'pattern:approve',
       expectedSpecificationId: garmentId,
       expectedRevisionId: revision.revisionId,
-      expectedSpecificationFingerprint: contentFingerprint,
+      expectedPatternRevisionId: revision.revisionId,
+      expectedBasePatternFingerprint: contentFingerprint,
+      expectedGeometryFingerprint: geometryFingerprint,
+      expectedSourceSpecificationFingerprint: revision.sourceSpecificationFingerprint,
+      expectedSourceMeasurementSetFingerprint: revision.sourceMeasurementSetFingerprint,
       expectedApprover: approverName,
       approvalTimestamp: approvedAt,
       expectedTenantId: revision.projectId,
       requireTargetBinding: true
     });
 
-    if (!idRes.verified || !idRes.isValid || !idRes.provenance) {
+    if (!idRes.verified || !idRes.isValid || !idRes.provenance || idRes.provenance.approvalScope !== 'pattern:approve') {
       throw new ProductionSnapshotValidationError(
         `Pattern revision Tier 3 identity verification failed (fail-closed): ${idRes.reason ?? 'credential rejected by TrustedIdentityVerifier'}.`
       );
@@ -3656,12 +3863,14 @@ export function approvePatternRevision(
       approvalEventId,
       patternRevisionId: revision.revisionId,
       boundBasePatternFingerprint: contentFingerprint,
+      boundGeometryFingerprint: geometryFingerprint,
       boundSpecificationFingerprint: revision.sourceSpecificationFingerprint,
       boundMeasurementSetFingerprint: revision.sourceMeasurementSetFingerprint,
       approverName,
       approverRole: (options.approverRole ?? 'lead-pattern-engineer').trim(),
       approvedAt,
       authorityTier: 'authenticated_designer',
+      approvalScope: 'pattern:approve',
       isApprovalAuthenticated: true,
       isApprovalCryptographicallySigned: false,
       verifiedIdentity: idRes.provenance as unknown as PatternRevisionApprovalRecord['verifiedIdentity']
@@ -3669,10 +3878,10 @@ export function approvePatternRevision(
   } else {
     if (
       !options.cryptographicVerifier ||
-      typeof options.cryptographicVerifier.verifyApprovalSignature !== 'function'
+      typeof options.cryptographicVerifier.verifyPatternApprovalSignature !== 'function'
     ) {
       throw new ProductionSnapshotValidationError(
-        `Pattern revision approval failed (fail-closed): Tier 4 ('cryptographic_principal') requires an active TrustedCryptographicVerifier, but none was provided.`
+        `Pattern revision approval failed (fail-closed): Tier 4 ('cryptographic_principal') requires an active TrustedCryptographicVerifier with verifyPatternApprovalSignature(), but none was provided.`
       );
     }
     if (!options.cryptographicSignature) {
@@ -3681,29 +3890,32 @@ export function approvePatternRevision(
       );
     }
 
-    const expectedBindingPayload = {
-      schemaVersion: '04.6.2.3.4-canonical-spec-v1',
+    const expectedBindingPayload: CanonicalPatternApprovalSigningPayload = {
+      schemaVersion: PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION,
       projectId: revision.projectId,
       tenantId: revision.projectId,
       garmentId,
-      specificationRevisionId: revision.revisionId,
-      specificationVersion: revision.revisionIndex,
-      canonicalSpecificationFingerprint: contentFingerprint,
+      patternRevisionId: revision.revisionId,
+      patternRevisionNumber: revision.revisionIndex,
+      basePatternFingerprint: contentFingerprint,
+      geometryFingerprint,
+      sourceSpecificationFingerprint: revision.sourceSpecificationFingerprint ?? '',
+      sourceMeasurementSetFingerprint: revision.sourceMeasurementSetFingerprint ?? '',
       approvalEventId,
       approverPrincipal: approverName,
-      authorityTier: 'cryptographic_principal' as const,
-      approvalScope: 'specification:approve',
+      authorityTier: 'cryptographic_principal',
+      approvalScope: 'pattern:approve',
       approvalTimestamp: approvedAt,
       keyId: options.cryptographicSignature.keyId,
       algorithm: 'Ed25519'
     };
 
-    const cryptoRes = options.cryptographicVerifier.verifyApprovalSignature(
+    const cryptoRes = options.cryptographicVerifier.verifyPatternApprovalSignature(
       options.cryptographicSignature,
       expectedBindingPayload
     );
 
-    if (!cryptoRes.verified || !cryptoRes.isValid) {
+    if (!cryptoRes.verified || !cryptoRes.isValid || cryptoRes.verifiedScope !== 'pattern:approve') {
       throw new ProductionSnapshotValidationError(
         `Pattern revision Tier 4 cryptographic verification failed (fail-closed): ${cryptoRes.reason ?? 'signature rejected by TrustedCryptographicVerifier'}.`
       );
@@ -3713,12 +3925,14 @@ export function approvePatternRevision(
       approvalEventId,
       patternRevisionId: revision.revisionId,
       boundBasePatternFingerprint: contentFingerprint,
+      boundGeometryFingerprint: geometryFingerprint,
       boundSpecificationFingerprint: revision.sourceSpecificationFingerprint,
       boundMeasurementSetFingerprint: revision.sourceMeasurementSetFingerprint,
       approverName,
       approverRole: (options.approverRole ?? 'principal-pattern-engineer').trim(),
       approvedAt,
       authorityTier: 'cryptographic_principal',
+      approvalScope: 'pattern:approve',
       isApprovalAuthenticated: true,
       isApprovalCryptographicallySigned: true,
       cryptographicSignature: options.cryptographicSignature as unknown as PatternRevisionApprovalRecord['cryptographicSignature']
@@ -3809,6 +4023,15 @@ export function invalidatePatternRevision(
     throw new ProductionSnapshotValidationError(
       `Cannot invalidate pattern revision '${revision.revisionId}': revision is already archived.`
     );
+  }
+  if (currentState === 'invalidated') {
+    const integrity = verifyPatternRevisionLifecycleIntegrity(revision);
+    if (!integrity.isValid) {
+      throw new ProductionSnapshotValidationError(
+        `Cannot idempotently invalidate pattern revision '${revision.revisionId}': existing revision failed integrity verification (${integrity.reason}).`
+      );
+    }
+    return revision;
   }
 
   const invalidatedAt = input.invalidatedAt ?? new Date().toISOString();

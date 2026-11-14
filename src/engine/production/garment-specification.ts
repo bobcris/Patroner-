@@ -89,8 +89,10 @@ import {
   VerifiedIdentityProvenance
 } from './garment-specification-types';
 import {
+  CanonicalPatternApprovalSigningPayload,
   EngineProvenanceRecord,
   FabricSnapshotProvenance,
+  PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION,
   ProductionSnapshotValidationError
 } from './production-types';
 
@@ -1353,6 +1355,18 @@ export interface IssueIdentityCredentialParams {
   targetRevisionId?: string;
   /** Bound target canonical specification fingerprint (`target_specification_fingerprint`, `FINDING-06`) */
   targetSpecificationFingerprint?: string;
+  /** Optional token use override (`'specification_approval'` or `'pattern_approval'`) */
+  use?: 'specification_approval' | 'pattern_approval' | string;
+  /** Bound pattern revision ID (`pattern_revision_id`, `AUDIT-05.1-05`) */
+  patternRevisionId?: string;
+  /** Bound immutable base pattern fingerprint (`base_pattern_fingerprint`, `AUDIT-05.1-05`) */
+  basePatternFingerprint?: string;
+  /** Bound pattern geometry fingerprint (`geometry_fingerprint`, `Safeguard 1`) */
+  geometryFingerprint?: string;
+  /** Bound upstream specification fingerprint (`source_specification_fingerprint`, `Safeguard 1`) */
+  sourceSpecificationFingerprint?: string;
+  /** Bound upstream measurement set fingerprint (`source_measurement_set_fingerprint`, `Safeguard 1`) */
+  sourceMeasurementSetFingerprint?: string;
   /** Optional Authentication Context Class Reference (`acr`, `FINDING-07`) */
   acr?: string;
   /** Optional Authentication Methods References (`amr`, `FINDING-07`) */
@@ -1521,6 +1535,12 @@ export function issueVerifiableIdentityCredential(
     kid
   };
 
+  const isPatternScopeOnly =
+    claimsList.includes('pattern:approve') && !claimsList.includes('specification:approve');
+  const resolvedUse =
+    params.use?.trim() ||
+    (isPatternScopeOnly ? 'pattern_approval' : 'specification_approval');
+
   const payload: OidcJwtPayload = {
     iss: params.issuer.trim(),
     sub: subjectId,
@@ -1531,13 +1551,26 @@ export function issueVerifiableIdentityCredential(
     jti,
     name: displayName,
     tid: params.tenantId?.trim(),
-    use: 'specification_approval',
+    use: resolvedUse,
     scope: claimsList.join(' '),
     roles: [...claimsList],
     ...(params.specificationId ? { spec_id: params.specificationId.trim() } : {}),
     ...(params.targetRevisionId ? { target_revision_id: params.targetRevisionId.trim() } : {}),
     ...(params.targetSpecificationFingerprint
       ? { target_specification_fingerprint: params.targetSpecificationFingerprint.trim().toLowerCase() }
+      : {}),
+    ...(params.patternRevisionId ? { pattern_revision_id: params.patternRevisionId.trim() } : {}),
+    ...(params.basePatternFingerprint
+      ? { base_pattern_fingerprint: params.basePatternFingerprint.trim().toLowerCase() }
+      : {}),
+    ...(params.geometryFingerprint
+      ? { geometry_fingerprint: params.geometryFingerprint.trim().toLowerCase() }
+      : {}),
+    ...(params.sourceSpecificationFingerprint
+      ? { source_specification_fingerprint: params.sourceSpecificationFingerprint.trim().toLowerCase() }
+      : {}),
+    ...(params.sourceMeasurementSetFingerprint
+      ? { source_measurement_set_fingerprint: params.sourceMeasurementSetFingerprint.trim().toLowerCase() }
       : {}),
     ...(params.acr ? { acr: params.acr.trim() } : {}),
     ...(params.amr ? { amr: [...params.amr] } : {})
@@ -1577,9 +1610,15 @@ export function issueVerifiableIdentityCredential(
     keyId: kid,
     tenantId: params.tenantId?.trim(),
     jti,
+    intendedUse: resolvedUse,
     specificationId: params.specificationId?.trim(),
     targetRevisionId: params.targetRevisionId?.trim(),
     targetSpecificationFingerprint: params.targetSpecificationFingerprint?.trim().toLowerCase(),
+    patternRevisionId: params.patternRevisionId?.trim(),
+    basePatternFingerprint: params.basePatternFingerprint?.trim().toLowerCase(),
+    geometryFingerprint: params.geometryFingerprint?.trim().toLowerCase(),
+    sourceSpecificationFingerprint: params.sourceSpecificationFingerprint?.trim().toLowerCase(),
+    sourceMeasurementSetFingerprint: params.sourceMeasurementSetFingerprint?.trim().toLowerCase(),
     acr: params.acr?.trim(),
     amr: params.amr ? [...params.amr] : undefined
   };
@@ -2041,11 +2080,20 @@ export function createTrustedIdentityVerifier(
       );
     }
 
-    // 5. Validate token purpose (`use`) and approval role/scope (`specification:approve`)
-    const tokenUse = typeof payloadObj.use === 'string' ? payloadObj.use : '';
-    if (tokenUse !== 'specification_approval') {
+    // 5. Validate domain-separated token purpose (`use`) and approval role/scope (`specification:approve` vs `pattern:approve`, AUDIT-05.1-05)
+    const expectedScope = (options?.expectedScope ?? 'specification:approve').trim();
+    if (expectedScope !== 'specification:approve' && expectedScope !== 'pattern:approve') {
       return fail(
-        `OIDC/JWT token "use" claim must be "specification_approval" (received "${tokenUse}").`
+        `Unsupported approval scope "${expectedScope}". Expected "specification:approve" or "pattern:approve".`
+      );
+    }
+    const expectedTokenUse =
+      expectedScope === 'pattern:approve' ? 'pattern_approval' : 'specification_approval';
+
+    const tokenUse = typeof payloadObj.use === 'string' ? payloadObj.use.trim() : '';
+    if (tokenUse !== expectedTokenUse) {
+      return fail(
+        `OIDC/JWT token "use" claim must be "${expectedTokenUse}" for scope "${expectedScope}" (received "${tokenUse}").`
       );
     }
 
@@ -2061,9 +2109,9 @@ export function createTrustedIdentityVerifier(
         : [];
     const combinedClaims = Array.from(new Set([...roles, ...authClaims, ...scopes]));
 
-    if (!combinedClaims.includes('specification:approve')) {
+    if (!combinedClaims.includes(expectedScope)) {
       return fail(
-        'OIDC/JWT token does not grant required "specification:approve" role or scope.'
+        `OIDC/JWT token does not grant required "${expectedScope}" role or scope.`
       );
     }
 
@@ -2109,7 +2157,7 @@ export function createTrustedIdentityVerifier(
       }
     }
 
-    // 8. Validate mandatory signed target specification / revision / fingerprint binding (FINDING-06, AUDIT-04.6.2.3.5-02)
+    // 8. Validate mandatory signed target specification / pattern / fingerprint binding (FINDING-06, AUDIT-04.6.2.3.5-02, AUDIT-05.1-05, Safeguard 1)
     if (options?.requireTargetBinding === false) {
       return fail(
         'Security policy violation: disabling JWT target binding (requireTargetBinding: false) is strictly forbidden.'
@@ -2129,6 +2177,31 @@ export function createTrustedIdentityVerifier(
       typeof payloadObj.target_specification_fingerprint === 'string' &&
       payloadObj.target_specification_fingerprint.trim().length > 0
         ? payloadObj.target_specification_fingerprint.trim().toLowerCase()
+        : undefined;
+    const tokenPatternRevId =
+      typeof payloadObj.pattern_revision_id === 'string' &&
+      payloadObj.pattern_revision_id.trim().length > 0
+        ? payloadObj.pattern_revision_id.trim()
+        : undefined;
+    const tokenBasePatternFp =
+      typeof payloadObj.base_pattern_fingerprint === 'string' &&
+      payloadObj.base_pattern_fingerprint.trim().length > 0
+        ? payloadObj.base_pattern_fingerprint.trim().toLowerCase()
+        : undefined;
+    const tokenGeometryFp =
+      typeof payloadObj.geometry_fingerprint === 'string' &&
+      payloadObj.geometry_fingerprint.trim().length > 0
+        ? payloadObj.geometry_fingerprint.trim().toLowerCase()
+        : undefined;
+    const tokenSourceSpecFp =
+      typeof payloadObj.source_specification_fingerprint === 'string' &&
+      payloadObj.source_specification_fingerprint.trim().length > 0
+        ? payloadObj.source_specification_fingerprint.trim().toLowerCase()
+        : undefined;
+    const tokenSourceMeasFp =
+      typeof payloadObj.source_measurement_set_fingerprint === 'string' &&
+      payloadObj.source_measurement_set_fingerprint.trim().length > 0
+        ? payloadObj.source_measurement_set_fingerprint.trim().toLowerCase()
         : undefined;
 
     const wrapperSpecId =
@@ -2164,54 +2237,198 @@ export function createTrustedIdentityVerifier(
         'Credential wrapper targetSpecificationFingerprint does not match signed JWT target_specification_fingerprint claim.'
       );
     }
-
-    // Signed JWT target-binding claims ("spec_id", "target_revision_id", "target_specification_fingerprint")
-    // are mandatory across ALL identity verification entry points (AUDIT-04.6.2.3.5-02).
-    if (!tokenSpecId || !tokenTargetRevId || !tokenTargetFp) {
+    if (
+      credential.patternRevisionId !== undefined &&
+      credential.patternRevisionId.trim() !== tokenPatternRevId
+    ) {
       return fail(
-        'OIDC/JWT approval credential is missing required target-binding claims ("spec_id", "target_revision_id", and "target_specification_fingerprint"). Unbound tokens cannot approve a garment specification.'
+        `Credential wrapper patternRevisionId "${credential.patternRevisionId}" does not match signed JWT pattern_revision_id claim "${String(tokenPatternRevId)}".`
+      );
+    }
+    if (
+      credential.basePatternFingerprint !== undefined &&
+      credential.basePatternFingerprint.trim().toLowerCase() !== tokenBasePatternFp
+    ) {
+      return fail(
+        'Credential wrapper basePatternFingerprint does not match signed JWT base_pattern_fingerprint claim.'
+      );
+    }
+    if (
+      credential.geometryFingerprint !== undefined &&
+      credential.geometryFingerprint.trim().toLowerCase() !== tokenGeometryFp
+    ) {
+      return fail(
+        'Credential wrapper geometryFingerprint does not match signed JWT geometry_fingerprint claim.'
+      );
+    }
+    if (
+      credential.sourceSpecificationFingerprint !== undefined &&
+      credential.sourceSpecificationFingerprint.trim().toLowerCase() !== tokenSourceSpecFp
+    ) {
+      return fail(
+        'Credential wrapper sourceSpecificationFingerprint does not match signed JWT source_specification_fingerprint claim.'
+      );
+    }
+    if (
+      credential.sourceMeasurementSetFingerprint !== undefined &&
+      credential.sourceMeasurementSetFingerprint.trim().toLowerCase() !== tokenSourceMeasFp
+    ) {
+      return fail(
+        'Credential wrapper sourceMeasurementSetFingerprint does not match signed JWT source_measurement_set_fingerprint claim.'
       );
     }
 
-    if (options !== undefined) {
-      if (!options || typeof options !== 'object') {
-        return fail('Invalid identity credential verification options.');
-      }
-      const expectedSpecId =
-        typeof options.expectedSpecificationId === 'string'
-          ? options.expectedSpecificationId.trim()
-          : '';
-      const expectedRevId =
-        typeof options.expectedRevisionId === 'string'
-          ? options.expectedRevisionId.trim()
-          : '';
-      const expectedFp =
-        typeof options.expectedSpecificationFingerprint === 'string'
-          ? options.expectedSpecificationFingerprint.trim().toLowerCase()
-          : '';
-
-      if (!expectedSpecId || !expectedRevId || !expectedFp) {
+    if (expectedScope === 'pattern:approve') {
+      if (
+        !tokenSpecId ||
+        !tokenPatternRevId ||
+        !tokenBasePatternFp ||
+        !tokenGeometryFp ||
+        !tokenSourceSpecFp ||
+        !tokenSourceMeasFp
+      ) {
         return fail(
-          'OIDC/JWT verification context is incomplete: expectedSpecificationId, expectedRevisionId, and expectedSpecificationFingerprint are all mandatory.'
+          'OIDC/JWT pattern approval credential is missing required pattern target-binding claims ("spec_id", "pattern_revision_id", "base_pattern_fingerprint", "geometry_fingerprint", "source_specification_fingerprint", "source_measurement_set_fingerprint").'
+        );
+      }
+      if (tokenTargetRevId && tokenTargetRevId !== tokenPatternRevId) {
+        return fail(
+          `OIDC/JWT target_revision_id "${tokenTargetRevId}" disagrees with pattern_revision_id "${tokenPatternRevId}".`
+        );
+      }
+      if (tokenTargetFp && tokenTargetFp !== tokenBasePatternFp) {
+        return fail(
+          'OIDC/JWT target_specification_fingerprint disagrees with base_pattern_fingerprint.'
         );
       }
 
-      if (tokenSpecId !== expectedSpecId) {
+      if (options !== undefined) {
+        if (!options || typeof options !== 'object') {
+          return fail('Invalid identity credential verification options.');
+        }
+        const expectedSpecId =
+          typeof options.expectedSpecificationId === 'string'
+            ? options.expectedSpecificationId.trim()
+            : '';
+        const expectedPatRevId =
+          typeof (options.expectedPatternRevisionId ?? options.expectedRevisionId) === 'string'
+            ? (options.expectedPatternRevisionId ?? options.expectedRevisionId)!.trim()
+            : '';
+        const expectedBaseFp =
+          typeof (options.expectedBasePatternFingerprint ?? options.expectedSpecificationFingerprint) === 'string'
+            ? (options.expectedBasePatternFingerprint ?? options.expectedSpecificationFingerprint)!.trim().toLowerCase()
+            : '';
+        const expectedGeomFp =
+          typeof options.expectedGeometryFingerprint === 'string'
+            ? options.expectedGeometryFingerprint.trim().toLowerCase()
+            : '';
+        const expectedSrcSpecFp =
+          typeof options.expectedSourceSpecificationFingerprint === 'string'
+            ? options.expectedSourceSpecificationFingerprint.trim().toLowerCase()
+            : '';
+        const expectedSrcMeasFp =
+          typeof options.expectedSourceMeasurementSetFingerprint === 'string'
+            ? options.expectedSourceMeasurementSetFingerprint.trim().toLowerCase()
+            : '';
+
+        if (
+          !expectedSpecId ||
+          !expectedPatRevId ||
+          !expectedBaseFp ||
+          !expectedGeomFp ||
+          !expectedSrcSpecFp ||
+          !expectedSrcMeasFp
+        ) {
+          return fail(
+            'OIDC/JWT pattern verification context is incomplete: expectedSpecificationId, expectedPatternRevisionId, expectedBasePatternFingerprint, expectedGeometryFingerprint, expectedSourceSpecificationFingerprint, and expectedSourceMeasurementSetFingerprint are all mandatory.'
+          );
+        }
+
+        if (tokenSpecId !== expectedSpecId) {
+          return fail(
+            `OIDC/JWT garmentId mismatch: token bound to spec_id="${tokenSpecId}", expected "${expectedSpecId}".`
+          );
+        }
+        if (tokenPatternRevId !== expectedPatRevId) {
+          return fail(
+            `OIDC/JWT patternRevisionId mismatch: token bound to pattern_revision_id="${tokenPatternRevId}", expected "${expectedPatRevId}".`
+          );
+        }
+        if (tokenBasePatternFp !== expectedBaseFp) {
+          return fail(
+            `OIDC/JWT basePatternFingerprint mismatch: token bound to "${tokenBasePatternFp}", expected "${expectedBaseFp}".`
+          );
+        }
+        if (tokenGeometryFp !== expectedGeomFp) {
+          return fail(
+            `OIDC/JWT geometryFingerprint mismatch: token bound to "${tokenGeometryFp}", expected "${expectedGeomFp}".`
+          );
+        }
+        if (tokenSourceSpecFp !== expectedSrcSpecFp) {
+          return fail(
+            `OIDC/JWT sourceSpecificationFingerprint mismatch: token bound to "${tokenSourceSpecFp}", expected "${expectedSrcSpecFp}".`
+          );
+        }
+        if (tokenSourceMeasFp !== expectedSrcMeasFp) {
+          return fail(
+            `OIDC/JWT sourceMeasurementSetFingerprint mismatch: token bound to "${tokenSourceMeasFp}", expected "${expectedSrcMeasFp}".`
+          );
+        }
+      }
+    } else {
+      // Signed JWT target-binding claims ("spec_id", "target_revision_id", "target_specification_fingerprint")
+      // are mandatory across ALL specification identity verification entry points (AUDIT-04.6.2.3.5-02).
+      if (!tokenSpecId || !tokenTargetRevId || !tokenTargetFp) {
         return fail(
-          `OIDC/JWT target specificationId mismatch: token is bound to spec_id="${tokenSpecId}", but target specification is "${expectedSpecId}".`
+          'OIDC/JWT approval credential is missing required target-binding claims ("spec_id", "target_revision_id", and "target_specification_fingerprint"). Unbound tokens cannot approve a garment specification.'
         );
       }
-      if (tokenTargetRevId !== expectedRevId) {
-        return fail(
-          `OIDC/JWT targetRevisionId mismatch: token is bound to target_revision_id="${tokenTargetRevId}", but target revision is "${expectedRevId}".`
-        );
-      }
-      if (tokenTargetFp !== expectedFp) {
-        return fail(
-          `OIDC/JWT targetSpecificationFingerprint mismatch: token is bound to fingerprint "${tokenTargetFp}", but target specification fingerprint is "${expectedFp}".`
-        );
+
+      if (options !== undefined) {
+        if (!options || typeof options !== 'object') {
+          return fail('Invalid identity credential verification options.');
+        }
+        const expectedSpecId =
+          typeof options.expectedSpecificationId === 'string'
+            ? options.expectedSpecificationId.trim()
+            : '';
+        const expectedRevId =
+          typeof options.expectedRevisionId === 'string'
+            ? options.expectedRevisionId.trim()
+            : '';
+        const expectedFp =
+          typeof options.expectedSpecificationFingerprint === 'string'
+            ? options.expectedSpecificationFingerprint.trim().toLowerCase()
+            : '';
+
+        if (!expectedSpecId || !expectedRevId || !expectedFp) {
+          return fail(
+            'OIDC/JWT verification context is incomplete: expectedSpecificationId, expectedRevisionId, and expectedSpecificationFingerprint are all mandatory.'
+          );
+        }
+
+        if (tokenSpecId !== expectedSpecId) {
+          return fail(
+            `OIDC/JWT target specificationId mismatch: token is bound to spec_id="${tokenSpecId}", but target specification is "${expectedSpecId}".`
+          );
+        }
+        if (tokenTargetRevId !== expectedRevId) {
+          return fail(
+            `OIDC/JWT targetRevisionId mismatch: token is bound to target_revision_id="${tokenTargetRevId}", but target revision is "${expectedRevId}".`
+          );
+        }
+        if (tokenTargetFp !== expectedFp) {
+          return fail(
+            `OIDC/JWT targetSpecificationFingerprint mismatch: token is bound to fingerprint "${tokenTargetFp}", but target specification fingerprint is "${expectedFp}".`
+          );
+        }
       }
     }
+
+    const effectiveBoundRevId =
+      expectedScope === 'pattern:approve' ? tokenPatternRevId! : tokenTargetRevId!;
+    const effectiveBoundFp =
+      expectedScope === 'pattern:approve' ? tokenBasePatternFp! : tokenTargetFp!;
 
     // 9. Atomic JTI Replay Protection (FINDING-06)
     const tokenDigest = sha256Hex(rawJwt);
@@ -2227,6 +2444,11 @@ export function createTrustedIdentityVerifier(
       ) {
         return fail('Incomplete recorded approval binding context for credential re-verification.');
       }
+      if (reverify.recordedScope && reverify.recordedScope !== expectedScope) {
+        return fail(
+          `Recorded approval scope "${reverify.recordedScope}" does not match expected scope "${expectedScope}".`
+        );
+      }
       if (tokenDigest !== reverify.recordedTokenDigest) {
         return fail('Identity credential token digest does not match the recorded approval tokenDigest.');
       }
@@ -2237,24 +2459,39 @@ export function createTrustedIdentityVerifier(
       }
       if (
         tokenSpecId !== reverify.recordedSpecificationId.trim() ||
-        tokenTargetRevId !== reverify.recordedRevisionId.trim() ||
-        tokenTargetFp !== reverify.recordedSpecificationFingerprint.trim().toLowerCase()
+        effectiveBoundRevId !== reverify.recordedRevisionId.trim() ||
+        effectiveBoundFp !== reverify.recordedSpecificationFingerprint.trim().toLowerCase()
       ) {
         return fail(
           'Identity credential target binding does not match the recorded approval target binding.'
         );
       }
+      if (expectedScope === 'pattern:approve') {
+        if (
+          (reverify.recordedGeometryFingerprint &&
+            tokenGeometryFp !== reverify.recordedGeometryFingerprint.trim().toLowerCase()) ||
+          (reverify.recordedSourceSpecificationFingerprint &&
+            tokenSourceSpecFp !== reverify.recordedSourceSpecificationFingerprint.trim().toLowerCase()) ||
+          (reverify.recordedSourceMeasurementSetFingerprint &&
+            tokenSourceMeasFp !== reverify.recordedSourceMeasurementSetFingerprint.trim().toLowerCase())
+        ) {
+          return fail(
+            'Identity credential pattern dependency binding does not match the recorded pattern approval.'
+          );
+        }
+      }
       const existingRecord = replayStore.getConsumedRecord(jti, iss);
       if (existingRecord) {
         if (
           existingRecord.tokenDigest !== reverify.recordedTokenDigest ||
+          (existingRecord.approvalScope && existingRecord.approvalScope !== expectedScope) ||
           existingRecord.targetRevisionId !== reverify.recordedRevisionId ||
           existingRecord.targetSpecificationFingerprint !==
             reverify.recordedSpecificationFingerprint.toLowerCase() ||
           existingRecord.specificationId !== reverify.recordedSpecificationId
         ) {
           return fail(
-            `Replay detected during approval re-verification: JWT jti "${jti}" was originally consumed for a different specification or revision.`
+            `Replay detected during approval re-verification: JWT jti "${jti}" was originally consumed for a different approval domain, specification, or revision.`
           );
         }
       }
@@ -2267,9 +2504,10 @@ export function createTrustedIdentityVerifier(
             subjectId: sub,
             consumedAtIso: verifiedAtIso,
             expiresAtEpochSeconds: exp,
+            approvalScope: expectedScope,
             specificationId: tokenSpecId,
-            targetRevisionId: tokenTargetRevId,
-            targetSpecificationFingerprint: tokenTargetFp,
+            targetRevisionId: effectiveBoundRevId,
+            targetSpecificationFingerprint: effectiveBoundFp,
             tokenDigest
           },
           nowSec
@@ -2308,9 +2546,16 @@ export function createTrustedIdentityVerifier(
       providerId: iss,
       verificationMethod: 'OIDC-JWT-EdDSA',
       tokenDigest,
+      approvalScope: expectedScope,
+      tokenUse,
       targetSpecificationId: tokenSpecId,
-      targetRevisionId: tokenTargetRevId,
-      targetSpecificationFingerprint: tokenTargetFp,
+      targetRevisionId: effectiveBoundRevId,
+      targetSpecificationFingerprint: effectiveBoundFp,
+      ...(tokenPatternRevId ? { patternRevisionId: tokenPatternRevId } : {}),
+      ...(tokenBasePatternFp ? { basePatternFingerprint: tokenBasePatternFp } : {}),
+      ...(tokenGeometryFp ? { geometryFingerprint: tokenGeometryFp } : {}),
+      ...(tokenSourceSpecFp ? { sourceSpecificationFingerprint: tokenSourceSpecFp } : {}),
+      ...(tokenSourceMeasFp ? { sourceMeasurementSetFingerprint: tokenSourceMeasFp } : {}),
       acr: tokenAcr,
       amr: tokenAmr
     };
@@ -2328,8 +2573,8 @@ export function createTrustedIdentityVerifier(
       verifiedClaims: combinedClaims,
       verifiedJti: jti,
       verifiedSpecificationId: tokenSpecId,
-      verifiedTargetRevisionId: tokenTargetRevId,
-      verifiedTargetSpecificationFingerprint: tokenTargetFp,
+      verifiedTargetRevisionId: effectiveBoundRevId,
+      verifiedTargetSpecificationFingerprint: effectiveBoundFp,
       verifiedAcr: tokenAcr,
       verifiedAmr: tokenAmr,
       verifiedAt: verifiedAtIso
@@ -2433,6 +2678,35 @@ export function canonicalizeApprovalSigningPayload(
     approverPrincipal: payload.approverPrincipal,
     authorityTier: 'cryptographic_principal',
     approvalScope: 'specification:approve',
+    approvalTimestamp: payload.approvalTimestamp,
+    keyId: payload.keyId,
+    algorithm: 'Ed25519'
+  };
+  return canonicalizeJson(ordered, { preserveUndefinedAsSentinel: true });
+}
+
+/**
+ * Deterministically serializes a domain-separated pattern revision approval signing payload
+ * (`PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION`, scope `'pattern:approve'`, `AUDIT-05.1-05`).
+ */
+export function canonicalizePatternApprovalSigningPayload(
+  payload: CanonicalPatternApprovalSigningPayload
+): string {
+  const ordered: CanonicalPatternApprovalSigningPayload = {
+    schemaVersion: PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION,
+    projectId: payload.projectId,
+    tenantId: payload.tenantId || payload.projectId,
+    garmentId: payload.garmentId,
+    patternRevisionId: payload.patternRevisionId,
+    patternRevisionNumber: payload.patternRevisionNumber,
+    basePatternFingerprint: payload.basePatternFingerprint,
+    geometryFingerprint: payload.geometryFingerprint,
+    sourceSpecificationFingerprint: payload.sourceSpecificationFingerprint,
+    sourceMeasurementSetFingerprint: payload.sourceMeasurementSetFingerprint,
+    approvalEventId: payload.approvalEventId,
+    approverPrincipal: payload.approverPrincipal,
+    authorityTier: 'cryptographic_principal',
+    approvalScope: 'pattern:approve',
     approvalTimestamp: payload.approvalTimestamp,
     keyId: payload.keyId,
     algorithm: 'Ed25519'
@@ -2674,8 +2948,180 @@ export function createTrustedCryptographicVerifier(
       ? new Set(config.trustedIssuers.map(i => i.trim()))
       : null;
 
-  // Track approvalEventId -> canonicalJson to detect cross-payload replay (Crypto 10)
+  // Track approvalEventId -> domain::canonicalJson to detect cross-payload or cross-domain replay (Crypto 10, AUDIT-05.1-05)
   const consumedApprovalEvents = new Map<string, string>();
+
+  function validateKeyForScopeAndTime(
+    keyId: string,
+    approverPrincipal: string,
+    tenantId: string,
+    projectId: string,
+    approvalTimestamp: string,
+    requiredScope: 'specification:approve' | 'pattern:approve',
+    signature: VerifiableCryptographicSignature,
+    fail: (
+      reason: string,
+      trustStatus?: ControlledPublicKeyRegistration['trustStatus']
+    ) => CryptographicVerificationResult
+  ): {
+    readonly ok: true;
+    readonly keyEntry: ControlledPublicKeyRegistration;
+    readonly expectedTenant: string;
+  } | {
+    readonly ok: false;
+    readonly result: CryptographicVerificationResult;
+  } {
+    const keyEntry = registryMap.get(keyId);
+    if (!keyEntry || keyEntry.trustStatus === 'unregistered_key' || keyEntry.trustStatus === 'untrusted') {
+      return {
+        ok: false,
+        result: fail(
+          `Unregistered or untrusted public keyId "${keyId}": arbitrary caller-supplied public keys are not trusted.`,
+          'unregistered_key'
+        )
+      };
+    }
+
+    if (
+      trustedIssuersSet &&
+      keyEntry.issuer &&
+      !trustedIssuersSet.has(keyEntry.issuer.trim())
+    ) {
+      return {
+        ok: false,
+        result: fail(`Public key "${keyId}" issuer "${keyEntry.issuer}" is not in trustedIssuers.`)
+      };
+    }
+
+    if (
+      keyEntry.revoked ||
+      keyEntry.compromised === true ||
+      keyEntry.trustStatus === 'revoked_key' ||
+      keyEntry.trustStatus === 'revoked' ||
+      keyEntry.revocationReasonCode === 'compromise' ||
+      keyEntry.revocationReason?.toLowerCase().includes('compromise')
+    ) {
+      return {
+        ok: false,
+        result: fail(
+          `Public key "${keyId}" has been revoked${keyEntry.revocationReason ? ` (${keyEntry.revocationReason})` : ''} and cannot verify approvals.`,
+          'revoked_key'
+        )
+      };
+    }
+
+    const signedTimeMs = Date.parse(approvalTimestamp);
+    if (Number.isNaN(signedTimeMs)) {
+      return { ok: false, result: fail('Invalid approvalTimestamp in expected signing payload.') };
+    }
+
+    const refTimeMs = config.referenceTimeIso ? Date.parse(config.referenceTimeIso) : signedTimeMs;
+    if (Number.isNaN(refTimeMs)) {
+      return { ok: false, result: fail('Invalid referenceTimeIso in TrustedCryptographicVerifier.') };
+    }
+
+    if (keyEntry.revokedAt) {
+      const revokedAtMs = Date.parse(keyEntry.revokedAt);
+      if (Number.isNaN(revokedAtMs) || signedTimeMs >= revokedAtMs || refTimeMs >= revokedAtMs) {
+        return {
+          ok: false,
+          result: fail(
+            `Public key "${keyId}" was revoked at "${keyEntry.revokedAt}" and cannot verify approvals.`,
+            'revoked_key'
+          )
+        };
+      }
+    }
+
+    const keyActivatedMs = Date.parse(keyEntry.activatedAt ?? '2020-01-01T00:00:00.000Z');
+    const keyExpiresMs = Date.parse(keyEntry.expiresAt ?? '2035-01-01T00:00:00.000Z');
+    if (signedTimeMs < keyActivatedMs || refTimeMs + skewMs < keyActivatedMs) {
+      return {
+        ok: false,
+        result: fail(
+          `Public key "${keyId}" was not yet active at "${approvalTimestamp}" (activatedAt: "${keyEntry.activatedAt}").`
+        )
+      };
+    }
+    if (
+      signedTimeMs >= keyExpiresMs ||
+      refTimeMs - skewMs >= keyExpiresMs ||
+      keyEntry.trustStatus === 'expired_key' ||
+      keyEntry.trustStatus === 'expired'
+    ) {
+      return {
+        ok: false,
+        result: fail(
+          `Public key "${keyId}" has expired (expiresAt: "${keyEntry.expiresAt}").`,
+          'expired_key'
+        )
+      };
+    }
+
+    if (config.referenceTimeIso && signedTimeMs > refTimeMs + skewMs) {
+      return {
+        ok: false,
+        result: fail(
+          `Approval timestamp "${approvalTimestamp}" is in the future relative to trusted evaluation time "${config.referenceTimeIso}".`
+        )
+      };
+    }
+
+    const keyOwner = keyEntry.ownerPrincipal ?? keyEntry.principalId ?? '*';
+    if (keyOwner !== '*' && keyOwner !== approverPrincipal.trim()) {
+      return {
+        ok: false,
+        result: fail(
+          `Public key "${keyId}" is bound to principal "${keyOwner}", not "${approverPrincipal}".`
+        )
+      };
+    }
+    const sigSigner =
+      signature.signerPrincipal ?? signature.signedPayload?.approverPrincipal;
+    if (sigSigner && sigSigner.trim() !== approverPrincipal.trim()) {
+      return {
+        ok: false,
+        result: fail(
+          `Signature signerPrincipal "${sigSigner}" does not match expected approverPrincipal "${approverPrincipal}".`
+        )
+      };
+    }
+
+    const expectedTenant = config.expectedTenantId ?? tenantId ?? projectId;
+    const keyTenant = keyEntry.tenantId ?? keyEntry.organizationScope ?? '*';
+    if (keyTenant !== '*' && keyTenant !== expectedTenant) {
+      return {
+        ok: false,
+        result: fail(
+          `Public key "${keyId}" is scoped to tenant "${keyTenant}", which does not match active tenant/project "${expectedTenant}".`
+        )
+      };
+    }
+
+    const scopes = keyEntry.allowedScopes ?? ['specification:approve'];
+    if (!scopes.includes(requiredScope)) {
+      return {
+        ok: false,
+        result: fail(
+          `Public key "${keyId}" is not authorized for scope "${requiredScope}".`
+        )
+      };
+    }
+
+    if (
+      signature.publicKeyHex &&
+      signature.publicKeyHex.trim().toLowerCase() !== keyEntry.publicKeyHex
+    ) {
+      return {
+        ok: false,
+        result: fail(
+          `Signature publicKeyHex does not match registered public key for keyId "${keyId}".`
+        )
+      };
+    }
+
+    return { ok: true, keyEntry, expectedTenant };
+  }
 
   function performVerification(
     signature: VerifiableCryptographicSignature,
@@ -2694,8 +3140,27 @@ export function createTrustedCryptographicVerifier(
     if (!signature || typeof signature !== 'object') {
       return fail('Missing or malformed cryptographic signature object.');
     }
+    if (!expectedPayload || typeof expectedPayload !== 'object') {
+      return fail('Missing or malformed expected specification signing payload.');
+    }
 
-    // 1. Algorithm check: reject legacy SHA256-KEYED-BINDING or any non-Ed25519 algorithm
+    // Domain separation guard (AUDIT-05.1-05): reject pattern payloads in specification verification
+    const rawExpected = expectedPayload as unknown as Record<string, unknown>;
+    const rawSigned = signature.signedPayload as unknown as Record<string, unknown> | undefined;
+    if (
+      rawExpected.approvalScope === 'pattern:approve' ||
+      rawExpected.schemaVersion === PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION ||
+      'patternRevisionId' in rawExpected ||
+      (rawSigned &&
+        (rawSigned.approvalScope === 'pattern:approve' ||
+          rawSigned.schemaVersion === PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION ||
+          'patternRevisionId' in rawSigned))
+    ) {
+      return fail(
+        'Cross-domain signature rejected: pattern approval payload cannot be verified in specification:approve domain.'
+      );
+    }
+
     if (signature.algorithm !== 'Ed25519') {
       return fail(
         `Unsupported or downgraded signature algorithm "${String(signature.algorithm)}". Only asymmetric "Ed25519" is permitted.`
@@ -2707,130 +3172,21 @@ export function createTrustedCryptographicVerifier(
       return fail('Signature is missing required keyId.');
     }
 
-    // 2. Lookup public key in controlled registry
-    const keyEntry = registryMap.get(keyId);
-    if (!keyEntry || keyEntry.trustStatus === 'unregistered_key' || keyEntry.trustStatus === 'untrusted') {
-      return fail(
-        `Unregistered or untrusted public keyId "${keyId}": arbitrary caller-supplied public keys are not trusted.`,
-        'unregistered_key'
-      );
+    const keyValidation = validateKeyForScopeAndTime(
+      keyId,
+      expectedPayload.approverPrincipal,
+      expectedPayload.tenantId || expectedPayload.projectId,
+      expectedPayload.projectId,
+      expectedPayload.approvalTimestamp,
+      'specification:approve',
+      signature,
+      fail
+    );
+    if (!keyValidation.ok) {
+      return keyValidation.result;
     }
+    const { keyEntry, expectedTenant } = keyValidation;
 
-    if (
-      trustedIssuersSet &&
-      keyEntry.issuer &&
-      !trustedIssuersSet.has(keyEntry.issuer.trim())
-    ) {
-      return fail(
-        `Public key "${keyId}" issuer "${keyEntry.issuer}" is not in trustedIssuers.`
-      );
-    }
-
-    // 3. Enforce key revocation and compromise semantics (FINDING-11)
-    if (
-      keyEntry.revoked ||
-      keyEntry.compromised === true ||
-      keyEntry.trustStatus === 'revoked_key' ||
-      keyEntry.trustStatus === 'revoked' ||
-      keyEntry.revocationReasonCode === 'compromise' ||
-      keyEntry.revocationReason?.toLowerCase().includes('compromise')
-    ) {
-      return fail(
-        `Public key "${keyId}" has been revoked${keyEntry.revocationReason ? ` (${keyEntry.revocationReason})` : ''} and cannot verify approvals.`,
-        'revoked_key'
-      );
-    }
-
-    const signedTimeMs = Date.parse(expectedPayload.approvalTimestamp);
-    if (Number.isNaN(signedTimeMs)) {
-      return fail('Invalid approvalTimestamp in expected signing payload.');
-    }
-
-    const refTimeMs = config.referenceTimeIso ? Date.parse(config.referenceTimeIso) : signedTimeMs;
-    if (Number.isNaN(refTimeMs)) {
-      return fail('Invalid referenceTimeIso in TrustedCryptographicVerifier.');
-    }
-
-    if (keyEntry.revokedAt) {
-      const revokedAtMs = Date.parse(keyEntry.revokedAt);
-      if (Number.isNaN(revokedAtMs) || signedTimeMs >= revokedAtMs || refTimeMs >= revokedAtMs) {
-        return fail(
-          `Public key "${keyId}" was revoked at "${keyEntry.revokedAt}" and cannot verify approvals.`,
-          'revoked_key'
-        );
-      }
-    }
-
-    // 4. Enforce key activation and expiration window against BOTH signed timestamp AND trusted evaluation time (FINDING-11)
-    const keyActivatedMs = Date.parse(keyEntry.activatedAt ?? '2020-01-01T00:00:00.000Z');
-    const keyExpiresMs = Date.parse(keyEntry.expiresAt ?? '2035-01-01T00:00:00.000Z');
-    if (signedTimeMs < keyActivatedMs || refTimeMs + skewMs < keyActivatedMs) {
-      return fail(
-        `Public key "${keyId}" was not yet active at "${expectedPayload.approvalTimestamp}" (activatedAt: "${keyEntry.activatedAt}").`
-      );
-    }
-    if (
-      signedTimeMs >= keyExpiresMs ||
-      refTimeMs - skewMs >= keyExpiresMs ||
-      keyEntry.trustStatus === 'expired_key' ||
-      keyEntry.trustStatus === 'expired'
-    ) {
-      return fail(
-        `Public key "${keyId}" has expired (expiresAt: "${keyEntry.expiresAt}").`,
-        'expired_key'
-      );
-    }
-
-    if (config.referenceTimeIso && signedTimeMs > refTimeMs + skewMs) {
-      return fail(
-        `Approval timestamp "${expectedPayload.approvalTimestamp}" is in the future relative to trusted evaluation time "${config.referenceTimeIso}".`
-      );
-    }
-
-    // 5. Enforce principal binding
-    const keyOwner = keyEntry.ownerPrincipal ?? keyEntry.principalId ?? '*';
-    if (keyOwner !== '*' && keyOwner !== expectedPayload.approverPrincipal.trim()) {
-      return fail(
-        `Public key "${keyId}" is bound to principal "${keyOwner}", not "${expectedPayload.approverPrincipal}".`
-      );
-    }
-    const sigSigner =
-      signature.signerPrincipal ?? signature.signedPayload?.approverPrincipal;
-    if (sigSigner && sigSigner.trim() !== expectedPayload.approverPrincipal.trim()) {
-      return fail(
-        `Signature signerPrincipal "${sigSigner}" does not match expected approverPrincipal "${expectedPayload.approverPrincipal}".`
-      );
-    }
-
-    // 6. Enforce tenant/project scope binding
-    const expectedTenant =
-      config.expectedTenantId ?? expectedPayload.tenantId ?? expectedPayload.projectId;
-    const keyTenant = keyEntry.tenantId ?? keyEntry.organizationScope ?? '*';
-    if (keyTenant !== '*' && keyTenant !== expectedTenant) {
-      return fail(
-        `Public key "${keyId}" is scoped to tenant "${keyTenant}", which does not match active tenant/project "${expectedTenant}".`
-      );
-    }
-
-    // 7. Enforce scope binding
-    const scopes = keyEntry.allowedScopes ?? ['specification:approve'];
-    if (!scopes.includes('specification:approve')) {
-      return fail(
-        `Public key "${keyId}" is not authorized for scope "specification:approve".`
-      );
-    }
-
-    // 8. If signature includes publicKeyHex, it must match the registered public key
-    if (
-      signature.publicKeyHex &&
-      signature.publicKeyHex.trim().toLowerCase() !== keyEntry.publicKeyHex
-    ) {
-      return fail(
-        `Signature publicKeyHex does not match registered public key for keyId "${keyId}".`
-      );
-    }
-
-    // 9. Recompute expected canonical signing payload and verify exact match
     const expectedPayloadWithKey: CanonicalApprovalSigningPayload = {
       ...expectedPayload,
       tenantId: expectedPayload.tenantId || expectedPayload.projectId,
@@ -2841,9 +3197,13 @@ export function createTrustedCryptographicVerifier(
     const expectedCanonicalJson = canonicalizeApprovalSigningPayload(expectedPayloadWithKey);
     const expectedPayloadFp = sha256Hex(expectedCanonicalJson);
 
+    const specSignedPayload =
+      signature.signedPayload && !('patternRevisionId' in signature.signedPayload)
+        ? (signature.signedPayload as CanonicalApprovalSigningPayload)
+        : undefined;
     const actualSignedCanonicalJson =
       signature.signedPayloadCanonicalJson ??
-      (signature.signedPayload ? canonicalizeApprovalSigningPayload(signature.signedPayload) : '');
+      (specSignedPayload ? canonicalizeApprovalSigningPayload(specSignedPayload) : '');
     const actualSignedFp =
       signature.signedPayloadFingerprint ??
       (actualSignedCanonicalJson ? sha256Hex(actualSignedCanonicalJson) : '');
@@ -2857,15 +3217,14 @@ export function createTrustedCryptographicVerifier(
       );
     }
 
-    // Check cross-payload approvalEventId replay
+    const domainPrefixedRecord = `specification:approve::${expectedCanonicalJson}`;
     const existingEventCanonical = consumedApprovalEvents.get(expectedPayload.approvalEventId);
-    if (existingEventCanonical && existingEventCanonical !== expectedCanonicalJson) {
+    if (existingEventCanonical && existingEventCanonical !== domainPrefixedRecord) {
       return fail(
-        `Replay detected: approvalEventId "${expectedPayload.approvalEventId}" has already been used for a different specification approval payload.`
+        `Replay detected: approvalEventId "${expectedPayload.approvalEventId}" has already been used for a different approval payload.`
       );
     }
 
-    // 10. Verify RFC 8032 Ed25519 signature using ONLY the registered public key
     const rawSigHex = (signature.signatureHex ?? signature.signatureDigest ?? '').trim();
     const isEd25519Valid = verifyEd25519Signature(
       keyEntry.publicKeyHex,
@@ -2877,7 +3236,7 @@ export function createTrustedCryptographicVerifier(
       return fail('Ed25519 asymmetric digital signature verification failed.');
     }
 
-    consumedApprovalEvents.set(expectedPayload.approvalEventId, expectedCanonicalJson);
+    consumedApprovalEvents.set(expectedPayload.approvalEventId, domainPrefixedRecord);
 
     return {
       verified: true,
@@ -2888,6 +3247,157 @@ export function createTrustedCryptographicVerifier(
       publicKeyFingerprint: keyEntry.publicKeyFingerprint,
       verifiedPrincipal: expectedPayload.approverPrincipal.trim(),
       verifiedTenantId: expectedTenant,
+      verifiedScope: 'specification:approve',
+      algorithm: 'Ed25519',
+      verifiedAlgorithm: 'Ed25519',
+      verifiedPayloadDigest: expectedPayloadFp,
+      trustStatus: keyEntry.trustStatus,
+      verifiedAt: config.referenceTimeIso ?? new Date().toISOString()
+    };
+  }
+
+  function performPatternVerification(
+    signature: VerifiableCryptographicSignature,
+    expectedPayload: CanonicalPatternApprovalSigningPayload
+  ): CryptographicVerificationResult {
+    const fail = (
+      reason: string,
+      trustStatus?: ControlledPublicKeyRegistration['trustStatus']
+    ): CryptographicVerificationResult => ({
+      verified: false,
+      isValid: false,
+      reason,
+      trustStatus
+    });
+
+    if (!signature || typeof signature !== 'object') {
+      return fail('Missing or malformed cryptographic signature object.');
+    }
+    if (!expectedPayload || typeof expectedPayload !== 'object') {
+      return fail('Missing or malformed expected pattern signing payload.');
+    }
+
+    // Strict domain separation (AUDIT-05.1-05): reject specification payloads or mismatched schemas/scopes
+    if (
+      expectedPayload.schemaVersion !== PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION ||
+      expectedPayload.approvalScope !== 'pattern:approve'
+    ) {
+      return fail(
+        `Cross-domain signature rejected: pattern approval requires schemaVersion="${PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION}" and approvalScope="pattern:approve".`
+      );
+    }
+    const rawSigned = signature.signedPayload as unknown as Record<string, unknown> | undefined;
+    if (
+      !rawSigned ||
+      rawSigned.schemaVersion !== PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION ||
+      rawSigned.approvalScope !== 'pattern:approve' ||
+      'canonicalSpecificationFingerprint' in rawSigned ||
+      typeof rawSigned.patternRevisionId !== 'string'
+    ) {
+      return fail(
+        'Cross-domain signature rejected: signed payload is not a valid pattern:approve payload.'
+      );
+    }
+
+    if (
+      !expectedPayload.patternRevisionId ||
+      !expectedPayload.basePatternFingerprint ||
+      !expectedPayload.geometryFingerprint ||
+      !expectedPayload.sourceSpecificationFingerprint ||
+      !expectedPayload.sourceMeasurementSetFingerprint ||
+      !expectedPayload.approvalEventId ||
+      !expectedPayload.approverPrincipal
+    ) {
+      return fail(
+        'Pattern approval signing payload is missing required pattern revision, content, geometry, or upstream source bindings.'
+      );
+    }
+
+    if (signature.algorithm !== 'Ed25519') {
+      return fail(
+        `Unsupported or downgraded signature algorithm "${String(signature.algorithm)}". Only asymmetric "Ed25519" is permitted.`
+      );
+    }
+
+    const keyId = typeof signature.keyId === 'string' ? signature.keyId.trim() : '';
+    if (!keyId) {
+      return fail('Signature is missing required keyId.');
+    }
+
+    const keyValidation = validateKeyForScopeAndTime(
+      keyId,
+      expectedPayload.approverPrincipal,
+      expectedPayload.tenantId || expectedPayload.projectId,
+      expectedPayload.projectId,
+      expectedPayload.approvalTimestamp,
+      'pattern:approve',
+      signature,
+      fail
+    );
+    if (!keyValidation.ok) {
+      return keyValidation.result;
+    }
+    const { keyEntry, expectedTenant } = keyValidation;
+
+    const expectedPayloadWithKey: CanonicalPatternApprovalSigningPayload = {
+      ...expectedPayload,
+      schemaVersion: PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION,
+      tenantId: expectedPayload.tenantId || expectedPayload.projectId,
+      approvalScope: 'pattern:approve',
+      keyId,
+      algorithm: 'Ed25519'
+    };
+    const expectedCanonicalJson = canonicalizePatternApprovalSigningPayload(expectedPayloadWithKey);
+    const expectedPayloadFp = sha256Hex(expectedCanonicalJson);
+
+    const patternSignedPayload = signature.signedPayload as CanonicalPatternApprovalSigningPayload;
+    const actualSignedCanonicalJson =
+      signature.signedPayloadCanonicalJson ??
+      canonicalizePatternApprovalSigningPayload(patternSignedPayload);
+    const actualSignedFp =
+      signature.signedPayloadFingerprint ??
+      (actualSignedCanonicalJson ? sha256Hex(actualSignedCanonicalJson) : '');
+
+    if (
+      actualSignedCanonicalJson !== expectedCanonicalJson ||
+      actualSignedFp !== expectedPayloadFp
+    ) {
+      return fail(
+        'Cryptographic pattern signature payload mismatch: signed payload does not match pattern revisionId, basePatternFingerprint, geometryFingerprint, upstream dependencies, or approval metadata.'
+      );
+    }
+
+    const domainPrefixedRecord = `pattern:approve::${expectedCanonicalJson}`;
+    const existingEventCanonical = consumedApprovalEvents.get(expectedPayload.approvalEventId);
+    if (existingEventCanonical && existingEventCanonical !== domainPrefixedRecord) {
+      return fail(
+        `Replay detected: approvalEventId "${expectedPayload.approvalEventId}" has already been used for a different approval payload.`
+      );
+    }
+
+    const rawSigHex = (signature.signatureHex ?? signature.signatureDigest ?? '').trim();
+    const isEd25519Valid = verifyEd25519Signature(
+      keyEntry.publicKeyHex,
+      expectedCanonicalJson,
+      rawSigHex
+    );
+
+    if (!isEd25519Valid) {
+      return fail('Ed25519 asymmetric digital signature verification failed for pattern approval.');
+    }
+
+    consumedApprovalEvents.set(expectedPayload.approvalEventId, domainPrefixedRecord);
+
+    return {
+      verified: true,
+      isValid: true,
+      keyId,
+      verifiedKeyId: keyId,
+      verifiedPublicKeyHex: keyEntry.publicKeyHex,
+      publicKeyFingerprint: keyEntry.publicKeyFingerprint,
+      verifiedPrincipal: expectedPayload.approverPrincipal.trim(),
+      verifiedTenantId: expectedTenant,
+      verifiedScope: 'pattern:approve',
       algorithm: 'Ed25519',
       verifiedAlgorithm: 'Ed25519',
       verifiedPayloadDigest: expectedPayloadFp,
@@ -2912,24 +3422,44 @@ export function createTrustedCryptographicVerifier(
       return performVerification(signature, expectedPayload);
     },
 
+    verifyPatternApprovalSignature(
+      signature: VerifiableCryptographicSignature,
+      expectedPayload: CanonicalPatternApprovalSigningPayload
+    ): CryptographicVerificationResult {
+      return performPatternVerification(signature, expectedPayload);
+    },
+
     verifySignature(
-      firstArg: CryptographicApprovalBindingPayload | VerifiableCryptographicSignature,
-      secondArg: VerifiableCryptographicSignature | CryptographicApprovalBindingPayload
+      firstArg:
+        | CryptographicApprovalBindingPayload
+        | CanonicalPatternApprovalSigningPayload
+        | VerifiableCryptographicSignature,
+      secondArg:
+        | VerifiableCryptographicSignature
+        | CryptographicApprovalBindingPayload
+        | CanonicalPatternApprovalSigningPayload
     ): CryptographicVerificationResult {
       const isFirstSignature =
         firstArg &&
         typeof firstArg === 'object' &&
         ('signatureHex' in firstArg || 'signatureDigest' in firstArg || 'signedPayload' in firstArg);
-      if (isFirstSignature) {
-        return performVerification(
-          firstArg as VerifiableCryptographicSignature,
-          secondArg as CryptographicApprovalBindingPayload
+      const sig = (isFirstSignature ? firstArg : secondArg) as VerifiableCryptographicSignature;
+      const expected = (isFirstSignature ? secondArg : firstArg) as
+        | CryptographicApprovalBindingPayload
+        | CanonicalPatternApprovalSigningPayload;
+      const rawExp = expected as unknown as Record<string, unknown>;
+      if (
+        rawExp &&
+        (rawExp.approvalScope === 'pattern:approve' ||
+          rawExp.schemaVersion === PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION ||
+          'patternRevisionId' in rawExp)
+      ) {
+        return performPatternVerification(
+          sig,
+          expected as CanonicalPatternApprovalSigningPayload
         );
       }
-      return performVerification(
-        secondArg as VerifiableCryptographicSignature,
-        firstArg as CryptographicApprovalBindingPayload
-      );
+      return performVerification(sig, expected as CryptographicApprovalBindingPayload);
     }
   };
 }

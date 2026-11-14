@@ -493,13 +493,15 @@ export interface PatternInvalidationRecord {
   readonly activeUpstreamFingerprint?: string;
 }
 
+export const PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION = 'm05.1-pattern-approval-v1' as const;
+
 /**
  * Canonical signing payload for Tier 4 (`cryptographic_principal`) pattern revision approval.
- * Binds exclusively to the immutable `contentFingerprint` (`basePatternFingerprint`) and `geometryFingerprint`
- * (`Milestone 05.1 Amendment 1, 2, 3`).
+ * Binds exclusively to the immutable `contentFingerprint` (`basePatternFingerprint`), `geometryFingerprint`,
+ * `sourceSpecificationFingerprint`, and `sourceMeasurementSetFingerprint` (`Milestone 05.1 / 05.1.1`).
  */
 export interface CanonicalPatternApprovalSigningPayload {
-  readonly schemaVersion: string;
+  readonly schemaVersion: typeof PATTERN_APPROVAL_CANONICAL_SCHEMA_VERSION | string;
   readonly projectId: string;
   readonly tenantId: string;
   readonly garmentId: string;
@@ -512,7 +514,7 @@ export interface CanonicalPatternApprovalSigningPayload {
   readonly approvalEventId: string;
   readonly approverPrincipal: string;
   readonly authorityTier: 'cryptographic_principal';
-  readonly approvalScope: 'pattern:approve' | 'specification:approve';
+  readonly approvalScope: 'pattern:approve';
   readonly approvalTimestamp: string;
   readonly keyId?: string;
   readonly algorithm?: 'Ed25519';
@@ -520,11 +522,15 @@ export interface CanonicalPatternApprovalSigningPayload {
 
 /**
  * Verified approval record bound to an AuthoritativePatternRevision's immutable `contentFingerprint`.
+ * Note (Safeguard 1): These fields are claims requiring live verification against a TrustedIdentityVerifier
+ * or TrustedCryptographicVerifier before granting production authorization.
  */
 export interface PatternRevisionApprovalRecord {
   readonly approvalEventId: string;
   readonly patternRevisionId: string;
+  readonly approvalScope?: 'pattern:approve';
   readonly boundBasePatternFingerprint: string;
+  readonly boundGeometryFingerprint?: string;
   readonly boundSpecificationFingerprint?: string;
   readonly boundMeasurementSetFingerprint?: string;
   readonly approverName: string;
@@ -542,6 +548,13 @@ export interface PatternRevisionApprovalRecord {
     readonly tokenDigest: string;
     readonly keyId?: string;
     readonly tenantId?: string;
+    readonly approvalScope?: string;
+    readonly tokenUse?: string;
+    readonly patternRevisionId?: string;
+    readonly basePatternFingerprint?: string;
+    readonly geometryFingerprint?: string;
+    readonly sourceSpecificationFingerprint?: string;
+    readonly sourceMeasurementSetFingerprint?: string;
     readonly [key: string]: unknown;
   };
   readonly cryptographicSignature?: {
@@ -771,6 +784,11 @@ export interface ProductionPackagePieceEntry {
   readonly pieceCode: string;
   readonly pieceName: string;
   readonly sizeCode: string;
+  readonly cutCount: number;
+  readonly onFold: boolean;
+  readonly material: 'self' | 'lining' | 'interfacing' | string;
+  readonly grainline: Readonly<GrainLine>;
+  readonly drillHoleCount: number;
   readonly pieceGeometryFingerprint: string;
   readonly widthCm: number;
   readonly heightCm: number;
@@ -891,13 +909,39 @@ export interface ProductionPackageCreationResult {
 }
 
 export interface ProductionPackageVerificationResult {
+  /**
+   * @deprecated Structural and historical lifecycle chain validity ONLY
+   * (`isStructurallyValid && isHistoricallyVerifiable`).
+   * NEVER implies current production authorization — inspect `isCurrentlyAuthorized`.
+   */
   readonly isValid: boolean;
+  /** True only when manifest schema, manifestFingerprint, piece inventory cut counts, and safety invariants hold. */
+  readonly isStructurallyValid: boolean;
+  /**
+   * True only when the package's hash chain follows strictly legal transitions with required transition metadata,
+   * and matches any supplied upstream historical artifacts (within local hash-chain limits; see `limitationNotes`).
+   */
+  readonly isHistoricallyVerifiable: boolean;
+  /**
+   * Fail-closed production authorization status.
+   * True ONLY when `isStructurallyValid && isHistoricallyVerifiable && currentPackageState === 'active'`,
+   * complete upstream source context (`patternRevision`, `specification`, `measurementSet`, and `gradingArtifact` when graded)
+   * and live Tier 3/4 verification contexts are provided, and all upstream dependencies and cryptographic/OIDC approvals pass live verification.
+   */
+  readonly isCurrentlyAuthorized: boolean;
+  readonly sourceVerificationStatus: 'complete' | 'partial-unverified-upstream';
+  readonly missingSourceContextFields: readonly string[];
+  readonly currentPackageState?: ProductionPackageLifecycleState;
   readonly isManifestTampered: boolean;
   readonly isLifecycleTampered: boolean;
+  readonly isUpstreamMismatch?: boolean;
+  readonly isApprovalVerified?: boolean;
   readonly recomputedManifestFingerprint?: string;
   readonly recomputedCurrentStateFingerprint?: string;
   readonly reason?: string;
   readonly errors: readonly string[];
+  readonly authorizationErrors: readonly string[];
+  readonly limitationNotes: readonly string[];
 }
 
 export class ProductionSnapshotValidationError extends Error {

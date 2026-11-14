@@ -44,12 +44,15 @@ import { getEnhancedFabricById, DEFAULT_ILLUSTRATIVE_FABRIC } from '../fabric/fa
 import { validatePatternDraft } from '../validation/seam-validator';
 import { gradePattern } from '../grading/pattern-grader';
 import {
-  createProductionPatternRevision,
-  createAuthoritativeMeasurementSet,
   approveAuthoritativeMeasurementSet,
+  approvePatternRevision,
+  createAuthoritativeGradingArtifact,
+  createAuthoritativeMeasurementSet,
+  createProductionPatternRevision,
+  signPatternRevisionApprovalPayload,
   supersedeAuthoritativeMeasurementSet,
-  verifyMeasurementSetIntegrity,
-  createAuthoritativeGradingArtifact
+  validatePatternRevision,
+  verifyMeasurementSetIntegrity
 } from './pattern-revision-snapshot';
 import { ValidationReport } from '../../types';
 import {
@@ -136,7 +139,7 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
     const designSpec = convertToDesignSpecification(spec);
     const pieces = draftSkirtBlock(sizeM, designSpec);
 
-    const snapshot = createProductionPatternRevision({
+    const draftSnapshot = createProductionPatternRevision({
       projectId: 'project-adversarial-v2',
       revisionId: 'rev-adv-skirt-v2-M',
       targetSize: 'M',
@@ -154,6 +157,49 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       patternPieces: pieces,
       validation: validReport,
       physicalValidationStatus: 'not-assessed'
+    });
+    const patKp = deriveEd25519SigningKeyPair('key-adv-v2-pat-01', 'seed-adv-v2-pat-01', {
+      ownerPrincipal: 'Certified Master Tailor',
+      tenantId: 'project-adversarial-v2',
+      allowedScopes: ['pattern:approve']
+    });
+    const patCryptoVerifier = createTrustedCryptographicVerifier({
+      publicKeyRegistry: [patKp.publicKeyRegistration]
+    });
+    const validatedSnapshot = validatePatternRevision(draftSnapshot, {
+      validatedAt: '2026-11-09T10:02:00.000Z'
+    });
+    const patSig = signPatternRevisionApprovalPayload(
+      {
+        schemaVersion: 'm05.1-pattern-approval-v1',
+        projectId: 'project-adversarial-v2',
+        tenantId: 'project-adversarial-v2',
+        garmentId: spec.garmentId,
+        patternRevisionId: validatedSnapshot.revisionId,
+        patternRevisionNumber: validatedSnapshot.revisionIndex,
+        basePatternFingerprint: validatedSnapshot.basePatternFingerprint!,
+        geometryFingerprint: validatedSnapshot.geometryFingerprint!,
+        sourceSpecificationFingerprint: validatedSnapshot.sourceSpecificationFingerprint!,
+        sourceMeasurementSetFingerprint: validatedSnapshot.sourceMeasurementSetFingerprint!,
+        approvalEventId: 'pat-app-adv-v2-01',
+        approverPrincipal: 'Certified Master Tailor',
+        authorityTier: 'cryptographic_principal',
+        approvalScope: 'pattern:approve',
+        approvalTimestamp: '2026-11-09T10:05:00.000Z'
+      },
+      {
+        keyId: patKp.keyId,
+        privateKeyHex: patKp.privateKeyHex,
+        tenantId: 'project-adversarial-v2'
+      }
+    );
+    const snapshot = approvePatternRevision(validatedSnapshot, {
+      approverName: 'Certified Master Tailor',
+      approvedAt: '2026-11-09T10:05:00.000Z',
+      approvalEventId: 'pat-app-adv-v2-01',
+      authorityTier: 'cryptographic_principal',
+      cryptographicVerifier: patCryptoVerifier,
+      cryptographicSignature: patSig
     });
 
     const graded = gradePattern(designSpec);
@@ -209,7 +255,8 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       fabric: standardFabric,
       patternPieces: pieces,
       validationReport: validReport,
-      productionSnapshot: snapshot
+      productionSnapshot: snapshot,
+      patternVerificationContext: { cryptographicVerifier: patCryptoVerifier }
     });
 
     return { spec, designSpec, pieces, snapshot, gradingArtifact, report };
@@ -915,7 +962,9 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       easeProfile: 'classic',
       lengthCm: 68.0
     });
-    const kp = deriveEd25519SigningKeyPair('key-prod-scen30', 'seed-prod-scen30');
+    const kp = deriveEd25519SigningKeyPair('key-prod-scen30', 'seed-prod-scen30', {
+      allowedScopes: ['specification:approve', 'pattern:approve']
+    });
     const cryptoVerifier = createTrustedCryptographicVerifier({
       publicKeyRegistry: [kp.publicKeyRegistration]
     });
@@ -943,7 +992,7 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
     });
     const designSpec = convertToDesignSpecification(spec);
     const pieces = draftSkirtBlock(sizeM, designSpec);
-    const snapshot = createProductionPatternRevision({
+    const draftSnapshot = createProductionPatternRevision({
       projectId: 'project-adversarial-v2',
       revisionId: 'rev-adv-skirt-v2-M',
       targetSize: 'M',
@@ -961,6 +1010,37 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       patternPieces: pieces,
       validation: validReport,
       physicalValidationStatus: 'not-assessed'
+    });
+    const validatedSnapshot = validatePatternRevision(draftSnapshot, {
+      validatedAt: '2026-11-09T10:02:00.000Z'
+    });
+    const patSig = signPatternRevisionApprovalPayload(
+      {
+        schemaVersion: 'm05.1-pattern-approval-v1',
+        projectId: 'project-adversarial-v2',
+        tenantId: 'project-adversarial-v2',
+        garmentId: spec.garmentId,
+        patternRevisionId: validatedSnapshot.revisionId,
+        patternRevisionNumber: validatedSnapshot.revisionIndex,
+        basePatternFingerprint: validatedSnapshot.basePatternFingerprint!,
+        geometryFingerprint: validatedSnapshot.geometryFingerprint!,
+        sourceSpecificationFingerprint: validatedSnapshot.sourceSpecificationFingerprint!,
+        sourceMeasurementSetFingerprint: validatedSnapshot.sourceMeasurementSetFingerprint!,
+        approvalEventId: 'pat-app-scen30-01',
+        approverPrincipal: 'Certified Master Tailor',
+        authorityTier: 'cryptographic_principal',
+        approvalScope: 'pattern:approve',
+        approvalTimestamp: '2026-11-09T10:05:00.000Z'
+      },
+      { keyId: 'key-prod-scen30', privateKeyHex: kp.privateKeyHex }
+    );
+    const snapshot = approvePatternRevision(validatedSnapshot, {
+      approverName: 'Certified Master Tailor',
+      approvedAt: '2026-11-09T10:05:00.000Z',
+      approvalEventId: 'pat-app-scen30-01',
+      authorityTier: 'cryptographic_principal',
+      cryptographicVerifier: cryptoVerifier,
+      cryptographicSignature: patSig
     });
     const graded = gradePattern(designSpec);
     const measFp = computeArtifactInputFingerprint({
