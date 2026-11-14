@@ -10,7 +10,7 @@ import {
   PatternPiece,
   ValidationReport
 } from '../../types';
-import { sha256Hex } from './crypto';
+import { isStrictValidIsoTimestamp, sha256Hex } from './crypto';
 import {
   canonicalizeJson,
   computeCanonicalFingerprint,
@@ -1155,15 +1155,9 @@ export function evaluatePipelineDependencyIntegrity(
     }
   }
 
-  if (inputs.gradingArtifact && gradingStatus === 'current') {
+  if (inputs.gradingArtifact) {
     const ga = inputs.gradingArtifact;
     const gaCheck = verifyGradingArtifactIntegrity(ga);
-    const expectedScope = ('projectId' in spec ? spec.projectId : undefined) ?? inputs.productionSnapshot?.projectId ?? '';
-    const expectedMeasFp =
-      inputs.measurementSet && 'canonicalFingerprint' in inputs.measurementSet
-        ? inputs.measurementSet.canonicalFingerprint
-        : measFingerprint;
-
     if (gaCheck.isTampered) {
       gradingStatus = 'invalid';
       gradingValidationStatus = 'tampered';
@@ -1174,126 +1168,161 @@ export function evaluatePipelineDependencyIntegrity(
       gradingValidationStatus = 'revoked';
       gradingStaleReason = gaCheck.reason ?? 'Grading artifact has been revoked.';
       staleReasons.push(gradingStaleReason);
-    } else if (ga.lifecycleState === 'superseded' || Boolean(ga.supersededByRevisionId)) {
-      gradingStatus = 'stale';
-      gradingValidationStatus = 'superseded';
-      gradingStaleReason = gaCheck.reason ?? 'Grading artifact has been superseded.';
-      staleReasons.push(gradingStaleReason);
-    } else if (gaCheck.isSizeRangeIncomplete) {
-      gradingStatus = 'invalid';
-      gradingValidationStatus = 'size-range-incomplete';
-      gradingStaleReason = gaCheck.reason ?? 'Grading artifact size range is incomplete.';
-      staleReasons.push(gradingStaleReason);
-    } else if (gaCheck.isValidationFailed) {
-      gradingStatus = 'invalid';
-      gradingValidationStatus = 'validation-failed';
-      gradingStaleReason = gaCheck.reason ?? 'Grading artifact geometry or cross-size validation failed.';
-      staleReasons.push(gradingStaleReason);
-    } else if (expectedScope && (ga.projectId !== expectedScope || ga.tenantId !== expectedScope)) {
-      gradingStatus = 'invalid';
-      gradingValidationStatus = 'scope-mismatch';
-      gradingStaleReason = `Grading artifact project/tenant ('${ga.projectId}'/'${ga.tenantId}') does not match active project ('${expectedScope}').`;
-      staleReasons.push(gradingStaleReason);
-    } else if (
-      ga.sourceSpecificationId !== specGarmentId ||
-      ga.sourceSpecificationRevisionId !== specRevisionId ||
-      ga.sourceSpecificationFingerprint !== specFingerprint
-    ) {
-      gradingStatus = 'stale';
-      gradingValidationStatus = 'stale-specification';
-      gradingStaleReason = 'Grading artifact source specification lineage does not match active specification.';
-      staleReasons.push(gradingStaleReason);
-    } else if (inputs.productionSnapshot && ga.sourcePatternRevisionId !== inputs.productionSnapshot.revisionId) {
-      gradingStatus = 'stale';
-      gradingValidationStatus = 'stale-pattern-revision';
-      gradingStaleReason = `Grading artifact sourcePatternRevisionId ('${ga.sourcePatternRevisionId}') does not match active snapshot ('${inputs.productionSnapshot.revisionId}').`;
-      staleReasons.push(gradingStaleReason);
-    } else if (
-      inputs.productionSnapshot &&
-      (() => {
-        const validSnapshotFps = new Set<string>(
-          [
-            inputs.productionSnapshot.canonicalFingerprint,
-            inputs.productionSnapshot.basePatternFingerprint,
-            inputs.productionSnapshot.contentFingerprint
-          ].filter((fp): fp is string => typeof fp === 'string' && fp.length > 0)
-        );
-        const gaSourceFp = ga.sourceBasePatternFingerprint ?? ga.sourcePatternSnapshotFingerprint;
-        if (!gaSourceFp || !validSnapshotFps.has(gaSourceFp)) {
-          return true;
-        }
-        if (
-          ga.sourceBasePatternFingerprint &&
-          ga.sourcePatternSnapshotFingerprint &&
-          ga.sourceBasePatternFingerprint !== ga.sourcePatternSnapshotFingerprint
-        ) {
-          return true;
-        }
-        return false;
-      })()
-    ) {
-      gradingStatus = 'stale';
-      gradingValidationStatus = 'stale-pattern-snapshot';
-      gradingStaleReason =
-        'Grading artifact sourceBasePatternFingerprint/sourcePatternSnapshotFingerprint does not match active snapshot basePatternFingerprint or canonicalFingerprint.';
-      staleReasons.push(gradingStaleReason);
-    } else if (
-      ga.sourceMeasurementSetFingerprint !== measFingerprint &&
-      ga.sourceMeasurementSetFingerprint !== expectedMeasFp
-    ) {
-      gradingStatus = 'stale';
-      gradingValidationStatus = 'stale-measurements';
-      gradingStaleReason = 'Grading artifact sourceMeasurementSetFingerprint does not match active measurement set fingerprint.';
-      staleReasons.push(gradingStaleReason);
-    } else if (
-      ga.gradingRuleSetRevision !== `rules-grading-${gradingRulesVer}` &&
-      ga.gradingRuleSetRevision !== gradingRulesVer
-    ) {
-      gradingStatus = 'stale';
-      gradingValidationStatus = 'stale-grading-rules';
-      gradingStaleReason = `Grading artifact gradingRuleSetRevision ('${ga.gradingRuleSetRevision}') does not match active grading rules ('${gradingRulesVer}').`;
-      staleReasons.push(gradingStaleReason);
-    } else if (ga.gradingRuleSetFingerprint !== gradingRulesFingerprint) {
-      gradingStatus = 'stale';
-      gradingValidationStatus = 'stale-grading-rules';
-      gradingStaleReason = 'Grading artifact gradingRuleSetFingerprint does not match active grading rules fingerprint.';
-      staleReasons.push(gradingStaleReason);
-    } else if (ga.baseSize !== inputs.activeSize) {
-      gradingStatus = 'stale';
-      gradingValidationStatus = 'base-size-mismatch';
-      gradingStaleReason = `Grading artifact baseSize ('${ga.baseSize}') does not match active size ('${inputs.activeSize}').`;
-      staleReasons.push(gradingStaleReason);
-    } else if (inputs.productionSnapshot) {
-      const basePieces = ga.perSizePatternGeometry?.[ga.baseSize];
-      const snapPieces = inputs.productionSnapshot.patternPieces;
-      if (!basePieces || basePieces.length !== snapPieces.length) {
+    } else if (gradingStatus === 'current') {
+      const expectedScope = ('projectId' in spec ? spec.projectId : undefined) ?? inputs.productionSnapshot?.projectId ?? '';
+      const expectedMeasFp =
+        inputs.measurementSet && 'canonicalFingerprint' in inputs.measurementSet
+          ? inputs.measurementSet.canonicalFingerprint
+          : measFingerprint;
+
+      if (ga.lifecycleState === 'superseded' || Boolean(ga.supersededByRevisionId)) {
         gradingStatus = 'stale';
-        gradingValidationStatus = 'stale-base-geometry';
-        gradingStaleReason = 'Grading artifact base-size piece count does not match snapshot pattern pieces.';
+        gradingValidationStatus = 'superseded';
+        gradingStaleReason = gaCheck.reason ?? 'Grading artifact has been superseded.';
         staleReasons.push(gradingStaleReason);
-      } else {
-        const snapMap = new Map(snapPieces.map(p => [p.pieceCode, p]));
-        for (const bp of basePieces) {
-          const sp = snapMap.get(bp.pieceCode);
+      } else if (gaCheck.isSizeRangeIncomplete) {
+        gradingStatus = 'invalid';
+        gradingValidationStatus = 'size-range-incomplete';
+        gradingStaleReason = gaCheck.reason ?? 'Grading artifact size range is incomplete.';
+        staleReasons.push(gradingStaleReason);
+      } else if (gaCheck.isValidationFailed) {
+        gradingStatus = 'invalid';
+        gradingValidationStatus = 'validation-failed';
+        gradingStaleReason = gaCheck.reason ?? 'Grading artifact geometry or cross-size validation failed.';
+        staleReasons.push(gradingStaleReason);
+      } else if (!gaCheck.isValid) {
+        gradingStatus = 'invalid';
+        gradingValidationStatus = 'invalid';
+        gradingStaleReason = gaCheck.reason ?? 'Grading artifact failed integrity verification.';
+        staleReasons.push(gradingStaleReason);
+      } else if (expectedScope && (ga.projectId !== expectedScope || ga.tenantId !== expectedScope)) {
+        gradingStatus = 'invalid';
+        gradingValidationStatus = 'scope-mismatch';
+        gradingStaleReason = `Grading artifact project/tenant ('${ga.projectId}'/'${ga.tenantId}') does not match active project ('${expectedScope}').`;
+        staleReasons.push(gradingStaleReason);
+      } else if (
+        ga.sourceSpecificationId !== specGarmentId ||
+        ga.sourceSpecificationRevisionId !== specRevisionId ||
+        ga.sourceSpecificationFingerprint !== specFingerprint
+      ) {
+        gradingStatus = 'stale';
+        gradingValidationStatus = 'stale-specification';
+        gradingStaleReason = 'Grading artifact source specification lineage does not match active specification.';
+        staleReasons.push(gradingStaleReason);
+      } else if (inputs.productionSnapshot && ga.sourcePatternRevisionId !== inputs.productionSnapshot.revisionId) {
+        gradingStatus = 'stale';
+        gradingValidationStatus = 'stale-pattern-revision';
+        gradingStaleReason = `Grading artifact sourcePatternRevisionId ('${ga.sourcePatternRevisionId}') does not match active snapshot ('${inputs.productionSnapshot.revisionId}').`;
+        staleReasons.push(gradingStaleReason);
+      } else if (
+        inputs.productionSnapshot &&
+        (() => {
+          const validSnapshotFps = new Set<string>(
+            [
+              inputs.productionSnapshot.canonicalFingerprint,
+              inputs.productionSnapshot.basePatternFingerprint,
+              inputs.productionSnapshot.contentFingerprint
+            ].filter((fp): fp is string => typeof fp === 'string' && fp.length > 0)
+          );
+          const gaSourceFp = ga.sourceBasePatternFingerprint ?? ga.sourcePatternSnapshotFingerprint;
+          if (!gaSourceFp || !validSnapshotFps.has(gaSourceFp)) {
+            return true;
+          }
           if (
-            !sp ||
-            bp.cutPathData !== sp.cutPathData ||
-            bp.sewPathData !== sp.sewPathData ||
-            Math.abs(bp.boundingBox.widthCm - sp.boundingBox.widthCm) > 0.05 ||
-            Math.abs(bp.boundingBox.heightCm - sp.boundingBox.heightCm) > 0.05 ||
-            Math.abs(bp.seamAllowanceWidthCm - sp.seamAllowanceWidthCm) > 0.01 ||
-            canonicalizeJson(bp.notches) !== canonicalizeJson(sp.notches) ||
-            canonicalizeJson(bp.grainline) !== canonicalizeJson(sp.grainline)
+            ga.sourceBasePatternFingerprint &&
+            ga.sourcePatternSnapshotFingerprint &&
+            ga.sourceBasePatternFingerprint !== ga.sourcePatternSnapshotFingerprint
           ) {
-            gradingStatus = 'stale';
-            gradingValidationStatus = 'stale-base-geometry';
-            gradingStaleReason = `Grading artifact base-size piece '${bp.pieceCode}' geometry does not match snapshot pattern piece.`;
-            staleReasons.push(gradingStaleReason);
-            break;
+            return true;
+          }
+          return false;
+        })()
+      ) {
+        gradingStatus = 'stale';
+        gradingValidationStatus = 'stale-pattern-snapshot';
+        gradingStaleReason =
+          'Grading artifact sourceBasePatternFingerprint/sourcePatternSnapshotFingerprint does not match active snapshot basePatternFingerprint or canonicalFingerprint.';
+        staleReasons.push(gradingStaleReason);
+      } else if (
+        ga.sourceMeasurementSetFingerprint !== measFingerprint &&
+        ga.sourceMeasurementSetFingerprint !== expectedMeasFp
+      ) {
+        gradingStatus = 'stale';
+        gradingValidationStatus = 'stale-measurements';
+        gradingStaleReason = 'Grading artifact sourceMeasurementSetFingerprint does not match active measurement set fingerprint.';
+        staleReasons.push(gradingStaleReason);
+      } else if (
+        ga.gradingRuleSetRevision !== `rules-grading-${gradingRulesVer}` &&
+        ga.gradingRuleSetRevision !== gradingRulesVer
+      ) {
+        gradingStatus = 'stale';
+        gradingValidationStatus = 'stale-grading-rules';
+        gradingStaleReason = `Grading artifact gradingRuleSetRevision ('${ga.gradingRuleSetRevision}') does not match active grading rules ('${gradingRulesVer}').`;
+        staleReasons.push(gradingStaleReason);
+      } else if (ga.gradingRuleSetFingerprint !== gradingRulesFingerprint) {
+        gradingStatus = 'stale';
+        gradingValidationStatus = 'stale-grading-rules';
+        gradingStaleReason = 'Grading artifact gradingRuleSetFingerprint does not match active grading rules fingerprint.';
+        staleReasons.push(gradingStaleReason);
+      } else if (ga.baseSize !== inputs.activeSize) {
+        gradingStatus = 'stale';
+        gradingValidationStatus = 'base-size-mismatch';
+        gradingStaleReason = `Grading artifact baseSize ('${ga.baseSize}') does not match active size ('${inputs.activeSize}').`;
+        staleReasons.push(gradingStaleReason);
+      } else if (inputs.productionSnapshot) {
+        const basePieces = ga.perSizePatternGeometry?.[ga.baseSize];
+        const snapPieces = inputs.productionSnapshot.patternPieces;
+        if (!basePieces || basePieces.length !== snapPieces.length) {
+          gradingStatus = 'stale';
+          gradingValidationStatus = 'stale-base-geometry';
+          gradingStaleReason = 'Grading artifact base-size piece count does not match snapshot pattern pieces.';
+          staleReasons.push(gradingStaleReason);
+        } else {
+          const snapMap = new Map(snapPieces.map(p => [p.pieceCode, p]));
+          for (const bp of basePieces) {
+            const sp = snapMap.get(bp.pieceCode);
+            if (
+              !sp ||
+              bp.cutPathData !== sp.cutPathData ||
+              bp.sewPathData !== sp.sewPathData ||
+              Math.abs(bp.boundingBox.widthCm - sp.boundingBox.widthCm) > 0.05 ||
+              Math.abs(bp.boundingBox.heightCm - sp.boundingBox.heightCm) > 0.05 ||
+              Math.abs(bp.seamAllowanceWidthCm - sp.seamAllowanceWidthCm) > 0.01 ||
+              canonicalizeJson(bp.notches) !== canonicalizeJson(sp.notches) ||
+              canonicalizeJson(bp.grainline) !== canonicalizeJson(sp.grainline)
+            ) {
+              gradingStatus = 'stale';
+              gradingValidationStatus = 'stale-base-geometry';
+              gradingStaleReason = `Grading artifact base-size piece '${bp.pieceCode}' geometry does not match snapshot pattern piece.`;
+              staleReasons.push(gradingStaleReason);
+              break;
+            }
           }
         }
       }
     }
+  } else if (inputs.exportGradingPolicy) {
+    const rawPolicyMode = inputs.exportGradingPolicy.mode as string | undefined;
+    const expectsGraded = rawPolicyMode === 'graded-multi-size' || rawPolicyMode === 'multi-size-graded';
+    if (expectsGraded && gradingStatus === 'current') {
+      gradingStatus = 'unverified';
+      gradingValidationStatus = 'missing';
+      gradingStaleReason = 'AuthoritativeGradingArtifact is missing for graded multi-size export policy.';
+      staleReasons.push(gradingStaleReason);
+      requiredActions.push('Generate and attach an active AuthoritativeGradingArtifact.');
+    }
+  }
+  if (
+    inputs.exportGradingPolicy &&
+    inputs.gradingArtifact &&
+    ((inputs.exportGradingPolicy.mode as string) === 'single-size-ungraded' ||
+      (inputs.exportGradingPolicy.mode as string) === 'base-size-only') &&
+    gradingStatus === 'current'
+  ) {
+    gradingStatus = 'invalid';
+    gradingValidationStatus = 'scope-mismatch';
+    gradingStaleReason = 'Single-size ungraded policy contradicts attached AuthoritativeGradingArtifact.';
+    staleReasons.push(gradingStaleReason);
   }
 
   const gradingContentFingerprint = computeArtifactInputFingerprint(
@@ -1324,7 +1353,7 @@ export function evaluatePipelineDependencyIntegrity(
     generatedContentFingerprint: gradingContentFingerprint,
     engineVersion: currentEngineVer,
     staleReason: gradingStaleReason,
-    regenerationRequired: gradingStatus === 'stale' || gradingStatus === 'invalid' || gradingStatus === 'revoked',
+    regenerationRequired: gradingStatus === 'stale' || gradingStatus === 'invalid' || gradingStatus === 'revoked' || gradingStatus === 'unverified',
     validationStatus: gradingValidationStatus,
     upstreamDependencies: [specArtifact.artifactId, draftingArtifact.artifactId, gradingRulesArtifact.artifactId],
     upstreamFingerprints: {
@@ -1527,20 +1556,49 @@ export function evaluatePipelineDependencyIntegrity(
   let exportStatus: PipelineArtifactStatus = 'current';
   let exportStaleReason: string | undefined = undefined;
 
-  if (draftingStatus === 'stale' || geomValStatus === 'stale' || snapStatus === 'stale' || snapStatus === 'invalid' || finishedDimsStatus === 'stale' || gradingStatus === 'stale') {
-    exportStatus = snapStatus === 'invalid' ? 'invalid' : 'stale';
-    exportStaleReason = snapStatus === 'invalid'
-      ? (snapStaleReason ?? 'Production export is blocked: pattern revision snapshot is invalid.')
-      : 'Production export is blocked: one or more dependent engineering stages are stale.';
+  const hasInvalidOrRevokedBlocking =
+    snapStatus === 'invalid' ||
+    gradingStatus === 'invalid' ||
+    gradingStatus === 'revoked' ||
+    geomValStatus === 'invalid' ||
+    measStatus === 'invalid';
+
+  const hasStaleStage =
+    draftingStatus === 'stale' ||
+    geomValStatus === 'stale' ||
+    snapStatus === 'stale' ||
+    finishedDimsStatus === 'stale' ||
+    gradingStatus === 'stale';
+
+  if (hasInvalidOrRevokedBlocking) {
+    exportStatus = 'invalid';
+    exportStaleReason =
+      snapStatus === 'invalid'
+        ? (snapStaleReason ?? 'Production export is blocked: pattern revision snapshot is invalid.')
+        : gradingStatus === 'revoked'
+          ? (gradingStaleReason ?? 'Production export is blocked: grading artifact has been revoked.')
+          : gradingStatus === 'invalid'
+            ? (gradingStaleReason ?? 'Production export is blocked: grading artifact is invalid or failed validation.')
+            : geomValStatus === 'invalid'
+              ? (geomStaleReason ?? 'Production export is blocked: geometry validation failed.')
+              : (measStaleReason ?? 'Production export is blocked: measurements are invalid.');
+  } else if (hasStaleStage) {
+    exportStatus = 'stale';
+    exportStaleReason =
+      gradingStatus === 'stale'
+        ? (gradingStaleReason ?? 'Production export is blocked: grading artifact is stale or superseded.')
+        : 'Production export is blocked: one or more dependent engineering stages are stale.';
   } else if (specStatus !== 'approved') {
     exportStatus = 'pending';
     exportStaleReason = `Production documentation export is blocked: design specification is ${specStatus}.`;
   } else if (!isMeasExplicitlyApproved) {
     exportStatus = 'pending';
     exportStaleReason = `Production documentation export is blocked: body measurements are ${measApprovalState} (explicit approval and non-AI provenance required).`;
-  } else if (geomValStatus !== 'current' || snapStatus !== 'current') {
+  } else if (geomValStatus !== 'current' || snapStatus !== 'current' || gradingStatus !== 'current') {
     exportStatus = 'pending';
-    exportStaleReason = snapStaleReason ?? 'Production export is pending completion of geometry validation or approved pattern revision snapshot.';
+    exportStaleReason =
+      (gradingStatus !== 'current' ? gradingStaleReason : snapStaleReason) ??
+      'Production export is pending completion of geometry validation, grading verification, or approved pattern revision snapshot.';
   }
 
   const exportContentFingerprint = computeArtifactInputFingerprint({
@@ -1603,18 +1661,47 @@ export function evaluatePipelineDependencyIntegrity(
     'production-export': exportArtifact
   };
 
-  const hasStale = Object.values(artifacts).some(a => a.status === 'stale');
-  const hasBlocking = Object.values(artifacts).some(a => a.status === 'invalid' || a.status === 'stale');
+  const hasStale = Object.values(artifacts).some(a => a.status === 'stale' || a.status === 'superseded');
+  const hasBlocking = Object.values(artifacts).some(
+    a =>
+      a.status === 'invalid' ||
+      a.status === 'stale' ||
+      a.status === 'revoked' ||
+      a.status === 'unverified' ||
+      a.status === 'superseded'
+  );
+  const gradingBlockingOrUnverified = gradingStatus !== 'current';
   const canExport =
     specStatus === 'approved' &&
     isMeasExplicitlyApproved &&
     !hasStale &&
     !hasBlocking &&
+    !gradingBlockingOrUnverified &&
     snapStatus === 'current' &&
-    geomValStatus === 'current';
+    geomValStatus === 'current' &&
+    exportStatus === 'current';
+  const isPipelineSynchronized =
+    !hasStale &&
+    !hasBlocking &&
+    !gradingBlockingOrUnverified &&
+    specStatus === 'approved' &&
+    isMeasExplicitlyApproved &&
+    geomValStatus !== 'invalid' &&
+    snapStatus !== 'invalid';
+
+  const blockingReasons = Object.values(artifacts)
+    .filter(
+      a =>
+        a.status === 'invalid' ||
+        a.status === 'stale' ||
+        a.status === 'revoked' ||
+        a.status === 'unverified' ||
+        a.status === 'superseded'
+    )
+    .map(a => a.staleReason ?? `Artifact '${a.artifactType}' is in blocking status '${a.status}'.`);
 
   return deepFreeze({
-    isPipelineSynchronized: !hasStale && specStatus === 'approved' && isMeasExplicitlyApproved,
+    isPipelineSynchronized,
     hasStaleArtifacts: hasStale,
     hasBlockingErrors: hasBlocking,
     activeSpecificationRevisionId: specRevisionId,
@@ -1624,6 +1711,7 @@ export function evaluatePipelineDependencyIntegrity(
     artifacts,
     staleReasons,
     requiredActions,
+    blockingReasons,
     canExportProductionDocumentation: canExport,
     evaluatedAt: now
   });
@@ -2287,7 +2375,8 @@ export function validateProductionExportPrerequisites(
         verificationContext: activeInputs.verificationContext,
         patternVerificationContext: activeInputs.patternVerificationContext,
         gradingSummary: activeInputs.gradingResult,
-        gradingArtifact: activeInputs.gradingArtifact
+        gradingArtifact: activeInputs.gradingArtifact,
+        exportGradingPolicy: activeInputs.exportGradingPolicy
       });
 
       const reportMismatches: string[] = [];
@@ -2298,6 +2387,16 @@ export function validateProductionExportPrerequisites(
       }
       if (Boolean(report.hasBlockingErrors) !== Boolean(recomputedReport.hasBlockingErrors)) {
         reportMismatches.push(`hasBlockingErrors (${report.hasBlockingErrors} !== ${recomputedReport.hasBlockingErrors})`);
+      }
+      if (Boolean(report.canExportProductionDocumentation) !== Boolean(recomputedReport.canExportProductionDocumentation)) {
+        reportMismatches.push(
+          `canExportProductionDocumentation (${report.canExportProductionDocumentation} !== ${recomputedReport.canExportProductionDocumentation})`
+        );
+      }
+      if (Boolean(report.isPipelineSynchronized) !== Boolean(recomputedReport.isPipelineSynchronized)) {
+        reportMismatches.push(
+          `isPipelineSynchronized (${report.isPipelineSynchronized} !== ${recomputedReport.isPipelineSynchronized})`
+        );
       }
 
       for (const stage of requiredStages) {
@@ -2317,9 +2416,10 @@ export function validateProductionExportPrerequisites(
 
       if (reportMismatches.length > 0) {
         reportOnlyMismatchedGradingStage =
-          Boolean(activeInputs.gradingArtifact) &&
-          mismatchedStages.length === 1 &&
-          mismatchedStages[0] === 'grading';
+          mismatchedStages.length > 0 &&
+          mismatchedStages.includes('grading') &&
+          mismatchedStages.every(s => s === 'grading' || s === 'production-export') &&
+          recomputedReport.artifacts.grading.status !== 'current';
         blockingArtifacts.push(
           `pipeline-integrity-report (forged: Report contradicts recomputed active dependency evaluation — ${reportMismatches.join('; ')})`
         );
@@ -3141,12 +3241,7 @@ export function computeProductionPackageLifecycleEventFingerprint(
 }
 
 function isValidPackageIsoDate(dateStr: unknown): boolean {
-  if (typeof dateStr !== 'string' || dateStr.trim() === '') return false;
-  const trimmed = dateStr.trim();
-  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))$/.test(trimmed)) {
-    return false;
-  }
-  return Number.isFinite(Date.parse(trimmed));
+  return isStrictValidIsoTimestamp(dateStr);
 }
 
 export function toCanonicalProductionPackagePieceEntry(
@@ -3936,9 +4031,17 @@ export function verifyProductionPackageIntegrity(
     );
   }
 
-  // Structural pieceInventory & manifest checks (AUDIT-05.1-03)
   const manifest = pkg.manifest;
   if (
+    !Number.isInteger(manifest.sourcePatternRevisionNumber) ||
+    manifest.sourcePatternRevisionNumber < 1 ||
+    typeof manifest.validationDigest !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(manifest.validationDigest) ||
+    typeof manifest.approvalDigest !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(manifest.approvalDigest) ||
+    manifest.projectId !== pkg.projectId ||
+    manifest.tenantId !== pkg.tenantId ||
+    manifest.garmentId !== pkg.garmentId ||
     !Array.isArray(manifest.includedSizes) ||
     manifest.includedSizes.length === 0 ||
     new Set(manifest.includedSizes).size !== manifest.includedSizes.length ||
@@ -3949,7 +4052,7 @@ export function verifyProductionPackageIntegrity(
     manifest.pieceCount <= 0
   ) {
     isManifestTampered = true;
-    errors.push('Production package manifest includedSizes, pieceInventory, or pieceCount is empty or invalid.');
+    errors.push('Production package manifest metadata, sourcePatternRevisionNumber, validationDigest, approvalDigest, includedSizes, pieceInventory, or pieceCount is invalid.');
   } else {
     let computedTotalInstances = 0;
     const sizeSet = new Set(manifest.includedSizes);
@@ -4212,64 +4315,135 @@ export function verifyProductionPackageIntegrity(
   if (sourceContext?.patternRevision) {
     const rev = sourceContext.patternRevision;
     const revIntegrity = verifyPatternRevisionLifecycleIntegrity(rev);
-    const revBaseFp = rev.contentFingerprint ?? rev.basePatternFingerprint;
+    const revBaseFp = revIntegrity.recomputedBasePatternFingerprint ?? rev.contentFingerprint ?? rev.basePatternFingerprint;
+    const revGarmentId = rev.sourceSpecificationId ?? rev.designSpecification.id;
     if (
       !revIntegrity.isValid ||
       rev.revisionId !== manifest.sourcePatternRevisionId ||
+      rev.revisionIndex !== manifest.sourcePatternRevisionNumber ||
+      rev.projectId !== manifest.projectId ||
+      revGarmentId !== manifest.garmentId ||
       revBaseFp !== manifest.basePatternFingerprint ||
       rev.geometryFingerprint !== manifest.geometryFingerprint ||
       rev.draftingConfigFingerprint !== manifest.draftingConfigFingerprint
     ) {
       isUpstreamMismatch = true;
-      errors.push(`Package manifest diverges from provided patternRevision '${rev.revisionId}'.`);
-      authorizationErrors.push(`Package manifest diverges from provided patternRevision '${rev.revisionId}'.`);
-    } else if (manifest.gradingMode === 'single-size-ungraded') {
-      try {
-        const expectedInv = buildCanonicalProductionPackageInventory({
-          patternRevision: rev,
-          gradingMode: 'single-size-ungraded'
+      const msg =
+        rev.revisionIndex !== manifest.sourcePatternRevisionNumber
+          ? `Package manifest.sourcePatternRevisionNumber (${manifest.sourcePatternRevisionNumber}) does not match authoritative patternRevision.revisionIndex (${rev.revisionIndex}).`
+          : `Package manifest diverges from provided patternRevision '${rev.revisionId}'.`;
+      errors.push(msg);
+      authorizationErrors.push(msg);
+    } else {
+      // Authoritative validationDigest binding (PKG-EDGE)
+      if (!rev.validation || !rev.validation.isValid || (rev.validation.failureCount ?? 0) > 0) {
+        isUpstreamMismatch = true;
+        const msg = `Package validationDigest cannot bind to invalid or failed patternRevision '${rev.revisionId}' validation result.`;
+        errors.push(msg);
+        authorizationErrors.push(msg);
+      } else if (manifest.gradingMode === 'single-size-ungraded') {
+        const expectedValidationDigest = computeCanonicalFingerprint({
+          patternValidation: rev.validation,
+          gradingValidation: null
         });
-        if (
-          manifest.baseSize !== expectedInv.baseSize ||
-          canonicalizeJson([...manifest.includedSizes]) !== canonicalizeJson([...expectedInv.includedSizes]) ||
-          manifest.pieceCount !== expectedInv.pieceCount ||
-          manifest.totalPieceInstancesAcrossSizes !== expectedInv.totalPieceInstancesAcrossSizes ||
-          canonicalizeJson([...manifest.pieceInventory]) !== canonicalizeJson([...expectedInv.pieceInventory])
-        ) {
+        if (manifest.validationDigest !== expectedValidationDigest) {
           isUpstreamMismatch = true;
-          const msg = `Single-size production package inventory diverges from authoritative patternRevision '${rev.revisionId}'.`;
+          const msg = `Package manifest.validationDigest '${manifest.validationDigest}' does not match authoritative validation digest '${expectedValidationDigest}'.`;
           errors.push(msg);
           authorizationErrors.push(msg);
         }
-      } catch (err) {
-        isUpstreamMismatch = true;
-        const msg = `Single-size package inventory reconstruction failed against patternRevision '${rev.revisionId}': ${err instanceof Error ? err.message : String(err)}`;
-        errors.push(msg);
-        authorizationErrors.push(msg);
+      } else if (manifest.gradingMode === 'graded-multi-size' && sourceContext.gradingArtifact) {
+        const expectedValidationDigest = computeCanonicalFingerprint({
+          patternValidation: rev.validation,
+          gradingValidation: sourceContext.gradingArtifact.gradingValidationResult
+        });
+        if (manifest.validationDigest !== expectedValidationDigest) {
+          isUpstreamMismatch = true;
+          const msg = `Package manifest.validationDigest '${manifest.validationDigest}' does not match authoritative graded validation digest '${expectedValidationDigest}'.`;
+          errors.push(msg);
+          authorizationErrors.push(msg);
+        }
       }
-    } else if (manifest.gradingMode === 'graded-multi-size') {
-      // Even if gradingArtifact is omitted in partial sourceContext, verify base-size inventory matches patternRevision
-      try {
-        const revExpectedBaseInv = buildCanonicalProductionPackageInventory({
-          patternRevision: rev,
-          gradingMode: 'single-size-ungraded'
+
+      // Authoritative approvalDigest binding (PKG-EDGE)
+      const appRec = rev.patternApprovalRecord;
+      const specFpForDigest = sourceContext.specification
+        ? computeSpecificationFingerprint(sourceContext.specification)
+        : (rev.sourceSpecificationFingerprint ?? manifest.sourceSpecificationFingerprint);
+      const measFpForDigest = sourceContext.measurementSet
+        ? sourceContext.measurementSet.canonicalFingerprint
+        : (rev.sourceMeasurementSetFingerprint ?? manifest.sourceMeasurementSetFingerprint);
+      if (!appRec || !revBaseFp || !specFpForDigest || !measFpForDigest) {
+        isUpstreamMismatch = true;
+        const msg = `Package manifest.approvalDigest cannot be bound because authoritative patternApprovalRecord or upstream fingerprints are missing on '${rev.revisionId}'.`;
+        errors.push(msg);
+        authorizationErrors.push(msg);
+      } else {
+        const expectedApprovalDigest = computeCanonicalFingerprint({
+          specificationApprovalFingerprint: specFpForDigest,
+          measurementApprovalFingerprint: measFpForDigest,
+          patternApprovalEventId: appRec.approvalEventId,
+          patternApprover: appRec.approverName,
+          patternApprovedAt: appRec.approvedAt,
+          patternAuthorityTier: appRec.authorityTier,
+          boundBasePatternFingerprint: revBaseFp
         });
-        const manifestBaseEntries = manifest.pieceInventory.filter(e => e.sizeCode === manifest.baseSize);
-        if (
-          manifest.baseSize !== revExpectedBaseInv.baseSize ||
-          manifest.pieceCount !== revExpectedBaseInv.pieceCount ||
-          canonicalizeJson(manifestBaseEntries) !== canonicalizeJson([...revExpectedBaseInv.pieceInventory])
-        ) {
+        if (manifest.approvalDigest !== expectedApprovalDigest) {
           isUpstreamMismatch = true;
-          const msg = `Graded production package base-size inventory diverges from authoritative patternRevision '${rev.revisionId}'.`;
+          const msg = `Package manifest.approvalDigest '${manifest.approvalDigest}' does not match authoritative approval digest '${expectedApprovalDigest}'.`;
           errors.push(msg);
           authorizationErrors.push(msg);
         }
-      } catch (err) {
-        isUpstreamMismatch = true;
-        const msg = `Graded package base-size inventory verification failed against patternRevision '${rev.revisionId}': ${err instanceof Error ? err.message : String(err)}`;
-        errors.push(msg);
-        authorizationErrors.push(msg);
+      }
+
+      if (manifest.gradingMode === 'single-size-ungraded') {
+        try {
+          const expectedInv = buildCanonicalProductionPackageInventory({
+            patternRevision: rev,
+            gradingMode: 'single-size-ungraded'
+          });
+          if (
+            manifest.baseSize !== expectedInv.baseSize ||
+            canonicalizeJson([...manifest.includedSizes]) !== canonicalizeJson([...expectedInv.includedSizes]) ||
+            manifest.pieceCount !== expectedInv.pieceCount ||
+            manifest.totalPieceInstancesAcrossSizes !== expectedInv.totalPieceInstancesAcrossSizes ||
+            canonicalizeJson([...manifest.pieceInventory]) !== canonicalizeJson([...expectedInv.pieceInventory])
+          ) {
+            isUpstreamMismatch = true;
+            const msg = `Single-size production package inventory diverges from authoritative patternRevision '${rev.revisionId}'.`;
+            errors.push(msg);
+            authorizationErrors.push(msg);
+          }
+        } catch (err) {
+          isUpstreamMismatch = true;
+          const msg = `Single-size package inventory reconstruction failed against patternRevision '${rev.revisionId}': ${err instanceof Error ? err.message : String(err)}`;
+          errors.push(msg);
+          authorizationErrors.push(msg);
+        }
+      } else if (manifest.gradingMode === 'graded-multi-size') {
+        // Even if gradingArtifact is omitted in partial sourceContext, verify base-size inventory matches patternRevision
+        try {
+          const revExpectedBaseInv = buildCanonicalProductionPackageInventory({
+            patternRevision: rev,
+            gradingMode: 'single-size-ungraded'
+          });
+          const manifestBaseEntries = manifest.pieceInventory.filter(e => e.sizeCode === manifest.baseSize);
+          if (
+            manifest.baseSize !== revExpectedBaseInv.baseSize ||
+            manifest.pieceCount !== revExpectedBaseInv.pieceCount ||
+            canonicalizeJson(manifestBaseEntries) !== canonicalizeJson([...revExpectedBaseInv.pieceInventory])
+          ) {
+            isUpstreamMismatch = true;
+            const msg = `Graded production package base-size inventory diverges from authoritative patternRevision '${rev.revisionId}'.`;
+            errors.push(msg);
+            authorizationErrors.push(msg);
+          }
+        } catch (err) {
+          isUpstreamMismatch = true;
+          const msg = `Graded package base-size inventory verification failed against patternRevision '${rev.revisionId}': ${err instanceof Error ? err.message : String(err)}`;
+          errors.push(msg);
+          authorizationErrors.push(msg);
+        }
       }
     }
   }
@@ -4278,7 +4452,9 @@ export function verifyProductionPackageIntegrity(
     const spec = sourceContext.specification;
     const specFp = computeSpecificationFingerprint(spec);
     if (
+      spec.projectId !== manifest.projectId ||
       spec.garmentId !== manifest.sourceSpecificationId ||
+      spec.garmentId !== manifest.garmentId ||
       spec.specificationRevisionId !== manifest.sourceSpecificationRevisionId ||
       specFp !== manifest.sourceSpecificationFingerprint
     ) {

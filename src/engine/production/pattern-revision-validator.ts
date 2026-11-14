@@ -11,6 +11,7 @@ import {
   PRODUCTION_PATTERN_SNAPSHOT_SCHEMA_VERSION,
   RevisionValidationResult
 } from './production-types';
+import { isStrictValidIsoTimestamp } from './crypto';
 import {
   computeCanonicalRevisionFingerprint,
   VALID_MEASUREMENT_ORIGINS
@@ -28,12 +29,10 @@ const VALID_FABRIC_PROVENANCES = [
 ] as const;
 
 /**
- * Validates whether an ISO date string is syntactically well-formed and parseable.
+ * Validates whether an ISO date string is syntactically well-formed and represents a valid Gregorian calendar date.
  */
 function isValidIsoDate(dateStr: unknown): boolean {
-  if (typeof dateStr !== 'string' || dateStr.trim() === '') return false;
-  const epoch = Date.parse(dateStr);
-  return Number.isFinite(epoch);
+  return isStrictValidIsoTimestamp(dateStr);
 }
 
 /**

@@ -30,6 +30,7 @@ import {
   computeEd25519PublicKeyFingerprint,
   generateEd25519KeyPairFromPassphrase,
   generateEd25519KeyPairFromRawSeedHex,
+  isStrictValidIsoTimestamp,
   sha256Hex,
   signEd25519Message
 } from './crypto';
@@ -139,13 +140,7 @@ export function isMisleadingChartApproverIdentity(identity: string | undefined):
 }
 
 function isValidIsoDate(dateStr: unknown): boolean {
-  if (typeof dateStr !== 'string' || dateStr.trim() === '') return false;
-  const trimmed = dateStr.trim();
-  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))$/.test(trimmed)) {
-    return false;
-  }
-  const epoch = Date.parse(trimmed);
-  return Number.isFinite(epoch);
+  return isStrictValidIsoTimestamp(dateStr);
 }
 
 /**
@@ -2310,6 +2305,7 @@ function validateGradedPieceSnapshotGeometry(
     for (const seg of contour.segments) {
       if (
         !seg ||
+        (seg.type !== 'line' && seg.type !== 'bezier') ||
         !seg.start ||
         !seg.end ||
         !Number.isFinite(seg.start.x) ||
@@ -2317,12 +2313,32 @@ function validateGradedPieceSnapshotGeometry(
         !Number.isFinite(seg.end.x) ||
         !Number.isFinite(seg.end.y) ||
         !Number.isFinite(seg.lengthCm) ||
-        seg.lengthCm < 0 ||
-        (seg.control1 && (!Number.isFinite(seg.control1.x) || !Number.isFinite(seg.control1.y))) ||
-        (seg.control2 && (!Number.isFinite(seg.control2.x) || !Number.isFinite(seg.control2.y)))
+        seg.lengthCm < 0
       ) {
-        errs.push(`Graded piece '${label}' (${expectedSizeCode}) ${contourName} has non-finite segment coordinates.`);
+        errs.push(`Graded piece '${label}' (${expectedSizeCode}) ${contourName} has non-finite or malformed segment geometry.`);
         break;
+      }
+      if (seg.type === 'bezier' || seg.controlPoints !== undefined) {
+        if (!Array.isArray(seg.controlPoints) || seg.controlPoints.length !== 2) {
+          errs.push(
+            `Graded piece '${label}' (${expectedSizeCode}) ${contourName} Bézier segment '${seg.id ?? 'unknown'}' must define exactly 2 finite controlPoints.`
+          );
+          break;
+        }
+        const [cp1, cp2] = seg.controlPoints;
+        if (
+          !cp1 ||
+          !cp2 ||
+          !Number.isFinite(cp1.x) ||
+          !Number.isFinite(cp1.y) ||
+          !Number.isFinite(cp2.x) ||
+          !Number.isFinite(cp2.y)
+        ) {
+          errs.push(
+            `Graded piece '${label}' (${expectedSizeCode}) ${contourName} Bézier segment '${seg.id ?? 'unknown'}' has non-finite or missing controlPoints coordinates.`
+          );
+          break;
+        }
       }
     }
   };
@@ -2401,10 +2417,15 @@ function validateGradingSizesAndParity(
   let isSizeRangeIncomplete = false;
   let isValidationFailed = false;
 
-  if (!Array.isArray(sizeRange) || sizeRange.length < 2 || !sizeRange.includes(baseSize)) {
+  if (
+    !Array.isArray(sizeRange) ||
+    sizeRange.length < 2 ||
+    sizeRange.some(s => typeof s !== 'string' || s.trim() === '' || s.trim() !== s) ||
+    !sizeRange.includes(baseSize)
+  ) {
     isSizeRangeIncomplete = true;
     errors.push(
-      `Grading artifact sizeRange [${(sizeRange ?? []).join(', ')}] is incomplete or missing baseSize '${baseSize}'.`
+      `Grading artifact sizeRange [${(sizeRange ?? []).join(', ')}] is incomplete, contains invalid size entries, or is missing baseSize '${baseSize}'.`
     );
     return { isSizeRangeIncomplete, isValidationFailed, errors };
   }
@@ -2416,7 +2437,7 @@ function validateGradingSizesAndParity(
 
   const sizeSet = new Set(sizeRange);
   for (const extraSize of Object.keys(perSizePatternGeometry ?? {})) {
-    if (!sizeSet.has(extraSize)) {
+    if (!extraSize || extraSize.trim() !== extraSize || !sizeSet.has(extraSize)) {
       isValidationFailed = true;
       errors.push(`Grading artifact contains undeclared size '${extraSize}' outside declared sizeRange.`);
     }
@@ -2520,12 +2541,22 @@ export function createAuthoritativeGradingArtifact(
 
   const projectId = (input.projectId ?? input.tenantId ?? 'project-patroner-default').trim();
   const tenantId = (input.tenantId ?? projectId).trim();
-  const baseSize = (input.baseSize ?? input.gradedPatternSet?.baseSize ?? 'M').trim();
-  const sizeRange = (
-    input.sizeRange
-      ? [...input.sizeRange]
-      : (input.gradedPatternSet?.supportedSizes ? [...input.gradedPatternSet.supportedSizes] : ['XS', 'S', 'M', 'L', 'XL', 'XXL'])
-  ).map(s => String(s).trim());
+  const baseSize = typeof (input.baseSize ?? input.gradedPatternSet?.baseSize ?? 'M') === 'string'
+    ? String(input.baseSize ?? input.gradedPatternSet?.baseSize ?? 'M').trim()
+    : '';
+  const rawSizeRange = input.sizeRange
+    ? [...input.sizeRange]
+    : (input.gradedPatternSet?.supportedSizes ? [...input.gradedPatternSet.supportedSizes] : ['XS', 'S', 'M', 'L', 'XL', 'XXL']);
+
+  if (!baseSize) {
+    throw new ProductionSnapshotValidationError('Grading artifact requires a non-empty baseSize.');
+  }
+  if (!Array.isArray(rawSizeRange) || rawSizeRange.some(s => typeof s !== 'string' || s.trim() === '')) {
+    throw new ProductionSnapshotValidationError(
+      'Grading artifact sizeRange cannot contain non-string, empty, or whitespace-only size codes.'
+    );
+  }
+  const sizeRange = rawSizeRange.map(s => s.trim());
 
   if (sizeRange.length < 2 || !sizeRange.includes(baseSize)) {
     throw new ProductionSnapshotValidationError(
@@ -2607,6 +2638,25 @@ export function createAuthoritativeGradingArtifact(
     }
   } else if (input.gradedPatternSet) {
     const gps = input.gradedPatternSet;
+    if (!gps.sizeResults || typeof gps.sizeResults !== 'object') {
+      throw new ProductionSnapshotValidationError(
+        'Grading artifact creation failed (fail-closed): gradedPatternSet.sizeResults must be a non-null object.'
+      );
+    }
+    if (gps.baseSize !== undefined && String(gps.baseSize).trim() !== baseSize) {
+      throw new ProductionSnapshotValidationError(
+        `Grading artifact creation failed (fail-closed): gradedPatternSet.baseSize '${String(gps.baseSize)}' does not match declared baseSize '${baseSize}'.`
+      );
+    }
+    const sizeSet = new Set(sizeRange);
+    for (const extraSz of Object.keys(gps.sizeResults)) {
+      const normalizedKey = typeof extraSz === 'string' ? extraSz.trim() : '';
+      if (!normalizedKey || normalizedKey !== extraSz || !sizeSet.has(extraSz)) {
+        throw new ProductionSnapshotValidationError(
+          `Grading artifact creation failed (fail-closed): gradedPatternSet.sizeResults contains invalid or undeclared size '${extraSz}' outside declared sizeRange [${sizeRange.join(', ')}].`
+        );
+      }
+    }
     for (const sz of sizeRange) {
       const szRes = gps.sizeResults[sz];
       if (!szRes) {
@@ -3232,6 +3282,10 @@ function expectedPatternEventTypeForTransition(
   }
 }
 
+export const PATTERN_REVISION_LIFECYCLE_LIMITATION_NOTES: readonly string[] = Object.freeze([
+  'Local hash-chain verification proves internal structural consistency of pattern revision lifecycleHistory but cannot prevent history rewriting or truncation by an attacker with unrestricted write access absent an external append-only ledger or signed identity checkpoint.'
+]);
+
 /**
  * Verifies the content integrity and append-only hash-chained lifecycle integrity
  * of an AuthoritativePatternRevision (Amendment 1 & Amendment 2).
@@ -3253,6 +3307,7 @@ export function verifyPatternRevisionLifecycleIntegrity(
   readonly derivedLifecycleState?: PatternRevisionLifecycleState;
   readonly reason?: string;
   readonly errors: readonly string[];
+  readonly limitationNotes: readonly string[];
 } {
   if (!revision || typeof revision !== 'object') {
     return {
@@ -3260,7 +3315,8 @@ export function verifyPatternRevisionLifecycleIntegrity(
       isContentTampered: false,
       isLifecycleTampered: false,
       reason: 'Pattern revision is missing.',
-      errors: ['Pattern revision is missing.']
+      errors: ['Pattern revision is missing.'],
+      limitationNotes: PATTERN_REVISION_LIFECYCLE_LIMITATION_NOTES
     };
   }
 
@@ -3271,7 +3327,8 @@ export function verifyPatternRevisionLifecycleIntegrity(
       isContentTampered: true,
       isLifecycleTampered: false,
       reason,
-      errors: [reason]
+      errors: [reason],
+      limitationNotes: PATTERN_REVISION_LIFECYCLE_LIMITATION_NOTES
     };
   }
 
@@ -3578,7 +3635,8 @@ export function verifyPatternRevisionLifecycleIntegrity(
       recomputedCurrentStateFingerprint: recomputedCurrentStateFp,
       derivedLifecycleState: derivedState,
       reason: errors[0],
-      errors
+      errors,
+      limitationNotes: PATTERN_REVISION_LIFECYCLE_LIMITATION_NOTES
     };
   }
 
@@ -3590,7 +3648,8 @@ export function verifyPatternRevisionLifecycleIntegrity(
     recomputedDraftingConfigFingerprint: recomputedDraftingFp,
     recomputedBasePatternFingerprint: recomputedBasePatternFp,
     reason: errors[0],
-    errors
+    errors,
+    limitationNotes: PATTERN_REVISION_LIFECYCLE_LIMITATION_NOTES
   };
 }
 

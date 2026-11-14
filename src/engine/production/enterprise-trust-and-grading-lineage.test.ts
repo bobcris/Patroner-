@@ -1886,6 +1886,15 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         buildCompleteExportPipelineFixture();
 
       // Create artifact with only S, M, L but require XS, S, M, L, XL, XXL at export
+      const partialGraded = {
+        ...graded,
+        supportedSizes: ['S', 'M', 'L'],
+        sizeResults: {
+          S: graded.sizeResults.S,
+          M: graded.sizeResults.M,
+          L: graded.sizeResults.L
+        }
+      };
       const partialSizeGrading = createAuthoritativeGradingArtifact({
         projectId: 'tenant-atelier-01',
         tenantId: 'tenant-atelier-01',
@@ -1899,7 +1908,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
         gradingRuleSetFingerprint: gradingRulesFp,
         baseSize: 'M',
         sizeRange: ['S', 'M', 'L'],
-        gradedPatternSet: graded,
+        gradedPatternSet: partialGraded as typeof graded,
         basePatternPieces: pieces
       });
 

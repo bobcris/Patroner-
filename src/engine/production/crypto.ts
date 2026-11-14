@@ -582,3 +582,61 @@ export function computeCanonicalSha256(
 ): string {
   return sha256Hex(canonicalizeJson(value, options));
 }
+
+/**
+ * Strictly validates an ISO-8601 UTC/offset timestamp (`YYYY-MM-DDTHH:MM:SS(.sss)?(Z|±HH:MM)`),
+ * rejecting non-existent Gregorian calendar dates (e.g. Feb 30, non-leap Feb 29, Apr 31, month 13, day 00)
+ * and out-of-range clock or timezone offset components that JavaScript `Date.parse` silently rolls over.
+ */
+export function isStrictValidIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return false;
+  }
+  const trimmed = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/.exec(
+    trimmed
+  );
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const tzOffsetSign = match[9];
+  const tzHour = match[10] !== undefined ? Number(match[10]) : 0;
+  const tzMinute = match[11] !== undefined ? Number(match[11]) : 0;
+
+  if (month < 1 || month > 12) return false;
+  const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const daysInMonth = [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (day < 1 || day > daysInMonth[month - 1]) return false;
+
+  if (hour < 0 || hour > 23) return false;
+  if (minute < 0 || minute > 59) return false;
+  if (second < 0 || second > 59) return false;
+
+  if (tzOffsetSign !== undefined) {
+    if (tzHour < 0 || tzHour > 23 || tzMinute < 0 || tzMinute > 59) {
+      return false;
+    }
+  }
+
+  const utcCheck = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (
+    utcCheck.getUTCFullYear() !== year ||
+    utcCheck.getUTCMonth() !== month - 1 ||
+    utcCheck.getUTCDate() !== day ||
+    utcCheck.getUTCHours() !== hour ||
+    utcCheck.getUTCMinutes() !== minute ||
+    utcCheck.getUTCSeconds() !== second
+  ) {
+    return false;
+  }
+
+  return Number.isFinite(Date.parse(trimmed));
+}
+

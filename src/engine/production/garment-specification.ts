@@ -43,6 +43,7 @@ import {
   generateEd25519KeyPairFromPassphrase,
   generateEd25519KeyPairFromRawSeedHex,
   hexToBytes,
+  isStrictValidIsoTimestamp,
   isValidEd25519PublicKey,
   isValidEd25519PublicKeyBytes,
   sha256Hex,
@@ -248,18 +249,6 @@ export const ALLOWED_REPLAY_STORE_KEYS: ReadonlySet<string> = new Set([
   'getConsumedRecord',
   'purgeExpired'
 ]);
-
-function isStrictValidIsoTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return false;
-  }
-  const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(trimmed)) {
-    return false;
-  }
-  const parsed = Date.parse(trimmed);
-  return Number.isFinite(parsed);
-}
 
 function isPlainRecordObject(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -1491,6 +1480,25 @@ export function createOidcPublicJwk(
     pubB64Url = kp.publicKeyBase64Url;
   }
 
+  if (meta.activatedAt !== undefined && !isStrictValidIsoTimestamp(meta.activatedAt)) {
+    throw new ProductionSnapshotValidationError(
+      `OIDC JWK "${keyId}" has malformed activatedAt ISO timestamp.`,
+      ['invalid-jwk-validity-window']
+    );
+  }
+  if (meta.expiresAt !== undefined && !isStrictValidIsoTimestamp(meta.expiresAt)) {
+    throw new ProductionSnapshotValidationError(
+      `OIDC JWK "${keyId}" has malformed expiresAt ISO timestamp.`,
+      ['invalid-jwk-validity-window']
+    );
+  }
+  if (meta.revokedAt !== undefined && !isStrictValidIsoTimestamp(meta.revokedAt)) {
+    throw new ProductionSnapshotValidationError(
+      `OIDC JWK "${keyId}" has malformed revokedAt ISO timestamp.`,
+      ['invalid-jwk-revoked-at']
+    );
+  }
+
   return {
     kty: 'OKP',
     crv: 'Ed25519',
@@ -1539,6 +1547,13 @@ export function issueVerifiableIdentityCredential(
     throw new ProductionSnapshotValidationError('Identity provider Ed25519 signing seed/private key cannot be empty.');
   }
 
+  if (
+    !isStrictValidIsoTimestamp(params.issuedAt) ||
+    !isStrictValidIsoTimestamp(params.expiresAt) ||
+    (params.notBefore !== undefined && !isStrictValidIsoTimestamp(params.notBefore))
+  ) {
+    throw new ProductionSnapshotValidationError('Identity credential issuedAt, expiresAt, and notBefore must be valid ISO-8601 timestamps.');
+  }
   const issuedMs = Date.parse(params.issuedAt);
   const expiresMs = Date.parse(params.expiresAt);
   if (Number.isNaN(issuedMs) || Number.isNaN(expiresMs)) {
