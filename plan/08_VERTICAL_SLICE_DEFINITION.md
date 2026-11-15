@@ -1,14 +1,14 @@
-# 08 — VERTICAL SLICE DEFINITION (`R2.1`)
+# 08 — VERTICAL SLICE DEFINITION (`R2.1.1`)
 
-**Document ID:** `PATRONER-BP-R2.1-08`  
-**Status:** Authoritative End-to-End Architectural Vertical Slice Specification (`M04a`/`M04b` & `M02h` Reconciled)  
+**Document ID:** `PATRONER-BP-R2.1.1-08`  
+**Status:** Authoritative End-to-End Architectural Vertical Slice Specification (`Gate Auth-3` — `M04a`/`M04b`, `M02h` & Tri-State Numerical/Offset Verification Reconciled)  
 **Governing Baseline:** `Patroner_Living_Project_Monograph_v5.16_Consolidated_Master.pdf` (`Ch. 03`, `Ch. 09`, `Ch. 15 Phase B/C/D`, `Revision v4.5`)
 
 ---
 
 ## 1. Purpose of the Vertical Slice
 
-Before scaling across all garment categories or launching the `M09` Commercial Pilot (`Release Level A`), Patroner must prove that its complete **Python Authoritative Computational System (`services/fashion-engine`) + Next.js Workspace (`apps/web`)** executes the full `Revision v4.5` closed-loop engineering flow end-to-end on real garments without architectural shortcuts, dependency circularity, mock data, or TypeScript authority leakage.
+Before scaling across all garment categories or launching the `M09` Commercial Pilot (`Gate Auth-4` / `Release Level A`), Patroner must prove at **`Gate Auth-3` (Vertical Slice Gate)** that its complete **Python Authoritative Computational System (`services/fashion-engine`) + Next.js Workspace (`apps/web`)** executes the full `Revision v4.5` closed-loop engineering flow end-to-end on real garments without architectural shortcuts, dependency circularity, mock data, or TypeScript authority leakage.
 
 ---
 
@@ -24,7 +24,7 @@ Before scaling across all garment categories or launching the `M09` Commercial P
 
 ---
 
-## 3. The Corrected 14-Step End-to-End Vertical Slice Pipeline (`R2.1`)
+## 3. The Corrected 14-Step End-to-End Vertical Slice Pipeline (`R2.1.1`)
 
 Per **`Correction 01`**, multimodal perception and intent confirmation (**`M04a`**, Steps 02–03) execute *before* deterministic drafting and have zero dependency on `M02d`/`M02e`, while controlled recipe compilation (**`M04b`**, Step 06) bridges approved intent into `M02d`/`M02e` drafting.  
 Per **`Correction 02`**, deterministic marker nesting and validation (**`M02h`**) is explicitly integrated into **Step 12** via the mandatory 8-stage geometry-to-tech-pack sequence.
@@ -37,7 +37,7 @@ Per **`Correction 02`**, deterministic marker nesting and validation (**`M02h`**
 | **04** | **Body Measurement & Avatar Selection** | `M02c` + `M06` | Customer/fit-model `BodyMeasurementProfile` (base `M` / `EU 38` + target grade `XS`–`XXL` / `EU 34`–`46`) | Validate anthropometric plausibility & measurement provenance (`Dossier 03`, `Dossier 11`), compute derived chains, generate parametric 3D fit avatar. | `ValidatedBodyProfile` + `AvatarBodyRepresentation` | `AC-02`, `AC-05`, `AC-08` |
 | **05** | **Material & Fabric Assignment** | `M03` | Selected woven fabric coupon (e.g., 100% Virgin Wool Gabardine, $240\text{ g/m}^2$, usable width $148.0\text{ cm}$) | Load measured tensile/bending/shear/shrinkage parameters (`Dossier 04`, `Dossier 09`), usable width/nap rules, and category ease policy. | `CalibratedMaterialSpec` (`confidence_tier: TIER_1_LAB | TIER_2_BENCHTOP`) | `AC-07` |
 | **06** | **Controlled Recipe Compilation & Deterministic 2D Drafting** | **`M04b` + `M02a` + `M02d` + `M02e`** | `GarmentIntentSpecification` (`M04a`) + `ValidatedBodyProfile` (`M02c`) + `CalibratedMaterialSpec` (`M03`) | **`M04b`** compiles confirmed intent into typed `GarmentRecipe`, `RecipeOperatorAST`, and `DraftPlan` (`Dossier 08`); invokes **`M02d`** block drafting and **`M02e`** style operators in `float64` (`Dossier 03`). | `GarmentRecipe` + `DraftPlan` + `DraftedPatternRevision` (`state: Drafted`) | `AC-03`, `AC-04`, `AC-05` |
-| **07** | **Certified Seam Allowance, Mitering, Notches & Assembly Validation** | `M02a`, `M02b`, `M02f` | `DraftedPatternRevision` + ISO 4916 seam assignment rules | Compute offset curves; execute **complete-interval ($t \in [0, 1]$) Bernstein/interval cusp & tangent-reversal verification (`Correction 05`, `ADR-009`)**, corner miters, notches, and certified seam-mating arc lengths (`Method C1`). | `ValidatedPatternRevision` (`state: Validated`) | `AC-03`, `AC-05` |
+| **07** | **Certified Seam Allowance, Mitering, Notches & Assembly Validation** | `M02a`, `M02b`, `M02f` | `DraftedPatternRevision` + ISO 4916 seam assignment rules | Compute offset curves; execute **tri-state (`CERTIFIED_VALID`) complete-interval ($t \in [0, 1]$) 6-category offset verification (`Method C3`, `Corrections C & D`, `ADR-009`)**, corner miters, notches, and certified seam-mating arc-length enclosures (`Method C1-Cert`, `Corrections A & B`). | `ValidatedPatternRevision` (`state: Validated`, `OffsetValidationRecord` & `NumericalVerificationRecord` attached) | `AC-03`, `AC-05` |
 | **08** | **3D Garment Assembly & Drape Simulation** | `M06` | `ValidatedPatternRevision` + `AvatarBodyRepresentation` + `CalibratedMaterialSpec` | Construct 3D sewing constraint graph, triangulate planar pieces, run calibrated orthotropic FEM/discrete-shell drape solver to equilibrium (`Dossier 10`). | `SimulationCaseResult` (3D draped `glTF` mesh, strain/pressure fields) | `AC-08` |
 | **09** | **Quantitative Fit Evaluation** | `M06` | `SimulationCaseResult` + `GarmentIntentSpecification` fit targets | Evaluate regional ease, contact pressure, grainline torque, and hem levelness (`Dossier 05`, `Dossier 11`, `Dossier 12`). | `FitEvaluationReport` (regional diagnostics, uncertainty bounds) | `AC-08`, `AC-09` |
 | **10** | **Bounded Pattern Optimization & Independent Re-Verification** | `M06` + `M04b` + `M02` | `FitEvaluationReport` (if regional strain/ease outside target band) | Adjust bounded recipe parameters $\boldsymbol{\theta} \in [\boldsymbol{\theta}_{\min}, \boldsymbol{\theta}_{\max}]$, re-compile via `M04b` (`Step 06`), independently re-validate via `M02b`/`M02f` (`Step 07`), and re-simulate (`Step 08`). | `BoundedOptimizationProposal` + `ParetoComparison` | `AC-03`, `AC-05`, `AC-08` |
@@ -52,7 +52,7 @@ Per **`Correction 02`**, deterministic marker nesting and validation (**`M02h`**
 
 To ensure zero ambiguity between grading (`M02g`), material constraints (`M03`), marker nesting (`M02h`), piece production sheets (`M05.1`), and tech packs (`M05.2`–`M05.5`), the pipeline enforces this exact 8-stage dataflow:
 
-1. **Stage 12.1 — Validated Pattern Geometry (`M02a`, `M02b`, `M02d`, `M02e`, `M02f`):** Base pieces pass closed-loop topology, certified arc-length/area bounds, and complete-interval $[0, 1]$ offset cusp/reversal verification.
+1. **Stage 12.1 — Validated Pattern Geometry (`M02a`, `M02b`, `M02d`, `M02e`, `M02f`):** Base pieces pass closed-loop topology, 5-concept certified arc-length (`Method C1-Cert`) and area (`Method C2`) enclosures, and tri-state `CERTIFIED_VALID` complete-interval $[0, 1]$ 6-category offset verification (`Method C3`).
 2. **Stage 12.2 — Validated Multi-Size Grading (`M02g`):** All target sizes (`XS`–`XXL` / `EU 34`–`46`) pass cross-size seam mating, notch proportionality, and monotonic area scaling.
 3. **Stage 12.3 — Material & Fabric-Width Constraints (`M03`):** Load `CalibratedMaterialSpec` specifying nominal usable cuttable width $W_{\text{usable}} = W_{\text{total}} - 2\,m_{\text{selvedge}}$, relaxation shrinkage factors $(\lambda_{\text{warp}}, \lambda_{\text{weft}})$, grainline tilt limit $\Delta\theta_{\max}$, and nap/one-way directional constraints ($0^\circ$ only vs. $0^\circ/180^\circ$).
 4. **Stage 12.4 — Marker Input Preparation (`M02h`):** Combine shrinkage-compensated graded cutting contours from `M02g`, validated order size-quantity breakdown (`DEF-M00-03` strict set equality), outward chordal buffer $\delta_{\text{chord}} = 0.02\text{ cm}$, and minimum cutter kerf clearance $c_{\text{kerf}} \ge 0.10\text{ cm}$.
