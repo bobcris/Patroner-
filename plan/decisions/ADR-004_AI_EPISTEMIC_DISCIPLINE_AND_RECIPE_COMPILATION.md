@@ -1,7 +1,7 @@
-# ADR-004 — MULTIMODAL AI INTERPRETATION (`M04a`), EPISTEMIC UNCERTAINTY & CONTROLLED RECIPE COMPILATION (`M04b`) (`R2.1.1`)
+# ADR-004 — MULTIMODAL AI INTERPRETATION (`M04a`), EPISTEMIC UNCERTAINTY & CONTROLLED RECIPE COMPILATION (`M04b`) (`R2.1.2`)
 
 - **ADR ID:** `ADR-004`
-- **Revision:** `2.1.1` (Targeted Numerical Assurance, Migration Boundary & Governance Correction)
+- **Revision:** `2.1.2` (Targeted Mathematical Correction, Numerical Assurance & Governance Alignment)
 - **Status:** Accepted & Mandatory
 - **Date:** 15 November 2026
 - **Governing Sources:** `Patroner_Living_Project_Monograph_v5.16_Consolidated_Master.pdf` (`Ch. 04`, `Ch. 05`), `Patroner_Architecture_Revision_v4.5.pdf`, `Dossier 06 v5.4`, `Dossier 07 v5.5`, `Dossier 08 v5.6`, `REQ-AI-01a`, `REQ-AI-01b`
@@ -16,7 +16,7 @@ Furthermore, in Blueprint R2, `M04` was treated as a single monolithic workload 
 ---
 
 ## 2. Decision
-1. **Explicit Architectural Split of `M04` into `M04a` and `M04b` (`Correction 01`):**
+1. **Explicit Architectural Split of `M04` into `M04a` and `M04b`:**
    - **`M04a` — Multimodal Perception & Design Intent (`REQ-AI-01a`):**
      - **Upstream Dependency:** Depends **only** on `M01` (`World Model, Schemas, Contracts & Revision Graph`, `M01.3` & `M01.5`). It has **zero** runtime or build-time dependency on `M02a`–`M02h` or `M03`.
      - **Lifecycle Execution (`Steps 02–03`):** Executes *before* deterministic drafting (`Step 06`) to ingest sketches, technical flats, reference images, and text briefs, produce a `DesignObservationBundle` with three-way epistemic tags (`OBSERVED_VISIBLE`, `INFERRED_CATEGORY_PRIOR`, `AMBIGUOUS_REQUIRES_CONFIRMATION`), and drive the human disambiguation gate to lock a canonical `GarmentIntentSpecification` (`Concept` → `Specified`).

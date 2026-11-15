@@ -1,24 +1,24 @@
-# WORKLOAD M05 — PRODUCTION SHEETS, TECH PACKS & MANUFACTURING DOCUMENTATION (`R2.1.1`)
+# WORKLOAD M05 — PRODUCTION SHEETS, TECH PACKS & MANUFACTURING DOCUMENTATION (`R2.1.2`)
 
 ## 1. Workload ID & Title
 - **Workload ID:** `M05`
 - **Title:** Piece Production Sheets, Complete Industrial Tech Packs, ISO 4915/4916 Seam Schedules, Operation Routing, `M02h`-Linked BOM, POM/QC & Cut-File Qualification
 - **Roadmap Phase Mapping:** `v5.16 Ch. 15 — Phase B/D (Production Engineering & Manufacturing Documentation)`
-- **Authorization Gate (`Correction F`):** Governed by **`Gate Auth-2`** (`M00.10` + `ADR-009`, `DEC-09`, `DEC-11`, `DEC-13`).
+- **Authorization Gate (`Critical Corrections D & E`):** Governed by **`Gate Auth-2`** (`M00.10` + `ADR-009` (`R2.1.2`), `DEC-09`, `DEC-11`, `DEC-13 Stage 2`).
 
 ## 2. Purpose & Architectural Role
-`M05` transforms a validated, graded pattern family (`M02g`), a validated deterministic marker layout (`M02h`, `Correction 02`), and a calibrated material specification (`M03`) into a complete, factory-executable **Manufacturing Tech Pack and Cryptographically Signed Release Package** (`Dossier 14 v5.12`) inside `services/fashion-engine`. It ports and remediates `src/engine/production/piece-production-sheet.ts` (consuming `M02a`/`M02f` production geometry to close `DEF-M00-02` via tri-state complete-interval $[0, 1]$ Bernstein/interval verification `Corrections C, D, E`, closing `DEF-M00-03` via strict quantity key set equality, and closing `DEF-M00-04` via mandatory tenant binding), while adding **Construction Specifications, ISO 4915/4916 Seam & Stitch Schedules, Directed Acyclic Sewing Operation Routing (`OperationDAG`), `M02h`-Linked Bill of Materials (`BOM`), Geometrically Reconciled Points of Measure (`POM`) QC Tolerances, and Calibrated DXF-AAMA / 1:1 PDF Cut-File Exports**.
+`M05` transforms a validated, graded pattern family (`M02g`), a validated deterministic marker layout (`M02h`), and a calibrated material specification (`M03`) into a complete, factory-executable **Manufacturing Tech Pack and Cryptographically Signed Release Package** (`Dossier 14 v5.12`) inside `services/fashion-engine`. It ports and remediates `src/engine/production/piece-production-sheet.ts` (consuming `M02a`/`M02f` production geometry to close `DEF-M00-02` via tri-state complete-interval $[0, 1]$ Bernstein/interval verification under the corrected offset derivative $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$, separate $Q(t)=0$ check, and $s\,d\,C(t)>0$ sign gate (`Critical Correction A`), closing `DEF-M00-03` via strict quantity key set equality, and closing `DEF-M00-04` via mandatory tenant binding), while adding **Construction Specifications, ISO 4915/4916 Seam & Stitch Schedules, Directed Acyclic Sewing Operation Routing (`OperationDAG`), `M02h`-Linked Bill of Materials (`BOM`), Geometrically Reconciled Points of Measure (`POM`) QC Tolerances, and Calibrated DXF-AAMA / 1:1 PDF Cut-File Exports**.
 
 ## 3. Governing Monograph Chapters, Addenda & Dossiers
 - `Patroner_Living_Project_Monograph_v5.16_Consolidated_Master.pdf`: `Ch. 07`, `Ch. 09`, `Ch. 11`, `Ch. 15 (Phase B/D)`, `App. A10`, `App. F`
 - `Dossier 14 v5.12` (Manufacturing Constraints, Tech Packs & Production Release)
 - Prior Milestone Audit Baseline: `M05.1` (Lifecycle & Provenance) and `M05.2.1-R2` (Piece Production Sheets — Phase E3 Audit Findings)
-- `ADR-003` & `ADR-009` (`R2.1.1` Five-Concept Numerical Assurance, `Method C1` Downgrade, 6-Category Offset Failure Taxonomy & Tri-State Interval Verification)
+- `ADR-003` & `ADR-009` (`R2.1.2` Corrected Offset Derivative Sign $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$, Parameter-to-Output Error Propagation `Method B1/B2`, 4-Layer `Method C1-Cert` Assurance, 6-Category Offset Failure Taxonomy & Tri-State Interval Verification)
 
 ## 4. Canonical Requirements Implemented (`REQ-*`)
 - **`REQ-MFG-01`**: Hard `isProductionReady: false` Default Invariant until Physical Sample + Plotter Qualification
 - **`REQ-MFG-02`**: Complete Industrial Tech Pack (Piece Sheets, ISO 4915/4916 Seam Schedule, Operation Routing DAG, `M02h`-Linked BOM, POM/QC, Calibrated DXF-AAMA/PDF Exports)
-- **`REQ-GEO-01`**, **`REQ-GEO-02`** (Consumes `M02a`/`M02f` certified `Method C1-Cert/C2/C3` area/perimeter bounds & tri-state `CERTIFIED_VALID` complete-interval $t \in [0, 1]$ offset verification)
+- **`REQ-GEO-01`**, **`REQ-GEO-02`** (Consumes `M02a`/`M02f` certified `Method C1-Cert/C2/C3` area/perimeter bounds with `Method B1/B2` parameter-to-output propagation & tri-state `CERTIFIED_VALID` complete-interval $t \in [0, 1]$ offset verification)
 - **`REQ-SEC-01`**, **`REQ-WM-02`** (Mandatory tenant isolation & RFC 8785 SHA-256 + Ed25519 provenance)
 
 ## 5. Current Repository Baseline & Classification
@@ -26,12 +26,13 @@
 - **Industrial Tech Pack (ISO 4915/4916 Seam Schedule, Sewing Operation DAG, BOM, POM QC Table, DXF-AAMA Export)**: `M` (Missing — `0%` implemented).
 
 ## 6. Residual Defects & Technical Debt to Close (`DEF-*`)
-1. **`DEF-M00-02` Closure (`Corrections C, D, E`):** Replace 3-point (`0, 0.5, 1`) offset segment sampling in `piece-production-sheet.ts` by delegating offset verification to `M02f`'s complete parameter-interval ($t \in [0, 1]$) Bernstein polynomial + `mpmath.iv` interval verifier (`Method C3`, `ADR-009`), enforcing `verification_outcome == "CERTIFIED_VALID"`, recording the 6-category `OffsetValidationRecord` (`REGULARITY_MARGIN_VIOLATION`, `ACTUAL_ZERO_SPEED_CUSP`, `TANGENT_REVERSAL`, `LOCAL_OFFSET_SELF_INTERSECTION`, `GLOBAL_CONTOUR_SELF_INTERSECTION`, `INCONCLUSIVE_VERIFICATION`), and enforcing $\ge 85\%$ primary segment projection span (banning `2%`-span straight line substitutions on curved contours).
+1. **`DEF-M00-02` Closure (`Critical Correction A`, `ADR-009 §4–§5`):** Replace 3-point (`0, 0.5, 1`) offset segment sampling in `piece-production-sheet.ts` by delegating offset verification to `M02f`'s complete parameter-interval ($t \in [0, 1]$) Bernstein polynomial + `mpmath.iv` interval verifier (`Method C3`, `ADR-009`) with $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$, separate $Q(t)=0$ check, and $s\,d\,C(t)>0$ sign gate, enforcing `verification_outcome == "CERTIFIED_VALID"`, recording the 6-category `OffsetValidationRecord` (`REGULARITY_MARGIN_VIOLATION`, `ACTUAL_ZERO_SPEED_CUSP`, `TANGENT_REVERSAL`, `LOCAL_OFFSET_SELF_INTERSECTION`, `GLOBAL_CONTOUR_SELF_INTERSECTION`, `INCONCLUSIVE_VERIFICATION`), and enforcing $\ge 85\%$ primary segment projection span (banning `2%`-span straight line substitutions on curved contours).
 2. **`DEF-M00-03` Closure:** Enforce strict set equality $\text{keys}(\texttt{quantity\_by\_size}) \equiv \text{set}(\texttt{supported\_sizes})$ (rejecting any extraneous/unknown size keys with `GRADING_EXTRA_UNDECLARED_SIZE` / `QUANTITY_BASIS_INVALID`) and reject payloads that supply conflicting scalar `expected_quantity_per_piece` and `expected_quantities_by_size`.
 3. **`DEF-M00-04` Closure:** Require non-empty `tenant_id` on both input artifacts (`grading_artifact.tenant_id`) and execution context in all builders and verifiers (`input.tenant_id == context.tenant_id`), failing closed with `CROSS_TENANT_MISMATCH` if either is missing.
 
-## 7. Prerequisites & Upstream Dependencies (`Correction 02` & `Correction E`)
-- Requires **`M01.5`** (Signed artifact storage), **`M02a`/`M02f`** (Authoritative production geometry & tri-state offset/seam/notch engine), **`M02g`** (Validated multi-size grading), **`M02h`** (Validated deterministic marker nesting & utilization — `Correction 02`), and **`M03`** (Material & seam compatibility rules).
+## 7. Prerequisites & Upstream Dependencies
+- Requires **`M01.5`** (Signed artifact storage), **`M02a`/`M02f`** (Authoritative production geometry & tri-state offset/seam/notch engine), **`M02g`** (Validated multi-size grading), **`M02h`** (Validated deterministic marker nesting & utilization), and **`M03`** (Material & seam compatibility rules).
+- Governed at **`Gate Auth-2`** by **`ADR-009` (`R2.1.2`)**, **`DEC-09`**, **`DEC-11`**, and **`DEC-13 Stage 2`** (`07_RISK_AND_OPEN_DECISIONS_REGISTER.md`).
 
 ## 8. Target Architecture & Module Ownership
 ```text
@@ -62,7 +63,7 @@ services/fashion-engine/app/production/
    - Aggregates `ValidatedMarkerArtifact` (`M02h`) + `PieceProductionSheetPackage` + `SeamAndStitchSchedule` + `SewingOperationDAG` + `BOM` + `GradedPOMSpecification` + `DXFAAMAArtifact` + `PDFPlotArtifact` + `CalibrationCertificate`.
 
 ## 10. Mathematical, Algorithmic & Domain Specifications
-1. **Mandatory 8-Stage Geometry-to-Tech-Pack Sequence (`Correction 02`) & Tri-State Gate (`Correction D`):**
+1. **Mandatory 8-Stage Geometry-to-Tech-Pack Sequence & Tri-State Gate:**
    `M05` enforces that `PieceProductionSheetPackage` and `ManufacturingTechPack` cannot be built unless Stages 12.1–12.6 (`M02a`–`M02f` geometry with `verification_outcome == "CERTIFIED_VALID"` → `M02g` grading → `M03` material width/nap constraints → `M02h` marker preparation → `M02h` deterministic marker nesting → `M02h` independent non-overlap & utilization verification) have completed and produced a valid `ValidatedMarkerArtifact`. Any `CERTIFIED_INVALID` or `INCONCLUSIVE` record fails closed while preserving its exact `failure_category`.
 2. **Strict Quantity Map Validation (`DEF-M00-03` Fix):**
    - Let $S = \text{set}(\texttt{graded\_family.supported\_sizes})$ and $K = \text{set}(\texttt{quantity\_by\_size.keys()})$.
@@ -74,14 +75,14 @@ services/fashion-engine/app/production/
    - Thread consumption per seam $e$ of certified length $L_e$ (`Method C1-Cert`):
      $$L_{\text{thread}, e} = (1 + w_{\text{thread}}) \cdot \gamma(\text{ISO\_4915\_class}, \text{thickness\_mm}) \cdot L_e$$
 4. **POM Geometric Reconciliation Invariant:**
-   - Every graded POM target value $P(S_k)$ is computed directly from `M02g` net sew contour anchors and verified to match the 2D piece geometry within $\le 0.05\text{ cm}$ (`DEC-11`), while physical QC inspection tolerances $\pm \tau_p$ ($\ge 0.20\text{ cm}$) govern shop-floor inspection in `M07.5`.
+   - Every graded POM target value $P(S_k)$ is computed directly from `M02g` net sew contour anchors (with `Method B1/B2` coordinate output bounds when anchor points are parameter-isolated) and verified to match the 2D piece geometry within $\le 0.05\text{ cm}$ (`DEC-11`), while physical QC inspection tolerances $\pm \tau_p$ ($\ge 0.20\text{ cm}$) govern shop-floor inspection in `M07.5`.
 5. **DXF-AAMA (`ASTM D6673`) Layer Standard & Calibration Square:**
    - Embeds an authoritative $100.0\text{ mm} \times 100.0\text{ mm}$ ($10.0\text{ cm} \times 10.0\text{ cm}$) calibration square piece on every DXF and 1:1 PDF plot sheet (`AC-10`).
 
 ## 11. API Endpoints, Async Jobs & Event Contracts
 - `POST /api/v1/production/piece-sheets` → Builds and verifies `PieceProductionSheetPackage`.
 - `POST /api/v1/production/tech-pack` → Consumes `M02h` `ValidatedMarkerArtifact` and `PieceProductionSheetPackage` to generate complete `ManufacturingTechPack`.
-- `POST /api/v1/production/verify-package` → Runs independent cryptographic, 5-concept numerical enclosure (`Method C1-Cert/C2/C3`), tri-state offset, marker, quantity, and tenant verification.
+- `POST /api/v1/production/verify-package` → Runs independent cryptographic, 5-concept numerical enclosure (`Method C1-Cert/C2/C3` + `Method B1/B2` output propagation), tri-state offset, marker, quantity, and tenant verification.
 
 ## 12. Security, Tenant Isolation, RBAC/ABAC & Provenance Controls
 - Mandatory `tenant_id` equality check at builder entry, verifier entry, and artifact download (`DEF-M00-04` closed).
@@ -94,7 +95,7 @@ services/fashion-engine/app/production/
   - Signed Export Drawer for `DXF-AAMA` and `1:1 PDF Plot` with $100.0\text{ mm}$ calibration square checklist.
 
 ## 14. Detailed Work Packages & Implementation Sequence
-1. **`M05.1` — Remediated Piece Production Sheet Engine (Python Port):** Port `piece-production-sheet.ts` to Python, delegating geometry/offset verification to `M02a`/`M02f` (`Method C1-Cert/C2/C3` + tri-state 6-category offset verification) and closing `DEF-M00-02`, `DEF-M00-03`, `DEF-M00-04`, and `DEF-M00-05`.
+1. **`M05.1` — Remediated Piece Production Sheet Engine (Python Port):** Port `piece-production-sheet.ts` to Python, delegating geometry/offset verification to `M02a`/`M02f` (`Method C1-Cert/C2/C3` + `Method B1/B2` output bounds + tri-state 6-category offset verification with $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$) and closing `DEF-M00-02`, `DEF-M00-03`, `DEF-M00-04`, and `DEF-M00-05`.
 2. **`M05.2` — ISO 4915/4916 Seam Schedule & Operation Routing DAG Generator.**
 3. **`M05.3` — `M02h`-Linked Bill of Materials (BOM) & Graded POM Reconciliation Engine.**
 4. **`M05.4` — Calibrated DXF-AAMA & 1:1 PDF Exporter.**
@@ -104,7 +105,7 @@ services/fashion-engine/app/production/
 - Preserves all 18 R1 and 34 R2 structural/provenance invariants from `m0521-piece-production-sheet.test.ts`, while replacing the defective numerical/cusp/quantity/tenant behaviors (`DEF-M00-02`–`05`) with Class B Normative expectations verified by the independent `M00.4` oracle harness.
 
 ## 16. Unit, Property & Adversarial Test Plan
-- Reproduce all Phase E2/E3 adversarial vectors (`t=0.25` and $t=1/\pi$ interior cusps, regularity-margin-only violation, `2%` straight segment on curved contour, extraneous size key `XXXL: 99`, conflicting scalar vs. map quantities, omitted `expectedTenantId` with blank `tenantId`, and skirt grading) and verify 100% deterministic classification into the exact 6-category taxonomy and fail-closed rejection.
+- Reproduce all Phase E2/E3 and `ADR-009 §4.4` adversarial vectors (Families 1–14, including `t=0.25` and $t=1/3$ stationary cusps, exact evolute cusp $1 - s\,d\,\kappa(t^*)=0$, over-offset tangent reversal $1 - s\,d\,\kappa(t) < 0$, regularity-margin-only violation $0 < 1 - s\,d\,\kappa(t) < 0.05$, convex vs. concave curvature sign distinction, `2%` straight segment on curved contour, extraneous size key `XXXL: 99`, conflicting scalar vs. map quantities, omitted `expectedTenantId` with blank `tenantId`, and skirt grading) and verify 100% deterministic classification into the exact 6-category taxonomy and fail-closed rejection.
 - Verify that an `INCONCLUSIVE` offset verification outcome blocks `PieceProductionSheetPackage` approval while recording `failure_category: "INCONCLUSIVE_VERIFICATION"` (never `ACTUAL_ZERO_SPEED_CUSP`).
 - Missing `ValidatedMarkerArtifact` (`M02h`) when requesting `ManufacturingTechPack` → rejected.
 
@@ -130,8 +131,9 @@ services/fashion-engine/app/production/
 - Unlocks the **Vertical Slice Gate (`plan/08`)** and **`M07`** (Maker Network, Sample Approval & Shop-Floor Traceability).
 
 ## 24. Definition of Done Checklist
-- [ ] `DEF-M00-02`, `DEF-M00-03`, `DEF-M00-04`, and `DEF-M00-05` verified closed by adversarial tests.
+- [ ] `Gate Auth-2` approvals (`ADR-009` (`R2.1.2`), `DEC-09`, `DEC-11`, `DEC-13 Stage 2`) recorded before implementation.
+- [ ] `DEF-M00-02`, `DEF-M00-03`, `DEF-M00-04`, and `DEF-M00-05` verified closed by adversarial tests (Families 1–14).
 - [ ] Complete 8-stage `M02g` → `M03` → `M02h` → `M05` pipeline operational in Python.
-- [ ] Five-concept `NumericalVerificationRecord` and 6-category tri-state `OffsetValidationRecord` persisted on every production sheet.
+- [ ] Five-concept `NumericalVerificationRecord` (with `Method B1/B2` output propagation) and 6-category tri-state `OffsetValidationRecord` persisted on every production sheet.
 - [ ] DXF-AAMA and 1:1 PDF exports verified by independent `ezdxf` reader and physical $100.0\text{ mm}$ calibration check (`AC-10`).
 - [ ] `is_production_ready: false` default enforced across all unapproved revisions.

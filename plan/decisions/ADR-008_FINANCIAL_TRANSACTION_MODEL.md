@@ -1,17 +1,17 @@
-# ADR-008 — MULTI-CURRENCY DOUBLE-ENTRY FINANCIAL LEDGER & MULTI-PARTY SETTLEMENT ARCHITECTURE (`R2.1.1`)
+# ADR-008 — MULTI-CURRENCY DOUBLE-ENTRY FINANCIAL LEDGER & MULTI-PARTY SETTLEMENT ARCHITECTURE (`R2.1.2`)
 
 - **ADR ID:** `ADR-008`
-- **Revision:** `2.1.1` (Targeted Numerical Assurance, Migration Boundary & Governance Correction)
-- **Status:** `APPROVED (Policy per v5.16 Ch. 08, Ch. 12 & App. F) / PROPOSED (Concrete Multi-Currency Chart-of-Accounts, Tax Profiles & FX Schema — Requires Finance/Legal/CPA Governance Approval per DEC-08, DEC-12; Blocks Gate Auth-2 for M08 & Gate Auth-4 for M09)`
+- **Revision:** `2.1.2` (Targeted Mathematical Correction, Numerical Assurance & Governance Alignment)
+- **Status:** `APPROVED (Policy per v5.16 Ch. 08, Ch. 12 & App. F) / PROPOSED (Concrete Multi-Currency Chart-of-Accounts, Tax Profiles & FX Schema — Requires Finance/Legal/CPA Governance Approval per DEC-08, DEC-12; Blocks M08 Production Sign-Off & Gate Auth-4 for M09)`
 - **Date:** 15 November 2026
-- **Governing Sources:** `Patroner_Living_Project_Monograph_v5.16_Consolidated_Master.pdf` (`Ch. 08`, `Ch. 12`, `App. F`), `Patroner_Monograph_v5.15_Commercial_Ecosystem_Update.pdf`, `REQ-FIN-01`, `DEC-08`, `DEC-12`
+- **Governing Sources:** `Patroner_Living_Project_Monograph_v5.16_Consolidated_Master.pdf` (`Ch. 08`, `Ch. 12`, `App. F`), `Patroner_Monograph_v5.15_Commercial_Ecosystem_Update.pdf`, `REQ-FIN-01`, `DEC-08`, `DEC-12`, `07_RISK_AND_OPEN_DECISIONS_REGISTER.md`
 
 ---
 
 ## 1. Context & Problem Statement
 Each physical garment transaction in Patroner involves multiple financial counter-parties, jurisdictions, and timing boundaries: customer checkout capture, PSP processing fees, VAT/GST/sales tax accrual, raw fabric lot allocation, workshop milestone payables (`M07`), return/remake reserve holdbacks, and creator royalty splits (`M08`).
 
-In Blueprint R2, `ADR-008` and `M08` contained hard-coded single-currency/single-jurisdiction phrasing (`EUR cents`, `EU OSS VAT`) that conflicted with `v5.16`'s international platform vision (`Correction 06`, `§8`). A production-grade financial ledger must support multi-currency, multi-jurisdiction transactions natively while distinguishing between the **configurable single operating jurisdiction/currency of the `M09` controlled commercial pilot (`DEC-12`)** and **full cross-currency settlement at scale (`M10`)**. Furthermore, per `Correction F`, jurisdiction-specific legal/tax sign-off (`DEC-12`) gates **`M09` Pilot Entry (`Gate Auth-4`)** and does **not** block unrelated foundational migration work (`M00`, `Gate Auth-1`) or geometry engineering (`M02`, `Gate Auth-2`).
+In Blueprint R2, `ADR-008` and `M08` contained hard-coded single-currency/single-jurisdiction phrasing (`EUR cents`, `EU OSS VAT`) that conflicted with `v5.16`'s international platform vision. A production-grade financial ledger must support multi-currency, multi-jurisdiction transactions natively while distinguishing between the **configurable single operating jurisdiction/currency of the `M09` controlled commercial pilot (`DEC-12`)** and **full cross-currency settlement at scale (`M10`)**. Per `07_RISK_AND_OPEN_DECISIONS_REGISTER.md` (`Critical Correction E`), CPA/legal sign-off on `ADR-008 Schema`, `DEC-08`, and `DEC-12` gates **`M08` production financial sign-off and `M09` Pilot Entry (`Gate Auth-4`)** and does **not** block unrelated foundational migration work (`M00`, `Gate Auth-1`) or geometry/simulation engineering (`M02`/`M06`, `Gate Auth-2`/`Gate Auth-3`).
 
 ---
 
@@ -33,7 +33,7 @@ In Blueprint R2, `ADR-008` and `M08` contained hard-coded single-currency/single
 
 ### 2.3 Transaction Currency vs. Functional/Reporting Currency & FX Rate Provenance
 - **Dual-Amount `JournalLine` Representation:**
-  Every `JournalLine` records **both**:
+   Every `JournalLine` records **both**:
   1. **Transaction Currency Amount:** `tx_currency: CHAR(3)`, `tx_minor_unit_exponent: SMALLINT`, `tx_debit_minor: BIGINT`, `tx_credit_minor: BIGINT`.
   2. **Functional / Reporting Currency Amount:** `func_currency: CHAR(3)` (defined per `Organization` / legal entity), `func_minor_unit_exponent: SMALLINT`, `func_debit_minor: BIGINT`, `func_credit_minor: BIGINT`.
 - **Immutable FX Rate Provenance (`FXRateSnapshot`):**
@@ -70,5 +70,5 @@ In Blueprint R2, `ADR-008` and `M08` contained hard-coded single-currency/single
 ---
 
 ## 3. Consequences & Enforcement
-- **Positive:** Eliminates single-currency/single-jurisdiction hardcoding (`Correction 06`), guarantees integer minor-unit exactness across 0-, 2-, 3-, and 4-decimal ISO 4217 currencies, provides full FX auditability, and cleanly separates the `M09` pilot's regulatory gate (`Gate Auth-4`) from `M00`/`M02` technical gates (`Correction F`).
+- **Positive:** Eliminates single-currency/single-jurisdiction hardcoding, guarantees integer minor-unit exactness across 0-, 2-, 3-, and 4-decimal ISO 4217 currencies, provides full FX auditability, and cleanly separates the `M09` pilot's regulatory gate (`Gate Auth-4`) from `M00`/`M02` technical gates (`07_RISK_AND_OPEN_DECISIONS_REGISTER.md`).
 - **Enforcement (`AC-12`, `Gate F.9`):** Verified by `Hypothesis` 5,000-lifecycle stateful property tests across `EUR` (`e=2`), `USD` (`e=2`), `GBP` (`e=2`), `JPY` (`e=0`), and `KWD` (`e=3`), and daily PSP-to-ledger zero-variance reconciliation checks.
