@@ -707,12 +707,17 @@ describe('Milestone 04.4: Integrated Pattern Grading & Cross-Size Assembly Valid
       assert.equal(gradedM.bodicePieces.length, directBodicePieces.length);
       assert.equal(gradedM.sleevePiece.seams.length, directSleeve.piece.seams.length);
 
-      // Compare front armhole seam length
+      // Compare front armhole seam length (seam metadata uses 2-decimal display lengthCm; assembly uses full-precision adaptiveLength)
       const fPiece = directBodicePieces.find(p => p.pieceCode.includes('BOD-F'));
+      const gfPiece = gradedM.bodicePieces.find(p => p.pieceCode.includes('BOD-F'));
       const directFrontSeam = fPiece?.seams.find(s => s.id.includes('armhole'));
+      const gradedBodiceFrontSeam = gfPiece?.seams.find(s => s.id.includes('armhole'));
+      const directFrontCurve = fPiece?.stitchingContour?.segments.find(s => s.id.includes('armhole')) as { adaptiveLength?: (tol: number) => { lengthCm: number } } | undefined;
       const gradedFrontSeam = gradedM.assemblyResult?.ease.frontBodiceArmholeLengthCm;
-      assert.ok(directFrontSeam && gradedFrontSeam);
-      assert.ok(Math.abs(directFrontSeam.lengthCm - gradedFrontSeam) < 1e-4);
+      assert.ok(directFrontSeam && gradedBodiceFrontSeam && gradedFrontSeam && directFrontCurve?.adaptiveLength);
+      assert.equal(directFrontSeam.lengthCm, gradedBodiceFrontSeam.lengthCm);
+      assert.ok(Math.abs(directFrontCurve.adaptiveLength(0.005).lengthCm - gradedFrontSeam) < 1e-12);
+      assert.ok(Math.abs(directFrontSeam.lengthCm - gradedFrontSeam) <= 0.005);
     });
 
     it('audit-7. verifies construction invariants across all generated sizes (CF perpendicularity, seam matches)', () => {

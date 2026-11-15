@@ -36,6 +36,7 @@ import {
   createAuthoritativeMeasurementSet,
   approveAuthoritativeMeasurementSet,
   createDraftPatternRevision,
+  isStrictValidIsoTimestamp,
   PatternPieceSnapshot,
   PieceCutSemanticsDeclaration,
   resolveCutQuantitySemantics,
@@ -43,6 +44,10 @@ import {
   verifyPieceProductionSheetIntegrity,
   verifyPieceProductionSheetSetIntegrity
 } from './index';
+import { approximateBezierLength, computeAdaptiveBezierLength } from '../geometry/math';
+import { CubicBezierCurve } from '../geometry/primitives';
+import { getArcLengthProjectionDiagnostics } from '../geometry/curve-projection';
+import { measureCurveSeam } from '../assembly/assembly-validator';
 import { DesignSpecification, GarmentCategory, PatternPiece } from '../../types';
 
 // ============================================================================
@@ -1950,6 +1955,787 @@ describe('Milestone 05.2.1 — Pattern Piece Production Sheets, Cut Semantics & 
       });
       assert.equal(wrongBasisCheck.isValid, false);
       assert.ok(wrongBasisCheck.rejectionCodes.includes('QUANTITY_BASIS_INVALID'));
+    });
+  });
+
+  // ==========================================================================
+  // M05.2.1-R2 REMEDIATION SUITES (WORKSTREAMS A–F)
+  // ==========================================================================
+
+  function computeIndependent256PtGLContourArea(
+    segments: NonNullable<PatternPieceSnapshot['stitchingContour']>['segments']
+  ): number {
+    const GL16_NODES = [
+      -0.989400934991649932596, -0.944575023073232576078, -0.865631202387831743880, -0.755404408355003033895,
+      -0.617876244402643748447, -0.458016777657227386342, -0.281603550779258913230, -0.095012509837637440185,
+      0.095012509837637440185, 0.281603550779258913230, 0.458016777657227386342, 0.617876244402643748447,
+      0.755404408355003033895, 0.865631202387831743880, 0.944575023073232576078, 0.989400934991649932596
+    ];
+    const GL16_WEIGHTS = [
+      0.027152459411754094852, 0.062253523938647892863, 0.095158511682492784810, 0.124628971255533872052,
+      0.149595988816576732081, 0.169156519395002538189, 0.182603415044923588867, 0.189450610455068496285,
+      0.189450610455068496285, 0.182603415044923588867, 0.169156519395002538189, 0.149595988816576732081,
+      0.124628971255533872052, 0.095158511682492784810, 0.062253523938647892863, 0.027152459411754094852
+    ];
+    const ox = segments[0].start.x;
+    const oy = segments[0].start.y;
+    let sum = 0;
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i];
+      const next = segments[(i + 1) % segments.length];
+      if (s.type === 'line' || !s.controlPoints) {
+        sum += (s.start.x - ox) * (s.end.y - oy) - (s.start.y - oy) * (s.end.x - ox);
+      } else {
+        const [cp1, cp2] = s.controlPoints;
+        const p0x = s.start.x - ox, p0y = s.start.y - oy;
+        const c1x = cp1.x - ox, c1y = cp1.y - oy;
+        const c2x = cp2.x - ox, c2y = cp2.y - oy;
+        const p3x = s.end.x - ox, p3y = s.end.y - oy;
+        for (let k = 0; k < 16; k++) {
+          const a = k / 16, b = (k + 1) / 16, half = (b - a) / 2, mid = (a + b) / 2;
+          for (let g = 0; g < 16; g++) {
+            const t = mid + half * GL16_NODES[g];
+            const mt = 1 - t;
+            const x = mt * mt * mt * p0x + 3 * mt * mt * t * c1x + 3 * mt * t * t * c2x + t * t * t * p3x;
+            const y = mt * mt * mt * p0y + 3 * mt * mt * t * c1y + 3 * mt * t * t * c2y + t * t * t * p3y;
+            const dx = 3 * mt * mt * (c1x - p0x) + 6 * mt * t * (c2x - c1x) + 3 * t * t * (p3x - c2x);
+            const dy = 3 * mt * mt * (c1y - p0y) + 6 * mt * t * (c2y - c1y) + 3 * t * t * (p3y - c2y);
+            sum += (x * dy - y * dx) * GL16_WEIGHTS[g] * half;
+          }
+        }
+      }
+      const gap = Math.hypot(s.end.x - next.start.x, s.end.y - next.start.y);
+      if (gap > 1e-12) {
+        sum += (s.end.x - ox) * (next.start.y - oy) - (s.end.y - oy) * (next.start.x - ox);
+      }
+    }
+    return Math.abs(sum * 0.5);
+  }
+
+  function makeSyntheticSymmetricPiece(
+    id: string,
+    stSegs: NonNullable<PatternPieceSnapshot['stitchingContour']>['segments'],
+    cutSegs: NonNullable<PatternPieceSnapshot['cuttingContour']>['segments']
+  ): PatternPieceSnapshot {
+    const base = makeRectangularPieceSnapshot();
+    const computeSegsBbox = (segs: NonNullable<PatternPieceSnapshot['stitchingContour']>['segments']) => {
+      const xs: number[] = [];
+      const ys: number[] = [];
+      for (const s of segs) {
+        xs.push(s.start.x, s.end.x);
+        ys.push(s.start.y, s.end.y);
+        if (s.controlPoints) {
+          xs.push(s.controlPoints[0].x, s.controlPoints[1].x);
+          ys.push(s.controlPoints[0].y, s.controlPoints[1].y);
+        }
+      }
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      return {
+        minX,
+        minY,
+        maxX,
+        maxY,
+        widthCm: maxX - minX,
+        heightCm: maxY - minY,
+        isApproximate: false,
+        basis: 'exact' as const
+      };
+    };
+    const stBbox = computeSegsBbox(stSegs);
+    const cutBbox = computeSegsBbox(cutSegs);
+    const stLen = stSegs.reduce((acc, s) => acc + (s.lengthCm ?? 0), 0);
+    const cutLen = cutSegs.reduce((acc, s) => acc + (s.lengthCm ?? 0), 0);
+    return {
+      ...base,
+      id,
+      pieceCode: id.toUpperCase(),
+      onFold: false,
+      cutCount: 2,
+      boundingBox: cutBbox,
+      stitchingContour: {
+        id: `${id}-st`,
+        isClosed: true,
+        segments: stSegs,
+        totalLengthCm: stLen,
+        boundingBox: stBbox
+      },
+      cuttingContour: {
+        id: `${id}-cut`,
+        isClosed: true,
+        segments: cutSegs,
+        totalLengthCm: cutLen,
+        boundingBox: cutBbox
+      }
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // SUITE 13 (AUDIT-0521-03): RETURNED AREA VALUES & ERROR-BOUND INTEGRITY
+  // --------------------------------------------------------------------------
+  describe('13. AUDIT-0521-03 — Returned Area Values & Upper Error-Bound Integrity', () => {
+    it('guarantees actual returned area error <= reported upper bound across all real Skirt/Bodice/Sleeve contours and non-integer/shifted/curved synthetic cases', () => {
+      const skirt = buildApprovedFoundation('skirt', 'garment-r2-area-skirt');
+      const bodice = buildFullBodiceGradingCtx('garment-r2-area-bodice');
+
+      const realPieces: PatternPieceSnapshot[] = [
+        ...skirt.patternRevision.patternPieces,
+        ...bodice.patternRevision.patternPieces
+      ];
+      for (const sz of Object.keys(bodice.gradingArtifact.perSizePatternGeometry)) {
+        realPieces.push(...bodice.gradingArtifact.perSizePatternGeometry[sz]);
+      }
+      assert.ok(realPieces.length >= 17);
+
+      let contoursVerified = 0;
+      for (const piece of realPieces) {
+        const metrics = computePieceGeometryMetrics(piece);
+        assert.equal(metrics.isValid, true, `Expected valid metrics for ${piece.pieceCode}/${piece.sizeCode}: ${metrics.errors.join('; ')}`);
+        assert.ok(metrics.stitchingAreaCm2 !== null && metrics.cuttingAreaCm2 !== null);
+
+        const stOracle = computeIndependent256PtGLContourArea(piece.stitchingContour!.segments);
+        const cutOracle = computeIndependent256PtGLContourArea(piece.cuttingContour!.segments);
+        const stActualErr = Math.abs(metrics.stitchingAreaCm2! - stOracle);
+        const cutActualErr = Math.abs(metrics.cuttingAreaCm2! - cutOracle);
+
+        assert.ok(
+          stActualErr <= metrics.numericalPrecision.stitchingAreaUpperBoundCm2,
+          `${piece.pieceCode}/${piece.sizeCode} stitching area error ${stActualErr} > upper bound ${metrics.numericalPrecision.stitchingAreaUpperBoundCm2}`
+        );
+        assert.ok(
+          cutActualErr <= metrics.numericalPrecision.cuttingAreaUpperBoundCm2,
+          `${piece.pieceCode}/${piece.sizeCode} cutting area error ${cutActualErr} > upper bound ${metrics.numericalPrecision.cuttingAreaUpperBoundCm2}`
+        );
+        assert.ok(metrics.numericalPrecision.stitchingAreaUpperBoundCm2 > 0);
+        assert.ok(metrics.numericalPrecision.cuttingAreaUpperBoundCm2 > 0);
+        assert.ok(
+          metrics.numericalPrecision.areaApproximationUpperBoundCm2 >=
+            Math.max(
+              metrics.numericalPrecision.stitchingAreaUpperBoundCm2,
+              metrics.numericalPrecision.cuttingAreaUpperBoundCm2
+            )
+        );
+        contoursVerified += 2;
+      }
+      assert.ok(contoursVerified >= 34);
+
+      // Verify full-precision preservation on non-integer polygon (never truncated to 4 decimals below ~1e-11 bound)
+      const piTriangle = makeSyntheticSymmetricPiece(
+        'pi-tri',
+        [
+          { id: 't1', type: 'line', start: { x: 0.1234567, y: 0.2345678 }, end: { x: 10.9876543, y: 0.2345678 }, seamAllowanceCm: 0, isFold: true, lengthCm: Number((10.9876543 - 0.1234567).toFixed(2)) },
+          { id: 't2', type: 'line', start: { x: 10.9876543, y: 0.2345678 }, end: { x: 10.9876543, y: 12.3456789 }, seamAllowanceCm: 0, isFold: true, lengthCm: Number((12.3456789 - 0.2345678).toFixed(2)) },
+          { id: 't3', type: 'line', start: { x: 10.9876543, y: 12.3456789 }, end: { x: 0.1234567, y: 0.2345678 }, seamAllowanceCm: 0, isFold: true, lengthCm: Number(Math.hypot(10.8641976, 12.1111111).toFixed(2)) }
+        ],
+        [
+          { id: 't1c', type: 'line', start: { x: 0.1234567, y: 0.2345678 }, end: { x: 10.9876543, y: 0.2345678 }, seamAllowanceCm: 0, isFold: true, sourceSegmentId: 't1', lengthCm: Number((10.9876543 - 0.1234567).toFixed(2)) },
+          { id: 't2c', type: 'line', start: { x: 10.9876543, y: 0.2345678 }, end: { x: 10.9876543, y: 12.3456789 }, seamAllowanceCm: 0, isFold: true, sourceSegmentId: 't2', lengthCm: Number((12.3456789 - 0.2345678).toFixed(2)) },
+          { id: 't3c', type: 'line', start: { x: 10.9876543, y: 12.3456789 }, end: { x: 0.1234567, y: 0.2345678 }, seamAllowanceCm: 0, isFold: true, sourceSegmentId: 't3', lengthCm: Number(Math.hypot(10.8641976, 12.1111111).toFixed(2)) }
+        ]
+      );
+      const triMetrics = computePieceGeometryMetrics(piTriangle);
+      const triExact = 0.5 * 10.8641976 * 12.1111111;
+      const triRounded4 = Number(triExact.toFixed(4));
+      assert.ok(Math.abs(triExact - triRounded4) > 1e-6);
+      assert.ok(Math.abs(triMetrics.stitchingAreaCm2! - triExact) <= triMetrics.numericalPrecision.stitchingAreaUpperBoundCm2);
+      assert.ok(triMetrics.numericalPrecision.stitchingAreaUpperBoundCm2 > 0);
+      assert.ok(triMetrics.numericalPrecision.stitchingAreaUpperBoundCm2 < 1e-9);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // SUITE 14 (AUDIT-0521-04): ADAPTIVE BÉZIER ARC-LENGTH CONTRACT
+  // --------------------------------------------------------------------------
+  describe('14. AUDIT-0521-04 — Adaptive Bézier Arc-Length Error-Bound & Tolerance Contract', () => {
+    it('returns full-precision lengths/bounds, enforces unrounded errorBoundCm <= toleranceCm, and separates per-segment vs contour bounds', () => {
+      // High-precision 64-pt GL single cubic arc-length oracle
+      const glCurveLength = (p0: { x: number; y: number }, p1: { x: number; y: number }, p2: { x: number; y: number }, p3: { x: number; y: number }): number => {
+        const nodes = [
+          -0.989400934991649932596, -0.944575023073232576078, -0.865631202387831743880, -0.755404408355003033895,
+          -0.617876244402643748447, -0.458016777657227386342, -0.281603550779258913230, -0.095012509837637440185,
+          0.095012509837637440185, 0.281603550779258913230, 0.458016777657227386342, 0.617876244402643748447,
+          0.755404408355003033895, 0.865631202387831743880, 0.944575023073232576078, 0.989400934991649932596
+        ];
+        const weights = [
+          0.027152459411754094852, 0.062253523938647892863, 0.095158511682492784810, 0.124628971255533872052,
+          0.149595988816576732081, 0.169156519395002538189, 0.182603415044923588867, 0.189450610455068496285,
+          0.189450610455068496285, 0.182603415044923588867, 0.169156519395002538189, 0.149595988816576732081,
+          0.124628971255533872052, 0.095158511682492784810, 0.062253523938647892863, 0.027152459411754094852
+        ];
+        let total = 0;
+        for (let k = 0; k < 8; k++) {
+          const a = k / 8, b = (k + 1) / 8, half = (b - a) / 2, mid = (a + b) / 2;
+          for (let g = 0; g < 16; g++) {
+            const t = mid + half * nodes[g];
+            const mt = 1 - t;
+            const dx = 3 * mt * mt * (p1.x - p0.x) + 6 * mt * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x);
+            const dy = 3 * mt * mt * (p1.y - p0.y) + 6 * mt * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y);
+            total += Math.hypot(dx, dy) * weights[g] * half;
+          }
+        }
+        return total;
+      };
+
+      // E2 Case 1: sleeve cap Bézier with toleranceCm = 0.00047
+      const { patternRevision } = buildApprovedFoundation('bodice', 'garment-r2-bez');
+      const slv = patternRevision.patternPieces.find(p => p.pieceCode === 'SLV-01')!;
+      const bez = slv.stitchingContour!.segments.find(s => s.type === 'bezier' && s.controlPoints)!;
+      const r1 = computeAdaptiveBezierLength(bez.start, bez.controlPoints![0], bez.controlPoints![1], bez.end, 0.00047, 14);
+      const trueLen = glCurveLength(bez.start, bez.controlPoints![0], bez.controlPoints![1], bez.end);
+      assert.equal(r1.toleranceAchieved, true);
+      assert.ok(r1.errorBoundCm <= 0.00047);
+      assert.ok(Math.abs(r1.lengthCm - trueLen) <= r1.errorBoundCm);
+      assert.ok(r1.lowerBoundCm <= trueLen && trueLen <= r1.upperBoundCm);
+
+      // E2 Case 2: boundary case where raw errorBoundCm = 0.00200120 > toleranceCm = 0.00200
+      let loY = 0.5, hiY = 20.0;
+      for (let i = 0; i < 60; i++) {
+        const midY = (loY + hiY) / 2;
+        const probe = computeAdaptiveBezierLength({ x: 0, y: 0 }, { x: 1, y: midY }, { x: 9, y: midY }, { x: 10, y: 0 }, 0.002, 4);
+        if (probe.errorBoundCm < 0.0020012) loY = midY;
+        else hiY = midY;
+      }
+      const probeBound = computeAdaptiveBezierLength({ x: 0, y: 0 }, { x: 1, y: hiY }, { x: 9, y: hiY }, { x: 10, y: 0 }, 0.002, 4);
+      assert.ok(probeBound.errorBoundCm > 0.002 && probeBound.errorBoundCm < 0.002005);
+      assert.equal(probeBound.toleranceAchieved, false, 'Must NEVER report toleranceAchieved=true when unrounded errorBoundCm > toleranceCm');
+
+      // Invalid tolerances & coordinates fail closed
+      assert.equal(computeAdaptiveBezierLength({ x: 0, y: 0 }, { x: 2, y: 5 }, { x: 8, y: 5 }, { x: 10, y: 0 }, -0.01).toleranceAchieved, false);
+      assert.equal(computeAdaptiveBezierLength({ x: 0, y: 0 }, { x: 2, y: 5 }, { x: 8, y: 5 }, { x: 10, y: 0 }, NaN).toleranceAchieved, false);
+      assert.equal(computeAdaptiveBezierLength({ x: 0, y: 0 }, { x: 2, y: 5 }, { x: 8, y: 5 }, { x: 10, y: 0 }, Infinity).toleranceAchieved, false);
+      assert.equal(computeAdaptiveBezierLength({ x: NaN, y: 0 }, { x: 2, y: 5 }, { x: 8, y: 5 }, { x: 10, y: 0 }, 0.002).toleranceAchieved, false);
+
+      // Callers remain consistent and bounded
+      const curveObj = new CubicBezierCurve('test-bez', bez.start, bez.controlPoints![0], bez.controlPoints![1], bez.end, 1, false);
+      const methodRes = curveObj.adaptiveLength(0.00047, 14);
+      assert.equal(methodRes.lengthCm, r1.lengthCm);
+      assert.equal(methodRes.errorBoundCm, r1.errorBoundCm);
+      assert.equal(approximateBezierLength(bez.start, bez.controlPoints![0], bez.controlPoints![1], bez.end), Number(computeAdaptiveBezierLength(bez.start, bez.controlPoints![0], bez.controlPoints![1], bez.end, 0.002).lengthCm.toFixed(2)));
+      const seamMeas = measureCurveSeam(curveObj, slv.id, slv.pieceCode, 'seam-test', 0.00047);
+      assert.equal(seamMeas.lengthCm, r1.lengthCm);
+      assert.equal(seamMeas.toleranceAchieved, true);
+      const projDiag = getArcLengthProjectionDiagnostics(curveObj, bez.controlPoints![0], 0.00047);
+      assert.ok(projDiag.arcLengthErrorBoundCm <= 0.00047);
+
+      // Aggregated contour perimeter bounds vs per-segment worst bound on multi-segment sleeve
+      const slvMetrics = computePieceGeometryMetrics(slv);
+      const np = slvMetrics.numericalPrecision;
+      assert.ok(np.stitchingPerimeterUpperBoundCm >= np.perimeterWorstErrorBoundCm);
+      assert.ok(np.cuttingPerimeterUpperBoundCm >= np.perimeterWorstErrorBoundCm);
+      assert.ok(np.perimeterTotalErrorBoundCm >= Math.max(np.stitchingPerimeterUpperBoundCm, np.cuttingPerimeterUpperBoundCm));
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // SUITE 15 (NEW-0521R1-02): AUTHORITATIVE ORDER QUANTITY CONTEXT & UNIFORMITY
+  // --------------------------------------------------------------------------
+  describe('15. NEW-0521R1-02 — Authoritative Order Quantity Binding & Intra-Size Uniformity', () => {
+    it('never trusts sheet.cutSemantics.garmentUnitQuantity on declared-order-quantity, rejects intra-size qty mismatches & partial maps', () => {
+      const ctx = buildFullBodiceGradingCtx('garment-r2-qty');
+      const frontPiece = ctx.gradingArtifact.perSizePatternGeometry.M.find(p => p.pieceCode === 'BOD-F-01')!;
+
+      // Build legitimate declared-order-quantity single sheet & graded set
+      const builtSheetRes = buildPatternPieceProductionSheet({
+        patternRevision: ctx.patternRevision,
+        piece: frontPiece,
+        gradingMode: 'graded-multi-size',
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01'],
+        garmentUnitQuantity: 5,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty',
+        generatedAt: FIXED_TIMESTAMP
+      });
+      assert.equal(builtSheetRes.validation.isValid, true);
+
+      // 1. Forging garmentUnitQuantity (5 -> 12) + recomputing fingerprint when expected quantity is OMITTED -> REJECTED
+      const forgedSheetBase = {
+        ...builtSheetRes,
+        cutSemantics: {
+          ...builtSheetRes.cutSemantics,
+          garmentUnitQuantity: 12,
+          totalPhysicalPanelsForOrder: 12 * (builtSheetRes.cutSemantics.physicalPanelCountPerGarment ?? 1)
+        }
+      };
+      const forgedSheet = {
+        ...forgedSheetBase,
+        sheetContentFingerprint: computePieceProductionSheetContentFingerprint(forgedSheetBase)
+      };
+      const omittedSingle = verifyPieceProductionSheetIntegrity(forgedSheet, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty',
+        cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01']
+      });
+      assert.equal(omittedSingle.isValid, false);
+      assert.ok(omittedSingle.rejectionCodes.includes('QUANTITY_BASIS_INVALID'));
+
+      // Even legitimate sheet fails declared-order-quantity verification when expected quantity is omitted
+      const validSingleMissingExp = verifyPieceProductionSheetIntegrity(builtSheetRes, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty',
+        cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01']
+      });
+      assert.equal(validSingleMissingExp.isValid, false);
+      assert.ok(validSingleMissingExp.rejectionCodes.includes('QUANTITY_BASIS_INVALID'));
+
+      // Passes when authoritative expectedGarmentUnitQuantity: 5 is supplied
+      const validSingleWithExp = verifyPieceProductionSheetIntegrity(builtSheetRes, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty',
+        cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01'],
+        expectedGarmentUnitQuantity: 5
+      });
+      assert.equal(validSingleWithExp.isValid, true);
+
+      // 2. Graded declared-order-quantity set tests
+      const qtyMap: Record<string, number> = { XS: 2, S: 3, M: 5, L: 4, XL: 2, XXL: 1 };
+      const builtSet = buildAuthoritativePieceProductionSheetSet({
+        patternRevision: ctx.patternRevision,
+        gradingMode: 'graded-multi-size',
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+        garmentUnitQuantitiesBySize: qtyMap,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty',
+        generatedAt: FIXED_TIMESTAMP
+      });
+      assert.equal(builtSet.validation.isValid, true);
+
+      // Valid verification with full authoritative map
+      const validSetCheck = verifyPieceProductionSheetSetIntegrity(builtSet, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty',
+        expectedGarmentUnitQuantitiesBySize: qtyMap
+      });
+      assert.equal(validSetCheck.isValid, true);
+
+      // Omitting expected quantities rejects even genuine declared-order-quantity set
+      const missingSetQty = verifyPieceProductionSheetSetIntegrity(builtSet, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty'
+      });
+      assert.equal(missingSetQty.isValid, false);
+      assert.ok(missingSetQty.rejectionCodes.includes('QUANTITY_BASIS_INVALID'));
+
+      // Partial quantity map omitting 'XXL' rejects
+      const partialQtyMap = { XS: 2, S: 3, M: 5, L: 4, XL: 2 };
+      const partialMapCheck = verifyPieceProductionSheetSetIntegrity(builtSet, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty',
+        expectedGarmentUnitQuantitiesBySize: partialQtyMap
+      });
+      assert.equal(partialMapCheck.isValid, false);
+      assert.ok(partialMapCheck.rejectionCodes.includes('QUANTITY_BASIS_INVALID'));
+
+      // Intra-size quantity divergence (BOD-F-01 = 99 vs BOD-B-01 = 5 in size M, recomputed digests)
+      const hackedMSheets = builtSet.sheetsBySize.M.map(s => {
+        if (s.pieceCode !== 'BOD-F-01') return s;
+        const mut = {
+          ...s,
+          cutSemantics: {
+            ...s.cutSemantics,
+            garmentUnitQuantity: 99,
+            totalPhysicalPanelsForOrder: 99 * (s.cutSemantics.physicalPanelCountPerGarment ?? 1)
+          }
+        };
+        return { ...mut, sheetContentFingerprint: computePieceProductionSheetContentFingerprint(mut) };
+      });
+      const intraMismatchBase = {
+        ...builtSet,
+        sheetsBySize: { ...builtSet.sheetsBySize, M: hackedMSheets },
+        totalPhysicalPanelsAcrossSizesForOrder: builtSet.totalPhysicalPanelsAcrossSizesForOrder! + (99 - 5)
+      };
+      const intraMismatchSet = {
+        ...intraMismatchBase,
+        sheetSetContentFingerprint: computePieceProductionSheetSetContentFingerprint(intraMismatchBase)
+      };
+      const intraCheck = verifyPieceProductionSheetSetIntegrity(intraMismatchSet, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty',
+        expectedGarmentUnitQuantitiesBySize: qtyMap
+      });
+      assert.equal(intraCheck.isValid, false);
+      assert.ok(intraCheck.rejectionCodes.includes('QUANTITY_BASIS_INVALID'));
+
+      // Tampered totalPhysicalPanelsAcrossSizesForOrder with recomputed digest rejects
+      const tamperedTotalsBase = {
+        ...builtSet,
+        totalPhysicalPanelsAcrossSizesForOrder: 9999
+      };
+      const tamperedTotalsSet = {
+        ...tamperedTotalsBase,
+        sheetSetContentFingerprint: computePieceProductionSheetSetContentFingerprint(tamperedTotalsBase)
+      };
+      const totalsCheck = verifyPieceProductionSheetSetIntegrity(tamperedTotalsSet, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-qty',
+        expectedGarmentUnitQuantitiesBySize: qtyMap
+      });
+      assert.equal(totalsCheck.isValid, false);
+      assert.ok(totalsCheck.rejectionCodes.includes('QUANTITY_BASIS_INVALID'));
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // SUITE 16 (NEW-0521R1-03): AUTHORITATIVE TENANT BINDING
+  // --------------------------------------------------------------------------
+  describe('16. NEW-0521R1-03 — Authoritative Tenant Binding Across Grading & Verifiers', () => {
+    it('binds sourceTenantId to expectedTenantId and gradingArtifact.tenantId and rejects unverified or conflicting tenants', () => {
+      const ctx = buildFullBodiceGradingCtx('garment-r2-tenant');
+      const frontM = ctx.gradingArtifact.perSizePatternGeometry.M.find(p => p.pieceCode === 'BOD-F-01')!;
+
+      const validGradedSheet = buildPatternPieceProductionSheet({
+        patternRevision: ctx.patternRevision,
+        piece: frontM,
+        gradingMode: 'graded-multi-size',
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01'],
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-tenant',
+        generatedAt: FIXED_TIMESTAMP
+      });
+      const validGradedSet = buildAuthoritativePieceProductionSheetSet({
+        patternRevision: ctx.patternRevision,
+        gradingMode: 'graded-multi-size',
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+        expectedProjectId: PROJECT_ID,
+        expectedTenantId: TENANT_ID,
+        expectedGarmentId: 'garment-r2-tenant',
+        generatedAt: FIXED_TIMESTAMP
+      });
+      assert.equal(validGradedSheet.validation.isValid, true);
+      assert.equal(validGradedSet.validation.isValid, true);
+
+      // 1. Missing expectedTenantId + valid gradingArtifact passes when sheet/set tenant matches gradingArtifact.tenantId
+      assert.equal(
+        verifyPieceProductionSheetIntegrity(validGradedSheet, {
+          patternRevision: ctx.patternRevision,
+          gradingArtifact: ctx.gradingArtifact,
+          cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01']
+        }).isValid,
+        true
+      );
+      assert.equal(
+        verifyPieceProductionSheetSetIntegrity(validGradedSet, {
+          patternRevision: ctx.patternRevision,
+          gradingArtifact: ctx.gradingArtifact,
+          cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS
+        }).isValid,
+        true
+      );
+
+      // 2. Forged sheet.sourceTenantId even when expectedTenantId is omitted (caught via gradingArtifact.tenantId)
+      const forgedSheetTenantBase = { ...validGradedSheet, sourceTenantId: 'rogue-tenant' };
+      const forgedSheetTenant = {
+        ...forgedSheetTenantBase,
+        sheetContentFingerprint: computePieceProductionSheetContentFingerprint(forgedSheetTenantBase)
+      };
+      const sheetTenantRes = verifyPieceProductionSheetIntegrity(forgedSheetTenant, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01']
+      });
+      assert.equal(sheetTenantRes.isValid, false);
+      assert.ok(sheetTenantRes.rejectionCodes.includes('CROSS_TENANT_MISMATCH'));
+
+      // 3. Forged sheetSet.sourceTenantId with expectedTenantId omitted (caught via gradingArtifact.tenantId)
+      const forgedSetTenantBase = { ...validGradedSet, sourceTenantId: 'rogue-tenant' };
+      const forgedSetTenant = {
+        ...forgedSetTenantBase,
+        sheetSetContentFingerprint: computePieceProductionSheetSetContentFingerprint(forgedSetTenantBase)
+      };
+      const setTenantRes = verifyPieceProductionSheetSetIntegrity(forgedSetTenant, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS
+      });
+      assert.equal(setTenantRes.isValid, false);
+      assert.ok(setTenantRes.rejectionCodes.includes('CROSS_TENANT_MISMATCH'));
+
+      // 4. Conflicting expectedTenantId vs gradingArtifact.tenantId
+      const conflictSingle = verifyPieceProductionSheetIntegrity(validGradedSheet, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        expectedTenantId: 'other-tenant',
+        cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01']
+      });
+      assert.equal(conflictSingle.isValid, false);
+      assert.ok(conflictSingle.rejectionCodes.includes('CROSS_TENANT_MISMATCH'));
+
+      const conflictSet = verifyPieceProductionSheetSetIntegrity(validGradedSet, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        expectedTenantId: 'other-tenant',
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS
+      });
+      assert.equal(conflictSet.isValid, false);
+      assert.ok(conflictSet.rejectionCodes.includes('CROSS_TENANT_MISMATCH'));
+
+      // 5. Cross-sheet conflict inside set & sheet.sourceTenantId vs sheetSet.sourceTenantId
+      const swappedSheetsBySize = {
+        ...validGradedSet.sheetsBySize,
+        M: validGradedSet.sheetsBySize.M.map((s, idx) =>
+          idx === 0
+            ? {
+                ...s,
+                sourceTenantId: 'other-tenant',
+                sheetContentFingerprint: computePieceProductionSheetContentFingerprint({ ...s, sourceTenantId: 'other-tenant' })
+              }
+            : s
+        )
+      };
+      const crossSheetBase = { ...validGradedSet, sheetsBySize: swappedSheetsBySize };
+      const crossSheetSet = {
+        ...crossSheetBase,
+        sheetSetContentFingerprint: computePieceProductionSheetSetContentFingerprint(crossSheetBase)
+      };
+      const crossSheetRes = verifyPieceProductionSheetSetIntegrity(crossSheetSet, {
+        patternRevision: ctx.patternRevision,
+        gradingArtifact: ctx.gradingArtifact,
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+        expectedTenantId: TENANT_ID
+      });
+      assert.equal(crossSheetRes.isValid, false);
+      assert.ok(crossSheetRes.rejectionCodes.includes('CROSS_TENANT_MISMATCH'));
+
+      // 6. Single-size-ungraded asserting sourceTenantId without expectedTenantId or gradingArtifact fails closed
+      const ungradedBase = buildApprovedFoundation('skirt', 'garment-r2-tenant-skirt');
+      const ungradedFront = ungradedBase.patternRevision.patternPieces.find(p => p.pieceCode === 'SK-01-F')!;
+      const assertedTenantSheet = buildPatternPieceProductionSheet({
+        patternRevision: ungradedBase.patternRevision,
+        piece: ungradedFront,
+        gradingMode: 'single-size-ungraded',
+        cutSemanticsDeclaration: SKIRT_CUT_DECLARATIONS['SK-01-F'],
+        expectedTenantId: TENANT_ID,
+        generatedAt: FIXED_TIMESTAMP
+      });
+      const missingAuthTenantRes = verifyPieceProductionSheetIntegrity(assertedTenantSheet, {
+        patternRevision: ungradedBase.patternRevision,
+        cutSemanticsDeclaration: SKIRT_CUT_DECLARATIONS['SK-01-F']
+      });
+      assert.equal(missingAuthTenantRes.isValid, false);
+      assert.ok(missingAuthTenantRes.rejectionCodes.includes('CROSS_TENANT_MISMATCH'));
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // SUITE 17 (NEW-0521R1-05): CONTINUOUS ADAPTIVE OFFSET VERIFICATION
+  // --------------------------------------------------------------------------
+  describe('17. NEW-0521R1-05 — Continuous Adaptive Offset Verification Over [0, 1]', () => {
+    it('rejects tilted lines, endpoint-dipped Béziers, localized interior spikes, wrong-side crossings, reversals, cusps, and depth limits', () => {
+      const base = makeRectangularPieceSnapshot();
+
+      // 1. E2 Attack 1 — Tilted straight-line offset: t=0 has 0.01 cm, t=0.5 has exact +1.0 cm, t=1 has 1.99 cm
+      const tiltedCutSegs = [
+        { id: 'r-fold-cut', type: 'line' as const, start: { x: 0, y: -1 }, end: { x: 0, y: 21 }, seamAllowanceCm: 0, isFold: true, sourceSegmentId: 'r-fold', seamId: 'r-center', lengthCm: 22 },
+        { id: 'r-bottom-cut', type: 'line' as const, start: { x: 0, y: 21 }, end: { x: 10.01, y: 21 }, seamAllowanceCm: 1, isFold: false, sourceSegmentId: 'r-bottom', seamId: 'r-hem', lengthCm: Number((10.01).toFixed(2)) },
+        { id: 'r-right-cut', type: 'line' as const, start: { x: 10.01, y: 21 }, end: { x: 11.99, y: -1 }, seamAllowanceCm: 1, isFold: false, sourceSegmentId: 'r-right', seamId: 'r-side', lengthCm: Number(Math.hypot(1.98, 22).toFixed(2)) },
+        { id: 'r-top-cut', type: 'line' as const, start: { x: 11.99, y: -1 }, end: { x: 0, y: -1 }, seamAllowanceCm: 1, isFold: false, sourceSegmentId: 'r-top', seamId: 'r-waist', lengthCm: Number((11.99).toFixed(2)) }
+      ];
+      const tiltedRes = computePieceGeometryMetrics({
+        ...base,
+        boundingBox: { minX: 0, minY: -1, maxX: 11.99, maxY: 21, widthCm: 11.99, heightCm: 22, isApproximate: false, basis: 'exact' },
+        cuttingContour: {
+          id: 'tilt-cut',
+          isClosed: true,
+          segments: tiltedCutSegs,
+          totalLengthCm: Number(tiltedCutSegs.reduce((a, s) => a + s.lengthCm, 0).toFixed(2)),
+          boundingBox: { minX: 0, minY: -1, maxX: 11.99, maxY: 21, widthCm: 11.99, heightCm: 22, isApproximate: false, basis: 'exact' }
+        }
+      });
+      assert.equal(tiltedRes.isValid, false);
+      assert.ok(tiltedRes.errors.some(e => e.includes('continuous normal offset vector')));
+
+      // Helper for closed curved panel: top edge is cubic Bézier from (0,0) -> (20,0), arch upward (y <= 0, outward is -Y for CW rectangle)
+      // Let's keep CCW or CW clean:
+      // Bottom (0,20)->(20,20), Right (20,20)->(20,0), Top cubic (20,0)->(0,0) curving slightly outward/up (negative y or positive y? Let's check: (0,0)->(0,20)->(20,20)->(20,0)->(0,0) has signedArea < 0 (CW on Y-down), outward normal of (20,0)->(0,0) has tx=-1, ty=0, outwardSign=1 => (-ty*1, tx*1) = (0, -1) = -Y!
+      const mkCurvedPiece = (cutTopCp1: { x: number; y: number }, cutTopCp2: { x: number; y: number }, cutTopStart = { x: 20, y: -1 }, cutTopEnd = { x: 0, y: -1 }) => {
+        const stCurve = {
+          id: 'c-top',
+          type: 'bezier' as const,
+          start: { x: 20, y: 0 },
+          end: { x: 0, y: 0 },
+          controlPoints: [{ x: 15, y: 0 }, { x: 5, y: 0 }] as const,
+          seamAllowanceCm: 1,
+          isFold: false,
+          seamId: 'c-top-seam',
+          lengthCm: 20
+        };
+        const stSegs = [
+          { id: 'c-left', type: 'line' as const, start: { x: 0, y: 0 }, end: { x: 0, y: 20 }, seamAllowanceCm: 0, isFold: true, seamId: 'c-left-s', lengthCm: 20 },
+          { id: 'c-bot', type: 'line' as const, start: { x: 0, y: 20 }, end: { x: 20, y: 20 }, seamAllowanceCm: 1, isFold: false, seamId: 'c-bot-s', lengthCm: 20 },
+          { id: 'c-right', type: 'line' as const, start: { x: 20, y: 20 }, end: { x: 20, y: 0 }, seamAllowanceCm: 1, isFold: false, seamId: 'c-right-s', lengthCm: 20 },
+          stCurve
+        ];
+        const cutCurveLen = computeAdaptiveBezierLength(cutTopStart, cutTopCp1, cutTopCp2, cutTopEnd, 0.002).lengthCm;
+        const miterLen = Math.hypot(cutTopStart.x - 21, cutTopStart.y - 0);
+        const cutLeftLen = Math.hypot(0 - cutTopEnd.x, 21 - cutTopEnd.y);
+        const cutSegs = [
+          { id: 'c-left-c', type: 'line' as const, start: cutTopEnd, end: { x: 0, y: 21 }, seamAllowanceCm: 0, isFold: true, sourceSegmentId: 'c-left', seamId: 'c-left-s', lengthCm: Number(cutLeftLen.toFixed(2)) },
+          { id: 'c-bot-c', type: 'line' as const, start: { x: 0, y: 21 }, end: { x: 21, y: 21 }, seamAllowanceCm: 1, isFold: false, sourceSegmentId: 'c-bot', seamId: 'c-bot-s', lengthCm: 21 },
+          { id: 'c-right-c', type: 'line' as const, start: { x: 21, y: 21 }, end: { x: 21, y: 0 }, seamAllowanceCm: 1, isFold: false, sourceSegmentId: 'c-right', seamId: 'c-right-s', lengthCm: 21 },
+          { id: 'c-right-miter', type: 'line' as const, start: { x: 21, y: 0 }, end: cutTopStart, role: 'miter' as const, seamAllowanceCm: 1, isFold: false, lengthCm: Number(miterLen.toFixed(2)) },
+          {
+            id: 'c-top-c',
+            type: 'bezier' as const,
+            start: cutTopStart,
+            end: cutTopEnd,
+            controlPoints: [cutTopCp1, cutTopCp2] as const,
+            seamAllowanceCm: 1,
+            isFold: false,
+            sourceSegmentId: 'c-top',
+            seamId: 'c-top-s',
+            lengthCm: Number(cutCurveLen.toFixed(2))
+          }
+        ];
+        return makeSyntheticSymmetricPiece('curved-atk', stSegs, cutSegs);
+      };
+
+      // Baseline valid flat curved piece
+      assert.equal(computePieceGeometryMetrics(mkCurvedPiece({ x: 15, y: -1 }, { x: 5, y: -1 })).isValid, true);
+
+      // 2. E2 Attack 2 — Curved Bézier with exact +1.0 cm at midpoint t=0.5 (y = -1.0) but endpoint dips (0.02 cm) at t=0 and t=1:
+      // B(0.5)_y = 0.125*y0 + 0.375*y1 + 0.375*y2 + 0.125*y3 = 0.25*(-0.02) + 0.75*(y1) = -1.0 => y1 = y2 = -0.995/0.75 = -1.3266667!
+      const dipEndPiece = mkCurvedPiece({ x: 15, y: -1.3266667 }, { x: 5, y: -1.3266667 }, { x: 20, y: -0.02 }, { x: 0, y: -0.02 });
+      const dipEndRes = computePieceGeometryMetrics(dipEndPiece);
+      assert.equal(dipEndRes.isValid, false);
+      assert.ok(dipEndRes.errors.some(e => e.includes('offset') && e.includes('c-top-c')));
+
+      // 3. Localized interior spike (t=0, t=0.5, t=1 all exact y = -1.0, asymmetric wiggle peaks outside allowedErr near t=0.21):
+      const spikePiece = mkCurvedPiece({ x: 15, y: -2.2 }, { x: 5, y: 0.2 });
+      const spikeRes = computePieceGeometryMetrics(spikePiece);
+      assert.equal(spikeRes.isValid, false);
+
+      // 4. Degenerate cusp derivative (triple repeated control points at endpoint -> derivLen === 0)
+      const cuspPiece = mkCurvedPiece({ x: 20, y: -1 }, { x: 20, y: -1 });
+      const cuspRes = computePieceGeometryMetrics(cuspPiece);
+      assert.equal(cuspRes.isValid, false);
+
+      // 5. Reversed curve traversal (cut segment reversed start/end vs stSeg direction)
+      const reversedPiece = mkCurvedPiece({ x: 5, y: -1 }, { x: 15, y: -1 }, { x: 0, y: -1 }, { x: 20, y: -1 });
+      const reversedRes = computePieceGeometryMetrics(reversedPiece);
+      assert.equal(reversedRes.isValid, false);
+
+      // 6. Extreme high-curvature oscillatory distortion exceeds subdivision node/depth limit -> fails closed
+      const extremePiece = mkCurvedPiece({ x: -1000, y: -1 }, { x: 1020, y: -1 });
+      const extremeRes = computePieceGeometryMetrics(extremePiece);
+      assert.equal(extremeRes.isValid, false);
+
+      // 7. All real Skirt / Bodice / Sleeve pieces continue to pass continuous offset verification
+      const skirt = buildApprovedFoundation('skirt', 'garment-r2-cont-skirt');
+      const bodice = buildApprovedFoundation('bodice', 'garment-r2-cont-bodice');
+      for (const p of [...skirt.patternRevision.patternPieces, ...bodice.patternRevision.patternPieces]) {
+        const res = computePieceGeometryMetrics(p);
+        assert.equal(res.isValid, true, `Real piece ${p.pieceCode} failed continuous offset: ${res.errors.join('; ')}`);
+      }
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // SUITE 18 (NEW-0521R1-06): STRICT WHITESPACE-FREE ISO TIMESTAMP VALIDATION
+  // --------------------------------------------------------------------------
+  describe('18. NEW-0521R1-06 — Strict Whitespace-Free ISO-8601 Timestamp Validation', () => {
+    it('rejects leading/trailing whitespace, tabs, and newlines across isStrictValidIsoTimestamp and production-sheet builders/verifiers', () => {
+      const paddedVariants = [
+        ` ${FIXED_TIMESTAMP}`,
+        `${FIXED_TIMESTAMP} `,
+        `\t${FIXED_TIMESTAMP}`,
+        `${FIXED_TIMESTAMP}\n`,
+        ` ${FIXED_TIMESTAMP}\r\n`
+      ];
+
+      for (const badTs of paddedVariants) {
+        assert.equal(isStrictValidIsoTimestamp(badTs), false, `Expected false for padded timestamp ${JSON.stringify(badTs)}`);
+      }
+      assert.equal(isStrictValidIsoTimestamp(FIXED_TIMESTAMP), true);
+
+      const { patternRevision } = buildApprovedFoundation('bodice', 'garment-r2-ts');
+      const frontPiece = patternRevision.patternPieces.find(p => p.pieceCode === 'BOD-F-01')!;
+      const validSheet = buildPatternPieceProductionSheet({
+        patternRevision,
+        piece: frontPiece,
+        gradingMode: 'single-size-ungraded',
+        cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01'],
+        generatedAt: FIXED_TIMESTAMP
+      });
+      const validSet = buildAuthoritativePieceProductionSheetSet({
+        patternRevision,
+        gradingMode: 'single-size-ungraded',
+        nonGradingReason: 'Timestamp test',
+        cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+        generatedAt: FIXED_TIMESTAMP
+      });
+
+      for (const badTs of paddedVariants) {
+        const bSheet = buildPatternPieceProductionSheet({
+          patternRevision,
+          piece: frontPiece,
+          gradingMode: 'single-size-ungraded',
+          cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01'],
+          generatedAt: badTs
+        });
+        assert.equal(bSheet.validation.isValid, false);
+        assert.ok(bSheet.validation.rejectionCodes.includes('TIMESTAMP_INVALID'));
+
+        const bSet = buildAuthoritativePieceProductionSheetSet({
+          patternRevision,
+          gradingMode: 'single-size-ungraded',
+          nonGradingReason: 'Timestamp test',
+          cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS,
+          generatedAt: badTs
+        });
+        assert.equal(bSet.validation.isValid, false);
+        assert.ok(bSet.validation.rejectionCodes.includes('TIMESTAMP_INVALID'));
+
+        const vSheet = verifyPieceProductionSheetIntegrity(
+          { ...validSheet, generatedAt: badTs },
+          { patternRevision, cutSemanticsDeclaration: BODICE_CUT_DECLARATIONS['BOD-F-01'] }
+        );
+        assert.equal(vSheet.isValid, false);
+        assert.ok(vSheet.rejectionCodes.includes('TIMESTAMP_INVALID'));
+
+        const vSet = verifyPieceProductionSheetSetIntegrity(
+          { ...validSet, generatedAt: badTs },
+          { patternRevision, cutSemanticsByPieceCode: BODICE_CUT_DECLARATIONS }
+        );
+        assert.equal(vSet.isValid, false);
+        assert.ok(vSet.rejectionCodes.includes('TIMESTAMP_INVALID'));
+      }
     });
   });
 });

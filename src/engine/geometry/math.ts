@@ -126,20 +126,32 @@ export function cubicBezierTangent(
 }
 
 export interface AdaptiveBezierLengthResult {
+  /** Authoritative full-precision single-segment cubic Bézier arc-length estimate (cm). */
   lengthCm: number;
+  /** Conservative lower bound on this single segment's true arc length (cm). */
   lowerBoundCm: number;
+  /** Conservative upper bound on this single segment's true arc length (cm). */
   upperBoundCm: number;
+  /**
+   * Complete conservative upper bound on |lengthCm - trueSegmentLength| for this single cubic Bézier segment (cm),
+   * combining half-spread (upper - lower) / 2 and binary64 floating-point roundoff margin.
+   * NOTE: This is a single-segment bound, NOT a whole-contour aggregated bound.
+   */
   errorBoundCm: number;
+  /** True iff input & tolerance are valid, maxDepth was not exceeded, and full conservative errorBoundCm <= toleranceCm. */
   toleranceAchieved: boolean;
   subdivisions: number;
   maxDepthReached: boolean;
 }
 
 /**
- * Computes cubic Bézier curve arc length adaptively using recursive De Casteljau subdivision.
- * Uses chord length as lower bound and control-polygon length as upper bound.
- * Both bounds are mathematically proven: L_chord <= ArcLength <= L_poly.
- * Returns the computed length and an independently calculated, proven error bound.
+ * Computes a single cubic Bézier curve segment's arc length adaptively using recursive De Casteljau subdivision.
+ * Uses chord length as lower bound and control-polygon length as upper bound:
+ *   L_chord <= TrueArcLength <= L_poly (in exact arithmetic),
+ * augmented with conservative IEEE-754 binary64 floating-point roundoff margins.
+ *
+ * Returns full-precision length, bounds, and errorBoundCm (never pre-rounded before comparing with toleranceCm).
+ * Note: Returns a per-segment bound; callers summing multiple segments across a contour must aggregate bounds.
  */
 export function computeAdaptiveBezierLength(
   p0: Point,
@@ -149,8 +161,32 @@ export function computeAdaptiveBezierLength(
   toleranceCm = 0.005,
   maxDepth = 14
 ): AdaptiveBezierLengthResult {
+  const coordsValid =
+    p0 && p1 && p2 && p3 &&
+    Number.isFinite(p0.x) && Number.isFinite(p0.y) &&
+    Number.isFinite(p1.x) && Number.isFinite(p1.y) &&
+    Number.isFinite(p2.x) && Number.isFinite(p2.y) &&
+    Number.isFinite(p3.x) && Number.isFinite(p3.y);
+
+  const tolValid = typeof toleranceCm === 'number' && Number.isFinite(toleranceCm) && toleranceCm >= 0;
+  const effectiveDepthCap = Number.isInteger(maxDepth) && maxDepth >= 0 ? maxDepth : 14;
+
+  if (!coordsValid) {
+    return {
+      lengthCm: NaN,
+      lowerBoundCm: NaN,
+      upperBoundCm: NaN,
+      errorBoundCm: NaN,
+      toleranceAchieved: false,
+      subdivisions: 0,
+      maxDepthReached: false
+    };
+  }
+
   let subdivisions = 0;
   let maxDepthReached = false;
+  let maxUsedDepth = 0;
+  const activeTol = tolValid ? toleranceCm : 0;
 
   function subdivideAndMeasure(
     q0: Point,
@@ -160,18 +196,21 @@ export function computeAdaptiveBezierLength(
     depth: number,
     localTol: number
   ): { lower: number; upper: number; est: number } {
+    if (depth > maxUsedDepth) {
+      maxUsedDepth = depth;
+    }
     const chord = distance(q0, q3);
     const poly = distance(q0, q1) + distance(q1, q2) + distance(q2, q3);
     const diff = poly - chord;
 
-    if (diff <= localTol || depth >= maxDepth) {
-      if (depth >= maxDepth && diff > localTol) {
+    if (diff <= localTol || depth >= effectiveDepthCap) {
+      if (depth >= effectiveDepthCap && diff > localTol) {
         maxDepthReached = true;
       }
       return {
         lower: chord,
         upper: poly,
-        // Midpoint of bounds provides minimax error <= diff / 2
+        // Midpoint of bounds provides minimax geometric error <= diff / 2
         est: (chord + poly) / 2
       };
     }
@@ -198,14 +237,50 @@ export function computeAdaptiveBezierLength(
     };
   }
 
-  const res = subdivideAndMeasure(p0, p1, p2, p3, 0, toleranceCm);
-  const errorBoundCm = Number(((res.upper - res.lower) / 2).toFixed(5));
-  const toleranceAchieved = errorBoundCm <= toleranceCm;
+  const res = subdivideAndMeasure(p0, p1, p2, p3, 0, activeTol);
+
+  const isExactAxisAlignedIntLine =
+    subdivisions === 0 &&
+    res.lower === res.upper &&
+    ((p0.x === p1.x && p1.x === p2.x && p2.x === p3.x &&
+      Number.isInteger(p0.x) && Number.isInteger(p0.y) && Number.isInteger(p3.y) &&
+      ((p0.y <= p1.y && p1.y <= p2.y && p2.y <= p3.y) || (p0.y >= p1.y && p1.y >= p2.y && p2.y >= p3.y))) ||
+     (p0.y === p1.y && p1.y === p2.y && p2.y === p3.y &&
+      Number.isInteger(p0.y) && Number.isInteger(p0.x) && Number.isInteger(p3.x) &&
+      ((p0.x <= p1.x && p1.x <= p2.x && p2.x <= p3.x) || (p0.x >= p1.x && p1.x >= p2.x && p2.x >= p3.x))));
+
+  const maxAbsCoord = Math.max(
+    Math.abs(p0.x), Math.abs(p0.y),
+    Math.abs(p1.x), Math.abs(p1.y),
+    Math.abs(p2.x), Math.abs(p2.y),
+    Math.abs(p3.x), Math.abs(p3.y),
+    1
+  );
+  const leafCount = subdivisions + 1;
+  const U = Number.EPSILON / 2;
+  const fpMarginCm = (res.upper === 0 || isExactAxisAlignedIntLine)
+    ? 0
+    : (12 * U * res.upper + 4 * leafCount * Math.max(1, maxUsedDepth) * U * maxAbsCoord);
+
+  const rawHalfSpread = Math.max(0, (res.upper - res.lower) / 2);
+  const lowerBoundCm = res.upper === 0 || isExactAxisAlignedIntLine ? res.lower : Math.max(0, res.lower - fpMarginCm);
+  const upperBoundCm = res.upper === 0 || isExactAxisAlignedIntLine ? res.upper : res.upper + fpMarginCm;
+  // Combine minimax geometric half-spread + leaf/sum FP roundoff + final arithmetic roundoff (strictly >= exact bound)
+  const rawErrorBoundCm = (res.upper === 0 || isExactAxisAlignedIntLine)
+    ? 0
+    : (rawHalfSpread + fpMarginCm + 4 * U * Math.max(res.est, rawHalfSpread)) * (1 + 4 * Number.EPSILON);
+
+  const errorBoundCm = Number.isFinite(rawErrorBoundCm) ? rawErrorBoundCm : NaN;
+  const toleranceAchieved =
+    tolValid &&
+    !maxDepthReached &&
+    Number.isFinite(errorBoundCm) &&
+    errorBoundCm <= toleranceCm;
 
   return {
-    lengthCm: Number(res.est.toFixed(3)),
-    lowerBoundCm: Number(res.lower.toFixed(3)),
-    upperBoundCm: Number(res.upper.toFixed(3)),
+    lengthCm: res.est,
+    lowerBoundCm,
+    upperBoundCm,
     errorBoundCm,
     toleranceAchieved,
     subdivisions,
@@ -215,13 +290,14 @@ export function computeAdaptiveBezierLength(
 
 /**
  * Calculates cubic Bezier curve length using adaptive subdivision with guaranteed error bounds.
+ * Presentation helper returning 2-decimal rounded length (in cm) from full-precision adaptive calculation.
  */
 export function approximateBezierLength(
   p0: Point,
   p1: Point,
   p2: Point,
   p3: Point,
-  steps = 30
+  _steps = 30
 ): number {
   return Number(computeAdaptiveBezierLength(p0, p1, p2, p3, 0.002).lengthCm.toFixed(2));
 }

@@ -589,12 +589,11 @@ export function computeCanonicalSha256(
  * and out-of-range clock or timezone offset components that JavaScript `Date.parse` silently rolls over.
  */
 export function isStrictValidIsoTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string' || value.trim().length === 0) {
+  if (typeof value !== 'string' || value.length === 0) {
     return false;
   }
-  const trimmed = value.trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/.exec(
-    trimmed
+    value
   );
   if (!match) {
     return false;
@@ -637,6 +636,6 @@ export function isStrictValidIsoTimestamp(value: unknown): value is string {
     return false;
   }
 
-  return Number.isFinite(Date.parse(trimmed));
+  return Number.isFinite(Date.parse(value));
 }
 

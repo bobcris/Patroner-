@@ -149,7 +149,14 @@ export interface BezierNumericalPrecisionMetadata {
   readonly perimeterMaxSubdivisionDepth: number;
   readonly perimeterActualMaxDepth: number;
   readonly perimeterMaxDepthReached: boolean;
+  /** Worst individual segment adaptive error bound across stitching & cutting contours (per-segment bound, cm). */
   readonly perimeterWorstErrorBoundCm: number;
+  /** Aggregated whole-contour perimeter upper error bound for stitchingContour (sum of segment + FP bounds, cm). */
+  readonly stitchingPerimeterUpperBoundCm: number;
+  /** Aggregated whole-contour perimeter upper error bound for cuttingContour (sum of segment + FP bounds, cm). */
+  readonly cuttingPerimeterUpperBoundCm: number;
+  /** Combined whole-contour perimeter upper error bound across stitching + cutting contours (cm). */
+  readonly perimeterTotalErrorBoundCm: number;
   readonly perimeterAllTolerancesAchieved: boolean;
   readonly areaMethod:
     | 'exact-shoelace-polygon'

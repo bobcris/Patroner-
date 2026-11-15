@@ -158,10 +158,17 @@ export interface PieceProductionSheetSetVerificationResult {
   readonly warnings: readonly string[];
 }
 
+export const MAX_OFFSET_VERIFY_DEPTH = 11;
+
 function round4(n: number): number {
   return Number(n.toFixed(4));
 }
 
+/**
+ * Preserves positive error bounds without downward truncation or rounding down.
+ * Scales positive values slightly upward by 8 binary64 ulps so downstream consumer
+ * sums/checks remain strictly conservative.
+ */
 function preservePositiveErrorBound(val: number): number {
   if (!Number.isFinite(val) || val < 0) {
     return NaN;
@@ -169,7 +176,7 @@ function preservePositiveErrorBound(val: number): number {
   if (val === 0) {
     return 0;
   }
-  return Number(val.toPrecision(6));
+  return val * (1 + 8 * Number.EPSILON);
 }
 
 function pointDistance(a: Point, b: Point): number {
@@ -626,6 +633,468 @@ function evalSegmentPointAndTangent(
   return evalCubicBezierPointAndTangent(seg.start, seg.controlPoints[0], seg.controlPoints[1], seg.end, t);
 }
 
+interface CubicBezierControlPoints {
+  readonly p0: Point;
+  readonly cp1: Point;
+  readonly cp2: Point;
+  readonly p3: Point;
+}
+
+function evalCubicBezierWithDeriv(
+  p0: Point,
+  cp1: Point,
+  cp2: Point,
+  p3: Point,
+  t: number
+): { point: Point; tangent: Point; derivLen: number } {
+  const mt = 1 - t;
+  const x =
+    mt * mt * mt * p0.x +
+    3 * mt * mt * t * cp1.x +
+    3 * mt * t * t * cp2.x +
+    t * t * t * p3.x;
+  const y =
+    mt * mt * mt * p0.y +
+    3 * mt * mt * t * cp1.y +
+    3 * mt * t * t * cp2.y +
+    t * t * t * p3.y;
+  const dx =
+    3 * mt * mt * (cp1.x - p0.x) +
+    6 * mt * t * (cp2.x - cp1.x) +
+    3 * t * t * (p3.x - cp2.x);
+  const dy =
+    3 * mt * mt * (cp1.y - p0.y) +
+    6 * mt * t * (cp2.y - cp1.y) +
+    3 * t * t * (p3.y - cp2.y);
+  const derivLen = Math.hypot(dx, dy);
+  return {
+    point: { x, y },
+    tangent: derivLen > 1e-12 ? { x: dx / derivLen, y: dy / derivLen } : { x: 0, y: 0 },
+    derivLen
+  };
+}
+
+function splitCubicBezierHalf(
+  c: CubicBezierControlPoints
+): { readonly left: CubicBezierControlPoints; readonly right: CubicBezierControlPoints } {
+  const p01 = { x: (c.p0.x + c.cp1.x) / 2, y: (c.p0.y + c.cp1.y) / 2 };
+  const p12 = { x: (c.cp1.x + c.cp2.x) / 2, y: (c.cp1.y + c.cp2.y) / 2 };
+  const p23 = { x: (c.cp2.x + c.p3.x) / 2, y: (c.cp2.y + c.p3.y) / 2 };
+  const p012 = { x: (p01.x + p12.x) / 2, y: (p01.y + p12.y) / 2 };
+  const p123 = { x: (p12.x + p23.x) / 2, y: (p12.y + p23.y) / 2 };
+  const mid = { x: (p012.x + p123.x) / 2, y: (p012.y + p123.y) / 2 };
+  return {
+    left: { p0: c.p0, cp1: p01, cp2: p012, p3: mid },
+    right: { p0: mid, cp1: p123, cp2: p23, p3: c.p3 }
+  };
+}
+
+function subdivideStitchingBezierByPath(
+  stSeg: GeometricSegmentSnapshot,
+  lrPath: string
+): CubicBezierControlPoints {
+  const cp1 = stSeg.controlPoints![0];
+  const cp2 = stSeg.controlPoints![1];
+  let cur: CubicBezierControlPoints = {
+    p0: stSeg.start,
+    cp1,
+    cp2,
+    p3: stSeg.end
+  };
+  const steps = lrPath ? lrPath.split('-').filter(Boolean) : [];
+  for (const dir of steps) {
+    const { left, right } = splitCubicBezierHalf(cur);
+    if (dir === 'L') {
+      cur = left;
+    } else if (dir === 'R') {
+      cur = right;
+    }
+  }
+  return cur;
+}
+
+function findClosestOnCubicBezierContinuous(
+  queryPt: Point,
+  c: CubicBezierControlPoints
+): { u: number; point: Point; tangent: Point; derivLen: number; dist: number } {
+  const coarseSamples = 24;
+  const dist2At = (u: number): number => {
+    const pt = evalCubicBezierWithDeriv(c.p0, c.cp1, c.cp2, c.p3, u).point;
+    const dx = pt.x - queryPt.x;
+    const dy = pt.y - queryPt.y;
+    return dx * dx + dy * dy;
+  };
+
+  const gridVals: number[] = [];
+  for (let i = 0; i <= coarseSamples; i++) {
+    gridVals.push(dist2At(i / coarseSamples));
+  }
+
+  // Gather candidate local-minimum basins (up to best 3) to avoid getting trapped on S-curves
+  const candidates: { idx: number; val: number }[] = [];
+  for (let i = 0; i <= coarseSamples; i++) {
+    const leftVal = i > 0 ? gridVals[i - 1] : Infinity;
+    const rightVal = i < coarseSamples ? gridVals[i + 1] : Infinity;
+    if (gridVals[i] <= leftVal && gridVals[i] <= rightVal) {
+      candidates.push({ idx: i, val: gridVals[i] });
+    }
+  }
+  if (candidates.length === 0) {
+    let bestIdx = 0;
+    for (let i = 1; i <= coarseSamples; i++) {
+      if (gridVals[i] < gridVals[bestIdx]) bestIdx = i;
+    }
+    candidates.push({ idx: bestIdx, val: gridVals[bestIdx] });
+  }
+  candidates.sort((a, b) => a.val - b.val);
+  const topCandidates = candidates.slice(0, 3);
+
+  const phi = (Math.sqrt(5) - 1) / 2;
+  let globalBestU = topCandidates[0].idx / coarseSamples;
+  let globalBestD2 = topCandidates[0].val;
+
+  for (const cand of topCandidates) {
+    let lo = Math.max(0, (cand.idx - 1) / coarseSamples);
+    let hi = Math.min(1, (cand.idx + 1) / coarseSamples);
+    let x1 = hi - phi * (hi - lo);
+    let x2 = lo + phi * (hi - lo);
+    let f1 = dist2At(x1);
+    let f2 = dist2At(x2);
+
+    for (let iter = 0; iter < 20; iter++) {
+      if (f1 < f2) {
+        hi = x2;
+        x2 = x1;
+        f2 = f1;
+        x1 = hi - phi * (hi - lo);
+        f1 = dist2At(x1);
+      } else {
+        lo = x1;
+        x1 = x2;
+        f1 = f2;
+        x2 = lo + phi * (hi - lo);
+        f2 = dist2At(x2);
+      }
+    }
+    const uMid = (lo + hi) / 2;
+    const candidatesU = [lo, uMid, hi];
+    for (const u of candidatesU) {
+      const d2 = dist2At(u);
+      if (d2 < globalBestD2) {
+        globalBestD2 = d2;
+        globalBestU = u;
+      }
+    }
+  }
+
+  const evalRes = evalCubicBezierWithDeriv(c.p0, c.cp1, c.cp2, c.p3, globalBestU);
+  return {
+    u: globalBestU,
+    point: evalRes.point,
+    tangent: evalRes.tangent,
+    derivLen: evalRes.derivLen,
+    dist: Math.sqrt(globalBestD2)
+  };
+}
+
+function cubicBezierControlPolygonSpan(c: CubicBezierControlPoints): number {
+  return (
+    pointDistance(c.p0, c.cp1) +
+    pointDistance(c.cp1, c.cp2) +
+    pointDistance(c.cp2, c.p3)
+  );
+}
+
+/**
+ * Verifies that a mapped cutting segment maintains the expected outward normal offset
+ * continuously over the entire parameter domain [0, 1], with no endpoint dips, interior
+ * wrong-side crossings, reversals, or cusp singularities.
+ */
+function verifyContinuousOffsetForMappedSegment(
+  stSeg: GeometricSegmentSnapshot,
+  cutSeg: GeometricSegmentSnapshot,
+  lrPath: string,
+  outwardSign: 1 | -1,
+  errors: string[]
+): void {
+  const allowance = stSeg.seamAllowanceCm ?? 0;
+  if (!(allowance > ALLOWANCE_MATCH_TOLERANCE_CM)) return;
+
+  const allowedErr = Math.max(OFFSET_NORMAL_TOLERANCE_CM, allowance * 0.25);
+  const stIsBezier =
+    stSeg.type === 'bezier' &&
+    Array.isArray(stSeg.controlPoints) &&
+    stSeg.controlPoints.length === 2;
+  const cutIsBezier =
+    cutSeg.type === 'bezier' &&
+    Array.isArray(cutSeg.controlPoints) &&
+    cutSeg.controlPoints.length === 2;
+
+  // Fast exact closed-form verification for straight-line -> straight-line mappings.
+  // Since affine functions achieve their extrema on [0, 1] at endpoints t=0 and t=1,
+  // checking both endpoints proves continuity across the entire interval [0, 1].
+  if (!stIsBezier && !cutIsBezier) {
+    const stDx = stSeg.end.x - stSeg.start.x;
+    const stDy = stSeg.end.y - stSeg.start.y;
+    const stLen = Math.hypot(stDx, stDy);
+    const cutDx = cutSeg.end.x - cutSeg.start.x;
+    const cutDy = cutSeg.end.y - cutSeg.start.y;
+    const cutLen = Math.hypot(cutDx, cutDy);
+
+    if (stLen < MIN_SEGMENT_LENGTH_CM || cutLen < MIN_SEGMENT_LENGTH_CM) {
+      errors.push(
+        `Mapped segment pair ('${stSeg.id}' -> '${cutSeg.id}') has degenerate length below ${MIN_SEGMENT_LENGTH_CM} cm.`
+      );
+      return;
+    }
+
+    const tx = stDx / stLen;
+    const ty = stDy / stLen;
+    const ctx = cutDx / cutLen;
+    const cty = cutDy / cutLen;
+    const tanDot = tx * ctx + ty * cty;
+    if (tanDot < 0.5) {
+      errors.push(
+        `Cutting segment '${cutSeg.id}' diverges/reverses direction relative to stitching segment '${stSeg.id}' (dot=${tanDot.toFixed(3)}).`
+      );
+      return;
+    }
+
+    const nx = -ty * outwardSign;
+    const ny = tx * outwardSign;
+    const d0 = (cutSeg.start.x - stSeg.start.x) * nx + (cutSeg.start.y - stSeg.start.y) * ny;
+    const d1 = (cutSeg.end.x - stSeg.start.x) * nx + (cutSeg.end.y - stSeg.start.y) * ny;
+    const s0 = (cutSeg.start.x - stSeg.start.x) * tx + (cutSeg.start.y - stSeg.start.y) * ty;
+    const s1 = (cutSeg.end.x - stSeg.start.x) * tx + (cutSeg.end.y - stSeg.start.y) * ty;
+
+    if (s1 <= s0 + MIN_SEGMENT_LENGTH_CM * 0.5) {
+      errors.push(
+        `Cutting segment '${cutSeg.id}' has non-positive tangential progression along '${stSeg.id}' (s0=${s0.toFixed(3)}, s1=${s1.toFixed(3)}).`
+      );
+      return;
+    }
+
+    const maxEndpointShift = Math.max(allowance * 6.0, 6.0);
+    if (s0 > stLen * 0.5 || s1 < stLen * 0.5 || s0 < -maxEndpointShift || s1 > stLen + maxEndpointShift) {
+      errors.push(
+        `Cutting segment '${cutSeg.id}' tangential span [${s0.toFixed(3)}, ${s1.toFixed(3)}] cm does not cover stitching segment '${stSeg.id}' [0, ${stLen.toFixed(3)}] cm.`
+      );
+      return;
+    }
+
+    if (d0 <= 0 || d1 <= 0) {
+      errors.push(
+        `Cutting segment '${cutSeg.id}' crosses to inward/wrong side of stitching segment '${stSeg.id}' (d0=${d0.toFixed(3)} cm, d1=${d1.toFixed(3)} cm).`
+      );
+      return;
+    }
+
+    const err0 = Math.abs(d0 - allowance);
+    const err1 = Math.abs(d1 - allowance);
+    if (err0 > allowedErr || err1 > allowedErr) {
+      errors.push(
+        `Cutting segment '${cutSeg.id}' continuous normal offset vector diverges from allowance ${allowance.toFixed(3)} cm of '${stSeg.id}' (endpoints d0=${d0.toFixed(3)} cm, d1=${d1.toFixed(3)} cm, maxErr=${Math.max(err0, err1).toFixed(3)} cm > ${allowedErr.toFixed(3)} cm).`
+      );
+    }
+    return;
+  }
+
+  // Adaptive continuous De Casteljau verification for any pair involving a Bézier segment
+  const cutCtrl: CubicBezierControlPoints = cutIsBezier
+    ? {
+        p0: cutSeg.start,
+        cp1: cutSeg.controlPoints![0],
+        cp2: cutSeg.controlPoints![1],
+        p3: cutSeg.end
+      }
+    : {
+        p0: cutSeg.start,
+        cp1: {
+          x: cutSeg.start.x + (cutSeg.end.x - cutSeg.start.x) / 3,
+          y: cutSeg.start.y + (cutSeg.end.y - cutSeg.start.y) / 3
+        },
+        cp2: {
+          x: cutSeg.start.x + (2 * (cutSeg.end.x - cutSeg.start.x)) / 3,
+          y: cutSeg.start.y + (2 * (cutSeg.end.y - cutSeg.start.y)) / 3
+        },
+        p3: cutSeg.end
+      };
+
+  const stSub: CubicBezierControlPoints = stIsBezier
+    ? subdivideStitchingBezierByPath(stSeg, lrPath)
+    : {
+        p0: stSeg.start,
+        cp1: {
+          x: stSeg.start.x + (stSeg.end.x - stSeg.start.x) / 3,
+          y: stSeg.start.y + (stSeg.end.y - stSeg.start.y) / 3
+        },
+        cp2: {
+          x: stSeg.start.x + (2 * (stSeg.end.x - stSeg.start.x)) / 3,
+          y: stSeg.start.y + (2 * (stSeg.end.y - stSeg.start.y)) / 3
+        },
+        p3: stSeg.end
+      };
+
+  if (cubicBezierControlPolygonSpan(cutCtrl) < MIN_SEGMENT_LENGTH_CM || cubicBezierControlPolygonSpan(stSub) < MIN_SEGMENT_LENGTH_CM) {
+    errors.push(
+      `Mapped segment pair ('${stSeg.id}' -> '${cutSeg.id}') has degenerate span below ${MIN_SEGMENT_LENGTH_CM} cm.`
+    );
+    return;
+  }
+
+  // Check stitching sub-curve derivative sanity at endpoints and midpoint
+  for (const stT of [0, 0.5, 1]) {
+    const stEv = evalCubicBezierWithDeriv(stSub.p0, stSub.cp1, stSub.cp2, stSub.p3, stT);
+    if (stEv.derivLen < 1e-6) {
+      errors.push(
+        `Stitching segment '${stSeg.id}'${lrPath ? ` (${lrPath})` : ''} has degenerate derivative/cusp at t=${stT}.`
+      );
+      return;
+    }
+  }
+
+  const MAX_CONTINUOUS_OFFSET_DEPTH = 12;
+  const MAX_CONTINUOUS_OFFSET_NODES = 2048;
+  let visitedNodes = 0;
+  let failureMessage: string | null = null;
+
+  const evalSample = (c: CubicBezierControlPoints, t: number) => {
+    const cutEv = evalCubicBezierWithDeriv(c.p0, c.cp1, c.cp2, c.p3, t);
+    if (cutEv.derivLen < 1e-6) {
+      return { degenerate: true as const };
+    }
+    const closest = findClosestOnCubicBezierContinuous(cutEv.point, stSub);
+    if (closest.derivLen < 1e-6) {
+      return { degenerate: true as const };
+    }
+    const nx = -closest.tangent.y * outwardSign;
+    const ny = closest.tangent.x * outwardSign;
+    const sn = (cutEv.point.x - closest.point.x) * nx + (cutEv.point.y - closest.point.y) * ny;
+    const tanDot = cutEv.tangent.x * closest.tangent.x + cutEv.tangent.y * closest.tangent.y;
+    return {
+      degenerate: false as const,
+      point: cutEv.point,
+      tangent: cutEv.tangent,
+      u: closest.u,
+      dist: closest.dist,
+      sn,
+      tanDot
+    };
+  };
+
+  const verifyLeaf = (c: CubicBezierControlPoints, depth: number, uStartBound: number, uEndBound: number): boolean => {
+    if (failureMessage) return false;
+    visitedNodes++;
+    if (visitedNodes > MAX_CONTINUOUS_OFFSET_NODES) {
+      failureMessage = `Cutting segment '${cutSeg.id}' continuous offset verification exceeded node budget (${MAX_CONTINUOUS_OFFSET_NODES}) against '${stSeg.id}' (possible high-curvature/oscillating distortion).`;
+      return false;
+    }
+
+    const s0 = evalSample(c, 0);
+    const sMid = evalSample(c, 0.5);
+    const s1 = evalSample(c, 1);
+
+    if (s0.degenerate || sMid.degenerate || s1.degenerate) {
+      failureMessage = `Mapped segment pair ('${stSeg.id}' -> '${cutSeg.id}') encountered degenerate derivative/cusp during continuous offset verification.`;
+      return false;
+    }
+
+    if (depth === 0) {
+      if (s0.u > 0.15 || s1.u < 0.85 || s1.u <= s0.u + 0.25) {
+        failureMessage = `Cutting segment '${cutSeg.id}' covers insufficient parameter span [${s0.u.toFixed(3)}, ${s1.u.toFixed(3)}] of stitching segment '${stSeg.id}'${lrPath ? ` (${lrPath})` : ''}.`;
+        return false;
+      }
+      if (sMid.u < s0.u - 0.05 || sMid.u > s1.u + 0.05) {
+        failureMessage = `Cutting segment '${cutSeg.id}' reverses parameter progression along '${stSeg.id}' (u0=${s0.u.toFixed(3)}, uMid=${sMid.u.toFixed(3)}, u1=${s1.u.toFixed(3)}).`;
+        return false;
+      }
+    } else if (s1.u < s0.u - 0.05 || sMid.u < uStartBound - 0.1 || sMid.u > uEndBound + 0.1) {
+      failureMessage = `Cutting segment '${cutSeg.id}' reverses/folds parameter traversal along '${stSeg.id}' at depth ${depth}.`;
+      return false;
+    }
+
+    for (const [label, smp] of [
+      ['start', s0],
+      ['mid', sMid],
+      ['end', s1]
+    ] as const) {
+      if (smp.tanDot < 0.5) {
+        failureMessage = `Cutting segment '${cutSeg.id}' tangent diverges/reverses from '${stSeg.id}' at ${label} (dot=${smp.tanDot.toFixed(3)}).`;
+        return false;
+      }
+      if (smp.sn <= 0) {
+        failureMessage = `Cutting segment '${cutSeg.id}' crosses to inward/wrong side of '${stSeg.id}' at ${label} (signedOffset=${smp.sn.toFixed(3)} cm).`;
+        return false;
+      }
+      if (Math.abs(smp.dist - allowance) > allowedErr || Math.abs(smp.sn - allowance) > allowedErr || Math.abs(smp.dist - smp.sn) > 0.12) {
+        failureMessage = `Cutting segment '${cutSeg.id}' offset at ${label} (${smp.sn.toFixed(3)} cm, dist=${smp.dist.toFixed(3)} cm) diverges from allowance ${allowance.toFixed(3)} cm of '${stSeg.id}' (allowedErr=${allowedErr.toFixed(3)} cm).`;
+        return false;
+      }
+    }
+
+    // 1-Lipschitz continuous convex-hull certificate around sMid.point:
+    // Every point C(t) in the cubic sub-curve lies inside the convex hull of {p0, cp1, cp2, p3},
+    // so ||C(t) - C(0.5)|| <= hullRadius. Since Euclidean distance to stSub is 1-Lipschitz,
+    // |dist(C(t), stSub) - allowance| <= |dist(C(0.5), stSub) - allowance| + hullRadius.
+    const hullRadius = Math.max(
+      pointDistance(c.p0, sMid.point),
+      pointDistance(c.cp1, sMid.point),
+      pointDistance(c.cp2, sMid.point),
+      pointDistance(c.p3, sMid.point)
+    );
+    const errMid = Math.abs(sMid.dist - allowance);
+    const errSnMid = Math.abs(sMid.sn - allowance);
+
+    // Hodograph cone check prevents interior cusps or tight loops from slipping inside a leaf
+    const v0 = { x: 3 * (c.cp1.x - c.p0.x), y: 3 * (c.cp1.y - c.p0.y) };
+    const v1 = { x: 3 * (c.cp2.x - c.cp1.x), y: 3 * (c.cp2.y - c.cp1.y) };
+    const v2 = { x: 3 * (c.p3.x - c.cp2.x), y: 3 * (c.p3.y - c.cp2.y) };
+    const l0 = Math.hypot(v0.x, v0.y);
+    const l1 = Math.hypot(v1.x, v1.y);
+    const l2 = Math.hypot(v2.x, v2.y);
+    const hodographSafe =
+      l0 > 1e-6 &&
+      l1 > 1e-6 &&
+      l2 > 1e-6 &&
+      (v0.x * v1.x + v0.y * v1.y) / (l0 * l1) >= 0.7 &&
+      (v1.x * v2.x + v1.y * v2.y) / (l1 * l2) >= 0.7 &&
+      (v0.x * v2.x + v0.y * v2.y) / (l0 * l2) >= 0.5;
+
+    const tanSwing = Math.min(
+      s0.tangent.x * sMid.tangent.x + s0.tangent.y * sMid.tangent.y,
+      sMid.tangent.x * s1.tangent.x + sMid.tangent.y * s1.tangent.y,
+      s0.tangent.x * s1.tangent.x + s0.tangent.y * s1.tangent.y
+    );
+
+    if (
+      hodographSafe &&
+      tanSwing >= 0.94 &&
+      errMid + hullRadius <= allowedErr &&
+      errSnMid + hullRadius <= allowedErr &&
+      sMid.dist - hullRadius > 0 &&
+      sMid.sn - hullRadius > 0
+    ) {
+      return true;
+    }
+
+    if (depth >= MAX_CONTINUOUS_OFFSET_DEPTH) {
+      failureMessage = `Cutting segment '${cutSeg.id}' continuous offset verification failed to converge within depth ${MAX_CONTINUOUS_OFFSET_DEPTH} against '${stSeg.id}' (residual+hull=${(Math.max(errMid, errSnMid) + hullRadius).toFixed(4)} cm > ${allowedErr.toFixed(4)} cm, hodographSafe=${hodographSafe}).`;
+      return false;
+    }
+
+    const { left, right } = splitCubicBezierHalf(c);
+    return (
+      verifyLeaf(left, depth + 1, s0.u, sMid.u) &&
+      verifyLeaf(right, depth + 1, sMid.u, s1.u)
+    );
+  };
+
+  verifyLeaf(cutCtrl, 0, 0, 1);
+  if (failureMessage) {
+    errors.push(failureMessage);
+  }
+}
+
 /**
  * Computes exact bounding box extrema along 1D cubic Bézier coordinate B'(t) = 0 on (0,1).
  */
@@ -769,6 +1238,7 @@ function computeExactGreensContourArea(
   let sumAbsDoubleTerms = 0;
   let totalGapCm = 0;
   let maxRadiusFromRef = 0;
+  let controlPolySpanCm = 0;
   let allExactIntegerDyadicLines = true;
 
   for (let i = 0; i < segments.length; i++) {
@@ -784,6 +1254,7 @@ function computeExactGreensContourArea(
     if (seg.type === 'line') {
       signedDoubleArea += cross(p0, p3);
       sumAbsDoubleTerms += absCross(p0, p3);
+      controlPolySpanCm += pointDistance(p0, p3);
       if (
         !Number.isInteger(seg.start.x) ||
         !Number.isInteger(seg.start.y) ||
@@ -801,6 +1272,7 @@ function computeExactGreensContourArea(
         Math.hypot(p1.x, p1.y),
         Math.hypot(p2.x, p2.y)
       );
+      controlPolySpanCm += pointDistance(p0, p1) + pointDistance(p1, p2) + pointDistance(p2, p3);
       const rawCross =
         6 * cross(p0, p1) +
         3 * cross(p0, p2) +
@@ -827,6 +1299,7 @@ function computeExactGreensContourArea(
       if (gap > 0) {
         signedDoubleArea += cross(p3, nStart);
         sumAbsDoubleTerms += absCross(p3, nStart);
+        controlPolySpanCm += gap;
         totalGapCm += gap;
         allExactIntegerDyadicLines = false;
       }
@@ -851,16 +1324,24 @@ function computeExactGreensContourArea(
   const hasBezier = segments.some(s => s.type === 'bezier');
   let rawUpperBoundCm2 = 0;
 
-  if (!hasBezier && allExactIntegerDyadicLines && maxCoordMag < 1e6 && totalGapCm === 0) {
-    // Exact integer Shoelace in IEEE-754 binary64 has zero rounding error
+  if (
+    !hasBezier &&
+    allExactIntegerDyadicLines &&
+    Number.isInteger(refX) &&
+    Number.isInteger(refY) &&
+    maxCoordMag < 1e6 &&
+    sumAbsDoubleTerms < 1e14 &&
+    totalGapCm === 0
+  ) {
+    // Exact integer Shoelace with integer centroid shift in IEEE-754 binary64 has zero rounding error
     rawUpperBoundCm2 = 0;
   } else {
     const fpAreaRoundoff = 32 * U * (sumAbsDoubleTerms / 2);
-    const coordShiftError = 4 * U * maxCoordMag * Math.max(perimeterCm, 0);
+    const coordShiftError = 4 * U * maxCoordMag * Math.max(perimeterCm, controlPolySpanCm, 0);
     const gapUncertainty = 0.5 * totalGapCm * maxRadiusFromRef;
     rawUpperBoundCm2 = Math.max(
       fpAreaRoundoff + coordShiftError + gapUncertainty,
-      areaCm2 > 0 ? U * areaCm2 : 0
+      areaCm2 > 0 ? 2 * U * areaCm2 : 0
     );
   }
 
@@ -991,6 +1472,7 @@ interface AnalyzedContourGeometry {
   readonly signedAreaCm2: number;
   readonly bezierArcLengthCm: number;
   readonly worstBezierErrorBoundCm: number;
+  readonly perimeterTotalErrorBoundCm: number;
   readonly perimeterActualMaxDepth: number;
   readonly perimeterMaxDepthReached: boolean;
   readonly allLengthTolerancesAchieved: boolean;
@@ -1022,6 +1504,7 @@ function analyzeContourGeometry(
       signedAreaCm2: 0,
       bezierArcLengthCm: 0,
       worstBezierErrorBoundCm: 0,
+      perimeterTotalErrorBoundCm: NaN,
       perimeterActualMaxDepth: 0,
       perimeterMaxDepthReached: false,
       allLengthTolerancesAchieved: false,
@@ -1052,6 +1535,7 @@ function analyzeContourGeometry(
       signedAreaCm2: 0,
       bezierArcLengthCm: 0,
       worstBezierErrorBoundCm: 0,
+      perimeterTotalErrorBoundCm: NaN,
       perimeterActualMaxDepth: 0,
       perimeterMaxDepthReached: false,
       allLengthTolerancesAchieved: false,
@@ -1072,6 +1556,8 @@ function analyzeContourGeometry(
   let totalPerimeterCm = 0;
   let bezierArcLengthCm = 0;
   let worstBezierErrorBoundCm = 0;
+  let summedSegmentErrorBoundCm = 0;
+  let allExactAxisIntLines = true;
   let perimeterActualMaxDepth = 0;
   let perimeterMaxDepthReached = false;
   let allLengthTolerancesAchieved = true;
@@ -1122,6 +1608,16 @@ function analyzeContourGeometry(
         );
       } else {
         totalPerimeterCm += len;
+        const isAxisIntLine =
+          (seg.start.x === seg.end.x || seg.start.y === seg.end.y) &&
+          Number.isInteger(seg.start.x) &&
+          Number.isInteger(seg.start.y) &&
+          Number.isInteger(seg.end.x) &&
+          Number.isInteger(seg.end.y);
+        if (!isAxisIntLine) {
+          allExactAxisIntLines = false;
+          summedSegmentErrorBoundCm += 4 * (Number.EPSILON / 2) * len;
+        }
         if (
           typeof seg.lengthCm === 'number' &&
           Number.isFinite(seg.lengthCm) &&
@@ -1135,6 +1631,7 @@ function analyzeContourGeometry(
       polyPoints.push(seg.start);
     } else if (seg.type === 'bezier') {
       hasBezier = true;
+      allExactAxisIntLines = false;
       if (!Array.isArray(seg.controlPoints) || seg.controlPoints.length !== 2) {
         errors.push(`${contourLabel} Bézier segment '${seg.id}' is missing required controlPoints[2].`);
         continue;
@@ -1161,6 +1658,9 @@ function analyzeContourGeometry(
       }
       if (bezRes.errorBoundCm > worstBezierErrorBoundCm) {
         worstBezierErrorBoundCm = bezRes.errorBoundCm;
+      }
+      if (Number.isFinite(bezRes.errorBoundCm)) {
+        summedSegmentErrorBoundCm += bezRes.errorBoundCm;
       }
       if (!bezRes.toleranceAchieved) {
         allLengthTolerancesAchieved = false;
@@ -1347,20 +1847,28 @@ function analyzeContourGeometry(
     errors.push(`${contourLabel} contour perimeter is non-positive (${totalPerimeterCm} cm).`);
   }
 
+  const summationFpBoundCm = allExactAxisIntLines && Number.isInteger(totalPerimeterCm)
+    ? 0
+    : contour.segments.length * (Number.EPSILON / 2) * Math.max(totalPerimeterCm, 0);
+  const perimeterTotalErrorBoundCm = preservePositiveErrorBound(
+    summedSegmentErrorBoundCm + summationFpBoundCm
+  );
+
   return {
     isValid: errors.length === 0,
     hasBezier,
-    perimeterCm: round4(totalPerimeterCm),
-    areaCm2: round4(greenArea.areaCm2),
+    perimeterCm: totalPerimeterCm,
+    areaCm2: greenArea.areaCm2,
     signedAreaCm2: greenArea.signedAreaCm2,
-    bezierArcLengthCm: round4(bezierArcLengthCm),
-    worstBezierErrorBoundCm: Number(worstBezierErrorBoundCm.toFixed(6)),
+    bezierArcLengthCm,
+    worstBezierErrorBoundCm: preservePositiveErrorBound(worstBezierErrorBoundCm),
+    perimeterTotalErrorBoundCm,
     perimeterActualMaxDepth,
     perimeterMaxDepthReached,
     allLengthTolerancesAchieved,
     areaActualMaxDepth,
     areaMaxDepthReached,
-    areaWorstResidualFlatnessCm: Number(areaWorstResidualFlatnessCm.toFixed(6)),
+    areaWorstResidualFlatnessCm: preservePositiveErrorBound(areaWorstResidualFlatnessCm),
     areaFlatteningToleranceAchieved,
     areaUpperBoundCm2: greenArea.upperErrorBoundCm2,
     sampledBoundaryPoints: polyPoints,
@@ -2158,7 +2666,7 @@ export function computePieceGeometryMetrics(
       }
     }
 
-    // Per-segment outward normal offset verification via source-segment lineage
+    // Continuous adaptive outward-normal offset verification over [0, 1] per mapped segment
     const outwardSign = stitchAnalysis.signedAreaCm2 < 0 ? 1 : -1;
     const allStitchIds = new Set(piece.stitchingContour.segments.map(s => s.id));
     for (const stSeg of piece.stitchingContour.segments) {
@@ -2166,27 +2674,20 @@ export function computePieceGeometryMetrics(
         continue;
       }
       const coverage = findMatchingCuttingSegmentsStrict(stSeg, piece.cuttingContour, allStitchIds);
-      for (const cutSeg of coverage.matchedSegments) {
+      if (coverage.completenessIssue) {
+        errors.push(coverage.completenessIssue);
+      }
+      for (let mIdx = 0; mIdx < coverage.matchedSegments.length; mIdx++) {
+        const cutSeg = coverage.matchedSegments[mIdx];
         if (!isFinitePoint(cutSeg.start) || !isFinitePoint(cutSeg.end)) continue;
-        const cutMid = evalSegmentPointAndTangent(cutSeg, 0.5).point;
-        let bestDist = Infinity;
-        let bestSigned = 0;
-        const sampleCount = stSeg.type === 'bezier' ? 64 : 16;
-        for (let k = 0; k <= sampleCount; k++) {
-          const { point, tangent } = evalSegmentPointAndTangent(stSeg, k / sampleCount);
-          const n = { x: -tangent.y * outwardSign, y: tangent.x * outwardSign };
-          const d = pointDistance(cutMid, point);
-          if (d < bestDist) {
-            bestDist = d;
-            bestSigned = (cutMid.x - point.x) * n.x + (cutMid.y - point.y) * n.y;
-          }
-        }
-        const allowedErr = Math.max(OFFSET_NORMAL_TOLERANCE_CM, stSeg.seamAllowanceCm * 0.25);
-        if (bestSigned <= 0 || Math.abs(bestSigned - stSeg.seamAllowanceCm) > allowedErr) {
-          errors.push(
-            `Cutting segment '${cutSeg.id}' offset vector (${bestSigned.toFixed(3)} cm along outward normal of '${stSeg.id}') violates expected +${stSeg.seamAllowanceCm} cm seam allowance.`
-          );
-        }
+        const lrPath = coverage.isSubdividedBezierTree ? (coverage.lrPaths[mIdx] ?? '') : '';
+        verifyContinuousOffsetForMappedSegment(
+          stSeg,
+          cutSeg,
+          lrPath,
+          outwardSign,
+          errors
+        );
       }
     }
   }
@@ -2307,6 +2808,13 @@ export function computePieceGeometryMetrics(
       ? preservePositiveErrorBound(stitchingAreaUpperBoundCm2 + cuttingAreaUpperBoundCm2)
       : NaN;
 
+  const stitchingPerimeterUpperBoundCm = stitchAnalysis.perimeterTotalErrorBoundCm;
+  const cuttingPerimeterUpperBoundCm = cutAnalysis.perimeterTotalErrorBoundCm;
+  const combinedPerimeterBoundCm =
+    Number.isFinite(stitchingPerimeterUpperBoundCm) && Number.isFinite(cuttingPerimeterUpperBoundCm)
+      ? preservePositiveErrorBound(stitchingPerimeterUpperBoundCm + cuttingPerimeterUpperBoundCm)
+      : NaN;
+
   const numericalPrecision: BezierNumericalPrecisionMetadata = {
     hasBezierSegments: hasBezier,
     perimeterMethod: hasBezier ? 'adaptive-de-casteljau-subdivision' : 'exact-euclidean',
@@ -2315,6 +2823,9 @@ export function computePieceGeometryMetrics(
     perimeterActualMaxDepth,
     perimeterMaxDepthReached,
     perimeterWorstErrorBoundCm: worstBezierErrorBoundCm,
+    stitchingPerimeterUpperBoundCm,
+    cuttingPerimeterUpperBoundCm,
+    perimeterTotalErrorBoundCm: combinedPerimeterBoundCm,
     perimeterAllTolerancesAchieved: allLengthTolerancesAchieved,
     areaMethod: hasBezier ? 'exact-greens-theorem-cubic-bezier' : 'exact-shoelace-polygon',
     areaFlatnessToleranceCm: BEZIER_AREA_FLATNESS_TOLERANCE_CM,
@@ -2329,8 +2840,8 @@ export function computePieceGeometryMetrics(
     // Overall metric bundle is only purely symbolic/closed-form exact when no Bézier perimeter approximation is present.
     isExact: !hasBezier,
     documentationNote: hasBezier
-      ? `Cubic Bézier perimeters computed via De Casteljau adaptive subdivision (tol=${BEZIER_PERIMETER_TOLERANCE_CM} cm, maxDepth=${BEZIER_PERIMETER_MAX_DEPTH}; fail closed on non-convergence). Contour areas computed analytically via exact centered Green's-theorem Bernstein cross-product integration (with per-contour IEEE-754 + gap-closure bounds reported without zero-truncation); topology/containment verified via flatness flattening (tol=${BEZIER_AREA_FLATNESS_TOLERANCE_CM} cm, maxDepth=${BEZIER_AREA_MAX_SUBDIVISION_DEPTH}). Domain: finite planar coordinates with |coord| <= ${MAX_VALID_COORDINATE_MAGNITUDE_CM} cm, simple non-self-intersecting closed loops with endpoint gaps <= ${CONTOUR_CLOSURE_TOLERANCE_CM} cm.`
-      : `Line-only contour: Euclidean edge summation and centered Shoelace polygon area are exact up to IEEE-754 binary64 floating-point precision.`
+      ? `Cubic Bézier perimeters computed via full-precision De Casteljau adaptive subdivision (tol=${BEZIER_PERIMETER_TOLERANCE_CM} cm, maxDepth=${BEZIER_PERIMETER_MAX_DEPTH}; fail closed on non-convergence). perimeterWorstErrorBoundCm tracks the worst individual segment bound; stitchingPerimeterUpperBoundCm, cuttingPerimeterUpperBoundCm, and perimeterTotalErrorBoundCm report aggregated whole-contour bounds. Contour areas are returned at full IEEE-754 precision via centered Green's-theorem Bernstein cross-product integration (with strict non-truncated upper bounds); continuous offset integrity verified over [0, 1] via adaptive subdivision.`
+      : `Line-only contour: full-precision Euclidean edge summation and centered Shoelace polygon area are reported without output quantization; non-integer coordinates and non-dyadic centroids carry conservative binary64 bounds.`
   };
 
   const isValid = errors.length === 0;
@@ -2550,6 +3061,10 @@ export function buildPatternPieceProductionSheet(
   if (params.expectedGarmentId && sourceGarmentId !== params.expectedGarmentId) {
     rejectionCodes.push('CROSS_GARMENT_MISMATCH');
     errors.push(`Garment mismatch: pattern revision belongs to '${sourceGarmentId}', expected '${params.expectedGarmentId}'.`);
+  }
+  if (params.expectedTenantId !== undefined && params.expectedTenantId.trim().length === 0) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push('Authoritative expectedTenantId must be a non-empty string.');
   }
   if (
     params.expectedTenantId &&
@@ -2783,6 +3298,20 @@ export function buildAuthoritativePieceProductionSheetSet(
   if (params.expectedGarmentId && sourceGarmentId !== params.expectedGarmentId) {
     rejectionCodes.push('CROSS_GARMENT_MISMATCH');
     errors.push(`Garment mismatch: patternRevision garment '${sourceGarmentId}' !== '${params.expectedGarmentId}'.`);
+  }
+  if (params.expectedTenantId !== undefined && params.expectedTenantId.trim().length === 0) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push('Authoritative expectedTenantId must be a non-empty string.');
+  }
+  if (
+    params.expectedTenantId &&
+    params.gradingArtifact?.tenantId &&
+    params.gradingArtifact.tenantId !== params.expectedTenantId
+  ) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push(
+      `Tenant mismatch: grading artifact belongs to '${params.gradingArtifact.tenantId}', expected '${params.expectedTenantId}'.`
+    );
   }
 
   const baseSize = String(rev?.targetSize ?? '').trim();
@@ -3156,12 +3685,39 @@ export function verifyPieceProductionSheetIntegrity(
       `Project mismatch: sheet sourceProjectId '${sheet.sourceProjectId}' !== '${sourceContext.expectedProjectId}'.`
     );
   }
-  if (sourceContext.expectedTenantId && sheet.sourceTenantId !== sourceContext.expectedTenantId) {
+
+  // Authoritative tenant resolution: expectedTenantId + gradingArtifact.tenantId
+  const expTenant = sourceContext.expectedTenantId;
+  const gaTenant = sourceContext.gradingArtifact?.tenantId;
+  if (expTenant !== undefined && expTenant.trim().length === 0) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push('Authoritative expectedTenantId must be a non-empty string.');
+  }
+  if (sourceContext.gradingArtifact && (typeof gaTenant !== 'string' || gaTenant.trim().length === 0)) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push('Authoritative gradingArtifact is missing a valid non-empty tenantId.');
+  }
+  if (expTenant && gaTenant && gaTenant !== expTenant) {
     rejectionCodes.push('CROSS_TENANT_MISMATCH');
     errors.push(
-      `Tenant mismatch: sheet sourceTenantId '${String(sheet.sourceTenantId)}' !== '${sourceContext.expectedTenantId}'.`
+      `Tenant conflict between expectedTenantId ('${expTenant}') and gradingArtifact.tenantId ('${gaTenant}').`
     );
   }
+  const authoritativeTenant = expTenant ?? gaTenant;
+  if (authoritativeTenant) {
+    if (sheet.sourceTenantId !== authoritativeTenant) {
+      rejectionCodes.push('CROSS_TENANT_MISMATCH');
+      errors.push(
+        `Tenant mismatch: sheet sourceTenantId '${String(sheet.sourceTenantId)}' !== authoritative tenant '${authoritativeTenant}'.`
+      );
+    }
+  } else if (sheet.sourceTenantId !== undefined) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push(
+      `Sheet asserts sourceTenantId '${String(sheet.sourceTenantId)}' with no authoritative tenant context (expectedTenantId or gradingArtifact) to verify it.`
+    );
+  }
+
   if (sourceContext.expectedGarmentId && sheet.sourceGarmentId !== sourceContext.expectedGarmentId) {
     rejectionCodes.push('CROSS_GARMENT_MISMATCH');
     errors.push(
@@ -3343,28 +3899,52 @@ export function verifyPieceProductionSheetIntegrity(
         sourceContext.cutSemanticsDeclaration ??
         sourceContext.cutSemanticsByPieceCode?.[sheet.pieceCode];
 
-      const hasSizeQtyMap = sourceContext.expectedGarmentUnitQuantitiesBySize !== undefined;
+      const bySizeQtyMap = sourceContext.expectedGarmentUnitQuantitiesBySize;
+      if (bySizeQtyMap !== undefined) {
+        for (const [k, v] of Object.entries(bySizeQtyMap)) {
+          if (!Number.isInteger(v) || v < 1) {
+            rejectionCodes.push('QUANTITY_BASIS_INVALID');
+            errors.push(
+              `Invalid expectedGarmentUnitQuantitiesBySize['${k}'] quantity (${String(v)}); expected positive integer >= 1.`
+            );
+          }
+        }
+      }
       if (
-        hasSizeQtyMap &&
-        sourceContext.expectedGarmentUnitQuantitiesBySize?.[sheet.sizeCode] === undefined &&
-        sourceContext.expectedGarmentUnitQuantity === undefined
+        sourceContext.expectedGarmentUnitQuantity !== undefined &&
+        (!Number.isInteger(sourceContext.expectedGarmentUnitQuantity) ||
+          sourceContext.expectedGarmentUnitQuantity < 1)
       ) {
         rejectionCodes.push('QUANTITY_BASIS_INVALID');
         errors.push(
-          `expectedGarmentUnitQuantitiesBySize omits size '${sheet.sizeCode}' with no expectedGarmentUnitQuantity fallback.`
+          `Invalid expectedGarmentUnitQuantity (${String(sourceContext.expectedGarmentUnitQuantity)}); expected positive integer >= 1.`
         );
       }
 
-      const expectedQty =
-        sourceContext.expectedGarmentUnitQuantitiesBySize?.[sheet.sizeCode] ??
-        sourceContext.expectedGarmentUnitQuantity;
+      const expectedQty = bySizeQtyMap?.[sheet.sizeCode] ?? sourceContext.expectedGarmentUnitQuantity;
+      let qtyForRecompute: number | undefined;
 
-      const qtyForRecompute =
-        expectedQty !== undefined
-          ? expectedQty
-          : sheet.orderQuantityBasis === 'declared-order-quantity'
-            ? sheet.cutSemantics?.garmentUnitQuantity
-            : undefined;
+      if (sheet.orderQuantityBasis === 'declared-order-quantity') {
+        if (expectedQty === undefined) {
+          rejectionCodes.push('QUANTITY_BASIS_INVALID');
+          errors.push(
+            `Declared-order-quantity sheet for '${sheet.pieceCode}' (${sheet.sizeCode}) cannot be verified without authoritative expectedGarmentUnitQuantity or expectedGarmentUnitQuantitiesBySize['${sheet.sizeCode}'].`
+          );
+          // Do NOT fall back to sheet.cutSemantics.garmentUnitQuantity
+          qtyForRecompute = 0;
+        } else {
+          qtyForRecompute = expectedQty;
+        }
+      } else {
+        // default-single-garment-per-size-run
+        if (expectedQty !== undefined && expectedQty !== 1) {
+          rejectionCodes.push('QUANTITY_BASIS_INVALID');
+          errors.push(
+            `Default-quantity sheet for '${sheet.pieceCode}' (${sheet.sizeCode}) contradicts expected quantity (${expectedQty} !== 1).`
+          );
+        }
+        qtyForRecompute = undefined;
+      }
 
       const recomputedSemantics = resolveCutQuantitySemantics(sourcePiece, {
         declaration: decl,
@@ -3506,10 +4086,39 @@ export function verifyPieceProductionSheetSetIntegrity(
     rejectionCodes.push('CROSS_PROJECT_MISMATCH');
     errors.push(`Project mismatch on sheet set: '${sheetSet.sourceProjectId}' !== '${sourceContext.expectedProjectId}'.`);
   }
-  if (sourceContext.expectedTenantId && sheetSet.sourceTenantId !== sourceContext.expectedTenantId) {
+
+  // Authoritative tenant resolution on sheetSet: expectedTenantId + gradingArtifact.tenantId
+  const setExpTenant = sourceContext.expectedTenantId;
+  const setGaTenant = sourceContext.gradingArtifact?.tenantId;
+  if (setExpTenant !== undefined && setExpTenant.trim().length === 0) {
     rejectionCodes.push('CROSS_TENANT_MISMATCH');
-    errors.push(`Tenant mismatch on sheet set: '${String(sheetSet.sourceTenantId)}' !== '${sourceContext.expectedTenantId}'.`);
+    errors.push('Authoritative expectedTenantId must be a non-empty string.');
   }
+  if (sourceContext.gradingArtifact && (typeof setGaTenant !== 'string' || setGaTenant.trim().length === 0)) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push('Authoritative gradingArtifact is missing a valid non-empty tenantId.');
+  }
+  if (setExpTenant && setGaTenant && setGaTenant !== setExpTenant) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push(
+      `Tenant conflict on sheet set: expectedTenantId ('${setExpTenant}') !== gradingArtifact.tenantId ('${setGaTenant}').`
+    );
+  }
+  const authoritativeSetTenant = setExpTenant ?? setGaTenant;
+  if (authoritativeSetTenant) {
+    if (sheetSet.sourceTenantId !== authoritativeSetTenant) {
+      rejectionCodes.push('CROSS_TENANT_MISMATCH');
+      errors.push(
+        `Tenant mismatch on sheet set: '${String(sheetSet.sourceTenantId)}' !== authoritative tenant '${authoritativeSetTenant}'.`
+      );
+    }
+  } else if (sheetSet.sourceTenantId !== undefined) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push(
+      `Sheet set asserts sourceTenantId '${String(sheetSet.sourceTenantId)}' with no authoritative tenant context (expectedTenantId or gradingArtifact) to verify it.`
+    );
+  }
+
   if (sourceContext.expectedGarmentId && sheetSet.sourceGarmentId !== sourceContext.expectedGarmentId) {
     rejectionCodes.push('CROSS_GARMENT_MISMATCH');
     errors.push(`Garment mismatch on sheet set: '${sheetSet.sourceGarmentId}' !== '${sourceContext.expectedGarmentId}'.`);
@@ -3529,6 +4138,34 @@ export function verifyPieceProductionSheetSetIntegrity(
     rejectionCodes.push('QUANTITY_BASIS_INVALID');
     errors.push(
       `Order quantity basis mismatch: sheetSet '${sheetSet.orderQuantityBasis}' !== expected '${sourceContext.expectedOrderQuantityBasis}'.`
+    );
+  }
+  if (sourceContext.expectedGarmentUnitQuantitiesBySize !== undefined) {
+    for (const [k, v] of Object.entries(sourceContext.expectedGarmentUnitQuantitiesBySize)) {
+      if (!Number.isInteger(v) || v < 1) {
+        rejectionCodes.push('QUANTITY_BASIS_INVALID');
+        errors.push(`Invalid expectedGarmentUnitQuantitiesBySize['${k}'] value (${String(v)}); expected integer >= 1.`);
+      }
+    }
+  }
+  if (
+    sourceContext.expectedGarmentUnitQuantity !== undefined &&
+    (!Number.isInteger(sourceContext.expectedGarmentUnitQuantity) ||
+      sourceContext.expectedGarmentUnitQuantity < 1)
+  ) {
+    rejectionCodes.push('QUANTITY_BASIS_INVALID');
+    errors.push(
+      `Invalid expectedGarmentUnitQuantity (${String(sourceContext.expectedGarmentUnitQuantity)}); expected integer >= 1.`
+    );
+  }
+  if (
+    sheetSet.orderQuantityBasis === 'declared-order-quantity' &&
+    sourceContext.expectedGarmentUnitQuantity === undefined &&
+    sourceContext.expectedGarmentUnitQuantitiesBySize === undefined
+  ) {
+    rejectionCodes.push('QUANTITY_BASIS_INVALID');
+    errors.push(
+      `Sheet set carries orderQuantityBasis='declared-order-quantity' without expectedGarmentUnitQuantity or expectedGarmentUnitQuantitiesBySize in sourceContext.`
     );
   }
 
@@ -3715,11 +4352,12 @@ export function verifyPieceProductionSheetSetIntegrity(
     }
   }
 
-  // Per-size completeness, anti-cross-bucket stuffing, cross-size semantic parity, anti-cloning, and aggregate recomputation
+  // Per-size completeness, anti-cross-bucket stuffing, cross-size semantic parity, tenant parity, intra-size quantity uniformity, anti-cloning, and aggregate recomputation
   let recomputedTotalSheets = 0;
   let recomputedTotalPhysicalPanels = 0;
   const semanticProfileByPieceCode = new Map<string, string>();
   const baseSizeSheetKeyByCode = new Map<string, string>();
+  const observedSheetTenantIds = new Set<string | undefined>();
 
   const baseSizeSheets = sheetSet.sheetsBySize?.[rev.targetSize] ?? [];
   for (const bSheet of baseSizeSheets) {
@@ -3733,6 +4371,31 @@ export function verifyPieceProductionSheetSetIntegrity(
     const seenCodesInSize = new Set<string>();
     const seenIdsInSize = new Set<string>();
     let clonedFromBaseSheetCount = 0;
+    let uniformQtyInSize: number | undefined;
+
+    let expectedQtyForSize: number | undefined;
+    if (sheetSet.orderQuantityBasis === 'declared-order-quantity') {
+      const bySz = sourceContext.expectedGarmentUnitQuantitiesBySize?.[sz];
+      if (bySz !== undefined) {
+        expectedQtyForSize = bySz;
+      } else if (sourceContext.expectedGarmentUnitQuantity !== undefined) {
+        expectedQtyForSize = sourceContext.expectedGarmentUnitQuantity;
+      } else if (sourceContext.expectedGarmentUnitQuantitiesBySize !== undefined) {
+        rejectionCodes.push('QUANTITY_BASIS_INVALID');
+        errors.push(
+          `expectedGarmentUnitQuantitiesBySize omits declared set size '${sz}' with no expectedGarmentUnitQuantity fallback.`
+        );
+      }
+    } else {
+      expectedQtyForSize = 1;
+      const bySz = sourceContext.expectedGarmentUnitQuantitiesBySize?.[sz] ?? sourceContext.expectedGarmentUnitQuantity;
+      if (bySz !== undefined && bySz !== 1) {
+        rejectionCodes.push('QUANTITY_BASIS_INVALID');
+        errors.push(
+          `Default-quantity sheet set for size '${sz}' contradicts expected quantity (${bySz} !== 1).`
+        );
+      }
+    }
 
     for (const sheet of szSheets) {
       recomputedTotalSheets++;
@@ -3742,6 +4405,14 @@ export function verifyPieceProductionSheetSetIntegrity(
         rejectionCodes.push('PATTERN_REVISION_INVALID');
         errors.push(`[${sz}] Malformed null/non-object sheet entry.`);
         continue;
+      }
+
+      observedSheetTenantIds.add(sheet.sourceTenantId);
+      if (sheet.sourceTenantId !== sheetSet.sourceTenantId) {
+        rejectionCodes.push('CROSS_TENANT_MISMATCH');
+        errors.push(
+          `[${sz}/${sheet.pieceCode}] Sheet sourceTenantId '${String(sheet.sourceTenantId)}' disagrees with sheetSet.sourceTenantId '${String(sheetSet.sourceTenantId)}'.`
+        );
       }
 
       if (sheet.sizeCode !== sz) {
@@ -3777,6 +4448,22 @@ export function verifyPieceProductionSheetSetIntegrity(
         );
       }
 
+      const sheetUnitQty = sheet.cutSemantics?.garmentUnitQuantity;
+      if (uniformQtyInSize === undefined) {
+        uniformQtyInSize = sheetUnitQty;
+      } else if (sheetUnitQty !== uniformQtyInSize) {
+        rejectionCodes.push('QUANTITY_BASIS_INVALID');
+        errors.push(
+          `[${sz}/${sheet.pieceCode}] Intra-size garmentUnitQuantity mismatch (${String(sheetUnitQty)} !== ${String(uniformQtyInSize)}) inside size bucket '${sz}'.`
+        );
+      }
+      if (expectedQtyForSize !== undefined && sheetUnitQty !== expectedQtyForSize) {
+        rejectionCodes.push('QUANTITY_BASIS_INVALID');
+        errors.push(
+          `[${sz}/${sheet.pieceCode}] Sheet garmentUnitQuantity (${String(sheetUnitQty)}) disagrees with expected quantity (${expectedQtyForSize}) for size '${sz}'.`
+        );
+      }
+
       const declForPiece = sourceContext.cutSemanticsByPieceCode?.[sheet.pieceCode];
       const sheetCheck = verifyPieceProductionSheetIntegrity(sheet, {
         ...sourceContext,
@@ -3809,7 +4496,22 @@ export function verifyPieceProductionSheetSetIntegrity(
         );
       }
 
-      if (typeof sheet.cutSemantics?.totalPhysicalPanelsForOrder === 'number') {
+      const panelCountPerGarment = sheet.cutSemantics?.physicalPanelCountPerGarment;
+      if (
+        expectedQtyForSize !== undefined &&
+        typeof panelCountPerGarment === 'number' &&
+        Number.isInteger(panelCountPerGarment) &&
+        panelCountPerGarment >= 1
+      ) {
+        const expectedPanels = expectedQtyForSize * panelCountPerGarment;
+        if (sheet.cutSemantics?.totalPhysicalPanelsForOrder !== expectedPanels) {
+          rejectionCodes.push('QUANTITY_BASIS_INVALID');
+          errors.push(
+            `[${sz}/${sheet.pieceCode}] Sheet totalPhysicalPanelsForOrder (${String(sheet.cutSemantics?.totalPhysicalPanelsForOrder)}) !== expected ${expectedPanels}.`
+          );
+        }
+        recomputedTotalPhysicalPanels += expectedPanels;
+      } else if (typeof sheet.cutSemantics?.totalPhysicalPanelsForOrder === 'number') {
         recomputedTotalPhysicalPanels += sheet.cutSemantics.totalPhysicalPanelsForOrder;
       } else {
         rejectionCodes.push('CUT_SEMANTICS_UNRESOLVED');
@@ -3843,6 +4545,11 @@ export function verifyPieceProductionSheetSetIntegrity(
         `Graded size '${sz}' sheet geometries duplicate base size '${rev.targetSize}' verbatim without genuine grading.`
       );
     }
+  }
+
+  if (observedSheetTenantIds.size > 1) {
+    rejectionCodes.push('CROSS_TENANT_MISMATCH');
+    errors.push('Sheets within sheetSet carry conflicting sourceTenantId values.');
   }
 
   if (sheetSet.totalSheetsCount !== recomputedTotalSheets || recomputedTotalSheets === 0) {
