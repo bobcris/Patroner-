@@ -1,0 +1,77 @@
+{
+  "milestoneId": "M00.4",
+  "artifactName": "IntervalLibraryQualificationReport.json",
+  "governingDecision": "DEC-13 (Stage 1 Approved at Gate Auth-1 on 2026-11-16; Stage 2 Production Adoption Pending Gate Auth-2)",
+  "governingADR": "ADR-009 (R2.1.2-R1 \u00a75 & \u00a77.2)",
+  "environment": {
+    "pythonVersion": "3.10.12",
+    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+    "machine": "x86_64"
+  },
+  "candidatesEvaluated": [
+    {
+      "candidateRank": 1,
+      "candidateRole": "Primary Candidate (DEC-13 Stage 1)",
+      "libraryName": "mpmath.iv + fractions.Fraction",
+      "version": "1.4.1",
+      "availableInEnvironment": true,
+      "precisionTiersBits": [
+        53,
+        113
+      ],
+      "outwardDirectedRoundingVerified": true,
+      "grazingTangencyNoFalseNegative": true,
+      "wilkinsonClusterSeparationVerified": true,
+      "perCurveBenchmarkLatencyMs": 2.4142,
+      "latencyBudgetMaxMs": 50.0,
+      "withinLatencyBudget": true,
+      "totalQualificationTimeMs": 49.456,
+      "qualificationStatus": "QUALIFIED_PRIMARY"
+    },
+    {
+      "candidateRank": 2,
+      "candidateRole": "Secondary Candidate (DEC-13 Stage 1)",
+      "libraryName": "python-flint (arb + fmpq)",
+      "version": "0.9.0",
+      "availableInEnvironment": true,
+      "precisionTiersBits": [
+        53,
+        113
+      ],
+      "outwardDirectedRoundingVerified": true,
+      "grazingTangencyNoFalseNegative": true,
+      "wilkinsonClusterSeparationVerified": true,
+      "perCurveBenchmarkLatencyMs": 0.024,
+      "latencyBudgetMaxMs": 50.0,
+      "withinLatencyBudget": true,
+      "totalQualificationTimeMs": 0.871,
+      "qualificationStatus": "QUALIFIED_SECONDARY_RESERVE"
+    },
+    {
+      "candidateRank": 3,
+      "candidateRole": "Tertiary Pure-Python Fallback (DEC-13 Stage 1)",
+      "libraryName": "fractions.Fraction + decimal.Decimal (prec=50, ROUND_FLOOR/ROUND_CEILING)",
+      "version": "Python 3.10.12 stdlib",
+      "availableInEnvironment": true,
+      "precisionTiersBits": [
+        166
+      ],
+      "outwardDirectedRoundingVerified": true,
+      "grazingTangencyNoFalseNegative": true,
+      "wilkinsonClusterSeparationVerified": true,
+      "perCurveBenchmarkLatencyMs": 0.1662,
+      "latencyBudgetMaxMs": 50.0,
+      "withinLatencyBudget": true,
+      "totalQualificationTimeMs": 3.63,
+      "qualificationStatus": "QUALIFIED_TERTIARY_FALLBACK"
+    }
+  ],
+  "recommendedForStage2SignOffAtGateAuth2": {
+    "selectedOracleStack": "mpmath.iv (53-bit screen + 113-bit quad certification tier) + fractions.Fraction",
+    "secondaryCExtensionReserve": "python-flint 0.9.0 (arb + fmpq)",
+    "zeroDependencyStdlibFallback": "fractions.Fraction + decimal.Decimal (prec=50, ROUND_FLOOR/ROUND_CEILING)",
+    "rationale": "Primary candidate mpmath.iv (1.4.1) + fractions.Fraction passed 100% of outward directed rounding, exact rational Bernstein sign-variation, grazing tangency (Category 3), and Wilkinson root-cluster separation checks with 2.4142 ms per-curve latency (well under the 50 ms budget).",
+    "stage2GovernanceNote": "Per Owner Authorization Record Checkpoint 12, this report completes M00.4 Step 2 Library Qualification. Production adoption for M02 remains gated on Project Owner sign-off of DEC-13 Stage 2 at Gate Auth-2."
+  },
+  "allCandidatesQualified": true
+}

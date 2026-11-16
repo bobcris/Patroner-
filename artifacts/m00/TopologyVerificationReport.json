@@ -1,0 +1,27 @@
+{
+  "milestoneId": "M00.6",
+  "artifactName": "TopologyVerificationReport.json",
+  "ccwExteriorCheck": {
+    "closureGapCm": 0.0,
+    "signedAreaCm2": 1008.0,
+    "actualWinding": "CCW",
+    "expectedWinding": "CCW",
+    "selfIntersections": 0,
+    "isSimple": true,
+    "isMicroSliver": false,
+    "passed": true
+  },
+  "cwInteriorCutoutCheck": {
+    "closureGapCm": 0.0,
+    "signedAreaCm2": -25.0,
+    "actualWinding": "CW",
+    "expectedWinding": "CW",
+    "selfIntersections": 0,
+    "isSimple": true,
+    "isMicroSliver": false,
+    "passed": true
+  },
+  "bowtieSelfIntersectionDetected": true,
+  "microSliverDetected": true,
+  "allPassed": true
+}

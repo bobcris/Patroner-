@@ -1,0 +1,9 @@
+{
+  "name": "@patroner/contracts",
+  "version": "0.1.0-m00",
+  "private": true,
+  "description": "Canonical JSON Schema Draft 2020-12 and TypeScript contracts for Patroner M00.1 (DEC-01 Monorepo Architecture)",
+  "files": [
+    "schemas/canonical_contracts.schema.json"
+  ]
+}

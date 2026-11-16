@@ -1,0 +1,39 @@
+{
+  "milestoneId": "M00.5",
+  "artifactName": "ArcLengthVerificationReport.json",
+  "certifiedQuadLengthCm": 16.6656505146,
+  "adaptiveGaussLegendreLengthCm": 16.6656505146,
+  "forwardLengthErrorCm": 1.4210854715202004e-14,
+  "forwardToleranceMaxCm": 1e-06,
+  "panelsEvaluated": 23,
+  "inverseArcLengthChecks": [
+    {
+      "targetFraction": 0.25,
+      "targetArcLengthCm": 4.16641263,
+      "tStar": 0.425657617723,
+      "arcLengthResidualCm": 8.881784197001252e-16,
+      "deltaT": 5.551115123125783e-17,
+      "deltaPosCm": 7.8276405295714685e-16,
+      "passed": true
+    },
+    {
+      "targetFraction": 0.5,
+      "targetArcLengthCm": 8.33282526,
+      "tStar": 0.667210977108,
+      "arcLengthResidualCm": 1.7763568394002505e-15,
+      "deltaT": 1.1102230246251565e-16,
+      "deltaPosCm": 2.272607736949286e-15,
+      "passed": true
+    },
+    {
+      "targetFraction": 0.75,
+      "targetArcLengthCm": 12.49923789,
+      "tStar": 0.848755041555,
+      "arcLengthResidualCm": 1.7763568394002505e-15,
+      "deltaT": 1.1102230246251565e-16,
+      "deltaPosCm": 2.8251097400949894e-15,
+      "passed": true
+    }
+  ],
+  "allPassed": true
+}

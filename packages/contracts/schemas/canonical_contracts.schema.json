@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patroner.io/schemas/v1/canonical_contracts.schema.json",
+  "title": "PatronerCanonicalContractsV1",
+  "description": "Canonical M00.1 JSON Schema Draft 2020-12 contracts enforcing ADR-002, ADR-003, ADR-005, and ADR-009 (R2.1.2-R1).",
+  "type": "object",
+  "$defs": {
+    "Point2D": {
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number", "description": "X coordinate in cm (right-handed Cartesian plane)" },
+        "y": { "type": "number", "description": "Y coordinate in cm (right-handed Cartesian plane)" }
+      }
+    },
+    "CoordinateFrameSpec": {
+      "type": "object",
+      "required": [
+        "geometryUnit",
+        "clearanceUnit",
+        "internalAngleUnit",
+        "displayAngleUnit",
+        "handedness",
+        "exteriorWinding",
+        "interiorCutoutWinding",
+        "leftNormalDirectionOnExterior"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "geometryUnit": { "const": "cm" },
+        "clearanceUnit": { "const": "mm" },
+        "internalAngleUnit": { "const": "rad" },
+        "displayAngleUnit": { "const": "deg" },
+        "handedness": { "const": "right-handed-cartesian" },
+        "exteriorWinding": { "const": "CCW" },
+        "interiorCutoutWinding": { "const": "CW" },
+        "leftNormalDirectionOnExterior": { "const": "inward" }
+      }
+    },
+    "BezierSegment": {
+      "type": "object",
+      "required": ["id", "p0", "p1", "p2", "p3"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "p0": { "$ref": "#/$defs/Point2D" },
+        "p1": { "$ref": "#/$defs/Point2D" },
+        "p2": { "$ref": "#/$defs/Point2D" },
+        "p3": { "$ref": "#/$defs/Point2D" }
+      }
+    },
+    "SeamAllowanceSpec": {
+      "type": "object",
+      "required": ["segmentId", "distanceCm", "directionSign", "joinStyle", "miterLimit"],
+      "additionalProperties": false,
+      "properties": {
+        "segmentId": { "type": "string", "minLength": 1 },
+        "distanceCm": { "type": "number", "minimum": 0.0, "maximum": 10.0 },
+        "directionSign": {
+          "type": "integer",
+          "enum": [-1, 1],
+          "description": "+1 along +N_+(t) (inward on CCW exterior contour); -1 along -N_+(t) (outward seam allowance on CCW exterior contour)"
+        },
+        "joinStyle": { "type": "string", "enum": ["miter", "bevel", "round", "fold"] },
+        "miterLimit": { "type": "number", "minimum": 1.0, "maximum": 10.0 }
+      }
+    },
+    "NotchSpec": {
+      "type": "object",
+      "required": ["id", "segmentId", "targetArcLengthCm", "parameterT", "position", "normalVector", "notchType"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "segmentId": { "type": "string", "minLength": 1 },
+        "targetArcLengthCm": { "type": "number", "minimum": 0.0 },
+        "parameterT": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "position": { "$ref": "#/$defs/Point2D" },
+        "normalVector": { "$ref": "#/$defs/Point2D" },
+        "notchType": { "type": "string", "enum": ["slit", "v-notch", "t-notch", "double"] },
+        "arcLengthResidualCm": { "type": "number", "minimum": 0.0, "maximum": 1e-7 }
+      }
+    },
+    "RootBracketCertificate": {
+      "type": "object",
+      "required": ["tLower", "tUpper", "deltaT", "maxSpeedOnBracket", "deltaPosCm", "multiplicityOrOrder"],
+      "additionalProperties": false,
+      "properties": {
+        "tLower": { "type": "number", "minimum": -1.0, "maximum": 2.0 },
+        "tUpper": { "type": "number", "minimum": -1.0, "maximum": 2.0 },
+        "deltaT": { "type": "number", "minimum": 0.0, "maximum": 1e-12 },
+        "maxSpeedOnBracket": { "type": "number", "minimum": 0.0 },
+        "deltaPosCm": { "type": "number", "minimum": 0.0, "maximum": 1e-7 },
+        "multiplicityOrOrder": { "type": "string", "minLength": 1 }
+      }
+    },
+    "OffsetClassificationCategory": {
+      "type": "string",
+      "enum": [
+        "CERTIFIED_REGULAR",
+        "ACTUAL_ZERO_SPEED_CUSP",
+        "ACTUAL_CURVATURE_CUSP",
+        "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+        "TANGENTIAL_CUSP_DEGENERACY",
+        "SELF_INTERSECTING_NON_LOCAL"
+      ]
+    },
+    "OffsetClassificationReport": {
+      "type": "object",
+      "required": [
+        "segmentId",
+        "category",
+        "directionSign",
+        "offsetDistanceCm",
+        "minBaseSpeedSquaredQ",
+        "minOffsetSpeedFactorF",
+        "gridErrorCm",
+        "certifiedIntervalErrorCm",
+        "maxJoinTangentDeltaDeg",
+        "reparameterized",
+        "trimmed",
+        "isolatedRoots",
+        "oracleTierUsed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "segmentId": { "type": "string", "minLength": 1 },
+        "category": { "$ref": "#/$defs/OffsetClassificationCategory" },
+        "directionSign": { "type": "integer", "enum": [-1, 1] },
+        "offsetDistanceCm": { "type": "number", "minimum": 0.0 },
+        "minBaseSpeedSquaredQ": { "type": "number", "minimum": 0.0 },
+        "minOffsetSpeedFactorF": { "type": "number" },
+        "gridErrorCm": { "type": "number", "minimum": 0.0 },
+        "certifiedIntervalErrorCm": { "type": "number", "minimum": 0.0 },
+        "maxJoinTangentDeltaDeg": { "type": "number", "minimum": 0.0 },
+        "reparameterized": { "type": "boolean" },
+        "trimmed": { "type": "boolean" },
+        "isolatedRoots": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RootBracketCertificate" }
+        },
+        "oracleTierUsed": { "type": "string", "enum": ["C1-Fast", "C1-Cert-53bit", "C1-Cert-113bit-Q"] }
+      }
+    },
+    "BodyProfile": {
+      "type": "object",
+      "required": [
+        "profileId",
+        "unit",
+        "bustCm",
+        "waistCm",
+        "highHipCm",
+        "lowHipCm",
+        "waistToHipCm",
+        "backWaistLengthCm",
+        "frontWaistLengthCm",
+        "acrossBackCm",
+        "shoulderLengthCm",
+        "neckCircumferenceCm",
+        "bustSpanCm",
+        "bustHeightCm",
+        "armholeDepthCm",
+        "sleeveLengthCm"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "profileId": { "type": "string", "minLength": 1 },
+        "unit": { "const": "cm" },
+        "heightCm": { "type": "number", "minimum": 130.0, "maximum": 210.0 },
+        "bustCm": { "type": "number", "minimum": 70.0, "maximum": 150.0 },
+        "waistCm": { "type": "number", "minimum": 52.0, "maximum": 140.0 },
+        "highHipCm": { "type": "number", "minimum": 68.0, "maximum": 155.0 },
+        "lowHipCm": { "type": "number", "minimum": 75.0, "maximum": 165.0 },
+        "waistToHipCm": { "type": "number", "minimum": 14.0, "maximum": 28.0 },
+        "skirtLengthCm": { "type": "number", "minimum": 30.0, "maximum": 120.0 },
+        "backWaistLengthCm": { "type": "number", "minimum": 34.0, "maximum": 50.0 },
+        "frontWaistLengthCm": { "type": "number", "minimum": 34.0, "maximum": 54.0 },
+        "acrossBackCm": { "type": "number", "minimum": 28.0, "maximum": 50.0 },
+        "shoulderLengthCm": { "type": "number", "minimum": 9.0, "maximum": 18.0 },
+        "neckCircumferenceCm": { "type": "number", "minimum": 30.0, "maximum": 50.0 },
+        "bustSpanCm": { "type": "number", "minimum": 14.0, "maximum": 28.0 },
+        "bustHeightCm": { "type": "number", "minimum": 18.0, "maximum": 36.0 },
+        "armholeDepthCm": { "type": "number", "minimum": 16.0, "maximum": 30.0 },
+        "bicepsCircumferenceCm": { "type": "number", "minimum": 22.0, "maximum": 50.0 },
+        "wristCircumferenceCm": { "type": "number", "minimum": 13.0, "maximum": 24.0 },
+        "sleeveLengthCm": { "type": "number", "minimum": 48.0, "maximum": 72.0 }
+      }
+    },
+    "PatternPiece": {
+      "type": "object",
+      "required": [
+        "pieceId",
+        "pieceCode",
+        "name",
+        "coordinateFrame",
+        "sewBoundarySegments",
+        "cutBoundarySegments",
+        "notches",
+        "offsetReports"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pieceId": { "type": "string", "minLength": 1 },
+        "pieceCode": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "coordinateFrame": { "$ref": "#/$defs/CoordinateFrameSpec" },
+        "sewBoundarySegments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/BezierSegment" }
+        },
+        "cutBoundarySegments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/BezierSegment" }
+        },
+        "notches": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/NotchSpec" }
+        },
+        "offsetReports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OffsetClassificationReport" }
+        }
+      }
+    }
+  }
+}

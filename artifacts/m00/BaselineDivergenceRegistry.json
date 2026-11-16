@@ -1,0 +1,148 @@
+{
+  "milestoneId": "M00.2",
+  "artifactName": "BaselineDivergenceRegistry.json",
+  "governingPolicy": "04_MIGRATION_AND_PARITY_POLICY.md (§3 & §4 Three-Classification Parity Taxonomy)",
+  "c0LegacySnapshotsCount": 6,
+  "c0LegacySnapshots": [
+    {
+      "size": "XS",
+      "bodicePieceCount": 2,
+      "bodicePieceCodes": [
+        "BOD-F-01",
+        "BOD-B-01"
+      ],
+      "bodiceTotalSeamCount": 12,
+      "bodiceNotchCount": 6,
+      "skirtPieceCount": 2,
+      "skirtPieceCodes": [
+        "SK-01-F",
+        "SK-02-B"
+      ],
+      "skirtTotalSeamCount": 8,
+      "skirtNotchCount": 4
+    },
+    {
+      "size": "S",
+      "bodicePieceCount": 2,
+      "bodicePieceCodes": [
+        "BOD-F-01",
+        "BOD-B-01"
+      ],
+      "bodiceTotalSeamCount": 12,
+      "bodiceNotchCount": 6,
+      "skirtPieceCount": 2,
+      "skirtPieceCodes": [
+        "SK-01-F",
+        "SK-02-B"
+      ],
+      "skirtTotalSeamCount": 8,
+      "skirtNotchCount": 4
+    },
+    {
+      "size": "M",
+      "bodicePieceCount": 2,
+      "bodicePieceCodes": [
+        "BOD-F-01",
+        "BOD-B-01"
+      ],
+      "bodiceTotalSeamCount": 12,
+      "bodiceNotchCount": 6,
+      "skirtPieceCount": 2,
+      "skirtPieceCodes": [
+        "SK-01-F",
+        "SK-02-B"
+      ],
+      "skirtTotalSeamCount": 8,
+      "skirtNotchCount": 4
+    },
+    {
+      "size": "L",
+      "bodicePieceCount": 2,
+      "bodicePieceCodes": [
+        "BOD-F-01",
+        "BOD-B-01"
+      ],
+      "bodiceTotalSeamCount": 12,
+      "bodiceNotchCount": 6,
+      "skirtPieceCount": 2,
+      "skirtPieceCodes": [
+        "SK-01-F",
+        "SK-02-B"
+      ],
+      "skirtTotalSeamCount": 8,
+      "skirtNotchCount": 4
+    },
+    {
+      "size": "XL",
+      "bodicePieceCount": 2,
+      "bodicePieceCodes": [
+        "BOD-F-01",
+        "BOD-B-01"
+      ],
+      "bodiceTotalSeamCount": 12,
+      "bodiceNotchCount": 6,
+      "skirtPieceCount": 2,
+      "skirtPieceCodes": [
+        "SK-01-F",
+        "SK-02-B"
+      ],
+      "skirtTotalSeamCount": 8,
+      "skirtNotchCount": 4
+    },
+    {
+      "size": "XXL",
+      "bodicePieceCount": 2,
+      "bodicePieceCodes": [
+        "BOD-F-01",
+        "BOD-B-01"
+      ],
+      "bodiceTotalSeamCount": 12,
+      "bodiceNotchCount": 6,
+      "skirtPieceCount": 2,
+      "skirtPieceCodes": [
+        "SK-01-F",
+        "SK-02-B"
+      ],
+      "skirtTotalSeamCount": 8,
+      "skirtNotchCount": 4
+    }
+  ],
+  "c0LegacySampleDiagnostics": {
+    "armscyeChordPolygonMidpointLengthCm": 16.66565055908258,
+    "armscyeRoundedDisplayLengthCm": 16.67,
+    "armscyeErrorBoundCm": 0.0004816028561474739,
+    "armscyeOffsetSubsegmentCount": 8,
+    "armscyeOffsetMax5PointDeviationCm": 0.048
+  },
+  "parityClassifications": [
+    {
+      "divergenceId": "DIV-01",
+      "modulePath": "src/engine/drafting/bodice-block.ts & skirt-block.ts",
+      "metric": "Piece topology, pieceCode identifiers, seam connectivity graph, notch counts, and straight-line construction coordinates",
+      "parityClass": "CLASS A — EXACT INVARIANT PARITY",
+      "requirement": "Python C1-Fast must match C0-Legacy piece topology, IDs, and axis-aligned straight segments within <= 1e-6 cm."
+    },
+    {
+      "divergenceId": "DIV-02",
+      "modulePath": "src/engine/geometry/math.ts (cubicBezierPoint, lengthCm .toFixed(2))",
+      "metric": "Intermediate coordinate rounding (.toFixed(2) / .toFixed(3)) and chord/polygon midpoint arc-length",
+      "parityClass": "CLASS B — INTENTIONAL MATHEMATICAL UPGRADE",
+      "requirement": "C0-Legacy truncates intermediate coordinates to 10^-2 / 10^-3 cm. Python C1-Fast/C1-Cert preserves full IEEE-754 binary64 / 113-bit precision and uses 5-point adaptive Gauss-Legendre quadrature (<= 1e-6 cm error vs C1-Cert oracle)."
+    },
+    {
+      "divergenceId": "DIV-03",
+      "modulePath": "src/engine/geometry/offset.ts (offsetCubicBezier)",
+      "metric": "5-point heuristic Bezier offset sampling [0.15, 0.35, 0.5, 0.65, 0.85] with 0.05 cm tolerance and no degree-12 P_cusp(t) root isolation",
+      "parityClass": "CLASS B — INTENTIONAL MATHEMATICAL UPGRADE",
+      "requirement": "Replaced in Python by ADR-009 exact signed normal offset O(t) = B(t) + s*d*N_+(t), 5-way Q(t*)=0 singularity classification (separating Category 2a zero-speed cusps from Category 2c removable parameterization degeneracies like B(t)=(t^3,0)), degree-12 cusp isolation, E_grid <= 0.005 cm (1024 points), and E_cert <= 0.010 cm (>= 256 interval panels)."
+    },
+    {
+      "divergenceId": "DIV-04",
+      "modulePath": "src/engine/geometry/primitives.ts (GeometricContour.getWinding)",
+      "metric": "Screen-space (Y-down) clockwise/counter-clockwise convention",
+      "parityClass": "CLASS B — INTENTIONAL MATHEMATICAL UPGRADE",
+      "requirement": "Standardized in M00.1 / ADR-009 §1.1 to right-handed Cartesian plane with CCW exterior boundaries (left normal N_+(t) pointing inward, -N_+(t) pointing outward) and CW internal cutouts."
+    }
+  ],
+  "allPassed": true
+}

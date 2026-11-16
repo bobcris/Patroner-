@@ -1,95 +1,82 @@
-# 10 — RELEASE AND GOVERNANCE POLICY (`R2.1.2`)
+# 10 — Release, Branch Lineage, and Architecture Governance Policy
 
-**Document ID:** `PATRONER-BP-R2.1.2-10`  
-**Base Commit:** `8805140b1e6e7799922348369d7e29881102a75e` (`Patroner Blueprint R2.1.1`)  
-**Status:** Authoritative 8-State Realization Lifecycle, Six-Gate Authorization & Release Framework (`Gate Auth-1`–`Auth-6`), Tri-State Verification Promotion Rule, `isProductionReady` Gate & `Appendix F` Applicability Matrix  
-**Governing Baseline:** `Patroner_Living_Project_Monograph_v5.16_Consolidated_Master.pdf` (`Ch. 09`, `Ch. 11`, `Ch. 17`, `Ch. 20`, `App. F`), `07_RISK_AND_OPEN_DECISIONS_REGISTER.md` (`R2.1.2`)
+**Document ID:** `PATRONER-R2.1.2-R1-10`  
+**Baseline:** Blueprint Revision 2.1.2-R1 (Targeted Mathematical Correction, Singularity Classification & Governance Alignment)  
+**Governing Authority:** Monograph v5.16; Addendum v4.1; Revision v4.5; `ADR-001`–`ADR-009` (`R2.1.2-R1`); `05_WORKLOAD_DEPENDENCY_GRAPH.md`; `07_RISK_AND_OPEN_DECISIONS_REGISTER.md`  
+**Status:** **GATE AUTH-1 APPROVED (CHECKPOINT 12, 2026-11-16) — M00 AUTHORIZED; M02 BLOCKED PENDING GATE AUTH-2 / DEC-13 STAGE 2**
 
-> **Governance Invariant:** **R2.1.2 publication does not authorize M00. M00 remains blocked pending explicit owner approval.**
-
----
-
-## 1. The Canonical 8-State Realization Lifecycle (`v5.16 Ch. 09, p. 16`)
-
-Every garment revision in the Fashion World Model (`M01`) is governed by an explicit, append-only 8-state realization lifecycle. To maintain 100% traceability between the strategic prose in `v5.16 Ch. 09 (p. 16)` and the technical state machine in `services/fashion-engine`, the table below maps each canonical `v5.16` realization state to its technical enum identifier, `isProductionReady` invariant, and required promotion gate:
-
-```mermaid
-stateDiagram-v2
-  [*] --> Inspiration_Concept
-  Inspiration_Concept --> AI_Proposal_Specified : Gate G1 (M04a ObservationBundle + Human Disambiguation -> GarmentIntentSpecification)
-  AI_Proposal_Specified --> User_Approved_Design_Drafted : Gate G2 (M02c Body + M03 Material + M04b Recipe Compilation -> M02d/e Draft)
-  User_Approved_Design_Drafted --> Specification_Validated : Gate G3 (AC-03 5-Concept Output Enclosures + AC-05 Tri-State CERTIFIED_VALID (1 - s d kappa) 6-Category Offset/Seam + AC-06 M02g Grading)
-  Specification_Validated --> Feasibility_Fit_Approved : Gate G4 (AC-08 M06 Simulation + Fit Report + M02h Marker + M05 Tech Pack + Maker Quote)
-  Feasibility_Fit_Approved --> Sample_Approved : Gate G5 (AC-09 Physical Toile Trial + AC-10 100mm Plotter Check & First-Article POM QC)
-  Sample_Approved --> Production_Ready_Offer : Gate G6 (AC-10 Ed25519 Signed Release Package + AC-12 8-Role Offer Contract)
-  Production_Ready_Offer --> In_Production_Fulfilled : Gate G7 (M07 Work Order + Lot Traceability + Final POM QC + M08 Ledger Settlement)
-  User_Approved_Design_Drafted --> Inspiration_Concept : Superseded by New Revision Node
-  Specification_Validated --> AI_Proposal_Specified : Bounded Optimization Loop (Revision v4.5 / M06)
-```
-
-| # | `v5.16 Ch. 09` Canonical State Name | Technical Enum (`lifecycle_state`) | `isProductionReady` Flag | Permitted Downstream Actions | Required Promotion Gate Evidence |
-| :---: | :--- | :--- | :---: | :--- | :--- |
-| **1** | **Inspiration** | `Concept` (`INSPIRATION_CONCEPT`) | `false` | Reference sketch/image upload, text brief intake (`M04a`) | Authenticated project & tenant context (`M01`). |
-| **2** | **AI proposal** | `Specified` (`AI_PROPOSAL_SPECIFIED`) | `false` | Epistemic inspection, human disambiguation, measurement/material binding | `M04a` `DesignObservationBundle` + human disambiguation freezing `GarmentIntentSpecification`. |
-| **3** | **User-approved design** | `Drafted` (`USER_APPROVED_DESIGN_DRAFTED`) | `false` | Seam allowance, miter, notch, and assembly validation (`M02b`/`M02f`) | Confirmed `GarmentIntentSpecification` (`M04a`) + `ValidatedBodyProfile` (`M02c`) + `CalibratedMaterialSpec` (`M03`) compiled via `M04b` into `M02d`/`M02e` 2D pieces. |
-| **4** | **Specification in progress** | `Validated` (`SPECIFICATION_VALIDATED`) | `false` | 3D simulation (`M06`), multi-size grading (`M02g`), marker nesting (`M02h`), tech-pack compilation (`M05`) | Passing `AC-03` (5-concept output enclosures via 4-layer `Method C1-Cert` + qualified `mpmath.iv` & `Method C2`), `AC-05` (**tri-state `CERTIFIED_VALID`** complete-interval $t \in [0, 1]$ 6-category offset verification under $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$ & seam mating), and `AC-06` (`M02g` multi-size grading). *(Note: If any interval check returns `INCONCLUSIVE`, revision enters `Verification_Pending` and cannot promote to `Validated` until escalated to `CERTIFIED_VALID` per `ADR-009`.)* |
-| **5** | **Feasibility reviewed** | `Fit_Approved` (`FEASIBILITY_FIT_APPROVED`) | `false` | Sample cutting order & physical toile trial at qualified workshop (`M07`) | Passing `AC-08` (`M06` simulation convergence & `FitEvaluationReport`), `M02h` validated marker, `M05` `ManufacturingTechPack`, `M07.1` maker capability/quote match, and human patternmaker approval. |
-| **6** | **Sample approved** | `Sample_Approved` (`SAMPLE_APPROVED`) | `false` | Cryptographic production release signing & commercial offer binding | Physical $100.0\text{ mm}$ plotter calibration check ($\pm 0.1\text{ mm}$) + physical first-article sample measured and approved against POM tolerances (`AC-09`, `AC-10`, `M07.2`). |
-| **7** | **Production-ready offer** | `Production_Ready` (`PRODUCTION_READY_OFFER`) | **`true`** *(Revision-Scoped)* | Commercial checkout (`M08`/`M09`) & production work-order dispatch (`M07.4`) | RFC 8785 canonical JSON manifest + SHA-256 Merkle root + Ed25519 signature (`SignedManufacturingReleasePackage`, `DEC-09`) + 8-role `ProductOfferContract` (`AC-10`, `AC-11`, `AC-12`). |
-| **8** | **In production / fulfilled** | `In_Production_Completed` (`IN_PRODUCTION_FULFILLED`) | **`true`** *(Locked)* | Shop-floor operation logging, final POM QC, shipment, financial settlement | Complete `WorkOrderOperationLog`, lot traceability, final POM inspection pass (`M07.5`), and balanced double-entry ledger settlement (`M08`). |
+> **Owner Authorization Record (`Checkpoint 12` — 16 November 2026):**
+> * **`DEC-13 Stage 1` (APPROVED):** Approves the candidate library evaluation order specified in Blueprint `R2.1.2-R1` (`mpmath.iv` + `fractions.Fraction` primary; `python-flint` secondary; pure-Python `Fraction`+`Decimal` tertiary). Candidate selection only, not library qualification or production adoption.
+> * **`DEC-01` (APPROVED):** Approves the pnpm + Turborepo + uv monorepo architecture (`apps/web`, `services/geometry-engine`, `packages/contracts`) and Strangler-Fig migration policy.
+> * **`Gate Auth-1` (APPROVED):** Accepts Blueprint `R2.1.2-R1` as the governing baseline and authorizes commencement of `M00` (`M00.1`–`M00.10`), subject to producing `IntervalLibraryQualificationReport`, verifying the 17 adversarial geometry test families (`AG-01`–`AG-17`) with recorded evidence, and holding `M02` production implementation pending `DEC-13 Stage 2` / `Gate Auth-2`.
 
 ---
 
-## 2. Hard Invariant on `isProductionReady: false` & Tri-State Fail-Closed Promotion Rule
+## 1. Purpose and Authority Boundary
 
-1. **Global Default:** Across all software builds in `M00` through `M06`, `isProductionReady` **must remain `false`** by default on all pattern, grading, marker, and piece-production-sheet artifacts.
-2. **Prohibition on Manual Override:** No UI toggle, query parameter, or client payload may set `isProductionReady: true`.
-3. **Tri-State Verification Promotion Rule (`ADR-009`):**
-   - Only `overall_status == "CERTIFIED_VALID"` permits promotion across `Gate G3` (`Validated`), `Gate G4` (`Fit_Approved`), `Gate G5` (`Sample_Approved`), or `Gate G6` (`Production_Ready`).
-   - `CERTIFIED_INVALID` transitions the revision to `Invalid` with the exact proven failure category (`REGULARITY_MARGIN_VIOLATION`, `ACTUAL_ZERO_SPEED_CUSP`, `TANGENT_REVERSAL`, `LOCAL_OFFSET_SELF_INTERSECTION`, or `GLOBAL_CONTOUR_SELF_INTERSECTION`).
-   - `INCONCLUSIVE` (`INCONCLUSIVE_VERIFICATION`) blocks promotion (`is_production_ready = False`) and transitions the revision to `Verification_Pending` for precision/degree/subdivision escalation, **without ever misreporting the uncertified interval as a confirmed geometric defect**.
-4. **Cryptographic Promotion Function:** In `services/fashion-engine`, `is_production_ready` is a computed read-only property derived exclusively from the presence of a valid, non-revoked `SignedManufacturingReleasePackage` (`State 7`) linking a `Validated` (`CERTIFIED_VALID`) + `Fit_Approved` revision (`AC-03`, `AC-05`, `AC-06`, `AC-08`), a signed `PhysicalSampleApprovalRecord` (`AC-09`, `AC-10`), and a qualified `MakerOfRecord` capability match (`M07`).
+This policy defines the release engineering, Git branch lineage, authorization gates (`Gate Auth-1` through `Gate Auth-4`), and mathematical verification governance for the Patroner platform.
+
+### 1.1 Strict Gate Enforcement (`Gate Auth-1` Approved $\to$ `M00` Execution $\to$ `Gate Auth-2` Mandatory Before `M02`)
+* Following explicit Project Owner authorization at **`Gate Auth-1`** (`Checkpoint 12`, `16 November 2026`), **`M00` (`M00.1`–`M00.10`) is authorized to execute in its defined sequence**.
+* **`M02` production implementation remains strictly blocked pending `DEC-13 Stage 2` and `Gate Auth-2` sign-off**, and no production-readiness claim may be made without the required recorded evidence.
 
 ---
 
-## 3. Six-Stage Program Authorization & Release Governance Framework (`Synchronized with 07_RISK_AND_OPEN_DECISIONS_REGISTER.md`)
+## 2. Authoritative Git Lineage & Recovery Record (`R2` $\to$ `R2.1.2-R1` $\to$ `M00`)
 
-To govern both early engineering commencement (`M00`, `M01`/`M02`) and commercial/enterprise releases (`M09`, `M10`) without circularity or disproportionate blocking (`07_RISK_AND_OPEN_DECISIONS_REGISTER.md Section 3`), Patroner enforces six sequential program authorization gates:
+All planning revisions maintain a verifiable, non-destructive Git commit lineage anchored to `https://github.com/bobcris/Patroner-.git`:
 
-| Gate ID | Gate Name | Required Decisions & Evidence (`07_RISK_AND_OPEN_DECISIONS_REGISTER.md`) | What It Authorizes | Current Status |
-| :--- | :--- | :--- | :--- | :---: |
-| **`Gate Auth-1`** | **Authorization to Begin `M00` (Migration Prep & Oracles)** | Formal human approval of **`ADR-009` (`R2.1.2`)**, **`DEC-01`**, **`DEC-13 Stage 1`** (initial reference-oracle library selection via specification review — zero `M00` execution required prior to `Gate Auth-1`) + **explicit Project-Owner authorization (`AUTH-M00-START`)**. | Execution of `M00.1`–`M00.10` (inventory, defect reproduction, legacy TS freeze, Class A/B fixtures, `M00.4` independent oracle harness & library qualification). | **`BLOCKED / UNAUTHORIZED`** |
-| **`Gate Auth-2`** | **Authorization to Begin Authoritative `M01`/`M02` Implementation** | `M00.10` Exit Audit sign-off + **`DEC-13 Stage 2`** (`IntervalLibraryQualificationReport` + `< 5 ms` benchmark across 63 contours from `M00.4` for `M02a`/`M02f`) + workload-specific engineering decisions (**`DEC-04`**, **`DEC-05`** for `M01`; **`DEC-11`** for `M02b`/`M02f`/`M02g`/`M05`; **`DEC-06`** for `M02h`; **`DEC-03`** for `M03.1`; **`DEC-09`** for `M05.5`; **`DEC-02`** for `M06.2`). | Authoritative implementation of `M01`–`M06` in `services/fashion-engine` and `apps/web`. *(Not blocked by commercial/tax decisions `DEC-07`, `DEC-08`, `DEC-10`, `DEC-12`, `ADR-008 Schema`.)* | Pending `Gate Auth-1` & `M00.10` |
-| **`Gate Auth-3`** | **Internal Technical Acceptance (`Vertical Slice Gate`)** | 100% pass of the 14-step Vertical Slice (`plan/08`) + closure of empirical evidence for `DEC-01`–`06`, `DEC-09`, `DEC-11`, `DEC-13 Stage 2`, `ADR-001`–`006`, `ADR-009`. | Entry into `M07` physical workshop qualification and first-article sample trials. | Pending `M01`–`M06` |
-| **`Gate Auth-4`** | **Controlled Commercial Pilot Entry (`Release Level A Gate`)** | `Gate Auth-3` + `M07` ($\ge 2$ qualified workshops & approved physical samples) + `M08` multi-currency ledger + **`ADR-007`**, **`ADR-008`**, **`DEC-07`**, **`DEC-08`**, **`DEC-10`**, **`DEC-12`** (legal/tax CPA sign-off). | Launch of the capped `M09` Controlled Commercial Pilot ($\le 50$ units across Tracks P1, P2, P3). | Pending `Gate Auth-3`, `M07`, `M08` |
-| **`Gate Auth-5`** | **Commercial Pilot Acceptance (`Release Level B Gate`)** | Empirical `M09` pilot completion ($\ge 95\%$ first-pass POM QC yield, bounded fit return rates, $0$ minor-unit cash-to-ledger reconciliation variance). | Closure of `M09` and entry into `M10` enterprise-scale expansion. | Pending `M09` Execution |
-| **`Gate Auth-6`** | **Enterprise-Scale Release (`Release Level C Gate`)** | Completion of `M10` (`M10.1`–`M10.5`: repeatable Brand Studio waterfalls, BYOK KMS, automated crypto-shredding, partner APIs, multi-region DR drills). | Full institutional and multi-brand enterprise operations. | Pending `M10` Execution |
-
----
-
-## 4. `v5.16 Appendix F` Applicability Matrix Across `Gate Auth-4` (`Level A`), `Gate Auth-5` (`Level B`), and `Gate Auth-6` (`Level C`)
-
-All 10 institutional gates of `v5.16 Appendix F (p. 41)` are preserved in full and mapped to their exact release stage below:
-
-| `v5.16 Appendix F` Gate | Institutional Requirement | **Level A (`Gate Auth-4`): Engineering & Controlled Pilot Entry (`M09` Entry)** | **Level B (`Gate Auth-5`): `M09` Pilot Exit Acceptance (Unlocks `M10`)** | **Level C (`Gate Auth-6`): Enterprise & Institutional Scale Release (`M10` Exit)** |
+| Revision Baseline | Branch Name | Commit SHA | Parent Commit SHA | Role & Verification Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Gate F.1 — System-of-Systems Boundary Integrity** (`Addendum v4.1`) | Zero authoritative domain math, grading, marker, simulation, or approval execution in client UI; zero production implementation inside `M00` (`tests/oracles/`). | **MANDATORY (`AC-04`):** CI AST verification & bundle audit for Vertical Slice & pilot surfaces. | **MAINTAINED:** Zero boundary regressions during live pilot operations. | **MANDATORY:** Extended to enterprise white-label & partner API gateways (`M10.3`). |
-| **Gate F.2 — Deterministic Numerical & Geometric Certification** | 5-concept validated output bounds (`Method C1-Cert` 4-layer assurance + qualified `mpmath.iv`, `Method C2`, `ADR-009`) & tri-state `CERTIFIED_VALID` complete-interval $[0, 1]$ 6-category offset verification under $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$ (`Method C3`). | **MANDATORY (`AC-03`):** Validated `Method C1-Cert/C2/C3` enclosures verified across all pilot blocks (`skirt-block-v1`, `bodice-sleeve-v1`). | **MAINTAINED:** Verified across all pilot custom-fit (`Track P3`) customer revisions. | **MANDATORY:** Verified across all expanded garment families (`trouser`, `dress`, `knit`). |
-| **Gate F.3 — Cross-Size Grading, Construction & Marker Certification** | Full size-matrix seam parity, anti-cloning, and `M02h` non-overlapping marker utilization. | **MANDATORY (`AC-05`, `AC-06`):** Verified across `XS`–`XXL` / `EU 34`–`46` for pilot capsules. | **MANDATORY (Real Evidence):** Zero marker/cut-fit geometric failures across $\le 50$ pilot garments. | **MANDATORY:** Automated across multi-brand grading libraries. |
-| **Gate F.4 — Material Characterization & Shrinkage Compliance** | Separation of raw test observations from calibrated parameters; physical coupon evidence (`DEC-03`). | **MANDATORY (`AC-07`):** `TIER_1_LAB` or `TIER_2_BENCHTOP` certificates for all pilot capsule fabrics. | **MANDATORY (Real Evidence):** Incoming physical roll lot shrinkage (`M07.3`) vs. post-press POM drift reconciled. | **MANDATORY:** Multi-mill supplier lot federation & automated closed-loop calibration. |
-| **Gate F.5 — Simulation Convergence & Physical Toile Concordance** | Analytical solver benchmarks B1–B4 (`DEC-02`) + physical vs. digital fit concordance (`DEC-07`). | **MANDATORY (`AC-08`, `AC-09`):** Solver passes B1–B4; physical toile trial passes $\le 0.5\text{ cm}$ POM concordance on pilot blocks. | **MANDATORY (Real Evidence):** Real customer fit return/remake rate $\le 8\%$ (P1/P2) and $\le 12\%$ (P3) (`AC-09`). | **MANDATORY:** Multi-pose & 3D body-scan cohort calibration across expanded categories. |
-| **Gate F.6 — Manufacturing Tech-Pack, Plotter & Maker Qualification** | $100.0\text{ mm}$ physical plotter calibration, complete BOM/ISO 4915/4916/POM tech pack, and qualified makers. | **MANDATORY (`AC-10`):** Physical $100.0\text{ mm}$ check ($\pm 0.1\text{ mm}$), complete tech pack, and $\ge 2$ workshops qualified with approved physical samples. | **MANDATORY (Real Evidence):** $\ge 95\%$ first-pass final POM QC yield across all shipped pilot units (`M07.5`). | **MANDATORY:** Multi-region maker network SLA routing & automated capacity balancing. |
-| **Gate F.7 — Multi-Tenant Security, RBAC+ABAC & Job Re-Authorization** | Person/Org/Tenant isolation, PostgreSQL RLS (`DEC-04`), 3-point worker re-auth (`DEC-05`), scoped workshop grants. | **MANDATORY (`AC-11`):** Zero-finding cross-tenant penetration test & mid-job revocation verification across Own-Label, Brand Studio, and Maker tenants. | **MAINTAINED:** Zero cross-tenant or workshop PII exposure incidents during pilot. | **MANDATORY:** Enterprise BYOK KMS envelope encryption & external security audit (`M10.2`). |
-| **Gate F.8 — Cryptographic Provenance & Reproducibility Audit** | RFC 8785 Canonical JSON SHA-256 Merkle lineage + Ed25519 release signatures (`DEC-09`). | **MANDATORY (`AC-11`):** End-to-end replay reproducing identical digests from intent to `SignedManufacturingReleasePackage`. | **MANDATORY (Real Evidence):** 100% of shipped `GarmentSerialUnitID` units trace unbrokenly to signed release packages and fabric lots. | **MANDATORY:** Preserved under GDPR biometric crypto-shredding (`M10.2`). |
-| **Gate F.9 — 8-Role Commercial Contract & Multi-Currency Double-Entry Ledger** | 8-role `ProductOfferContract`, ISO 4217 multi-currency balanced ledger (`ADR-008`, `DEC-08`), VAT/reserves (`DEC-12`), and 8 metrics. | **MANDATORY (`AC-12`):** 8-role contract enforcement, 5,000-lifecycle ledger property test, sandbox settlement dry run, and legal/tax sign-off (`DEC-12`). | **MANDATORY (Real Evidence):** $0$ minor-unit cash-to-ledger reconciliation variance across all real pilot orders, refunds, maker invoices, and creator payouts. | **MANDATORY:** Celebrity/licensed minimum-guarantee advance recoupment waterfalls (`M10.1`). |
-| **Gate F.10 — Operational Resilience, Backup Restore & Privacy Governance** | Database/artifact backup restoration, incident rollback, and GDPR data retention/erasure. | **PILOT-SCOPED (`Level A`):** Single-region automated daily PostgreSQL + object-store backups with **verified pre-pilot restore test** (`RPO <= 1 hr`, `RTO <= 2 hr`) and documented GDPR erasure procedure (`M01`). | **MAINTAINED:** Zero unrecoverable data loss; timely processing of any pilot subject privacy requests. | **ENTERPRISE-SCOPED (`Level C` in `M10.2`/`M10.4`):** Multi-region active/standby automated DR drills (`RPO <= 5 min`, `RTO <= 30 min`) and automated crypto-shredding pipeline at scale. |
+| **Blueprint R2.1** | `main` (historical) | `617cc7f5d9e41b8cd55ed96b64d2363cdb29557b` | R2 baseline | Published R2.1 baseline on GitHub |
+| **Blueprint R2.1.1** | `docs/blueprint-revision-2.1.1` | `8805140b1e6e7799922348369d7e29881102a75e` | `617cc7f5d9e41b8cd55ed96b64d2363cdb29557b` | Published R2.1.1 baseline on GitHub |
+| **Blueprint R2.1.2 (Published)** | `docs/blueprint-revision-2.1.2` | `95eb441dd4e01de4137e6b262c7afb8aa4ab56c3` | `8805140b1e6e7799922348369d7e29881102a75e` | Published R2.1.2 18-file commit on GitHub (`Tree: 5707cecd61b582c275ca58bb0f6b45433541861b`) |
+| *Pre-Restart Local R2.1.2 (Historical Note)* | *(ephemeral pre-restart local commit)* | `724fc09b621b1fc623967f5228e5c0f1108c9422` | `8805140b1e6e7799922348369d7e29881102a75e` | Historical pre-restart local commit SHA recorded for audit traceability; content published to GitHub as `95eb441dd4e01de4137e6b262c7afb8aa4ab56c3` |
+| **Blueprint R2.1.2-R1 Recovery Anchor** | `main` / `origin/main` | `282a303ea1126fb3b1da368e4e8e4ddbeb59c552` | `95eb441dd4e01de4137e6b262c7afb8aa4ab56c3` | Owner-approved Option 1 recovery base containing the completed `R2.1.2-R1` update to `ADR-009` (`Tree: 16ebb94c7f02af88a5a3b82a2f31d560f89d6615`) |
+| **Blueprint R2.1.2-R1 Complete** | `docs/blueprint-revision-2.1.2-r1` | `6938f808629276fd1b0860fba407b42f5cb40aaf` | `282a303ea1126fb3b1da368e4e8e4ddbeb59c552` | Completed all 16 `R2.1.2-R1` `plan/` documents (`Tree: 651d5fc152b7c248e184a7f208812797cec40d13`); accepted at `Gate Auth-1` (Checkpoint 12) |
 
-> **Non-Promotion Rule:** Passing **`Gate Auth-4` (`Level A`)** authorizes launching the capped `M09` Commercial Pilot ($\le 50$ units) — it must **never** be represented as **`Gate Auth-5` (`Level B`)** (proven commercial/manufacturing pilot acceptance) or **`Gate Auth-6` (`Level C`)** (enterprise production readiness).
+### 2.1 Branch Protection & Non-Destructive History Rules
+1. **No Force-Pushes or History Rewriting:** Historical commits (`617cc7f`, `8805140`, `95eb441`, `282a303`, `6938f80`) must never be amended, rebased, or overwritten.
+2. **Dedicated Revision & Execution Branches:** Every blueprint revision and milestone execution is audited with deterministic commit/tree SHAs.
 
 ---
 
-## 5. Living Monograph & Blueprint Governance Protocol (`v5.16 Ch. 20`)
+## 3. Four-Gate Release & Decision Governance Protocol
 
-1. **No Silent Architecture Drift:** Any proposed change to system boundaries, mathematical tolerances, lifecycle states, or commercial roles requires a formal **ADR (`decisions/ADR-00X`)**, an update to `01_SOURCE_REGISTER_AND_REQUIREMENTS.md`, and explicit human approval.
-2. **Evidence Classification Preservation:** Every capability reported in status updates or release notes must carry its true implementation classification (`I1`, `I2`, `P`, `D`, `M`, `X`, `R`, `H`) verified by independent tests rather than commit messages.
-3. **No Implied Authorization:** **R2.1.2 publication does not authorize M00. M00 remains blocked pending explicit owner approval.**
+No engineering workload may bypass its governing Owner Authorization Gate. All 13 open decisions (`DEC-01` through `DEC-13`) are bound to specific gates as established in `05_WORKLOAD_DEPENDENCY_GRAPH.md` and `07_RISK_AND_OPEN_DECISIONS_REGISTER.md`:
+
+### 3.1 `Gate Auth-1` — Pre-`M00` Architecture, Mathematical Baseline & Candidate Selection Sign-Off (**APPROVED — CHECKPOINT 12, 2026-11-16**)
+* **Scope:** Authorizes the start of `M00` (Pre-Migration Verification, Contracts & Reference Oracle).
+* **Completed Prerequisites (Signed Off 2026-11-16):**
+  1. Completion and acceptance of Blueprint `R2.1.2-R1` (`ADR-001` through `ADR-009`, commit `6938f808629276fd1b0860fba407b42f5cb40aaf`).
+  2. Owner sign-off on **`DEC-01`** (pnpm + Turborepo + uv monorepo layout `apps/web`, `services/geometry-engine`, `packages/contracts` & Strangler-Fig cutover policy).
+  3. Owner sign-off on **`DEC-13 Stage 1`** (Candidate Selection of `mpmath.iv` + `fractions.Fraction` primary candidate, `python-flint` secondary, pure-Python `Fraction`+`Decimal` tertiary for evaluation in `M00.4`).
+
+### 3.2 `Gate Auth-2` — Post-`M00` Verification Audit & Core Platform Entry Sign-Off
+* **Scope:** Authorizes the start of `M01` (Platform Shell), `M02` (Deterministic Fashion Engine), `M03` (Material Physics), `M05` (Manufacturing Gatekeeper entry), and `M06.1`–`M06.2` (3D Simulation entry).
+* **Mandatory Prerequisites:**
+  1. Completion of all `M00.1`–`M00.10` deliverables, including the executed **`IntervalLibraryQualificationReport`** (`M00.4`) and 100% pass of the **`C1-Cert` Reference Oracle** across all **17 Adversarial Geometry Test Families (`AG-01`–`AG-17`)** and all 6 offset categories (`Category 1`, `2a`, `2b`, `2c`, `3`, `4`).
+  2. Owner sign-off on **`DEC-13 Stage 2`** (Production Interval Library Adoption based on the `M00.4` qualification report).
+  3. Owner sign-off on **`DEC-02 Stage 1`** (3D Cloth Solver Kernel Selection for `M06.2`), **`DEC-03 Stage 1`** (Material Testing Hardware & Tier Policy), **`DEC-04`** (PostgreSQL 16 + S3/GCS), **`DEC-05`** (Task Queue / Orchestrator), **`DEC-06`** (2D Nesting Engine), **`DEC-09`** (`Ed25519` / RFC 8785 JCS Signing Standard), and **`DEC-11`** (Two-Tier Paired Seam Tolerance Reconciliation: `0.05 cm` CAD vs. `0.20 cm` Sewn).
+
+### 3.3 `Gate Auth-3` — Vertical Slice 1 & 3D Physics Qualification Sign-Off
+* **Scope:** Certifies Vertical Slice 1 (`M01` + `M02` + `M05` E2E for Bodice & Trouser) and 3D Physics (`M03` + `M06`), authorizing `M04` (AI Copilot), `M07` (Fit Calibration), and `M08` (Commercial Sub-Ledger).
+* **Mandatory Prerequisites:**
+  1. Vertical Slice 1 passes all geometric, topological, and DXF-AAMA round-trip gates (`06_ACCEPTANCE_AND_EVIDENCE_FRAMEWORK.md`).
+  2. Owner sign-off on **`DEC-02 Stage 2`** (3D Simulation Kernel passes Benchmarks `B1`–`B4` within $\le 5\%$ error) and **`DEC-03 Stage 2`** (Empirical Fabric Correlation Study).
+
+### 3.4 `Gate Auth-4` — Commercial Pilot & Financial Compliance Sign-Off
+* **Scope:** Authorizes live commercial transactions and physical manufacturing in `M09` (Micro-Factory Pilot).
+* **Mandatory Prerequisites:**
+  1. Verified double-entry sub-ledger reconciliation (`M08`) and signed `TechPackManifest` handoff (`M05.5`).
+  2. Owner sign-off on **`DEC-07`** (Customer Body Acquisition Mode), **`DEC-08`** (Live PSP & Escrow Integration), **`DEC-10`** (Pilot Capsule Garment Mix), and **`DEC-12`** (Operating Jurisdiction & Tax Compliance).
+
+---
+
+## 4. Verification Honesty & Audit Reproducibility Rules
+
+1. **No Fabricated Test Execution Claims:** Planning documents must distinguish strictly between:
+   * **Specification-Time Analytical Derivations & Sanity Checks:** The 4 circle offset cases (`Case 1`–`Case 4`) and the analytical proof that $\mathbf{B}(t) = (t^3, 0)$ is a `Category 2c` removable parameterization degeneracy (`ADR-009 §1.4`, `§2.2`, `§6.1`).
+   * **Future Milestone Execution Deliverables:** The `IntervalLibraryQualificationReport`, the executable `C1-Cert` Python oracle, and the 17-family adversarial test suite (`AG-01`–`AG-17`), which will be implemented and executed in `M00.4` and `M00.10`.
+2. **Non-Bypass Rule for Exploratory Spikes:** Any pre-`M00` spike (`SPIKE-DEC13-01`) is non-binding and cannot waive `Gate Auth-1` (`DEC-13 Stage 1`), the `M00.4` `IntervalLibraryQualificationReport`, or `Gate Auth-2` (`DEC-13 Stage 2`).
+3. **Deterministic Audit Bundles:** At the close of every milestone, CI must emit a signed, content-addressed bundle containing exact Git commit/tree SHAs, lockfile digests, and JSON verification reports.

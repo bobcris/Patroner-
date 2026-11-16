@@ -1,0 +1,24 @@
+{
+  "milestoneId": "M00.7",
+  "artifactName": "DxfRoundTripVerificationReport.json",
+  "layersRequired": [
+    "1",
+    "11",
+    "2",
+    "4",
+    "7",
+    "8"
+  ],
+  "layersRecovered": [
+    "1",
+    "11",
+    "2",
+    "4",
+    "7",
+    "8"
+  ],
+  "missingLayers": [],
+  "maxVertexRoundTripErrorCm": 0.0,
+  "toleranceMaxCm": 0.001,
+  "allPassed": true
+}

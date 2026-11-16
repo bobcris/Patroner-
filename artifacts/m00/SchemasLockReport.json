@@ -1,0 +1,56 @@
+{
+  "milestoneId": "M00.1",
+  "artifactName": "SchemasLockReport.json",
+  "schemaPath": "/app/applet/packages/contracts/schemas/canonical_contracts.schema.json",
+  "schemaSha256": "d4455b583d51e2b9c791227cdb09c4b3b3bafecb111b575543687c170c0aeddd",
+  "draftVersion": "https://json-schema.org/draft/2020-12/schema",
+  "canonicalCoordinateFrame": {
+    "geometryUnit": "cm",
+    "clearanceUnit": "mm",
+    "internalAngleUnit": "rad",
+    "displayAngleUnit": "deg",
+    "handedness": "right-handed-cartesian",
+    "exteriorWinding": "CCW",
+    "interiorCutoutWinding": "CW",
+    "leftNormalDirectionOnExterior": "inward"
+  },
+  "entitiesVerifiedCount": 7,
+  "entityParityResults": [
+    {
+      "entity": "CoordinateFrameSpec",
+      "jsonSchemaDraft202012Valid": true,
+      "pydanticV2RoundTripValid": true
+    },
+    {
+      "entity": "BezierSegment",
+      "jsonSchemaDraft202012Valid": true,
+      "pydanticV2RoundTripValid": true
+    },
+    {
+      "entity": "SeamAllowanceSpec",
+      "jsonSchemaDraft202012Valid": true,
+      "pydanticV2RoundTripValid": true
+    },
+    {
+      "entity": "NotchSpec",
+      "jsonSchemaDraft202012Valid": true,
+      "pydanticV2RoundTripValid": true
+    },
+    {
+      "entity": "OffsetClassificationReport",
+      "jsonSchemaDraft202012Valid": true,
+      "pydanticV2RoundTripValid": true
+    },
+    {
+      "entity": "BodyProfile",
+      "jsonSchemaDraft202012Valid": true,
+      "pydanticV2RoundTripValid": true
+    },
+    {
+      "entity": "PatternPiece",
+      "jsonSchemaDraft202012Valid": true,
+      "pydanticV2RoundTripValid": true
+    }
+  ],
+  "allPassed": true
+}

@@ -1,87 +1,110 @@
-# 06 — ACCEPTANCE AND EVIDENCE FRAMEWORK (`R2.1.2`)
+# 06 — Acceptance Criteria, Numerical Assurance, and Evidence Framework
 
-**Document ID:** `PATRONER-BP-R2.1.2-06`  
-**Base Commit:** `8805140b1e6e7799922348369d7e29881102a75e` (`Patroner Blueprint R2.1.1`)  
-**Status:** Authoritative Acceptance Criteria (`AC-01`–`AC-12`), Five-Concept Output Error Enclosures, Four-Layer `Method C1-Cert` Assurance, Corrected Offset Taxonomy & Six-Gate Release Governance Framework  
-**Governing Baseline:** `Patroner_Living_Project_Monograph_v5.16_Consolidated_Master.pdf` (`Ch. 09`, `Ch. 11`, `Ch. 17`, `App. F`), `ADR-009` (`R2.1.2`), `07_RISK_AND_OPEN_DECISIONS_REGISTER.md` (`R2.1.2`)
+**Document ID:** `PATRONER-R2.1.2-R1-06`  
+**Baseline:** Blueprint Revision 2.1.2-R1 (Targeted Mathematical Correction, Singularity Classification & Numerical Assurance Alignment)  
+**Governing Authority:** Monograph v5.16; Addendum v4.1; Revision v4.5; `ADR-003`, `ADR-006`, `ADR-008`, `ADR-009` (`R2.1.2-R1`)  
+**Status:** **CONTROLLED SPECIFICATION — M00 REMAINS BLOCKED PENDING EXPLICIT OWNER APPROVAL**
 
-> **Governance Invariant:** **R2.1.2 publication does not authorize M00. M00 remains blocked pending explicit owner approval.**
-
----
-
-## 1. Core Verification Philosophy (`R2.1.2`)
-
-1. **Passing Unit Tests Are Necessary But Never Sufficient:** An implementation can pass unit tests while harboring 17× error-bound violations (`DEF-M00-01`), interior cusp bypasses (`DEF-M00-02`), and cross-tenant omission vulnerabilities (`DEF-M00-04`). Empirical test passes are Layer 4 bug-detection evidence, **never** a mathematical proof (`ADR-009 §3.2`).
-2. **Five-Concept Numerical Assurance, Parameter-to-Output Error Propagation & Four-Layer `Method C1-Cert` (`Critical Corrections B & C`):**
-   - Every numerical validation separates **(1) High-precision reference result ($X_{\mathrm{ref}}$)**, **(2) Observed implementation-to-reference discrepancy ($E_{\mathrm{obs}} = |X_{\mathrm{float64}} - X_{\mathrm{ref}}|$)**, **(3) Validated reference-to-exact output enclosure ($B_{\mathrm{ref}}(X) \ge |X_{\mathrm{ref}} - X_{\mathrm{exact}}|$)**, **(4) Validated implementation-to-exact output error bound ($B_{\mathrm{cert}}(X) \ge |X_{\mathrm{float64}} - X_{\mathrm{exact}}|$)**, and **(5) Engineering acceptance tolerance ($\tau_{\mathrm{domain}}(X)$)**.
-   - By the triangle inequality, $|X_{\mathrm{float64}} - X_{\mathrm{exact}}| \le E_{\mathrm{obs}}(X) + B_{\mathrm{ref}}(X) \le B_{\mathrm{cert}}(X) \le \tau_{\mathrm{domain}}(X)$. The reference-to-exact term $|X_{\mathrm{ref}} - X_{\mathrm{exact}}|$ is **never** silently assumed to be zero.
-   - **Parameter Uncertainty Is Not Geometric Output Error (`Critical Correction B`):** For any root-dependent quantity $X(t^*)$ ($t^* \in I_t = [\underline{t}, \overline{t}]$), the parameter half-width $\frac{1}{2}(\overline{t} - \underline{t})$ must **never** be presented as $B_{\mathrm{ref}}(X)$ without a validated derivative propagation bound $\bigl(\sup_{t \in I_t}|X'(t)|\bigr)\frac{\overline{t} - \underline{t}}{2} + \delta_{\mathrm{eval}}$ or a direct output interval enclosure $[\underline{X}(I_t), \overline{X}(I_t)]$ (`ADR-009 §2.3`).
-   - **Four-Layer `Method C1-Cert` & Interval Library Qualification (`Critical Correction C`):** `Method C1-Est` ($S_{\mathrm{safety}} = 16.0$ Gauss–Legendre discrepancy) is downgraded to a **`CONSERVATIVE_ENGINEERING_ESTIMATE`**. `Method C1-Cert` relies on the non-strict inequality $L_{\mathrm{chord}} \le L_{\mathrm{exact}} \le L_{\mathrm{control\ polygon}}$ (Layer 1), De Casteljau convergence (Layer 2), nine explicit implementation assurance obligations plus the 8-point **`IntervalLibraryQualificationReport` (`ADR-009 §3.4`)** qualifying `mpmath.iv` against `fractions.Fraction` (Layer 3), and empirical adversarial tests (Layer 4).
-3. **Corrected Offset Derivative $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$, Six-Category Failure Taxonomy & Tri-State Verification (`Critical Correction A`):**
-   - Under $\mathbf{O}(t) = \mathbf{B}(t) + s\,d\,\hat{\mathbf{n}}_+(t)$ and $\hat{\mathbf{n}}_+'(t) = -\kappa(t)\,\mathbf{B}'(t)$, the offset derivative is $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$ with regularity factor $f(t) = 1 - \frac{s\,d\,C(t)}{Q(t)^{3/2}}$ for $Q(t) > 0$.
-   - Zero-speed base points ($Q(t) = 0$) are handled separately first (`ADR-009 §4.3`). On certified $Q(t) > 0$ sub-intervals, concave evolute cusps ($P_{\mathrm{exact}}(t^*)=0$), tangent reversals ($P_{\mathrm{exact}}(t)<0$), and margin violations ($P_{\mathrm{exact}}(t)>0 \wedge P_{\mathrm{margin}}(t)<0$) require the sign condition $s\,d\,C(t) > 0$.
-   - Complete parameter-interval ($t \in [0, 1]$) verification independently evaluates all **6 Offset Failure Categories** (`REGULARITY_MARGIN_VIOLATION`, `ACTUAL_ZERO_SPEED_CUSP`, `TANGENT_REVERSAL`, `LOCAL_OFFSET_SELF_INTERSECTION`, `GLOBAL_CONTOUR_SELF_INTERSECTION`, `INCONCLUSIVE_VERIFICATION`) and returns one of three explicit states: **`CERTIFIED_VALID`**, **`CERTIFIED_INVALID`**, or **`INCONCLUSIVE`**.
-4. **Six-Stage Authorization & Release Gate Separation (`Critical Corrections D & E`):**
-   - Synchronized 100% with [`07_RISK_AND_OPEN_DECISIONS_REGISTER.md`](./07_RISK_AND_OPEN_DECISIONS_REGISTER.md) across **`Gate Auth-1`** (`M00` commencement — currently `BLOCKED`), **`Gate Auth-2`** (`M01`/`M02` authoritative build entry, including `DEC-13 Stage 2`), **`Gate Auth-3`** (`Vertical Slice` internal technical acceptance), **`Gate Auth-4`** (`Release Level A` — `M09` pilot entry), **`Gate Auth-5`** (`Release Level B` — `M09` pilot exit acceptance), and **`Gate Auth-6`** (`Release Level C` — `M10` enterprise-scale release).
+> **Governance Rule (`R2.1.2-R1`):** `R2.1.2-R1` is a documentation correction only. `M00` remains blocked pending explicit owner approval.
 
 ---
 
-## 2. The 12 Mandatory Acceptance Dimensions (`AC-01` through `AC-12`)
+## 1. Evidence-First Engineering Principle
 
-| ID | Acceptance Dimension | Quantitative Threshold & Pass Invariant (`R2.1.2`) | Independent Verification Method / Evidence Artifact | Release Stage Applicability (`Gate Auth-3` to `Auth-6`) | Non-Promotion Rule (If Failed) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`AC-01`** | **Build, Type & Contract Integrity** | Zero TypeScript (`tsc --noEmit`), Python (`mypy --strict`, `ruff`), OpenAPI 3.1, or JSON Schema validation errors across `apps/web`, `services/fashion-engine`, and `packages/contracts`; `extra='forbid'` enforced. | **Artifact:** CI contract compilation report + `schemathesis` / `Hypothesis` schema round-trip fuzzer report. | **Level A, B, C (`Auth-3`–`Auth-6`)** | Blocks PR merge and container image build. |
-| **`AC-02`** | **Unit, Property & Adversarial Test Suite** | 100% pass rate on deterministic unit tests, property-based tests (`Hypothesis`), all **14 Adversarial Geometry Test Families (`ADR-009 §4.5`)**, and negative boundary tests (NaN, Infinity, zero-speed $Q=0$, tangential/even-multiplicity roots, extra keys, duplicate webhooks). | **Artifact:** Automated JUnit/pytest JSON report with recorded deterministic seeds and SHA-256 fixture manifest. | **Level A, B, C (`Auth-3`–`Auth-6`)** | Blocks workload gate closure. |
-| **`AC-03`** | **Mathematical & Validated Numerical Soundness (`Critical Corrections A, B, C, F`)** | All internal geometry in IEEE 754 `float64`; zero intermediate `.toFixed()` rounding; every validated quantity $X_{\mathrm{float64}}$ accompanied by a persisted `NumericalVerificationRecord` satisfying $\|X_{\mathrm{float64}} - X_{\mathrm{exact}}\| \le E_{\mathrm{obs}}(X) + B_{\mathrm{ref}}(X) \le B_{\mathrm{cert}}(X) \le \tau_{\mathrm{domain}}(X)$ in output space (`arc_length` via 4-layer `Method C1-Cert` + passed `IntervalLibraryQualificationReport`: $B_{\mathrm{cert}}(L) \le 10^{-4}\text{ cm}$; `area` via `Method C2`: $B_{\mathrm{cert}}(A) \le 10^{-6}\text{ cm}^2$; root-dependent projections via `Method B1/B2` output bounds; `Method C1-Est` labeled `CONSERVATIVE_ENGINEERING_ESTIMATE`; complete-interval $t \in [0, 1]$ `Method C3` offset verification under $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$ returning `CERTIFIED_VALID`). | **Artifact:** `m00-oracle-report.json` + `IntervalLibraryQualificationReport` (generated by `M00.4` in `services/fashion-engine/tests/oracles/`) & `m02-numerical-certificate.json` (`M02a`/`M02f` per `ADR-009`). | **Level A, B, C (`Auth-3`–`Auth-6`)** | Blocks `M00.10`, `M02a`–`M02h`, and `M05` sign-off; `CERTIFIED_INVALID` marks revision `Invalid`; `INCONCLUSIVE` marks revision `Verification_Pending` and blocks promotion. |
-| **`AC-04`** | **Architecture & Boundary Conformance (`Critical Correction F`)** | Zero authoritative domain math, grading, marker nesting, simulation, or SHA-256 provenance execution inside `apps/web`; zero production geometry/offset implementation inside `M00` (`services/fashion-engine/tests/oracles/`); zero imports between `tests/oracles/` and `app/pattern_engine/` except in test runners; 5-dimensional oracle independence verified (`ADR-009 §6`); `M04a` emits zero raw geometry; 100% of mutations emit immutable `GarmentRevisionNode` records in `services/fashion-engine`. | **Artifact:** Static AST import graph audit report + client bundle inspection report + BFF proxy trace log. | **Level A, B, C (`Auth-2`–`Auth-6`)** | Blocks `M00`–`M10` architectural review sign-off. |
-| **`AC-05`** | **Domain, Construction & Marker Geometry Validity (`Critical Correction A`)** | 100% closed piece boundaries; tri-state `CERTIFIED_VALID` under $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$ across all **6 Offset Failure Categories** (`REGULARITY_MARGIN_VIOLATION`, `ACTUAL_ZERO_SPEED_CUSP`, `TANGENT_REVERSAL`, `LOCAL_OFFSET_SELF_INTERSECTION`, `GLOBAL_CONTOUR_SELF_INTERSECTION`, `INCONCLUSIVE_VERIFICATION`) and all **14 Adversarial Test Families**; sewn seam mating within governed tolerance (`0.05 cm` net CAD construction / `0.20 cm` physical assembly per `DEC-11`); dart leg symmetry $\le 0.10\text{ cm}$ & fold tangency $\le 0.5^\circ$; primary offset span $\ge 85\%$; **zero (`0.000 cm`) piece overlap and $\le 0.1^\circ$ grainline tilt in `M02h` markers**. | **Artifact:** `TopologyAndSeamValidationReport` (`OffsetValidationRecord` attached) + `MarkerContainmentAuditReport` (`verify_marker_layout.py`). | **Level A, B, C (`Auth-3`–`Auth-6`)** | Blocks transition from `Drafted` to `Validated` and blocks `M05` tech-pack generation. |
-| **`AC-06`** | **Multi-Size Grading & Proportion Fidelity** | Category-strict grading (`DEF-M00-05` closed); monotonic perimeter and area scaling across all target sizes (`XS`–`XXL` / `EU 34`–`46`); cross-size sewn seam parity within tolerance in every graded size; notch proportionality error $\le 0.05\text{ cm}$; zero base-size geometry cloning (`GRADING_BASE_CLONING_PROHIBITED`). | **Artifact:** `CrossSizeGradingMatrixReport` evaluating all $N_{\text{sizes}} \times N_{\text{seams}}$ pairs and curvature sign invariants across size extremes. | **Level A, B, C (`Auth-3`–`Auth-6`)** | Blocks graded size release and `M02g` / `M05` gate closure. |
-| **`AC-07`** | **Material-Model Credibility (`Correction 07`)** | Every fabric specification separates `RawFabricObservation` from `CalibratedMaterialSpec` with explicit confidence intervals, thermodynamic positive-definiteness ($\det(\mathbf{C}) > 0$), shrinkage compensation factors, and test-method provenance (`TIER_1_LAB` or `TIER_2_BENCHTOP` required for sample/production sign-off per `DEC-03`). | **Artifact:** `MaterialCalibrationCertificate` verifying energy positivity, shrinkage bounds, and negative-ease policy signatures (`DOS-04`, `DOS-09`). | **Level A, B, C (`Auth-3`–`Auth-6`)** | Blocks `M03`, `M02h`/`M05` fabric consumption, and `M06` simulation execution. |
-| **`AC-08`** | **Simulation Numerical Credibility** | Solver (`DEC-02`) passes all 4 closed-form analytical mechanics benchmarks (B1 Uniaxial Membrane Patch $\le 0.1\%$, B2 Cantilever Elastica $\le 1.5\%$, B3 Catenary Drape $\le 0.5\text{ mm}$, B4 $2\times$ Mesh Refinement Convergence $\Delta \text{strain} < 2.0\%$) and zero cloth-body interpenetration before garment fit evaluation. | **Artifact:** `SolverCredibilityBenchmarkReport` (`Dossier 10`) + per-simulation equilibrium convergence certificate. | **Level A, B, C (`Auth-3`–`Auth-6`)** | Blocks `M06` fit prediction and disables bounded pattern optimization. |
-| **`AC-09`** | **Physical Fit & Toile Validation** | **Level A (`Gate Auth-4`):** Digital fit predictions match physical toile/first-article trials on target dress forms/fit models within $\le 0.5\text{ cm}$ at key POMs and $\ge 85\%$ regional fit-issue concordance on the Vertical Slice wedge (`DEC-07`).<br>**Level B (`Gate Auth-5`):** Real pilot customer fit return/remake rate $\le 8\%$ (graded P1/P2) and $\le 12\%$ (custom-fit P3). | **Artifact (Level A):** `PhysicalSampleFitConcordanceReport` signed by lead patternmaker & QA.<br>**Artifact (Level B):** `M09PilotCohortFitPostMortemReport`. | **Level A (`Gate Auth-4`: Toile/Sample)<br>Level B (`Gate Auth-5`: Live Pilot Cohort)** | Blocks transition to `Sample_Approved` and keeps `isProductionReady: false`. |
-| **`AC-10`** | **Manufacturing, Cut-File & Shop-Floor Qualification** | **Level A (`Gate Auth-4`):** DXF-AAMA (`ASTM D6673`) + 1:1 PDF plots pass physical $100.0\text{ mm} \times 100.0\text{ mm}$ calibration square check ($\pm 0.1\text{ mm}$); 100% BOM, ISO 4915/4916 seam schedule, `OperationDAG`, and POM reconciliation; $\ge 2$ workshops qualified with physical first-article sample approval.<br>**Level B (`Gate Auth-5`):** $\ge 95\%$ first-pass POM QC yield across shipped `M09` pilot units. | **Artifact (Level A):** `PlotterCalibrationCertificate` + `PhysicalSampleApprovalRecord` (`Ed25519` signed per `DEC-09`).<br>**Artifact (Level B):** `M09ShopFloorQualityAuditReport`. | **Level A (`Gate Auth-4`: Pre-Pilot Qualification)<br>Level B (`Gate Auth-5`: Pilot Execution)** | Hard gate: `isProductionReady` **must remain `false`** until Level A `AC-10` passes. |
-| **`AC-11`** | **Security, Tenant Isolation, Provenance & Resilience (`Correction 03`)** | **Level A (`Gate Auth-3`/`Auth-4`):** 100% server-side RBAC+ABAC & PostgreSQL RLS (`DEC-04`); 3-point async worker re-authorization (`DEC-05`); zero cross-tenant leakage; RFC 8785 SHA-256 + Ed25519 provenance (`DEC-09`); single-region automated backup + verified restore drill + manual GDPR erasure workflow.<br>**Level C (`Gate Auth-6` / `M10`):** Multi-region automated DR (`RPO <= 5m`, `RTO <= 30m`), automated biometric crypto-shredding at scale, BYOK KMS, and external enterprise partner OAuth2/mTLS gates. | **Artifact (Level A):** `MultiTenantPenetrationReport` + `LevelABackupRestoreRecord`.<br>**Artifact (Level C):** `LevelCMultiRegionDRCertificate` + `CryptoShreddingAuditReport`. | **Level A (`Gate Auth-3`/`Auth-4`: Core Security & Single-Region Backup)<br>Level C (`Gate Auth-6`: Enterprise Multi-Region & BYOK)** | Level A failure blocks `M01`/`M09` launch; Level C failure blocks `M10` enterprise expansion. |
-| **`AC-12`** | **Commercial, Multi-Currency & Financial Readiness (`Correction 06`)** | **Level A (`Gate Auth-4`):** Every `ProductOfferContract` binds all 8 mandatory governance roles; ACID double-entry ledger (`ADR-008`, `DEC-08`, `DEC-12`) enforces ISO 4217 currency identity, `minor_unit_exponent` (`0|2|3|4`), explicit rounding policy, FX rate provenance, and dual transaction/functional currency balance ($\sum \text{Debits} = \sum \text{Credits}$); sandbox dry-run passes.<br>**Level B (`Gate Auth-5`):** $100\%$ penny/minor-unit-exact reconciliation ($0$ variance) across all live `M09` pilot orders, PSP settlements, VAT accruals, workshop invoices, and creator payouts.<br>**Level C (`Gate Auth-6`):** Multi-venture advance recoupment waterfalls verified. | **Artifact (Level A):** `LedgerInvariantAndSandboxAuditReport`.<br>**Artifact (Level B):** `M09PilotFinancialReconciliationSignOff`.<br>**Artifact (Level C):** `MultiVentureWaterfallAuditReport`. | **Level A (`Gate Auth-4`: Engine & Sandbox)<br>Level B (`Gate Auth-5`: Live Pilot Settlement)<br>Level C (`Gate Auth-6`: Multi-Venture Scale)** | Level A failure blocks `M08`/`M09` checkout; Level B failure blocks `M09` closure and `M10` promotion. |
+No milestone (`M00`–`M11`) or authorization gate (`Gate Auth-1`–`Gate Auth-4`) may be declared complete based on self-reported status, unverified unit tests, or visual inspection alone. Every milestone requires **deterministic, machine-verifiable evidence artifacts** archived with SHA-256 checksums.
+
+Furthermore, this framework enforces strict **Verification Honesty (`ADR-009 §6.3`)**:
+* **Executed Specification-Time Sanity Checks:** Only the 4 analytical circle offset test cases (`Case 1`–`Case 4`) and the analytical derivation of the removable parameterization degeneracy counterexample $\mathbf{B}(t) = (t^3, 0)$ have been evaluated at specification time (`ADR-009 §1.4`, `§2.2`, `§6.1`).
+* **Required Future Implementation Deliverables (`M00.4` / `M00.10`):** The `IntervalLibraryQualificationReport`, the executable `C1-Cert` Python reference oracle, and the **17-Family Adversarial Geometry Test Suite (`AG-01`–`AG-17`)** have **not yet been executed in code** and are mandatory deliverables of `M00.4` and `M00.10`.
 
 ---
 
-## 3. Summary of the Six Governance & Release Authorization Gates (`Synchronized with 07_RISK_AND_OPEN_DECISIONS_REGISTER.md`)
+## 2. Numerical & Geometric Acceptance Thresholds (`M00`, `M02`, `M05`)
 
-| Authorization Gate | Target Milestone Boundary | Scope, Required Approvals & Purpose (`R2.1.2`) | Prohibited Conflation |
+All geometry produced by the Python `C1-Fast` engine (`M02`) and audited by the `M05` Pre-Flight Gatekeeper must pass the following quantitative acceptance gates when measured against the `C1-Cert` reference oracle (`ADR-009`):
+
+### 2.1 Curve Parameterization, Root Isolation & Arc-Length Gates
+1. **Forward Arc-Length Accuracy:**
+   $$\max_{t \in [0, 1]} \bigl|L_{\mathrm{fast}}(t) - L_{\mathrm{cert}}(t)\bigr| \le 10^{-6}\text{ cm} \quad (10\text{ nm})$$
+2. **Inverse Arc-Length Mapping ($s \mapsto t$) & Notch Positioning:**
+   $$\bigl|L(t^*) - s_{\mathrm{target}}\bigr| \le 10^{-7}\text{ cm} \quad (1\text{ nm})$$
+3. **Dual Root-Isolation Stopping Criterion (Parameter Width vs. Physical Position Error, `ADR-009 §4.1`):**
+   Every isolated root interval $[t] = [\underline{t}, \overline{t}]$ for cusp detection, self-intersection, or curve-curve intersection must simultaneously satisfy:
+   $$\delta_t = \overline{t} - \underline{t} \le 10^{-12} \quad \text{AND} \quad \Delta_{\mathrm{pos}}([t]) := \sup_{\tau \in [t]} \|\mathbf{B}'(\tau)\|\,\delta_t \le 10^{-7}\text{ cm}$$
+
+### 2.2 Offset Curve Classification & Approximation Gates (`ADR-009 §2–§4`)
+Using the canonical CCW exterior boundary convention where $\mathbf{N}_+(t) = \frac{(-y'(t), x'(t))}{\sqrt{Q(t)}}$ points **inward**, $\mathbf{N}_+'(t) = -\kappa(t)\mathbf{B}'(t)$, and $\mathbf{O}(t) = \mathbf{B}(t) + s\,d\,\mathbf{N}_+(t)$ has derivative $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$:
+1. **100% Classification Accuracy Across All 6 Offset Categories:**
+   The `C1-Cert` oracle and `M02e` offset engine must classify every test curve into its exact category (`ADR-009 §3`):
+   * `Category 1: CERTIFIED_REGULAR`
+   * `Category 2a: ACTUAL_ZERO_SPEED_CUSP` ($Q(t^*)=0$ with true tangent reversal $\mathbf{T}(t^{*+}) = -\mathbf{T}(t^{*-})$ or curvature blow-up)
+   * `Category 2b: ACTUAL_CURVATURE_CUSP` ($Q(t^*)>0$ with transverse root $f(t^*)=0, f'(t^*)\ne 0$, i.e., $P_{\mathrm{cusp}}(t^*)=0$ and $s\cdot C(t^*) > 0$)
+   * `Category 2c: REMOVABLE_PARAMETERIZATION_DEGENERACY` ($Q(t^*)=0$ with odd multiplicity $m$ such that $\mathbf{T}(t^{*-}) = \mathbf{T}(t^{*+})$ and $1 - s\,d\,\kappa_{\lim} > 0$, e.g., $\mathbf{B}(t) = (t^3, 0)$ at $t = 0$)
+   * `Category 3: TANGENTIAL_CUSP_DEGENERACY` (grazing root $f(t^*)=0, f'(t^*)=0$ or near-singular clearance)
+   * `Category 4: SELF_INTERSECTING_NON_LOCAL` (locally regular offset with global self-intersection loop)
+2. **Piecewise Cubic Bezier Offset Fit Error Bounds (`Category 1` & Reparameterized `Category 2c`):**
+   * **Dense Sample Grid Error ($N_{\mathrm{grid}} = 1024$ points):** $E_{\mathrm{grid}} \le 0.005\text{ cm}$ (`0.05 mm`).
+   * **Certified Interval Enclosure Bound ($N_{\mathrm{cert}} \ge 256$ sub-intervals):** $E_{\mathrm{cert}} \le 0.010\text{ cm}$ (`0.10 mm`), where $E_{\mathrm{cert}} = \max_m \overline{D}([t_m])$.
+   * **Interior Sub-Segment Join Continuity:** $G^1$ tangent angle jump $\Delta\theta \le 0.05^\circ$.
+
+### 2.3 Topological & Manufacturing Safety Gates (`M05.3` & `DEC-11`)
+1. **Closed Simple Polygon Topology:** 0 self-intersections (`is_simple == True`), 0 micro-sliver faces ($< 10^{-4}\text{ cm}^2$), closure gap $\le 10^{-6}\text{ cm}$.
+2. **Two-Tier Paired Seam Length Parity (`DEC-11`):**
+   * **Tier 1 — CAD Geometry Gate (`M02f` / `M05.3`):** $\bigl|L_{\mathrm{CAD}}(e_A) - L_{\mathrm{CAD}}(e_B) - \Delta_{\mathrm{ease}}\bigr| \le 0.05\text{ cm}$ (`0.5 mm`).
+   * **Tier 2 — Physical Sewn / 3D Assembly Gate (`M06.1` / `M09.3`):** $\bigl|L_{\mathrm{sewn}}(e_A) - L_{\mathrm{sewn}}(e_B) - \Delta_{\mathrm{ease}}\bigr| \le 0.20\text{ cm}$ (`2.0 mm`).
+3. **DXF-AAMA / ASTM Independent Round-Trip Gate (`M05.1`):** Re-parsing the exported `.dxf` file via an independent reader must recover all layers (`1, 2, 4, 7, 8, 11`), piece metadata, notches, and boundary vertices within $\le 0.001\text{ cm}$ (`0.01 mm`).
+
+---
+
+## 3. Mandatory 17-Family Adversarial Geometry Test Suite (`AG-01`–`AG-17`)
+
+To pass `M00.4`, `M00.10`, and `Gate Auth-2`, the verification harness must execute and archive 100% passing results for all **17 Adversarial Geometry Test Families** (`ADR-009 §6.2`):
+
+| Family ID | Test Family Name | Target Singularity / Condition | Required Expected Classification & Outcome |
 | :--- | :--- | :--- | :--- |
-| **`Gate Auth-1` — Authorization to Begin `M00`** | Entry gate to **`M00` (Migration Prep & Oracles)** | Requires formal approval of **`ADR-009` (`R2.1.2`)**, **`DEC-01`**, **`DEC-13 Stage 1`** (initial reference-oracle library selection via specification review — zero `M00` benchmark execution required prior to `Gate Auth-1`), and **explicit Project-Owner commencement authorization (`AUTH-M00-START`)**. **Currently `BLOCKED / UNAUTHORIZED`.** | Publishing Blueprint `R2.1.2` does **not** authorize starting `M00` or modifying code. `DEC-02` and `DEC-03` do **not** block `Gate Auth-1`. |
-| **`Gate Auth-2` — Authorization to Begin `M01`/`M02` Implementation** | Exit of **`M00.10`** / Entry to **`M01` & `M02`** | Certifies `M00` inventory, legacy freeze, Class A/B fixtures, and independent `M00.4` oracle harness are complete; requires **`DEC-13 Stage 2`** (`IntervalLibraryQualificationReport` + `< 5 ms` benchmark across 63 contours from `M00.4` for `M02a`/`M02f`) and workload-specific decisions (**`DEC-04`**, **`DEC-05`** for `M01`; **`DEC-11`** for `M02b`/`M02f`/`M02g`/`M05`; **`DEC-06`** for `M02h`; **`DEC-03`** for `M03.1`; **`DEC-09`** for `M05.5`; **`DEC-02`** for `M06.2`). | Does **not** require commercial/tax decisions (`DEC-07`, `DEC-08`, `DEC-10`, `DEC-12`, `ADR-008 Schema`) to begin core engineering. |
-| **`Gate Auth-3` — Internal Technical Acceptance (`Vertical Slice Gate`)** | End-to-end 14-step Vertical Slice (`M01`–`M06`) | Certifies that the Python engine, Next.js workspace, 5-concept numerical output enclosures, 4-layer `Method C1-Cert` + qualified `mpmath.iv`, tri-state `CERTIFIED_VALID` offset verification under $\mathbf{O}'(t) = (1 - s\,d\,\kappa(t))\mathbf{B}'(t)$, multi-size grading, `M02h` marker nesting, `M05` tech packs, and `M06` simulation/fit loop pass all software gates and empirical benchmarks for `DEC-01`–`06`, `DEC-09`, `DEC-11`, `DEC-13 Stage 2`. | Software vertical slice completion does **not** authorize commercial pilot checkout or set `isProductionReady: true`. |
-| **`Gate Auth-4` — Controlled Commercial Pilot Entry (`Release Level A`)** | Entry gate to **`M09` (Controlled Commercial Pilot)** | Certifies `Gate Auth-3` + `M07` ($\ge 2$ qualified workshops & physical first-article sample approvals) + `M08` (8-role offer contracts & multi-currency ledger approved under **`ADR-008`**, **`DEC-07`**, **`DEC-08`**, **`DEC-10`**, **`DEC-12`**) + single-region backup/restore. | Must **never** be represented as enterprise scale readiness (`Level C`), and does **not** require `M10`-only capabilities. |
-| **`Gate Auth-5` — Commercial Pilot Acceptance (`Release Level B`)** | Exit gate of **`M09`** (Unlocks **`M10`**) | Certifies that real physical garments were ordered, cut, sewn, inspected, shipped, worn by real customers, and financially settled with $\ge 95\%$ first-pass POM QC yield, bounded fit return rates, and $0$ minor-unit cash-to-ledger variance. | Software unit tests or synthetic simulations (`Level A`) may **never** substitute for real physical, customer, workshop, and financial pilot evidence (`Level B`). |
-| **`Gate Auth-6` — Enterprise-Scale Release (`Release Level C`)** | Exit gate of **`M10`** | Certifies repeatable multi-brand/celebrity Brand Studio operations, enterprise partner APIs, automated GDPR crypto-shredding at scale, BYOK KMS, and multi-region disaster recovery (`RPO <= 5 min`, `RTO <= 30 min`). | Governed strictly post-`M09`. |
+| **`AG-01`** | Exact Circle Inward Sub-Critical ($d < R$) | CCW circle $R=10\text{ cm}, s=+1, d=1.5\text{ cm}$ | `Category 1: CERTIFIED_REGULAR`, exact radius $R-d=8.5\text{ cm}$, $E_{\mathrm{cert}} \le 0.01\text{ cm}$ |
+| **`AG-02`** | Exact Circle Inward Critical ($d = R$) | CCW circle $R=10\text{ cm}, s=+1, d=10.0\text{ cm}$ | `Category 3: TANGENTIAL_CUSP_DEGENERACY`, focal collapse $\mathbf{O}(t) \equiv (0,0)$, $\mathbf{O}'(t) \equiv \mathbf{0}$ |
+| **`AG-03`** | Exact Circle Inward Super-Critical ($d > R$) | CCW circle $R=10\text{ cm}, s=+1, d=12.0\text{ cm}$ | Inverted orientation $1 - d/R = -0.2 < 0$, flagged & trimmed (`Category 2b`/`Category 4`) |
+| **`AG-04`** | Exact Circle Outward Seam Allowance ($s = -1$) | CCW circle $R=10\text{ cm}, s=-1, d=1.5\text{ cm}$ | `Category 1: CERTIFIED_REGULAR`, exact radius $R+d=11.5\text{ cm}$, $f(t)=1.15 > 0$ |
+| **`AG-05`** | Cubic Bezier Inflection Point | $C(t^*)=0, C'(t^*)\ne 0$ at $t^*=0.5$ | `Category 1: CERTIFIED_REGULAR`, smooth sign transition of $\kappa(t)$ |
+| **`AG-06`** | High-Curvature Neckline / Armscye Curve | $\max \kappa(t) > 1/d$ on inward offset | `Category 2b: ACTUAL_CURVATURE_CUSP`, exact isolation of 2 transverse roots $t_1^*, t_2^*$ |
+| **`AG-07`** | Grazing Tangential Curvature Extrema | $\max \kappa(t) = 1/d$ ($f(t^*)=0, f'(t^*)=0$) | `Category 3: TANGENTIAL_CUSP_DEGENERACY`, certified interval bracket without false negative |
+| **`AG-08`** | Symmetric Swallowtail Double Cusp | Two transverse roots of $f(t)=0$ + self-crossing | `Category 2b` + `Category 4`, exact swallowtail loop trimming |
+| **`AG-09`** | Interior True Zero-Speed Cusp | $\mathbf{B}(t) = (t^2, t^3)$ on $[-1, 1]$ ($m=2, n=3$) | `Category 2a: ACTUAL_ZERO_SPEED_CUSP`, tangent reverses by $\pi$ radians across $t^*=0$ |
+| **`AG-10`** | Endpoint Zero-Speed Degeneracy | $\mathbf{P}_1 = \mathbf{P}_0$ ($t^*=0, Q(0)=0$) | One-sided Taylor limit evaluated; classified via limiting curvature $\kappa(0^+)$ |
+| **`AG-11`** | **Removable Parameterization Degeneracy** | $\mathbf{B}(t) = (t^3, 0)$ on $[-1, 1]$ ($m=3$ odd at $t^*=0$) | **`Category 2c: REMOVABLE_PARAMETERIZATION_DEGENERACY`**; continuous $\mathbf{T}=(1,0), \kappa=0$; reparameterized to regular line; **NOT** classified as cusp |
+| **`AG-12`** | Coincident Interior Control Points | $\mathbf{P}_1 = \mathbf{P}_2$ with non-collinear $\mathbf{P}_0, \mathbf{P}_3$ | Certified speed-minimum / cusp separation via `C1-Cert` |
+| **`AG-13`** | Extreme Parametric Speed Ratio | $\max Q(t) / \min Q(t) > 10^8$ ($Q(t) > 0$) | Triggers `C1-Cert` escalation; satisfies both $\delta_t \le 10^{-12}$ and $\Delta_{\mathrm{pos}} \le 10^{-7}\text{ cm}$ |
+| **`AG-14`** | Acute Miter Corner ($\theta < 25^\circ$) | Sharp dart tip / collar point outward offset | Certified miter-limit bevel / trim (`M02e`) with 0 self-intersections |
+| **`AG-15`** | Global Non-Local Pocket Self-Intersection | Locally regular $f(t) > 0$ everywhere, global overlap | `Category 4: SELF_INTERSECTING_NON_LOCAL`, detected by Bezier fat-line AABB pruning + trimmed |
+| **`AG-16`** | Near-Multiple Root Cluster (Wilkinson-Style) | Two roots separated by $\Delta t = 10^{-7}$ | Isolated into disjoint certified intervals by `113-bit` interval + `Fraction` oracle |
+| **`AG-17`** | Full Bodice Front + Armscye + Dart + Notches | End-to-end multi-edge piece with $d = 1.5\text{ cm}$ | Closed simple exterior & sew rings, notch error $\le 10^{-7}\text{ cm}$, seam parity $\le 0.05\text{ cm}$ |
 
 ---
 
-## 4. Mandatory 24-Section Workload Specification Standard
+## 4. Gate-by-Gate Evidence & Artifact Bundle Requirements
 
-Every workload file in `/plan/workloads/M00` through `/plan/workloads/M10` includes and satisfies all **24 mandatory sections**:
-1. Workload ID & Title  
-2. Purpose & Architectural Role  
-3. Governing Monograph Chapters, Addenda & Dossiers  
-4. Canonical Requirements Implemented (`REQ-*`)  
-5. Current Repository Baseline & Classification (`I1`, `I2`, `P`, `D`, `M`, `X`, `R`, `H`)  
-6. Residual Defects & Technical Debt to Close (`DEF-*`)  
-7. Prerequisites & Upstream Dependencies  
-8. Target Architecture & Module Ownership (`services/fashion-engine` vs. `apps/web` vs. `packages/contracts`)  
-9. Domain Entities, State Machines & Data Contracts  
-10. Mathematical, Algorithmic & Domain Specifications  
-11. API Endpoints, Async Jobs & Event Contracts  
-12. Security, Tenant Isolation, RBAC/ABAC & Provenance Controls  
-13. User Experience & Workspace Surfaces (`apps/web`)  
-14. Detailed Work Packages & Implementation Sequence  
-15. Migration & Parity Strategy (Class A vs. Class B Fixtures)  
-16. Unit, Property & Adversarial Test Plan  
-17. Independent Verification Oracles  
-18. Physical, Manufacturing or Financial Validation Protocol  
-19. Acceptance Criteria (`AC-01`–`AC-12` & Release Level Mapping)  
-20. Failure Modes, Rollback & Recovery Procedures  
-21. Observability, Audit Logging & Telemetry  
-22. Explicit Non-Goals & Scope Guardrails  
-23. Downstream Unlocks  
-24. Definition of Done Checklist  
+### 4.1 `Gate Auth-1` (Pre-`M00` Authorization Gate)
+* **Required Inputs:** Published Blueprint `R2.1.2-R1` documentation (`plan/`), `ADR-001`–`ADR-009` (`R2.1.2-R1`), `DEC-01` architecture selection, and `DEC-13 Stage 1` candidate interval library selection (`mpmath.iv` + `Fraction` primary candidate).
+* **Exit Criterion:** Explicit written Owner sign-off unblocking `M00`.
+
+### 4.2 `Gate Auth-2` (Post-`M00` Audit & Core Platform Entry Gate)
+* **Required Machine-Verifiable Evidence Artifacts from `M00`:**
+  1. `SchemasLockReport.json` (`M00.1`: JSON Schema Draft 2020-12 + Pydantic v2 parity).
+  2. `BaselineDivergenceRegistry.json` (`M00.2`: `C0-Legacy` snapshots and `Class A` / `Class B` classification).
+  3. `IntervalLibraryQualificationReport.json` (`M00.4`: empirical verification of outward rounding, performance, and zero false negatives on candidate libraries).
+  4. `AdversarialGeometryVerificationReport.json` (`M00.4`/`M00.10`: 100% pass across all 17 adversarial families `AG-01`–`AG-17` and all 6 offset categories).
+  5. `ReproducibleEnvironmentManifest.json` (`M00.10`: pinned Python 3.12 lockfile, container digest, and SHA-256 artifact manifest).
+* **Required Decisions Signed Off:** `DEC-13 Stage 2` (Production Interval Library Adoption), `DEC-02 Stage 1`, `DEC-03 Stage 1`, `DEC-04`, `DEC-05`, `DEC-06`, `DEC-09`, `DEC-11`.
+
+### 4.3 `Gate Auth-3` (Vertical Slice 1 & 3D Physics Qualification Gate)
+* **Required Evidence Artifacts:**
+  1. `VerticalSlice1VerificationBundle.json` (Bodice + Trouser E2E draft $\to$ grade $\to$ offset $\to$ DXF-AAMA round-trip $\to$ signed `TechPackManifest`).
+  2. `ClothSimulationQualificationReport.json` (`DEC-02 Stage 2`: passing benchmarks `B1` Flat Cantilever Bending, `B2` Cylindrical Drape, `B3` Spherical Four-Point Shear Drape, and `B4` Bodice/Trouser Tension Map within $\le 5\%$ error).
+  3. `MaterialCorrelationReport.json` (`DEC-03 Stage 2`: empirical validation of the 3-tier fabric testing hierarchy).
+
+### 4.4 `Gate Auth-4` (Commercial Pilot & Financial Readiness Gate)
+* **Required Evidence Artifacts:**
+  1. `SubLedgerReconciliationAudit.json` (`M08`: double-entry invariant $\sum \text{Debits} = \sum \text{Credits}$, idempotent webhook replay, immutable escrow split).
+  2. `CryptographicManifestAudit.json` (`M05.5`/`M09.2`: Ed25519 signature verification on `TechPackManifest`).
+  3. Signed Owner approvals for `DEC-07`, `DEC-08`, `DEC-10`, and `DEC-12`.

@@ -1,0 +1,325 @@
+{
+  "milestoneId": "M00.4",
+  "artifactName": "AdversarialGeometryVerificationReport.json",
+  "governingADR": "ADR-009 (R2.1.2-R1 \u00a71\u2013\u00a76)",
+  "totalFamiliesRequired": 17,
+  "totalFamiliesExecuted": 17,
+  "totalFamiliesPassed": 17,
+  "offsetCategoriesCovered": [
+    "ACTUAL_CURVATURE_CUSP",
+    "ACTUAL_ZERO_SPEED_CUSP",
+    "CERTIFIED_REGULAR",
+    "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+    "SELF_INTERSECTING_NON_LOCAL",
+    "TANGENTIAL_CUSP_DEGENERACY"
+  ],
+  "offsetCategoriesCount": 6,
+  "families": [
+    {
+      "familyId": "AG-01",
+      "title": "Case 1: CCW Circle Inward Sub-Critical (s=+1, d=1.5 cm < R=10 cm)",
+      "radiusCm": 10.0,
+      "directionSignS": 1,
+      "offsetDistanceCm": 1.5,
+      "signedCurvatureKappaCmInv": 0.1,
+      "offsetSpeedFactorF": 0.85,
+      "analyticalOffsetRadiusCm": 8.5,
+      "O_at_t0": [
+        8.5,
+        0.0
+      ],
+      "O_prime_at_t0": [
+        0.0,
+        8.5
+      ],
+      "expectedCategory": "CERTIFIED_REGULAR",
+      "classifiedCategory": "CERTIFIED_REGULAR",
+      "gridErrorCm": 1.666e-05,
+      "certifiedIntervalErrorCm": 2.082e-05,
+      "passed": true
+    },
+    {
+      "familyId": "AG-02",
+      "title": "Case 2: CCW Circle Inward Critical Focal Collapse (s=+1, d=10.0 cm = R)",
+      "radiusCm": 10.0,
+      "directionSignS": 1,
+      "offsetDistanceCm": 10.0,
+      "signedCurvatureKappaCmInv": 0.1,
+      "offsetSpeedFactorF": 0.0,
+      "analyticalOffsetRadiusCm": 0.0,
+      "O_at_t0": [
+        0.0,
+        0.0
+      ],
+      "O_prime_at_t0": [
+        0.0,
+        0.0
+      ],
+      "expectedCategory": "TANGENTIAL_CUSP_DEGENERACY",
+      "classifiedCategory": "TANGENTIAL_CUSP_DEGENERACY",
+      "gridErrorCm": 0.0,
+      "certifiedIntervalErrorCm": 0.0,
+      "passed": true
+    },
+    {
+      "familyId": "AG-03",
+      "title": "Case 3: CCW Circle Inward Super-Critical (s=+1, d=12.0 cm > R=10 cm)",
+      "radiusCm": 10.0,
+      "directionSignS": 1,
+      "offsetDistanceCm": 12.0,
+      "signedCurvatureKappaCmInv": 0.1,
+      "offsetSpeedFactorF": -0.2,
+      "analyticalOffsetRadiusCm": -2.0,
+      "O_at_t0": [
+        -2.0,
+        0.0
+      ],
+      "O_prime_at_t0": [
+        0.0,
+        -2.0000000000000018
+      ],
+      "expectedCategory": "ACTUAL_CURVATURE_CUSP",
+      "classifiedCategory": "ACTUAL_CURVATURE_CUSP",
+      "gridErrorCm": 3.92e-06,
+      "certifiedIntervalErrorCm": 4.9e-06,
+      "passed": true
+    },
+    {
+      "familyId": "AG-04",
+      "title": "Case 4: CCW Circle Outward Seam Allowance (s=-1, d=1.5 cm, R=10 cm)",
+      "radiusCm": 10.0,
+      "directionSignS": -1,
+      "offsetDistanceCm": 1.5,
+      "signedCurvatureKappaCmInv": 0.1,
+      "offsetSpeedFactorF": 1.15,
+      "analyticalOffsetRadiusCm": 11.5,
+      "O_at_t0": [
+        11.5,
+        0.0
+      ],
+      "O_prime_at_t0": [
+        0.0,
+        11.5
+      ],
+      "expectedCategory": "CERTIFIED_REGULAR",
+      "classifiedCategory": "CERTIFIED_REGULAR",
+      "gridErrorCm": 2.254e-05,
+      "certifiedIntervalErrorCm": 2.817e-05,
+      "passed": true
+    },
+    {
+      "familyId": "AG-05",
+      "title": "Cubic Bezier Inflection Point (C(0.5) = 0, Q(0.5) > 0)",
+      "expectedCategory": "CERTIFIED_REGULAR",
+      "classifiedCategory": "CERTIFIED_REGULAR",
+      "Q_at_0_5": 100.0,
+      "C_at_0_5": 0.0,
+      "gridErrorCm": 0.00084,
+      "certifiedIntervalErrorCm": 0.00192,
+      "passed": true
+    },
+    {
+      "familyId": "AG-06",
+      "title": "High-Curvature Armscye Curve with Two Transverse Curvature Cusps (f(t*)=0, f'(t*)!=0)",
+      "expectedCategory": "ACTUAL_CURVATURE_CUSP",
+      "classifiedCategory": "ACTUAL_CURVATURE_CUSP",
+      "kappaMaxCmInv": 0.75,
+      "criticalCurvatureCmInv": 0.5,
+      "isolatedRoots": [
+        {
+          "tLower": 0.40714846122409654,
+          "tUpper": 0.40714846122500603,
+          "deltaT": 9.094947017729282e-13,
+          "maxSpeedOnBracket": 9.157714,
+          "deltaPosCm": 8.32889230918749e-12,
+          "multiplicityOrOrder": "transverse-simple (m=1)"
+        },
+        {
+          "tLower": 0.592851538774994,
+          "tUpper": 0.5928515387759035,
+          "deltaT": 9.094947017729282e-13,
+          "maxSpeedOnBracket": 9.157714,
+          "deltaPosCm": 8.32889230918749e-12,
+          "multiplicityOrOrder": "transverse-simple (m=1)"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "familyId": "AG-07",
+      "title": "Grazing Tangential Curvature Extremum (f(t*)=0, f'(t*)=0 at t*=0.5)",
+      "expectedCategory": "TANGENTIAL_CUSP_DEGENERACY",
+      "classifiedCategory": "TANGENTIAL_CUSP_DEGENERACY",
+      "isolatedRoots": [
+        {
+          "tLower": 0.4999999999990687,
+          "tUpper": 0.5,
+          "deltaT": 9.313225746154785e-13,
+          "maxSpeedOnBracket": 8.0,
+          "deltaPosCm": 7.450580596923828e-12,
+          "multiplicityOrOrder": "tangential-double-grazing (f=0, f'=0)"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "familyId": "AG-08",
+      "title": "Symmetric Swallowtail Double Cusp & Exact Loop Trimming",
+      "expectedCategory": "ACTUAL_CURVATURE_CUSP",
+      "classifiedCategory": "ACTUAL_CURVATURE_CUSP",
+      "secondaryCategory": "SELF_INTERSECTING_NON_LOCAL",
+      "swallowtailTrimParameters": [
+        0.313661002,
+        0.686338998
+      ],
+      "trimmed": true,
+      "passed": true
+    },
+    {
+      "familyId": "AG-09",
+      "title": "Interior True Zero-Speed Base-Curve Cusp B(t) = (t^2, t^3) at t*=0 (u*=0.5)",
+      "expectedCategory": "ACTUAL_ZERO_SPEED_CUSP",
+      "classifiedCategory": "ACTUAL_ZERO_SPEED_CUSP",
+      "taylorOrdersMN": [
+        2,
+        3
+      ],
+      "limitingTangentMinus": [
+        -1.0,
+        -0.0
+      ],
+      "limitingTangentPlus": [
+        1.0,
+        0.0
+      ],
+      "tangentReversalRadians": 3.141592653589793,
+      "passed": true
+    },
+    {
+      "familyId": "AG-10",
+      "title": "Endpoint Zero-Speed Degeneracy (P1 = P0 at t* = 0, Collinear Regular Limit)",
+      "expectedCategory": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "classifiedCategory": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "taylorOrdersMN": [
+        2,
+        null
+      ],
+      "passed": true
+    },
+    {
+      "familyId": "AG-11",
+      "title": "Interior Removable Parameterization Degeneracy B(t) = (t^3, 0) at t*=0 (u*=0.5)",
+      "Q_at_star": 0.0,
+      "expectedCategory": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "classifiedCategory": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "taylorOrderM": 3,
+      "isGeometricCusp": false,
+      "limitingTangentMinus": [
+        1.0,
+        0.0
+      ],
+      "limitingTangentPlus": [
+        1.0,
+        0.0
+      ],
+      "limitingCurvature": 0.0,
+      "reparameterizedOffsetCurve": "Smooth line segment from (-1, s*d) to (+1, s*d) with zero cusps",
+      "passed": true
+    },
+    {
+      "familyId": "AG-12",
+      "title": "Coincident Interior Control Points (P1 = P2, Non-Zero Minimum Speed)",
+      "expectedCategory": "CERTIFIED_REGULAR",
+      "classifiedCategory": "CERTIFIED_REGULAR",
+      "Q_at_0_5": 56.25,
+      "offsetSpeedFactorF_at_0_5": 1.213333,
+      "passed": true
+    },
+    {
+      "familyId": "AG-13",
+      "title": "Extreme Parametric Speed Ratio (max Q / min Q > 10^8) & Dual Stopping Criterion",
+      "expectedCategory": "CERTIFIED_REGULAR",
+      "classifiedCategory": "CERTIFIED_REGULAR",
+      "maxSpeedCmPerUnit": 6000.0,
+      "bracketDeltaT": 7.275957614183426e-13,
+      "bracketDeltaPosCm": 4.3655745685100555e-09,
+      "escalatedToC1Cert": true,
+      "passed": true
+    },
+    {
+      "familyId": "AG-14",
+      "title": "Acute Dart/Collar Corner (theta = 20 deg) Miter-Limit Bevel Clipping",
+      "expectedCategory": "CERTIFIED_REGULAR",
+      "classifiedCategory": "CERTIFIED_REGULAR",
+      "cornerAngleDeg": 20.0,
+      "unclippedMiterRatio": 5.75877,
+      "miterLimit": 2.5,
+      "bevelJoinApplied": true,
+      "selfIntersectionsAfterClip": 0,
+      "passed": true
+    },
+    {
+      "familyId": "AG-15",
+      "title": "Global Non-Local Concave Pocket Self-Intersection (f(t) > 0 Locally, Global AABB Overlap)",
+      "expectedCategory": "SELF_INTERSECTING_NON_LOCAL",
+      "classifiedCategory": "SELF_INTERSECTING_NON_LOCAL",
+      "locallyRegularEverywhere": true,
+      "globalOverlapCm": 1.0,
+      "trimmed": true,
+      "passed": true
+    },
+    {
+      "familyId": "AG-16",
+      "title": "Wilkinson-Style Near-Multiple Root Cluster (Delta t = 1e-7) Disjoint Isolation",
+      "expectedCategory": "ACTUAL_CURVATURE_CUSP",
+      "classifiedCategory": "ACTUAL_CURVATURE_CUSP",
+      "rootSeparationDeltaT": 1e-07,
+      "disjointBracketsVerified": true,
+      "isolatedRoots": [
+        {
+          "tLower": 0.4999999499991536,
+          "tUpper": 0.49999995000008496,
+          "deltaT": 9.313225746154785e-13,
+          "maxSpeedOnBracket": 20.0,
+          "deltaPosCm": 1.862645149230957e-11,
+          "multiplicityOrOrder": "wilkinson-cluster-root-1"
+        },
+        {
+          "tLower": 0.5000000499999151,
+          "tUpper": 0.5000000500008464,
+          "deltaT": 9.313225746154785e-13,
+          "maxSpeedOnBracket": 20.0,
+          "deltaPosCm": 1.862645149230957e-11,
+          "multiplicityOrOrder": "wilkinson-cluster-root-2"
+        }
+      ],
+      "passed": true
+    },
+    {
+      "familyId": "AG-17",
+      "title": "Full Bodice Front + Armscye + Waist Dart + Notches Integration",
+      "expectedCategory": "CERTIFIED_REGULAR",
+      "classifiedCategory": "CERTIFIED_REGULAR",
+      "offsetClassificationReport": {
+        "segmentId": "bodice-front-armscye",
+        "category": "CERTIFIED_REGULAR",
+        "directionSign": -1,
+        "offsetDistanceCm": 1.5,
+        "minBaseSpeedSquaredQ": 256.32,
+        "minOffsetSpeedFactorF": 1.10369,
+        "gridErrorCm": 0.00142,
+        "certifiedIntervalErrorCm": 0.00318,
+        "maxJoinTangentDeltaDeg": 0.012,
+        "reparameterized": false,
+        "trimmed": false,
+        "isolatedRoots": [],
+        "oracleTierUsed": "C1-Cert-113bit-Q"
+      },
+      "notchPlacementErrorCm": 1.4e-08,
+      "pairedCadSeamDeltaCm": 0.008,
+      "contourClosureErrorCm": 0.0,
+      "passed": true
+    }
+  ],
+  "allPassed": true
+}

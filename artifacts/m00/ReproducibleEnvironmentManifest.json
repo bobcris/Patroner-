@@ -1,0 +1,75 @@
+{
+  "milestoneId": "M00.9-M00.10",
+  "artifactName": "ReproducibleEnvironmentManifest.json",
+  "governingAuthorization": {
+    "checkpoint": 12,
+    "date": "2026-11-16",
+    "baselineBlueprint": "R2.1.2-R1",
+    "baselineCommitSha": "6938f808629276fd1b0860fba407b42f5cb40aaf",
+    "recoveryAnchorCommitSha": "282a303ea1126fb3b1da368e4e8e4ddbeb59c552",
+    "approvedDecisionsAtGateAuth1": [
+      "Gate Auth-1",
+      "DEC-01",
+      "DEC-13 Stage 1"
+    ],
+    "mandatoryNextGate": "Gate Auth-2 / DEC-13 Stage 2 (Blocks M02 Production Implementation)"
+  },
+  "runtimeEnvironment": {
+    "pythonVersion": "3.10.12",
+    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+    "pythonHashSeed": "0",
+    "pinnedPackages": {
+      "mpmath": "1.4.1",
+      "python-flint": "0.9.0",
+      "pydantic": "2.14.3",
+      "jsonschema": "4.26.0",
+      "numpy": "2.2.6",
+      "scipy": "1.15.3",
+      "pytest": "9.2.0"
+    }
+  },
+  "deterministicReplayVerified": true,
+  "artifactDigests": [
+    {
+      "artifact": "SchemasLockReport.json",
+      "path": "artifacts/m00/SchemasLockReport.json",
+      "sha256": "3e6263070f0cf6434d79db0c99a631b55719ca24c9fb77cf0fd061e1934d076f"
+    },
+    {
+      "artifact": "BaselineDivergenceRegistry.json",
+      "path": "artifacts/m00/BaselineDivergenceRegistry.json",
+      "sha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d"
+    },
+    {
+      "artifact": "IntervalLibraryQualificationReport.json",
+      "path": "artifacts/m00/IntervalLibraryQualificationReport.json",
+      "sha256": "e34c60d1567149dd6fb89d83227b1291bc171a3b9cf8024b0bcaa69cae8e1c22"
+    },
+    {
+      "artifact": "AdversarialGeometryVerificationReport.json",
+      "path": "artifacts/m00/AdversarialGeometryVerificationReport.json",
+      "sha256": "0792f63511590b15c326129723acd470566e77d01b28cbcc2d2168495e5f2cb4"
+    },
+    {
+      "artifact": "ArcLengthVerificationReport.json",
+      "path": "artifacts/m00/ArcLengthVerificationReport.json",
+      "sha256": "76a5c26f355f7ce5038f1728049d3e4cf21eef87b054bd5f4d4face3e661f891"
+    },
+    {
+      "artifact": "TopologyVerificationReport.json",
+      "path": "artifacts/m00/TopologyVerificationReport.json",
+      "sha256": "006d3bb3a6aeb817c6938c590610741c37ed5a302687facd972465fcf421765b"
+    },
+    {
+      "artifact": "DxfRoundTripVerificationReport.json",
+      "path": "artifacts/m00/DxfRoundTripVerificationReport.json",
+      "sha256": "126200f7b948f4faf75dd5f243357a246c5558b67824f1387e9c80ce0982b99d"
+    },
+    {
+      "artifact": "AnthropometricVerificationReport.json",
+      "path": "artifacts/m00/AnthropometricVerificationReport.json",
+      "sha256": "590c874482bd4fa02904bf1fdee1655e088b3baefdb3c74f3b1895e5ae3f9dd7"
+    }
+  ],
+  "allM00SubWorkloadsPassed": true
+}

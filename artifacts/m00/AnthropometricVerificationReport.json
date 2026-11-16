@@ -1,0 +1,34 @@
+{
+  "milestoneId": "M00.8",
+  "artifactName": "AnthropometricVerificationReport.json",
+  "goldenProfilesValidatedCount": 3,
+  "invalidAnatomicalCovarianceRejected": true,
+  "dec11TwoTierSeamTolerancePolicy": {
+    "tier1CadGeometryMaxDeltaCm": 0.05,
+    "tier2PhysicalSewnMaxDeltaCm": 0.2,
+    "pairedSeamChecks": [
+      {
+        "seamPair": "Bodice Front Side <-> Bodice Back Side",
+        "edgeACm": 22.0,
+        "edgeBCm": 22.0,
+        "targetEaseCm": 0.0,
+        "cadDeltaCm": 0.0
+      },
+      {
+        "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+        "edgeACm": 12.8,
+        "edgeBCm": 12.8,
+        "targetEaseCm": 0.0,
+        "cadDeltaCm": 0.0
+      },
+      {
+        "seamPair": "Skirt Front Side Curve <-> Skirt Back Side Curve",
+        "edgeACm": 65.184,
+        "edgeBCm": 65.182,
+        "targetEaseCm": 0.0,
+        "cadDeltaCm": 0.002
+      }
+    ]
+  },
+  "allPassed": true
+}
