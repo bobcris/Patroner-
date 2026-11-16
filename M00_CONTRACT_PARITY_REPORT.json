@@ -1,0 +1,205 @@
+{
+  "deliverable": "M00_CONTRACT_PARITY_REPORT.json",
+  "checkpoint": "15",
+  "remediatedFinding": "FINDING-CONTRACTS-01",
+  "schemasLockReport": {
+    "milestoneId": "M00.1",
+    "artifactName": "SchemasLockReport.json",
+    "schemaPath": "/app/applet/packages/contracts/schemas/canonical_contracts.schema.json",
+    "schemaSha256": "b8520e9d46948aa8b636ef22b190fd38fea669f315ca61a82deab64ea5665960",
+    "draftVersion": "https://json-schema.org/draft/2020-12/schema",
+    "canonicalCoordinateFrame": {
+      "geometryUnit": "cm",
+      "clearanceUnit": "mm",
+      "internalAngleUnit": "rad",
+      "displayAngleUnit": "deg",
+      "handedness": "right-handed-cartesian",
+      "exteriorWinding": "CCW",
+      "interiorCutoutWinding": "CW",
+      "leftNormalDirectionOnExterior": "inward"
+    },
+    "canonicalOffsetClassifications": [
+      "CERTIFIED_VALID",
+      "REGULARITY_MARGIN_VIOLATION",
+      "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "TANGENT_REVERSAL",
+      "LOCAL_SELF_INTERSECTION",
+      "GLOBAL_SELF_INTERSECTION",
+      "INCONCLUSIVE"
+    ],
+    "baseCurveSingularityClassifications": [
+      "REGULAR_BASE_CURVE",
+      "GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD",
+      "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "ENDPOINT_TANGENTIAL_DEGENERACY",
+      "COLLAPSED_ZERO_LENGTH_CURVE"
+    ],
+    "entitiesVerifiedCount": 12,
+    "entityParityResults": [
+      {
+        "entity": "CoordinateFrameSpec",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "BezierSegment",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "SeamAllowance",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "Notch",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "NumericalVerificationRecord",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "OffsetValidationRecord",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "OffsetClassificationReport",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "GeometryWarning",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "DxfExportManifest",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "BodyProfile",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "GarmentSpec",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      },
+      {
+        "entity": "PatternPiece",
+        "jsonSchemaDraft202012Valid": true,
+        "pydanticV2RoundTripValid": true
+      }
+    ],
+    "negativeValidationCount": 10,
+    "negativeValidationResults": [
+      {
+        "caseId": "NEG-01-WRONG-GEOMETRY-UNIT",
+        "entity": "CoordinateFrameSpec",
+        "reason": "Must reject non-cm geometryUnit",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "NEG-02-WRONG-EXTERIOR-WINDING",
+        "entity": "CoordinateFrameSpec",
+        "reason": "Must reject CW exteriorWinding (CCW required)",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "NEG-03-EXTRA-UNDECLARED-PROPERTY",
+        "entity": "SeamAllowance",
+        "reason": "Must reject additionalProperties",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "NEG-04-OUT-OF-RANGE-SEAM-DISTANCE",
+        "entity": "SeamAllowance",
+        "reason": "Must reject negative seam allowance distanceCm",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "NEG-05-INVALID-NOTCH-RESIDUAL",
+        "entity": "Notch",
+        "reason": "Must reject arcLengthResidualCm > 1e-7 cm",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "NEG-06-INVALID-OFFSET-CLASSIFICATION-ENUM",
+        "entity": "OffsetValidationRecord",
+        "reason": "Must reject non-canonical offset classification enum value",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "NEG-07-MISSING-REQUIRED-BODY-FIELD",
+        "entity": "BodyProfile",
+        "reason": "Must reject BodyProfile missing required bustCm",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "NEG-08-INVALID-GARMENT-EASE-RANGE",
+        "entity": "GarmentSpec",
+        "reason": "Must reject GarmentSpec with bustEaseCm > 25.0 cm",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "NEG-09-INVALID-DXF-VERSION",
+        "entity": "DxfExportManifest",
+        "reason": "Must reject non-AC1009 DXF-AAMA version",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "NEG-10-INVALID-NUMERICAL-DT-BOUND",
+        "entity": "NumericalVerificationRecord",
+        "reason": "Must reject parameter_uncertainty_dt > 1e-12",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      }
+    ],
+    "semanticInvariantChecks": [
+      {
+        "caseId": "SEM-01-INCONCLUSIVE-PRODUCTION-READY-FORBIDDEN",
+        "description": "ADR-009 \u00a75.3: verification_outcome=INCONCLUSIVE must reject is_production_ready=True",
+        "pydanticSemanticValidatorRejected": true,
+        "errorMessage": "Value error, INCONCLUSIVE verification outcome cannot set is_production_ready=True"
+      },
+      {
+        "caseId": "SEM-02-METHOD-B1-UNDERESTIMATED-GEOMETRIC-ERROR",
+        "description": "ADR-009 \u00a72.5: Method B1 propagated_position_error_cm < local_speed_upper_bound * dt must be rejected",
+        "pydanticSemanticValidatorRejected": true,
+        "errorMessage": "Value error, Method B1 violation: propagated_position_error_cm must bound local_speed_upper_bound * dt"
+      },
+      {
+        "caseId": "SEM-03-ANATOMICAL-COVARIANCE-LOW-HIP-LT-HIGH-HIP",
+        "description": "M00.8: BodyProfile with lowHipCm < highHipCm - 2.0 must be rejected",
+        "pydanticSemanticValidatorRejected": true,
+        "errorMessage": "Value error, Anatomical covariance violation: lowHipCm cannot be >2 cm smaller than highHipCm"
+      }
+    ],
+    "allPassed": true
+  }
+}

@@ -1,0 +1,334 @@
+{
+  "deliverable": "M00_SUBORACLE_VERIFICATION_REPORT.json",
+  "checkpoint": "15",
+  "remediatedFinding": "FINDING-SUBORACLES-01",
+  "m00_5_arcLength": {
+    "milestoneId": "M00.5",
+    "artifactName": "ArcLengthVerificationReport.json",
+    "certifiedQuadLengthCm": 16.6656505146,
+    "adaptiveGaussLegendreLengthCm": 16.6656505146,
+    "forwardLengthErrorCm": 1.4210854715202004e-14,
+    "forwardToleranceMaxCm": 1e-06,
+    "panelsEvaluated": 23,
+    "methodC1CertArmscyeEnclosure": {
+      "subdivisionDepth": 8,
+      "panelsCount": 256,
+      "lowerChordBoundCm": 16.665623238030893,
+      "upperControlPolygonBoundCm": 16.665677791073044,
+      "enclosureWidthCm": 5.455304215118417e-05,
+      "quadratureLength113BitCm": 16.66565051456102,
+      "nonStrictInequalityHolds": true
+    },
+    "methodC1CertCollinearEnclosure": {
+      "subdivisionDepth": 5,
+      "panelsCount": 32,
+      "lowerChordBoundCm": 10.0,
+      "upperControlPolygonBoundCm": 10.0,
+      "enclosureWidthCm": 0.0,
+      "quadratureLength113BitCm": 10.0,
+      "nonStrictInequalityHolds": true
+    },
+    "forwardNumericalVerificationRecord": {
+      "curve_id": "bodice-front-armscye-m005",
+      "operation_type": "ARC_LENGTH",
+      "parameter_bracket_t": [
+        0.0,
+        1.0
+      ],
+      "parameter_uncertainty_dt": 0.0,
+      "local_speed_upper_bound_cm_per_t": 25.0,
+      "propagated_position_error_cm": 0.0,
+      "direct_geometric_error_bound_cm": 5.455304215118417e-05,
+      "propagation_method": "C1_CERT_CHORD_POLYGON_BOUNDS",
+      "working_precision_bits": 113,
+      "adaptive_subdivision_panels": 256,
+      "certified_within_tolerance": true
+    },
+    "inverseArcLengthChecks": [
+      {
+        "targetFraction": 0.25,
+        "targetArcLengthCm": 4.16641263,
+        "tStar": 0.425657617723,
+        "tBracket": [
+          0.4256576177230207,
+          0.42565761772302074
+        ],
+        "arcLengthResidualCm": 8.881784197001252e-16,
+        "deltaT": 5.551115123125783e-17,
+        "localSpeedUpperBoundCmPerT": 14.10102359,
+        "deltaPosCm": 7.8276405295714685e-16,
+        "numericalVerificationRecord": {
+          "curve_id": "bodice-front-armscye-m005",
+          "operation_type": "INVERSE_ARC_LENGTH",
+          "parameter_bracket_t": [
+            0.4256576177230207,
+            0.42565761772302074
+          ],
+          "parameter_uncertainty_dt": 5.551115123125783e-17,
+          "local_speed_upper_bound_cm_per_t": 14.101023588867303,
+          "propagated_position_error_cm": 7.8276405295714685e-16,
+          "direct_geometric_error_bound_cm": 8.881784197001252e-16,
+          "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
+          "working_precision_bits": 113,
+          "adaptive_subdivision_panels": 11,
+          "certified_within_tolerance": true
+        },
+        "passed": true
+      },
+      {
+        "targetFraction": 0.5,
+        "targetArcLengthCm": 8.33282526,
+        "tStar": 0.667210977108,
+        "tBracket": [
+          0.6672109771076997,
+          0.6672109771076998
+        ],
+        "arcLengthResidualCm": 1.7763568394002505e-15,
+        "deltaT": 1.1102230246251565e-16,
+        "localSpeedUpperBoundCmPerT": 20.46983071,
+        "deltaPosCm": 2.272607736949286e-15,
+        "numericalVerificationRecord": {
+          "curve_id": "bodice-front-armscye-m005",
+          "operation_type": "INVERSE_ARC_LENGTH",
+          "parameter_bracket_t": [
+            0.6672109771076997,
+            0.6672109771076998
+          ],
+          "parameter_uncertainty_dt": 1.1102230246251565e-16,
+          "local_speed_upper_bound_cm_per_t": 20.46983071456822,
+          "propagated_position_error_cm": 2.272607736949286e-15,
+          "direct_geometric_error_bound_cm": 1.7763568394002505e-15,
+          "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
+          "working_precision_bits": 113,
+          "adaptive_subdivision_panels": 19,
+          "certified_within_tolerance": true
+        },
+        "passed": true
+      },
+      {
+        "targetFraction": 0.75,
+        "targetArcLengthCm": 12.49923789,
+        "tStar": 0.848755041555,
+        "tBracket": [
+          0.8487550415554233,
+          0.8487550415554234
+        ],
+        "arcLengthResidualCm": 1.7763568394002505e-15,
+        "deltaT": 1.1102230246251565e-16,
+        "localSpeedUpperBoundCmPerT": 25.44632635,
+        "deltaPosCm": 2.8251097400949894e-15,
+        "numericalVerificationRecord": {
+          "curve_id": "bodice-front-armscye-m005",
+          "operation_type": "INVERSE_ARC_LENGTH",
+          "parameter_bracket_t": [
+            0.8487550415554233,
+            0.8487550415554234
+          ],
+          "parameter_uncertainty_dt": 1.1102230246251565e-16,
+          "local_speed_upper_bound_cm_per_t": 25.446326345545106,
+          "propagated_position_error_cm": 2.8251097400949894e-15,
+          "direct_geometric_error_bound_cm": 1.7763568394002505e-15,
+          "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
+          "working_precision_bits": 113,
+          "adaptive_subdivision_panels": 19,
+          "certified_within_tolerance": true
+        },
+        "passed": true
+      }
+    ],
+    "allPassed": true
+  },
+  "m00_6_topology": {
+    "milestoneId": "M00.6",
+    "artifactName": "TopologyVerificationReport.json",
+    "ccwExteriorCheck": {
+      "closureGapCm": 0.0,
+      "signedAreaCm2": 1008.0,
+      "actualWinding": "CCW",
+      "expectedWinding": "CCW",
+      "selfIntersections": 0,
+      "properTransverseCrossings": 0,
+      "degenerateCollinearOrVertexTouches": 0,
+      "isSimple": true,
+      "isMicroSliver": false,
+      "passed": true
+    },
+    "cwInteriorCutoutCheck": {
+      "closureGapCm": 0.0,
+      "signedAreaCm2": -25.0,
+      "actualWinding": "CW",
+      "expectedWinding": "CW",
+      "selfIntersections": 0,
+      "properTransverseCrossings": 0,
+      "degenerateCollinearOrVertexTouches": 0,
+      "isSimple": true,
+      "isMicroSliver": false,
+      "passed": true
+    },
+    "bowtieSelfIntersectionDetected": true,
+    "vertexOnEdgeDegeneracyDetected": true,
+    "collinearOverlapDegeneracyDetected": true,
+    "microSliverDetected": true,
+    "allPassed": true
+  },
+  "m00_7_dxfRoundTrip": {
+    "milestoneId": "M00.7",
+    "artifactName": "DxfRoundTripVerificationReport.json",
+    "sectionsRecovered": [
+      "HEADER",
+      "TABLES",
+      "ENTITIES"
+    ],
+    "acadVersionHeader": "AC1009",
+    "insUnitsHeader": "5",
+    "tableLayersDefined": [
+      "1",
+      "11",
+      "2",
+      "4",
+      "7",
+      "8"
+    ],
+    "layersRequired": [
+      "1",
+      "11",
+      "2",
+      "4",
+      "7",
+      "8"
+    ],
+    "layersRecovered": [
+      "1",
+      "11",
+      "2",
+      "4",
+      "7",
+      "8"
+    ],
+    "missingLayers": [],
+    "missingTableLayers": [],
+    "maxVertexRoundTripErrorCm": 0.0,
+    "toleranceMaxCm": 0.001,
+    "syntheticRoundTripVerified": true,
+    "externalCadInteroperabilityVerified": false,
+    "interoperabilityScopeNote": "Verifies deterministic synthetic DXF R12 (AC1009) / ASTM D6673 emitter-to-parser round-trip in M00.7. External third-party CAD software (Gerber AccuMark, Lectra Modaris, Optitex, CLO3D) file import/export validation is scheduled under M05 Industrial Export.",
+    "dxfExportManifest": {
+      "exportId": "M00-7-REF-BF-001",
+      "standard": "DXF-AAMA / ASTM D6673",
+      "dxfVersion": "AC1009",
+      "geometryUnit": "cm",
+      "requiredLayers": [
+        "1",
+        "2",
+        "4",
+        "7",
+        "8",
+        "11"
+      ],
+      "recoveredLayers": [
+        "1",
+        "11",
+        "2",
+        "4",
+        "7",
+        "8"
+      ],
+      "pieceCodes": [
+        "BF-001"
+      ],
+      "totalVertexCount": 12,
+      "maxRoundTripCoordinateErrorCm": 0.0,
+      "sha256Digest": "5b7bb4a125dd229c943809069169151d4d2b6bdcbed6603d0a892f83435568de",
+      "syntheticRoundTripVerified": true,
+      "externalCadInteroperabilityVerified": false
+    },
+    "allPassed": true
+  },
+  "m00_8_anthropometricsAndSeamParity": {
+    "milestoneId": "M00.8",
+    "artifactName": "AnthropometricVerificationReport.json",
+    "goldenProfilesValidatedCount": 3,
+    "invalidAnatomicalCovarianceRejected": true,
+    "covarianceNegativeChecks": [
+      {
+        "caseId": "COV-01-LOW-HIP-SMALLER-THAN-HIGH-HIP",
+        "rejected": true
+      },
+      {
+        "caseId": "COV-02-BUST-SPAN-EXCEEDS-35-PERCENT-BUST",
+        "rejected": true
+      },
+      {
+        "caseId": "COV-03-ACROSS-BACK-EXCEEDS-55-PERCENT-BUST",
+        "rejected": true
+      },
+      {
+        "caseId": "COV-04-WAIST-EXCEEDS-LOW-HIP-PLUS-12CM",
+        "rejected": true
+      }
+    ],
+    "dec11TwoTierSeamTolerancePolicy": {
+      "tier1CadGeometryMaxDeltaCm": 0.05,
+      "tier2PhysicalSewnMaxDeltaCm": 0.2,
+      "computedFromDraftedBezierCurves": true,
+      "pairedSeamChecks": [
+        {
+          "profileId": "STD-M",
+          "seamPair": "Bodice Front Side <-> Bodice Back Side",
+          "edgeACm": 21.102068,
+          "edgeBCm": 21.102068,
+          "edgeAC1CertIntervalCm": [
+            21.102068,
+            21.102068
+          ],
+          "edgeBC1CertIntervalCm": [
+            21.102068,
+            21.102068
+          ],
+          "quadraturePanelsUsed": 6,
+          "targetEaseCm": 0.0,
+          "cadDeltaCm": 0.0,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "profileId": "STD-M",
+          "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+          "edgeACm": 12.8,
+          "edgeBCm": 12.8,
+          "edgeAC1CertIntervalCm": [
+            12.8,
+            12.8
+          ],
+          "edgeBC1CertIntervalCm": [
+            12.8,
+            12.8
+          ],
+          "quadraturePanelsUsed": 6,
+          "targetEaseCm": 0.0,
+          "cadDeltaCm": 0.0,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "profileId": "STD-M",
+          "seamPair": "Skirt Front Side Curve <-> Skirt Back Side Curve",
+          "edgeACm": 66.117865,
+          "edgeBCm": 66.115728,
+          "edgeAC1CertIntervalCm": [
+            66.117613,
+            66.118116
+          ],
+          "edgeBC1CertIntervalCm": [
+            66.115478,
+            66.115978
+          ],
+          "quadraturePanelsUsed": 38,
+          "targetEaseCm": 0.0,
+          "cadDeltaCm": 0.002137,
+          "withinTier1CadTolerance0_05Cm": true
+        }
+      ]
+    },
+    "allPassed": true
+  },
+  "allSubOraclesPassed": true
+}

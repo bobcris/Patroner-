@@ -7,6 +7,8 @@
     "actualWinding": "CCW",
     "expectedWinding": "CCW",
     "selfIntersections": 0,
+    "properTransverseCrossings": 0,
+    "degenerateCollinearOrVertexTouches": 0,
     "isSimple": true,
     "isMicroSliver": false,
     "passed": true
@@ -17,11 +19,15 @@
     "actualWinding": "CW",
     "expectedWinding": "CW",
     "selfIntersections": 0,
+    "properTransverseCrossings": 0,
+    "degenerateCollinearOrVertexTouches": 0,
     "isSimple": true,
     "isMicroSliver": false,
     "passed": true
   },
   "bowtieSelfIntersectionDetected": true,
+  "vertexOnEdgeDegeneracyDetected": true,
+  "collinearOverlapDegeneracyDetected": true,
   "microSliverDetected": true,
   "allPassed": true
 }

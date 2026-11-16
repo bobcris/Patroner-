@@ -1,0 +1,403 @@
+{
+  "milestoneId": "M00.4",
+  "artifactName": "IntervalLibraryQualificationReport.json",
+  "governingDecision": "DEC-13 (Stage 1 Approved at Gate Auth-1 on 2026-11-16; Stage 2 Production Adoption Pending Gate Auth-2)",
+  "governingADR": "ADR-009 (R2.1.2-R1 \u00a73.2, \u00a75 & \u00a77.2)",
+  "deterministicMathematicalEvidenceOnly": true,
+  "environment": {
+    "pythonVersion": "3.10.12",
+    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+    "machine": "x86_64"
+  },
+  "candidatesEvaluated": [
+    {
+      "candidateRank": 1,
+      "candidateRole": "Primary Candidate (DEC-13 Stage 1)",
+      "libraryName": "mpmath.iv + fractions.Fraction",
+      "version": "1.4.1",
+      "availableInEnvironment": true,
+      "precisionTiersBits": [
+        53,
+        113,
+        170,
+        336
+      ],
+      "dyadicFloat64ExactConversionVerified": true,
+      "nonDyadicRationalEnclosureVerified": true,
+      "sampleIntervalEnclosures": [
+        {
+          "precisionBits": 53,
+          "rational": "1/3",
+          "lowerEndpointHex": "0x1.5555555555555p-2",
+          "upperEndpointHex": "0x1.5555555555556p-2",
+          "width": 5.551115123125783e-17,
+          "strictlyEnclosedInFraction": true
+        },
+        {
+          "precisionBits": 113,
+          "rational": "1/3",
+          "lowerEndpointHex": "[0.33333333333333333333333333333333331728, 0.33333333333333333333333333333333331728]",
+          "upperEndpointHex": "[0.33333333333333333333333333333333336543, 0.33333333333333333333333333333333336543]",
+          "width": 4.81482486096809e-35,
+          "strictlyEnclosedInFraction": true
+        }
+      ],
+      "outwardDirectedRoundingVerified": true,
+      "outwardRoundingChecksTotal": 124,
+      "outwardRoundingChecksPassed": 124,
+      "precisionTierBreakdown": [
+        {
+          "precisionBits": 53,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        },
+        {
+          "precisionBits": 113,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        },
+        {
+          "precisionBits": 170,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        },
+        {
+          "precisionBits": 336,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        }
+      ],
+      "bernsteinContainmentChecksTotal": 40,
+      "bernsteinContainmentChecksPassed": 40,
+      "domainTrapsVerified": {
+        "divisionByStraddlingZeroDetected": true,
+        "negativeSqrtDomainTrapDetected": true
+      },
+      "grazingTangencyNoFalseNegative": true,
+      "wilkinsonClusterSeparationVerified": true,
+      "unsplitRootIsolationFromUnitInterval": {
+        "initialDomain": [
+          0.0,
+          1.0
+        ],
+        "manualPreSplittingUsed": false,
+        "simpleTransverseRoot1_3": {
+          "isolated": [
+            {
+              "tLower": 0.33333333333303017,
+              "tUpper": 0.33333333333393966,
+              "tLowerRational": "366503875925/1099511627776",
+              "tUpperRational": "183251937963/549755813888",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            }
+          ],
+          "passed": true
+        },
+        "doubleGrazingRoot1_2": {
+          "isolated": [
+            {
+              "tLower": 0.4999999999995,
+              "tUpper": 0.5000000000005,
+              "tLowerRational": "999999999999/2000000000000",
+              "tUpperRational": "1000000000001/2000000000000",
+              "deltaT": 1e-12,
+              "multiplicity": "even-grazing-root"
+            }
+          ],
+          "passed": true
+        },
+        "wilkinsonCluster1e7AtHalf": {
+          "isolated": [
+            {
+              "tLower": 0.4999999499996193,
+              "tUpper": 0.49999995000052877,
+              "tLowerRational": "8589933733/17179869184",
+              "tUpperRational": "549755758913/1099511627776",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            },
+            {
+              "tLower": 0.5000000499994712,
+              "tUpper": 0.5000000500003807,
+              "tLowerRational": "549755868863/1099511627776",
+              "tUpperRational": "8589935451/17179869184",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            }
+          ],
+          "disjoint": true
+        },
+        "wilkinsonCluster1e9AtOneThird": {
+          "isolated": [
+            {
+              "tLower": 0.3333333328328081,
+              "tUpper": 0.3333333328337176,
+              "tLowerRational": "366503875375/1099511627776",
+              "tUpperRational": "22906492211/68719476736",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            },
+            {
+              "tLower": 0.33333333383325225,
+              "tUpper": 0.33333333383416175,
+              "tLowerRational": "366503876475/1099511627776",
+              "tUpperRational": "91625969119/274877906944",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            }
+          ],
+          "disjoint": true
+        },
+        "allPassed": true
+      },
+      "qualificationStatus": "QUALIFIED_PRIMARY"
+    },
+    {
+      "candidateRank": 2,
+      "candidateRole": "Secondary Candidate (DEC-13 Stage 1)",
+      "libraryName": "python-flint (arb + fmpq)",
+      "version": "0.9.0",
+      "availableInEnvironment": true,
+      "precisionTiersBits": [
+        53,
+        113,
+        170,
+        336
+      ],
+      "dyadicFloat64ExactConversionVerified": true,
+      "outwardDirectedRoundingVerified": true,
+      "outwardRoundingChecksTotal": 124,
+      "outwardRoundingChecksPassed": 124,
+      "precisionTierBreakdown": [
+        {
+          "precisionBits": 53,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        },
+        {
+          "precisionBits": 113,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        },
+        {
+          "precisionBits": 170,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        },
+        {
+          "precisionBits": 336,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        }
+      ],
+      "bernsteinContainmentChecksTotal": 40,
+      "bernsteinContainmentChecksPassed": 40,
+      "domainTrapsVerified": {
+        "divisionByStraddlingZeroDetected": true,
+        "negativeSqrtDomainTrapDetected": true
+      },
+      "grazingTangencyNoFalseNegative": true,
+      "wilkinsonClusterSeparationVerified": true,
+      "unsplitRootIsolationFromUnitInterval": {
+        "initialDomain": [
+          0.0,
+          1.0
+        ],
+        "manualPreSplittingUsed": false,
+        "simpleTransverseRoot1_3": {
+          "isolated": [
+            {
+              "tLower": 0.33333333333303017,
+              "tUpper": 0.33333333333393966,
+              "tLowerRational": "366503875925/1099511627776",
+              "tUpperRational": "183251937963/549755813888",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            }
+          ],
+          "passed": true
+        },
+        "doubleGrazingRoot1_2": {
+          "isolated": [
+            {
+              "tLower": 0.4999999999995,
+              "tUpper": 0.5000000000005,
+              "tLowerRational": "999999999999/2000000000000",
+              "tUpperRational": "1000000000001/2000000000000",
+              "deltaT": 1e-12,
+              "multiplicity": "even-grazing-root"
+            }
+          ],
+          "passed": true
+        },
+        "wilkinsonCluster1e7AtHalf": {
+          "isolated": [
+            {
+              "tLower": 0.4999999499996193,
+              "tUpper": 0.49999995000052877,
+              "tLowerRational": "8589933733/17179869184",
+              "tUpperRational": "549755758913/1099511627776",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            },
+            {
+              "tLower": 0.5000000499994712,
+              "tUpper": 0.5000000500003807,
+              "tLowerRational": "549755868863/1099511627776",
+              "tUpperRational": "8589935451/17179869184",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            }
+          ],
+          "disjoint": true
+        },
+        "wilkinsonCluster1e9AtOneThird": {
+          "isolated": [
+            {
+              "tLower": 0.3333333328328081,
+              "tUpper": 0.3333333328337176,
+              "tLowerRational": "366503875375/1099511627776",
+              "tUpperRational": "22906492211/68719476736",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            },
+            {
+              "tLower": 0.33333333383325225,
+              "tUpper": 0.33333333383416175,
+              "tLowerRational": "366503876475/1099511627776",
+              "tUpperRational": "91625969119/274877906944",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            }
+          ],
+          "disjoint": true
+        },
+        "allPassed": true
+      },
+      "qualificationStatus": "QUALIFIED_SECONDARY_RESERVE"
+    },
+    {
+      "candidateRank": 3,
+      "candidateRole": "Tertiary Pure-Python Fallback (DEC-13 Stage 1)",
+      "libraryName": "fractions.Fraction + DecimalInterval (prec=50 & prec=102, ROUND_FLOOR/ROUND_CEILING)",
+      "version": "Python 3.10.12 stdlib",
+      "availableInEnvironment": true,
+      "precisionTiersBits": [
+        166,
+        338
+      ],
+      "dyadicFloat64ExactConversionVerified": true,
+      "outwardDirectedRoundingVerified": true,
+      "outwardRoundingChecksTotal": 62,
+      "outwardRoundingChecksPassed": 62,
+      "precisionTierBreakdown": [
+        {
+          "decimalDigitsPrecision": 50,
+          "equivalentBinaryBits": 166,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        },
+        {
+          "decimalDigitsPrecision": 102,
+          "equivalentBinaryBits": 338,
+          "operationsVerified": 31,
+          "allOutwardEnclosedInExactRational": true
+        }
+      ],
+      "bernsteinContainmentChecksTotal": 40,
+      "bernsteinContainmentChecksPassed": 40,
+      "domainTrapsVerified": {
+        "divisionByStraddlingZeroDetected": true,
+        "negativeSqrtDomainTrapDetected": true
+      },
+      "grazingTangencyNoFalseNegative": true,
+      "wilkinsonClusterSeparationVerified": true,
+      "unsplitRootIsolationFromUnitInterval": {
+        "initialDomain": [
+          0.0,
+          1.0
+        ],
+        "manualPreSplittingUsed": false,
+        "simpleTransverseRoot1_3": {
+          "isolated": [
+            {
+              "tLower": 0.33333333333303017,
+              "tUpper": 0.33333333333393966,
+              "tLowerRational": "366503875925/1099511627776",
+              "tUpperRational": "183251937963/549755813888",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            }
+          ],
+          "passed": true
+        },
+        "doubleGrazingRoot1_2": {
+          "isolated": [
+            {
+              "tLower": 0.4999999999995,
+              "tUpper": 0.5000000000005,
+              "tLowerRational": "999999999999/2000000000000",
+              "tUpperRational": "1000000000001/2000000000000",
+              "deltaT": 1e-12,
+              "multiplicity": "even-grazing-root"
+            }
+          ],
+          "passed": true
+        },
+        "wilkinsonCluster1e7AtHalf": {
+          "isolated": [
+            {
+              "tLower": 0.4999999499996193,
+              "tUpper": 0.49999995000052877,
+              "tLowerRational": "8589933733/17179869184",
+              "tUpperRational": "549755758913/1099511627776",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            },
+            {
+              "tLower": 0.5000000499994712,
+              "tUpper": 0.5000000500003807,
+              "tLowerRational": "549755868863/1099511627776",
+              "tUpperRational": "8589935451/17179869184",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            }
+          ],
+          "disjoint": true
+        },
+        "wilkinsonCluster1e9AtOneThird": {
+          "isolated": [
+            {
+              "tLower": 0.3333333328328081,
+              "tUpper": 0.3333333328337176,
+              "tLowerRational": "366503875375/1099511627776",
+              "tUpperRational": "22906492211/68719476736",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            },
+            {
+              "tLower": 0.33333333383325225,
+              "tUpper": 0.33333333383416175,
+              "tLowerRational": "366503876475/1099511627776",
+              "tUpperRational": "91625969119/274877906944",
+              "deltaT": 9.094947017729282e-13,
+              "multiplicity": "simple-transverse-root"
+            }
+          ],
+          "disjoint": true
+        },
+        "allPassed": true
+      },
+      "qualificationStatus": "QUALIFIED_TERTIARY_FALLBACK"
+    }
+  ],
+  "recommendedForStage2SignOffAtGateAuth2": {
+    "selectedOracleStack": "mpmath.iv (53-bit screen + 113-bit primary + 170/336-bit escalation) + fractions.Fraction",
+    "secondaryCExtensionReserve": "python-flint 0.9.0 (arb + fmpq)",
+    "zeroDependencyStdlibFallback": "fractions.Fraction + DecimalInterval (prec=50 & prec=102, ROUND_FLOOR/ROUND_CEILING)",
+    "rationale": "All 3 candidates passed 100% of exact Fraction outward-rounding checks across (+, -, *, /, sqrt) at all configured precision tiers (53, 113, 170, 336 bits), Bernstein polynomial evaluation containment, domain violation traps, and un-pre-split Wilkinson root-cluster isolation (Delta t = 1e-7 and 1e-9) from [0, 1].",
+    "stage2GovernanceNote": "Per Owner Authorization Record Checkpoint 12, this report completes M00.4 Step 1-2 Library Qualification. Production adoption for M02 remains gated on Project Owner sign-off of DEC-13 Stage 2 at Gate Auth-2."
+  },
+  "allCandidatesQualified": true
+}

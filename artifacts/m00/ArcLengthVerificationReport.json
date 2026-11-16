@@ -6,32 +6,129 @@
   "forwardLengthErrorCm": 1.4210854715202004e-14,
   "forwardToleranceMaxCm": 1e-06,
   "panelsEvaluated": 23,
+  "methodC1CertArmscyeEnclosure": {
+    "subdivisionDepth": 8,
+    "panelsCount": 256,
+    "lowerChordBoundCm": 16.665623238030893,
+    "upperControlPolygonBoundCm": 16.665677791073044,
+    "enclosureWidthCm": 5.455304215118417e-05,
+    "quadratureLength113BitCm": 16.66565051456102,
+    "nonStrictInequalityHolds": true
+  },
+  "methodC1CertCollinearEnclosure": {
+    "subdivisionDepth": 5,
+    "panelsCount": 32,
+    "lowerChordBoundCm": 10.0,
+    "upperControlPolygonBoundCm": 10.0,
+    "enclosureWidthCm": 0.0,
+    "quadratureLength113BitCm": 10.0,
+    "nonStrictInequalityHolds": true
+  },
+  "forwardNumericalVerificationRecord": {
+    "curve_id": "bodice-front-armscye-m005",
+    "operation_type": "ARC_LENGTH",
+    "parameter_bracket_t": [
+      0.0,
+      1.0
+    ],
+    "parameter_uncertainty_dt": 0.0,
+    "local_speed_upper_bound_cm_per_t": 25.0,
+    "propagated_position_error_cm": 0.0,
+    "direct_geometric_error_bound_cm": 5.455304215118417e-05,
+    "propagation_method": "C1_CERT_CHORD_POLYGON_BOUNDS",
+    "working_precision_bits": 113,
+    "adaptive_subdivision_panels": 256,
+    "certified_within_tolerance": true
+  },
   "inverseArcLengthChecks": [
     {
       "targetFraction": 0.25,
       "targetArcLengthCm": 4.16641263,
       "tStar": 0.425657617723,
+      "tBracket": [
+        0.4256576177230207,
+        0.42565761772302074
+      ],
       "arcLengthResidualCm": 8.881784197001252e-16,
       "deltaT": 5.551115123125783e-17,
+      "localSpeedUpperBoundCmPerT": 14.10102359,
       "deltaPosCm": 7.8276405295714685e-16,
+      "numericalVerificationRecord": {
+        "curve_id": "bodice-front-armscye-m005",
+        "operation_type": "INVERSE_ARC_LENGTH",
+        "parameter_bracket_t": [
+          0.4256576177230207,
+          0.42565761772302074
+        ],
+        "parameter_uncertainty_dt": 5.551115123125783e-17,
+        "local_speed_upper_bound_cm_per_t": 14.101023588867303,
+        "propagated_position_error_cm": 7.8276405295714685e-16,
+        "direct_geometric_error_bound_cm": 8.881784197001252e-16,
+        "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
+        "working_precision_bits": 113,
+        "adaptive_subdivision_panels": 11,
+        "certified_within_tolerance": true
+      },
       "passed": true
     },
     {
       "targetFraction": 0.5,
       "targetArcLengthCm": 8.33282526,
       "tStar": 0.667210977108,
+      "tBracket": [
+        0.6672109771076997,
+        0.6672109771076998
+      ],
       "arcLengthResidualCm": 1.7763568394002505e-15,
       "deltaT": 1.1102230246251565e-16,
+      "localSpeedUpperBoundCmPerT": 20.46983071,
       "deltaPosCm": 2.272607736949286e-15,
+      "numericalVerificationRecord": {
+        "curve_id": "bodice-front-armscye-m005",
+        "operation_type": "INVERSE_ARC_LENGTH",
+        "parameter_bracket_t": [
+          0.6672109771076997,
+          0.6672109771076998
+        ],
+        "parameter_uncertainty_dt": 1.1102230246251565e-16,
+        "local_speed_upper_bound_cm_per_t": 20.46983071456822,
+        "propagated_position_error_cm": 2.272607736949286e-15,
+        "direct_geometric_error_bound_cm": 1.7763568394002505e-15,
+        "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
+        "working_precision_bits": 113,
+        "adaptive_subdivision_panels": 19,
+        "certified_within_tolerance": true
+      },
       "passed": true
     },
     {
       "targetFraction": 0.75,
       "targetArcLengthCm": 12.49923789,
       "tStar": 0.848755041555,
+      "tBracket": [
+        0.8487550415554233,
+        0.8487550415554234
+      ],
       "arcLengthResidualCm": 1.7763568394002505e-15,
       "deltaT": 1.1102230246251565e-16,
+      "localSpeedUpperBoundCmPerT": 25.44632635,
       "deltaPosCm": 2.8251097400949894e-15,
+      "numericalVerificationRecord": {
+        "curve_id": "bodice-front-armscye-m005",
+        "operation_type": "INVERSE_ARC_LENGTH",
+        "parameter_bracket_t": [
+          0.8487550415554233,
+          0.8487550415554234
+        ],
+        "parameter_uncertainty_dt": 1.1102230246251565e-16,
+        "local_speed_upper_bound_cm_per_t": 25.446326345545106,
+        "propagated_position_error_cm": 2.8251097400949894e-15,
+        "direct_geometric_error_bound_cm": 1.7763568394002505e-15,
+        "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
+        "working_precision_bits": 113,
+        "adaptive_subdivision_panels": 19,
+        "certified_within_tolerance": true
+      },
       "passed": true
     }
   ],

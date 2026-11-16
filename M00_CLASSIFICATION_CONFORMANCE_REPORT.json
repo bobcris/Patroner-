@@ -1,0 +1,168 @@
+{
+  "deliverable": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
+  "checkpoint": "15",
+  "remediatedFinding": "FINDING-TAX-01",
+  "governingADR": "ADR-009 (R2.1.2-R1 \u00a72.2, \u00a74.2, \u00a74.3, \u00a74.4, \u00a75.3)",
+  "canonicalOffsetClassificationsVerifiedCount": 7,
+  "canonicalOffsetTaxonomy": [
+    {
+      "classification": "CERTIFIED_VALID",
+      "adr009Section": "\u00a74.3 / \u00a75.3 (verification_outcome = CERTIFIED_VALID, failure_category = NONE)",
+      "mathematicalCondition": "Q(t) > 0 (or removable degeneracy) and f(t) = 1 - s*d*kappa(t) >= epsilon_reg = 0.05 across [0, 1], zero local/global self-intersections",
+      "verifiedByCases": [
+        "AG-01",
+        "AG-04",
+        "AG-05",
+        "AG-10a",
+        "AG-11",
+        "AG-12",
+        "AG-13",
+        "AG-14",
+        "AG-17",
+        "ADR009-S6-10 (convex)"
+      ]
+    },
+    {
+      "classification": "REGULARITY_MARGIN_VIOLATION",
+      "adr009Section": "\u00a74.4 Category 1",
+      "mathematicalCondition": "Q(t) > 0 and 0 < min_{t in [0,1]} f(t) < epsilon_reg = 0.05",
+      "verifiedByCases": [
+        "ADR009-S6-09"
+      ]
+    },
+    {
+      "classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "adr009Section": "\u00a74.4 Category 2 (ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP)",
+      "mathematicalCondition": "(Q(t*) > 0 and f(t*) = 1 - s*d*kappa(t*) = 0, including complete focal collapse d=R and grazing f=0, f'=0) OR genuine base-curve geometric cusp Q(t*) = 0",
+      "verifiedByCases": [
+        "AG-02",
+        "AG-06 (at cusp roots t1*, t2*)",
+        "AG-07",
+        "AG-09",
+        "AG-10b",
+        "AG-16",
+        "ADR009-S6-17",
+        "ADR009-CASE5-COLLAPSED"
+      ]
+    },
+    {
+      "classification": "TANGENT_REVERSAL",
+      "adr009Section": "\u00a74.4 Category 3",
+      "mathematicalCondition": "Q(t) > 0 and f(t) = 1 - s*d*kappa(t) < 0 (unit tangent of O(t) reverses relative to B(t))",
+      "verifiedByCases": [
+        "AG-03 (f=-0.20 < 0 everywhere without zero-speed cusp)",
+        "AG-06 (on (t1*, t2*) alongside cusp roots)",
+        "AG-08",
+        "ADR009-S6-10 (concave)"
+      ]
+    },
+    {
+      "classification": "LOCAL_SELF_INTERSECTION",
+      "adr009Section": "\u00a74.4 Category 4",
+      "mathematicalCondition": "O(t1*) = O(t2*) for t1* != t2* within a local swallowtail or corner neighborhood",
+      "verifiedByCases": [
+        "AG-08"
+      ]
+    },
+    {
+      "classification": "GLOBAL_SELF_INTERSECTION",
+      "adr009Section": "\u00a74.4 Category 5",
+      "mathematicalCondition": "O_i(t1*) = O_j(t2*) between non-adjacent contour segments where each segment is locally regular f_i(t) >= epsilon_reg",
+      "verifiedByCases": [
+        "AG-15"
+      ]
+    },
+    {
+      "classification": "INCONCLUSIVE",
+      "adr009Section": "\u00a74.4 Category 6 & \u00a75.3 Fail-Closed Rule",
+      "mathematicalCondition": "Interval enclosure straddles threshold at subdivision/precision ceiling; sets verification_outcome=INCONCLUSIVE and is_production_ready=False",
+      "verifiedByCases": [
+        "ADR009-S6-16"
+      ]
+    }
+  ],
+  "baseCurveSingularityClassificationsVerifiedCount": 5,
+  "baseCurveSingularityTaxonomy": [
+    {
+      "classification": "REGULAR_BASE_CURVE",
+      "stationaryParameterizationStatus": "NONE_REGULAR_SPEED",
+      "mathematicalCondition": "Q(t) = ||B'(t)||_2^2 > 0 for all t in [0, 1]",
+      "verifiedByCases": [
+        "AG-01..AG-08",
+        "AG-12..AG-17"
+      ]
+    },
+    {
+      "classification": "GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD",
+      "stationaryParameterizationStatus": "GENUINE_BASE_GEOMETRIC_SINGULARITY",
+      "mathematicalCondition": "Interior Q(t*) = 0 with even first non-vanishing Taylor order m = 2 (T_-(t*) = -T_+(t*), reversal = pi rad)",
+      "verifiedByCases": [
+        "AG-09",
+        "ADR009-S6-17"
+      ]
+    },
+    {
+      "classification": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "stationaryParameterizationStatus": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "mathematicalCondition": "Q(t*) = 0 with odd first non-vanishing Taylor order m = 3 (T_-(t*) = T_+(t*) and regular limiting curvature kappa_lim = 0)",
+      "verifiedByCases": [
+        "AG-11"
+      ]
+    },
+    {
+      "classification": "ENDPOINT_TANGENTIAL_DEGENERACY",
+      "stationaryParameterizationStatus": "ENDPOINT_TANGENTIAL_DEGENERACY",
+      "mathematicalCondition": "Endpoint t* in {0, 1} with B'(t*) = 0 (P1=P0 or P2=P3); collinear B''x B'''=0 is removable (AG-10a), non-collinear B''x B'''!=0 has |kappa|->inf (AG-10b)",
+      "verifiedByCases": [
+        "AG-10a",
+        "AG-10b"
+      ]
+    },
+    {
+      "classification": "COLLAPSED_ZERO_LENGTH_CURVE",
+      "stationaryParameterizationStatus": "COLLAPSED_ZERO_LENGTH_CURVE",
+      "mathematicalCondition": "B'(t) === 0 for all t in [0, 1] (P0 = P1 = P2 = P3)",
+      "verifiedByCases": [
+        "ADR009-CASE5-COLLAPSED"
+      ]
+    }
+  ],
+  "keyMathematicalDistinctionsVerified": {
+    "ag02FocalCollapseVsAg03TangentReversal": {
+      "ag02_d10_equals_R10": {
+        "f": 0.0,
+        "offsetSpeedNorm": 0.0,
+        "hasZeroSpeedCuspOnDomain": true,
+        "hasTangentReversalOnDomain": false,
+        "classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
+      },
+      "ag03_d12_exceeds_R10": {
+        "f": -0.2,
+        "offsetSpeedNorm": 2.0,
+        "hasZeroSpeedCuspOnDomain": false,
+        "hasTangentReversalOnDomain": true,
+        "classification": "TANGENT_REVERSAL"
+      }
+    },
+    "ag06TransverseCuspAndTangentReversalBothRecorded": {
+      "activeClassificationsOnDomain": [
+        "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "TANGENT_REVERSAL"
+      ],
+      "hasZeroSpeedCuspOnDomain": true,
+      "hasTangentReversalOnDomain": true
+    },
+    "ag11RemovableParameterizationDegeneracySeparatedFromFailure": {
+      "baseCurveSingularityClassification": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "stationaryParameterizationStatus": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "verificationOutcome": "CERTIFIED_VALID"
+    },
+    "s6_16InconclusiveFailClosedEnforced": {
+      "verificationOutcome": "INCONCLUSIVE",
+      "canonicalOffsetClassification": "INCONCLUSIVE",
+      "isProductionReady": false
+    }
+  },
+  "allConforming": true
+}

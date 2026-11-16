@@ -3,30 +3,82 @@
   "artifactName": "AnthropometricVerificationReport.json",
   "goldenProfilesValidatedCount": 3,
   "invalidAnatomicalCovarianceRejected": true,
+  "covarianceNegativeChecks": [
+    {
+      "caseId": "COV-01-LOW-HIP-SMALLER-THAN-HIGH-HIP",
+      "rejected": true
+    },
+    {
+      "caseId": "COV-02-BUST-SPAN-EXCEEDS-35-PERCENT-BUST",
+      "rejected": true
+    },
+    {
+      "caseId": "COV-03-ACROSS-BACK-EXCEEDS-55-PERCENT-BUST",
+      "rejected": true
+    },
+    {
+      "caseId": "COV-04-WAIST-EXCEEDS-LOW-HIP-PLUS-12CM",
+      "rejected": true
+    }
+  ],
   "dec11TwoTierSeamTolerancePolicy": {
     "tier1CadGeometryMaxDeltaCm": 0.05,
     "tier2PhysicalSewnMaxDeltaCm": 0.2,
+    "computedFromDraftedBezierCurves": true,
     "pairedSeamChecks": [
       {
+        "profileId": "STD-M",
         "seamPair": "Bodice Front Side <-> Bodice Back Side",
-        "edgeACm": 22.0,
-        "edgeBCm": 22.0,
+        "edgeACm": 21.102068,
+        "edgeBCm": 21.102068,
+        "edgeAC1CertIntervalCm": [
+          21.102068,
+          21.102068
+        ],
+        "edgeBC1CertIntervalCm": [
+          21.102068,
+          21.102068
+        ],
+        "quadraturePanelsUsed": 6,
         "targetEaseCm": 0.0,
-        "cadDeltaCm": 0.0
+        "cadDeltaCm": 0.0,
+        "withinTier1CadTolerance0_05Cm": true
       },
       {
+        "profileId": "STD-M",
         "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
         "edgeACm": 12.8,
         "edgeBCm": 12.8,
+        "edgeAC1CertIntervalCm": [
+          12.8,
+          12.8
+        ],
+        "edgeBC1CertIntervalCm": [
+          12.8,
+          12.8
+        ],
+        "quadraturePanelsUsed": 6,
         "targetEaseCm": 0.0,
-        "cadDeltaCm": 0.0
+        "cadDeltaCm": 0.0,
+        "withinTier1CadTolerance0_05Cm": true
       },
       {
+        "profileId": "STD-M",
         "seamPair": "Skirt Front Side Curve <-> Skirt Back Side Curve",
-        "edgeACm": 65.184,
-        "edgeBCm": 65.182,
+        "edgeACm": 66.117865,
+        "edgeBCm": 66.115728,
+        "edgeAC1CertIntervalCm": [
+          66.117613,
+          66.118116
+        ],
+        "edgeBC1CertIntervalCm": [
+          66.115478,
+          66.115978
+        ],
+        "quadraturePanelsUsed": 38,
         "targetEaseCm": 0.0,
-        "cadDeltaCm": 0.002
+        "cadDeltaCm": 0.002137,
+        "withinTier1CadTolerance0_05Cm": true
       }
     ]
   },

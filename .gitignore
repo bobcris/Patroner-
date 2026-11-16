@@ -8,3 +8,6 @@ coverage/
 !.env.example
 .aistudio/
 .playwright-cli/
+__pycache__/
+*.pyc
+.pytest_cache/

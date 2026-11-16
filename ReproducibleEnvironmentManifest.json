@@ -1,0 +1,131 @@
+{
+  "milestoneId": "M00.9-M00.10",
+  "artifactName": "ReproducibleEnvironmentManifest.json",
+  "checkpoint": 15,
+  "governingAuthorization": {
+    "checkpoint12Date": "2026-11-16",
+    "baselineBlueprint": "R2.1.2-R1",
+    "preRestartGateAuth1CommitSha": "6938f808629276fd1b0860fba407b42f5cb40aaf",
+    "recoveryAnchorCommitSha": "282a303ea1126fb3b1da368e4e8e4ddbeb59c552",
+    "synchronizedM00SubmissionCommitSha": "edafe5e9e6994233daeaedf5826c691a934bc013",
+    "checkpoint13aAuditCommitSha": "0f89b292d402a4c829fdfa78a07b8dc4143df2cb",
+    "remediationBranch": "fix/m00-evidence-remediation",
+    "approvedDecisionsAtGateAuth1": [
+      "Gate Auth-1",
+      "DEC-01",
+      "DEC-13 Stage 1"
+    ],
+    "mandatoryNextGate": "Gate Auth-2 / DEC-13 Stage 2 (Blocks M02 Production Implementation)"
+  },
+  "runtimeEnvironment": {
+    "pythonVersion": "3.10.12",
+    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+    "machine": "x86_64",
+    "pythonHashSeed": "0",
+    "pinnedPackages": {
+      "mpmath": "1.4.1",
+      "python-flint": "0.9.0",
+      "pydantic": "2.14.3",
+      "jsonschema": "4.26.0",
+      "numpy": "2.2.6",
+      "scipy": "1.15.3",
+      "pytest": "9.2.0"
+    }
+  },
+  "deterministicReplayVerified": true,
+  "artifactDigests": [
+    {
+      "artifact": "SchemasLockReport.json",
+      "path": "artifacts/m00/SchemasLockReport.json",
+      "sha256": "8a0035cbd13390f223c122b25f902485faf739fe403e407bb944a2b72d1259da",
+      "bytes": "6528"
+    },
+    {
+      "artifact": "BaselineDivergenceRegistry.json",
+      "path": "artifacts/m00/BaselineDivergenceRegistry.json",
+      "sha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d",
+      "bytes": "4987"
+    },
+    {
+      "artifact": "IntervalLibraryQualificationReport.json",
+      "path": "artifacts/m00/IntervalLibraryQualificationReport.json",
+      "sha256": "8382162acde12c6a26d4911598bf9cc7f8627c0ce9d299da6da3ee0434c89a53",
+      "bytes": "14525"
+    },
+    {
+      "artifact": "AdversarialGeometryVerificationReport.json",
+      "path": "artifacts/m00/AdversarialGeometryVerificationReport.json",
+      "sha256": "71d440ca22da6ba302f59cd2c281de7cb25f656e3fd928d242e3bbc16b5cb277",
+      "bytes": "47716"
+    },
+    {
+      "artifact": "ArcLengthVerificationReport.json",
+      "path": "artifacts/m00/ArcLengthVerificationReport.json",
+      "sha256": "ebd505eb3a154e8fb5f0cef1deaad3f84cedfe76087d8330ee91eb75cbb294d2",
+      "bytes": "4747"
+    },
+    {
+      "artifact": "TopologyVerificationReport.json",
+      "path": "artifacts/m00/TopologyVerificationReport.json",
+      "sha256": "c6e21e20645977515e6f9cbd4387f1438813367d6f62380d139aa59a8d55e255",
+      "bytes": "904"
+    },
+    {
+      "artifact": "DxfRoundTripVerificationReport.json",
+      "path": "artifacts/m00/DxfRoundTripVerificationReport.json",
+      "sha256": "e3552388ecbe36fdfbd51b6bd167d70a4c86f4f53d644712c23ddcf899347c01",
+      "bytes": "1623"
+    },
+    {
+      "artifact": "AnthropometricVerificationReport.json",
+      "path": "artifacts/m00/AnthropometricVerificationReport.json",
+      "sha256": "fb8dede0172764f59b999351b50eec8ab87b01474954001c9547df7d5a642d51",
+      "bytes": "2243"
+    }
+  ],
+  "checkpoint15DeliverableDigests": [
+    {
+      "artifact": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
+      "path": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
+      "sha256": "5a96238fb88c8fd8814c89934e74a68470f3fc352a669e920ea574a3cb12cd78",
+      "bytes": "17069"
+    },
+    {
+      "artifact": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
+      "path": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
+      "sha256": "a7e8c1b84a46c8a5cc9e6b1594ded3ce271a9ee24c0dc28aa69d7cece35bb896",
+      "bytes": "12631"
+    },
+    {
+      "artifact": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
+      "path": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
+      "sha256": "e776001524569e1adcdabb6b0f14e463e53c9d1881ade40662f1cdf3c19bb7a1",
+      "bytes": "6353"
+    },
+    {
+      "artifact": "M00_INTERVAL_QUALIFICATION_REPORT.json",
+      "path": "M00_INTERVAL_QUALIFICATION_REPORT.json",
+      "sha256": "8382162acde12c6a26d4911598bf9cc7f8627c0ce9d299da6da3ee0434c89a53",
+      "bytes": "14525"
+    },
+    {
+      "artifact": "M00_CONTRACT_PARITY_REPORT.json",
+      "path": "M00_CONTRACT_PARITY_REPORT.json",
+      "sha256": "5136264faf0be46ec07d25cfa8c17ad9b0840f96b0b0ace7d6c9a16ae930271d",
+      "bytes": "7074"
+    },
+    {
+      "artifact": "M00_SUBORACLE_VERIFICATION_REPORT.json",
+      "path": "M00_SUBORACLE_VERIFICATION_REPORT.json",
+      "sha256": "9487abd2a96e19c6fbb829f52dbca56e94b6c2f91237c220470baea692856e5f",
+      "bytes": "10437"
+    },
+    {
+      "artifact": "M00_REPRODUCIBILITY_REPORT.json",
+      "path": "M00_REPRODUCIBILITY_REPORT.json",
+      "sha256": "ed5540fd543d1abe5d8f73c46ddd93feb910dd27a5559b97fbbb14a0ffc6a58b",
+      "bytes": "2879"
+    }
+  ],
+  "allM00SubWorkloadsPassed": true
+}

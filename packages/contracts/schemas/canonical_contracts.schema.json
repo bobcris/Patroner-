@@ -50,7 +50,59 @@
         "p3": { "$ref": "#/$defs/Point2D" }
       }
     },
-    "SeamAllowanceSpec": {
+    "CanonicalOffsetClassification": {
+      "type": "string",
+      "description": "ADR-009 §4.3-4.4 Six Canonical Offset Classifications plus CERTIFIED_VALID when no failure occurs.",
+      "enum": [
+        "CERTIFIED_VALID",
+        "REGULARITY_MARGIN_VIOLATION",
+        "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "TANGENT_REVERSAL",
+        "LOCAL_SELF_INTERSECTION",
+        "GLOBAL_SELF_INTERSECTION",
+        "INCONCLUSIVE"
+      ]
+    },
+    "BaseCurveSingularityClassification": {
+      "type": "string",
+      "description": "ADR-009 §2.2 & §4.2 Separate 5-Way Base-Curve Singularity Classification where Q(t*) = 0.",
+      "enum": [
+        "REGULAR_BASE_CURVE",
+        "GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD",
+        "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+        "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "COLLAPSED_ZERO_LENGTH_CURVE"
+      ]
+    },
+    "StationaryParameterizationStatus": {
+      "type": "string",
+      "description": "ADR-009 §5.3 stationary_parameterization_status enum for OffsetValidationRecord.",
+      "enum": [
+        "NONE_REGULAR_SPEED",
+        "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+        "GENUINE_BASE_GEOMETRIC_SINGULARITY",
+        "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "COLLAPSED_ZERO_LENGTH_CURVE"
+      ]
+    },
+    "OffsetFailureCategory": {
+      "type": "string",
+      "description": "ADR-009 §5.3 failure_category enum for OffsetValidationRecord.",
+      "enum": [
+        "NONE",
+        "REGULARITY_MARGIN_VIOLATION",
+        "ACTUAL_ZERO_SPEED_CUSP",
+        "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "TANGENT_REVERSAL",
+        "LOCAL_OFFSET_SELF_INTERSECTION",
+        "LOCAL_SELF_INTERSECTION",
+        "GLOBAL_CONTOUR_SELF_INTERSECTION",
+        "GLOBAL_SELF_INTERSECTION",
+        "INCONCLUSIVE_VERIFICATION",
+        "INCONCLUSIVE"
+      ]
+    },
+    "SeamAllowance": {
       "type": "object",
       "required": ["segmentId", "distanceCm", "directionSign", "joinStyle", "miterLimit"],
       "additionalProperties": false,
@@ -66,7 +118,10 @@
         "miterLimit": { "type": "number", "minimum": 1.0, "maximum": 10.0 }
       }
     },
-    "NotchSpec": {
+    "SeamAllowanceSpec": {
+      "$ref": "#/$defs/SeamAllowance"
+    },
+    "Notch": {
       "type": "object",
       "required": ["id", "segmentId", "targetArcLengthCm", "parameterT", "position", "normalVector", "notchType"],
       "additionalProperties": false,
@@ -81,6 +136,9 @@
         "arcLengthResidualCm": { "type": "number", "minimum": 0.0, "maximum": 1e-7 }
       }
     },
+    "NotchSpec": {
+      "$ref": "#/$defs/Notch"
+    },
     "RootBracketCertificate": {
       "type": "object",
       "required": ["tLower", "tUpper", "deltaT", "maxSpeedOnBracket", "deltaPosCm", "multiplicityOrOrder"],
@@ -94,42 +152,217 @@
         "multiplicityOrOrder": { "type": "string", "minLength": 1 }
       }
     },
-    "OffsetClassificationCategory": {
-      "type": "string",
-      "enum": [
-        "CERTIFIED_REGULAR",
-        "ACTUAL_ZERO_SPEED_CUSP",
-        "ACTUAL_CURVATURE_CUSP",
-        "REMOVABLE_PARAMETERIZATION_DEGENERACY",
-        "TANGENTIAL_CUSP_DEGENERACY",
-        "SELF_INTERSECTING_NON_LOCAL"
-      ]
+    "SelfIntersectionCertificate": {
+      "type": "object",
+      "required": [
+        "scope",
+        "segmentIdA",
+        "segmentIdB",
+        "t1Bracket",
+        "t2Bracket",
+        "intersectionPointCm",
+        "residualDistanceCm"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scope": { "type": "string", "enum": ["LOCAL", "GLOBAL"] },
+        "segmentIdA": { "type": "string", "minLength": 1 },
+        "segmentIdB": { "type": "string", "minLength": 1 },
+        "t1Bracket": {
+          "type": "array",
+          "prefixItems": [{ "type": "number" }, { "type": "number" }],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "t2Bracket": {
+          "type": "array",
+          "prefixItems": [{ "type": "number" }, { "type": "number" }],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "intersectionPointCm": { "$ref": "#/$defs/Point2D" },
+        "residualDistanceCm": { "type": "number", "minimum": 0.0, "maximum": 1e-6 }
+      }
+    },
+    "NumericalVerificationRecord": {
+      "type": "object",
+      "description": "ADR-009 §2.5 Mandatory Numerical Verification Record separating parameter uncertainty delta_t from geometric error.",
+      "required": [
+        "curve_id",
+        "operation_type",
+        "parameter_bracket_t",
+        "parameter_uncertainty_dt",
+        "local_speed_upper_bound_cm_per_t",
+        "propagated_position_error_cm",
+        "direct_geometric_error_bound_cm",
+        "propagation_method",
+        "working_precision_bits",
+        "adaptive_subdivision_panels",
+        "certified_within_tolerance"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "curve_id": { "type": "string", "minLength": 1 },
+        "operation_type": {
+          "type": "string",
+          "enum": [
+            "ARC_LENGTH",
+            "INVERSE_ARC_LENGTH",
+            "OFFSET_CURVE",
+            "CURVE_INTERSECTION",
+            "ROOT_ISOLATION"
+          ]
+        },
+        "parameter_bracket_t": {
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "parameter_uncertainty_dt": { "type": "number", "minimum": 0.0, "maximum": 1e-12 },
+        "local_speed_upper_bound_cm_per_t": { "type": "number", "minimum": 0.0 },
+        "propagated_position_error_cm": { "type": "number", "minimum": 0.0 },
+        "direct_geometric_error_bound_cm": { "type": "number", "minimum": 0.0 },
+        "propagation_method": {
+          "type": "string",
+          "enum": [
+            "B1_FIRST_ORDER_UPPER_BOUND",
+            "B2_INTERVAL_IMAGE_ENCLOSURE",
+            "C1_CERT_CHORD_POLYGON_BOUNDS"
+          ]
+        },
+        "working_precision_bits": { "type": "integer", "minimum": 53, "maximum": 336 },
+        "adaptive_subdivision_panels": { "type": "integer", "minimum": 1 },
+        "certified_within_tolerance": { "type": "boolean" }
+      }
+    },
+    "OffsetValidationRecord": {
+      "type": "object",
+      "description": "ADR-009 §5.3 Mandatory Offset Validation Record produced by the C1-Cert oracle.",
+      "required": [
+        "segment_id",
+        "piece_id",
+        "contour_orientation",
+        "offset_direction_sign_s",
+        "offset_distance_cm",
+        "regularity_margin_epsilon",
+        "min_base_speed_squared_interval",
+        "min_offset_speed_factor_interval",
+        "has_zero_speed_cusp_on_domain",
+        "has_tangent_reversal_on_domain",
+        "stationary_parameterization_status",
+        "base_curve_singularity_classification",
+        "isolated_cusp_roots_t",
+        "isolated_self_intersections",
+        "max_geometric_deviation_bound_cm",
+        "verification_outcome",
+        "failure_category",
+        "canonical_offset_classification",
+        "active_classifications_on_domain",
+        "working_precision_bits",
+        "is_production_ready"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "segment_id": { "type": "string", "minLength": 1 },
+        "piece_id": { "type": "string", "minLength": 1 },
+        "contour_orientation": { "type": "string", "enum": ["CCW_EXTERIOR", "CW_CUTOUT"] },
+        "offset_direction_sign_s": { "type": "integer", "enum": [-1, 1] },
+        "offset_distance_cm": { "type": "number", "minimum": 0.0 },
+        "regularity_margin_epsilon": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 0.5 },
+        "min_base_speed_squared_interval": {
+          "type": "array",
+          "prefixItems": [{ "type": "number" }, { "type": "number" }],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "min_offset_speed_factor_interval": {
+          "type": "array",
+          "prefixItems": [{ "type": "number" }, { "type": "number" }],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "has_zero_speed_cusp_on_domain": { "type": "boolean" },
+        "has_tangent_reversal_on_domain": { "type": "boolean" },
+        "stationary_parameterization_status": { "$ref": "#/$defs/StationaryParameterizationStatus" },
+        "base_curve_singularity_classification": { "$ref": "#/$defs/BaseCurveSingularityClassification" },
+        "isolated_cusp_roots_t": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [{ "type": "number" }, { "type": "number" }],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "isolated_self_intersections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SelfIntersectionCertificate" }
+        },
+        "max_geometric_deviation_bound_cm": { "type": "number", "minimum": 0.0 },
+        "verification_outcome": {
+          "type": "string",
+          "enum": ["CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"]
+        },
+        "failure_category": { "$ref": "#/$defs/OffsetFailureCategory" },
+        "canonical_offset_classification": { "$ref": "#/$defs/CanonicalOffsetClassification" },
+        "active_classifications_on_domain": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/CanonicalOffsetClassification" }
+        },
+        "working_precision_bits": { "type": "integer", "minimum": 53, "maximum": 336 },
+        "is_production_ready": { "type": "boolean" }
+      }
     },
     "OffsetClassificationReport": {
       "type": "object",
       "required": [
         "segmentId",
-        "category",
+        "canonicalOffsetClassification",
+        "activeClassificationsOnDomain",
+        "baseCurveSingularityClassification",
+        "verificationOutcome",
+        "failureCategory",
         "directionSign",
         "offsetDistanceCm",
         "minBaseSpeedSquaredQ",
         "minOffsetSpeedFactorF",
+        "hasZeroSpeedCuspOnDomain",
+        "hasTangentReversalOnDomain",
         "gridErrorCm",
         "certifiedIntervalErrorCm",
         "maxJoinTangentDeltaDeg",
         "reparameterized",
         "trimmed",
         "isolatedRoots",
-        "oracleTierUsed"
+        "oracleTierUsed",
+        "isProductionReady"
       ],
       "additionalProperties": false,
       "properties": {
         "segmentId": { "type": "string", "minLength": 1 },
-        "category": { "$ref": "#/$defs/OffsetClassificationCategory" },
+        "canonicalOffsetClassification": { "$ref": "#/$defs/CanonicalOffsetClassification" },
+        "activeClassificationsOnDomain": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/CanonicalOffsetClassification" }
+        },
+        "baseCurveSingularityClassification": { "$ref": "#/$defs/BaseCurveSingularityClassification" },
+        "verificationOutcome": {
+          "type": "string",
+          "enum": ["CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"]
+        },
+        "failureCategory": { "$ref": "#/$defs/OffsetFailureCategory" },
         "directionSign": { "type": "integer", "enum": [-1, 1] },
         "offsetDistanceCm": { "type": "number", "minimum": 0.0 },
         "minBaseSpeedSquaredQ": { "type": "number", "minimum": 0.0 },
         "minOffsetSpeedFactorF": { "type": "number" },
+        "hasZeroSpeedCuspOnDomain": { "type": "boolean" },
+        "hasTangentReversalOnDomain": { "type": "boolean" },
         "gridErrorCm": { "type": "number", "minimum": 0.0 },
         "certifiedIntervalErrorCm": { "type": "number", "minimum": 0.0 },
         "maxJoinTangentDeltaDeg": { "type": "number", "minimum": 0.0 },
@@ -139,7 +372,80 @@
           "type": "array",
           "items": { "$ref": "#/$defs/RootBracketCertificate" }
         },
-        "oracleTierUsed": { "type": "string", "enum": ["C1-Fast", "C1-Cert-53bit", "C1-Cert-113bit-Q"] }
+        "oracleTierUsed": {
+          "type": "string",
+          "enum": ["C1-Fast", "C1-Cert-53bit", "C1-Cert-113bit-Q", "C1-Cert-170bit-Q", "C1-Cert-336bit-Q"]
+        },
+        "isProductionReady": { "type": "boolean" }
+      }
+    },
+    "GeometryWarning": {
+      "type": "object",
+      "required": [
+        "warningId",
+        "code",
+        "severity",
+        "classification",
+        "pieceId",
+        "segmentId",
+        "message",
+        "remediationAction"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "warningId": { "type": "string", "minLength": 1 },
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "type": "string", "enum": ["INFO", "WARNING", "ERROR", "CRITICAL_BLOCKING"] },
+        "classification": { "$ref": "#/$defs/CanonicalOffsetClassification" },
+        "pieceId": { "type": "string", "minLength": 1 },
+        "segmentId": { "type": "string", "minLength": 1 },
+        "parameterT": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "message": { "type": "string", "minLength": 1 },
+        "remediationAction": { "type": "string", "minLength": 1 }
+      }
+    },
+    "DxfExportManifest": {
+      "type": "object",
+      "required": [
+        "exportId",
+        "standard",
+        "dxfVersion",
+        "geometryUnit",
+        "requiredLayers",
+        "recoveredLayers",
+        "pieceCodes",
+        "totalVertexCount",
+        "maxRoundTripCoordinateErrorCm",
+        "sha256Digest",
+        "syntheticRoundTripVerified",
+        "externalCadInteroperabilityVerified"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "exportId": { "type": "string", "minLength": 1 },
+        "standard": { "const": "DXF-AAMA / ASTM D6673" },
+        "dxfVersion": { "const": "AC1009" },
+        "geometryUnit": { "const": "cm" },
+        "requiredLayers": {
+          "type": "array",
+          "minItems": 6,
+          "items": { "type": "string", "enum": ["1", "2", "4", "7", "8", "11"] }
+        },
+        "recoveredLayers": {
+          "type": "array",
+          "minItems": 6,
+          "items": { "type": "string" }
+        },
+        "pieceCodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "totalVertexCount": { "type": "integer", "minimum": 3 },
+        "maxRoundTripCoordinateErrorCm": { "type": "number", "minimum": 0.0, "maximum": 0.001 },
+        "sha256Digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "syntheticRoundTripVerified": { "type": "boolean" },
+        "externalCadInteroperabilityVerified": { "type": "boolean" }
       }
     },
     "BodyProfile": {
@@ -186,6 +492,39 @@
         "sleeveLengthCm": { "type": "number", "minimum": 48.0, "maximum": 72.0 }
       }
     },
+    "GarmentSpec": {
+      "type": "object",
+      "required": [
+        "garmentId",
+        "garmentCategory",
+        "blockSystem",
+        "bodyProfileId",
+        "coordinateFrame",
+        "bustEaseCm",
+        "waistEaseCm",
+        "hipEaseCm",
+        "defaultSeamAllowanceCm",
+        "hemAllowanceCm",
+        "grainlineAngleDeg"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "garmentId": { "type": "string", "minLength": 1 },
+        "garmentCategory": {
+          "type": "string",
+          "enum": ["bodice_block", "skirt_block", "sleeve_block", "trouser_block", "dress_block"]
+        },
+        "blockSystem": { "type": "string", "enum": ["ISO_INDUSTRIAL_V1", "MULLER_SOHN", "ALDRICH"] },
+        "bodyProfileId": { "type": "string", "minLength": 1 },
+        "coordinateFrame": { "$ref": "#/$defs/CoordinateFrameSpec" },
+        "bustEaseCm": { "type": "number", "minimum": 0.0, "maximum": 25.0 },
+        "waistEaseCm": { "type": "number", "minimum": 0.0, "maximum": 20.0 },
+        "hipEaseCm": { "type": "number", "minimum": 0.0, "maximum": 25.0 },
+        "defaultSeamAllowanceCm": { "type": "number", "minimum": 0.0, "maximum": 5.0 },
+        "hemAllowanceCm": { "type": "number", "minimum": 0.0, "maximum": 10.0 },
+        "grainlineAngleDeg": { "type": "number", "minimum": -90.0, "maximum": 90.0 }
+      }
+    },
     "PatternPiece": {
       "type": "object",
       "required": [
@@ -196,7 +535,10 @@
         "sewBoundarySegments",
         "cutBoundarySegments",
         "notches",
-        "offsetReports"
+        "seamAllowances",
+        "offsetReports",
+        "offsetValidationRecords",
+        "warnings"
       ],
       "additionalProperties": false,
       "properties": {
@@ -216,11 +558,23 @@
         },
         "notches": {
           "type": "array",
-          "items": { "$ref": "#/$defs/NotchSpec" }
+          "items": { "$ref": "#/$defs/Notch" }
+        },
+        "seamAllowances": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SeamAllowance" }
         },
         "offsetReports": {
           "type": "array",
           "items": { "$ref": "#/$defs/OffsetClassificationReport" }
+        },
+        "offsetValidationRecords": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OffsetValidationRecord" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GeometryWarning" }
         }
       }
     }

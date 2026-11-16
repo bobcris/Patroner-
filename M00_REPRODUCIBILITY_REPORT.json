@@ -1,0 +1,68 @@
+{
+  "deliverable": "M00_REPRODUCIBILITY_REPORT.json",
+  "checkpoint": "15",
+  "pythonHashSeed": "0",
+  "consecutiveRunsCompared": 2,
+  "allMathematicalArtifactsBitExactAcrossRuns": true,
+  "artifactRunComparisons": [
+    {
+      "artifact": "SchemasLockReport.json",
+      "run1Sha256": "8a0035cbd13390f223c122b25f902485faf739fe403e407bb944a2b72d1259da",
+      "run2Sha256": "8a0035cbd13390f223c122b25f902485faf739fe403e407bb944a2b72d1259da",
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "IntervalLibraryQualificationReport.json",
+      "run1Sha256": "8382162acde12c6a26d4911598bf9cc7f8627c0ce9d299da6da3ee0434c89a53",
+      "run2Sha256": "8382162acde12c6a26d4911598bf9cc7f8627c0ce9d299da6da3ee0434c89a53",
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "AdversarialGeometryVerificationReport.json",
+      "run1Sha256": "71d440ca22da6ba302f59cd2c281de7cb25f656e3fd928d242e3bbc16b5cb277",
+      "run2Sha256": "71d440ca22da6ba302f59cd2c281de7cb25f656e3fd928d242e3bbc16b5cb277",
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "ArcLengthVerificationReport.json",
+      "run1Sha256": "ebd505eb3a154e8fb5f0cef1deaad3f84cedfe76087d8330ee91eb75cbb294d2",
+      "run2Sha256": "ebd505eb3a154e8fb5f0cef1deaad3f84cedfe76087d8330ee91eb75cbb294d2",
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "TopologyVerificationReport.json",
+      "run1Sha256": "c6e21e20645977515e6f9cbd4387f1438813367d6f62380d139aa59a8d55e255",
+      "run2Sha256": "c6e21e20645977515e6f9cbd4387f1438813367d6f62380d139aa59a8d55e255",
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "DxfRoundTripVerificationReport.json",
+      "run1Sha256": "e3552388ecbe36fdfbd51b6bd167d70a4c86f4f53d644712c23ddcf899347c01",
+      "run2Sha256": "e3552388ecbe36fdfbd51b6bd167d70a4c86f4f53d644712c23ddcf899347c01",
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "AnthropometricVerificationReport.json",
+      "run1Sha256": "fb8dede0172764f59b999351b50eec8ab87b01474954001c9547df7d5a642d51",
+      "run2Sha256": "fb8dede0172764f59b999351b50eec8ab87b01474954001c9547df7d5a642d51",
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "BaselineDivergenceRegistry.json",
+      "run1Sha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d",
+      "run2Sha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d",
+      "identicalAcrossRuns": true
+    }
+  ],
+  "latencyQualificationPolicy": {
+    "wallClockTimestampsExcludedFromCanonicalJson": true,
+    "perCurveLatencyBudgetMaxMs": 50.0,
+    "allThreeCandidatesVerifiedUnder5MsP95": true,
+    "deterministicOperationCountsPerBenchmarkIteration": {
+      "degree12PowerToBernsteinConversions": 1,
+      "deCasteljauExactSubdivisions": 2,
+      "descartesSignVariationScans": 2,
+      "degree12IntervalHornerEvaluations": 13
+    }
+  }
+}

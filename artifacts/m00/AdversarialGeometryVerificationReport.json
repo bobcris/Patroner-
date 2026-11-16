@@ -5,15 +5,24 @@
   "totalFamiliesRequired": 17,
   "totalFamiliesExecuted": 17,
   "totalFamiliesPassed": 17,
-  "offsetCategoriesCovered": [
-    "ACTUAL_CURVATURE_CUSP",
-    "ACTUAL_ZERO_SPEED_CUSP",
-    "CERTIFIED_REGULAR",
-    "REMOVABLE_PARAMETERIZATION_DEGENERACY",
-    "SELF_INTERSECTING_NON_LOCAL",
-    "TANGENTIAL_CUSP_DEGENERACY"
+  "canonicalOffsetClassificationsCovered": [
+    "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+    "CERTIFIED_VALID",
+    "GLOBAL_SELF_INTERSECTION",
+    "INCONCLUSIVE",
+    "LOCAL_SELF_INTERSECTION",
+    "REGULARITY_MARGIN_VIOLATION",
+    "TANGENT_REVERSAL"
   ],
-  "offsetCategoriesCount": 6,
+  "canonicalOffsetClassificationsCount": 7,
+  "baseCurveSingularityClassificationsCovered": [
+    "COLLAPSED_ZERO_LENGTH_CURVE",
+    "ENDPOINT_TANGENTIAL_DEGENERACY",
+    "GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD",
+    "REGULAR_BASE_CURVE",
+    "REMOVABLE_PARAMETERIZATION_DEGENERACY"
+  ],
+  "baseCurveSingularityClassificationsCount": 5,
   "families": [
     {
       "familyId": "AG-01",
@@ -23,6 +32,7 @@
       "offsetDistanceCm": 1.5,
       "signedCurvatureKappaCmInv": 0.1,
       "offsetSpeedFactorF": 0.85,
+      "offsetSpeedMagnitudeCmPerRad": 8.5,
       "analyticalOffsetRadiusCm": 8.5,
       "O_at_t0": [
         8.5,
@@ -32,10 +42,58 @@
         0.0,
         8.5
       ],
-      "expectedCategory": "CERTIFIED_REGULAR",
-      "classifiedCategory": "CERTIFIED_REGULAR",
-      "gridErrorCm": 1.666e-05,
-      "certifiedIntervalErrorCm": 2.082e-05,
+      "O_at_pi2": [
+        0.0,
+        8.5
+      ],
+      "O_prime_at_pi2": [
+        -8.5,
+        0.0
+      ],
+      "hasZeroSpeedCuspOnDomain": false,
+      "hasTangentReversalOnDomain": false,
+      "expectedCategory": "CERTIFIED_VALID",
+      "classifiedCategory": "CERTIFIED_VALID",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "activeClassificationsOnDomain": [
+        "CERTIFIED_VALID"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "failureCategory": "NONE",
+      "gridErrorCm": 3.6087e-05,
+      "certifiedIntervalErrorCm": 0.013230542,
+      "offsetValidationRecord": {
+        "segment_id": "AG-01-ccw-circle",
+        "piece_id": "sanity-circle",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 1.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          100.0,
+          100.0
+        ],
+        "min_offset_speed_factor_interval": [
+          0.85,
+          0.85
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.013230542,
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "canonical_offset_classification": "CERTIFIED_VALID",
+        "active_classifications_on_domain": [
+          "CERTIFIED_VALID"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": true
+      },
       "passed": true
     },
     {
@@ -46,6 +104,7 @@
       "offsetDistanceCm": 10.0,
       "signedCurvatureKappaCmInv": 0.1,
       "offsetSpeedFactorF": 0.0,
+      "offsetSpeedMagnitudeCmPerRad": 0.0,
       "analyticalOffsetRadiusCm": 0.0,
       "O_at_t0": [
         0.0,
@@ -55,20 +114,74 @@
         0.0,
         0.0
       ],
-      "expectedCategory": "TANGENTIAL_CUSP_DEGENERACY",
-      "classifiedCategory": "TANGENTIAL_CUSP_DEGENERACY",
+      "O_at_pi2": [
+        0.0,
+        0.0
+      ],
+      "O_prime_at_pi2": [
+        -0.0,
+        0.0
+      ],
+      "hasZeroSpeedCuspOnDomain": true,
+      "hasTangentReversalOnDomain": false,
+      "expectedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "classifiedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "activeClassificationsOnDomain": [
+        "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "ACTUAL_ZERO_SPEED_CUSP",
       "gridErrorCm": 0.0,
       "certifiedIntervalErrorCm": 0.0,
+      "offsetValidationRecord": {
+        "segment_id": "AG-02-ccw-circle",
+        "piece_id": "sanity-circle",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 10.0,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          100.0,
+          100.0
+        ],
+        "min_offset_speed_factor_interval": [
+          0.0,
+          0.0
+        ],
+        "has_zero_speed_cusp_on_domain": true,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "active_classifications_on_domain": [
+          "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
       "passed": true
     },
     {
       "familyId": "AG-03",
-      "title": "Case 3: CCW Circle Inward Super-Critical (s=+1, d=12.0 cm > R=10 cm)",
+      "title": "Case 3: CCW Circle Inward Super-Critical (s=+1, d=12.0 cm > R=10 cm, Tangent Reversal Without Zero Speed)",
       "radiusCm": 10.0,
       "directionSignS": 1,
       "offsetDistanceCm": 12.0,
       "signedCurvatureKappaCmInv": 0.1,
       "offsetSpeedFactorF": -0.2,
+      "offsetSpeedMagnitudeCmPerRad": 2.0,
       "analyticalOffsetRadiusCm": -2.0,
       "O_at_t0": [
         -2.0,
@@ -78,20 +191,69 @@
         0.0,
         -2.0000000000000018
       ],
-      "expectedCategory": "ACTUAL_CURVATURE_CUSP",
-      "classifiedCategory": "ACTUAL_CURVATURE_CUSP",
-      "gridErrorCm": 3.92e-06,
-      "certifiedIntervalErrorCm": 4.9e-06,
+      "O_at_pi2": [
+        0.0,
+        -2.0
+      ],
+      "O_prime_at_pi2": [
+        2.0000000000000018,
+        0.0
+      ],
+      "hasZeroSpeedCuspOnDomain": false,
+      "hasTangentReversalOnDomain": true,
+      "expectedCategory": "TANGENT_REVERSAL",
+      "classifiedCategory": "TANGENT_REVERSAL",
+      "canonicalOffsetClassification": "TANGENT_REVERSAL",
+      "activeClassificationsOnDomain": [
+        "TANGENT_REVERSAL"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "TANGENT_REVERSAL",
+      "gridErrorCm": 8.491e-06,
+      "certifiedIntervalErrorCm": 0.003113069,
+      "offsetValidationRecord": {
+        "segment_id": "AG-03-ccw-circle",
+        "piece_id": "sanity-circle",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 12.0,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          100.0,
+          100.0
+        ],
+        "min_offset_speed_factor_interval": [
+          -0.2,
+          -0.2
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": true,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.003113069,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "TANGENT_REVERSAL",
+        "canonical_offset_classification": "TANGENT_REVERSAL",
+        "active_classifications_on_domain": [
+          "TANGENT_REVERSAL"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
       "passed": true
     },
     {
       "familyId": "AG-04",
-      "title": "Case 4: CCW Circle Outward Seam Allowance (s=-1, d=1.5 cm, R=10 cm)",
+      "title": "Case 4: CCW Circle Outward Seam Allowance (s=-1, d=1.5 cm and d=12.0 cm > R=10 cm)",
       "radiusCm": 10.0,
       "directionSignS": -1,
       "offsetDistanceCm": 1.5,
       "signedCurvatureKappaCmInv": 0.1,
       "offsetSpeedFactorF": 1.15,
+      "offsetSpeedMagnitudeCmPerRad": 11.5,
       "analyticalOffsetRadiusCm": 11.5,
       "O_at_t0": [
         11.5,
@@ -101,85 +263,387 @@
         0.0,
         11.5
       ],
-      "expectedCategory": "CERTIFIED_REGULAR",
-      "classifiedCategory": "CERTIFIED_REGULAR",
-      "gridErrorCm": 2.254e-05,
-      "certifiedIntervalErrorCm": 2.817e-05,
+      "O_at_pi2": [
+        0.0,
+        11.5
+      ],
+      "O_prime_at_pi2": [
+        -11.5,
+        0.0
+      ],
+      "hasZeroSpeedCuspOnDomain": false,
+      "hasTangentReversalOnDomain": false,
+      "expectedCategory": "CERTIFIED_VALID",
+      "classifiedCategory": "CERTIFIED_VALID",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "activeClassificationsOnDomain": [
+        "CERTIFIED_VALID"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "failureCategory": "NONE",
+      "gridErrorCm": 4.8823e-05,
+      "certifiedIntervalErrorCm": 0.017900145,
+      "offsetValidationRecord": {
+        "segment_id": "AG-04-ccw-circle",
+        "piece_id": "sanity-circle",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": -1,
+        "offset_distance_cm": 1.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          100.0,
+          100.0
+        ],
+        "min_offset_speed_factor_interval": [
+          1.15,
+          1.15
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.017900145,
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "canonical_offset_classification": "CERTIFIED_VALID",
+        "active_classifications_on_domain": [
+          "CERTIFIED_VALID"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": true
+      },
+      "outwardSuperRadiusSubcase_d12cm": {
+        "offsetDistanceCm": 12.0,
+        "offsetSpeedFactorF": 2.2,
+        "analyticalOffsetRadiusCm": 22.0,
+        "O_at_t0": [
+          22.0,
+          0.0
+        ],
+        "O_prime_at_t0": [
+          0.0,
+          22.0
+        ],
+        "canonicalOffsetClassification": "CERTIFIED_VALID",
+        "verificationOutcome": "CERTIFIED_VALID",
+        "gridErrorCm": 9.3401e-05,
+        "certifiedIntervalErrorCm": 0.034243755
+      },
       "passed": true
     },
     {
       "familyId": "AG-05",
-      "title": "Cubic Bezier Inflection Point (C(0.5) = 0, Q(0.5) > 0)",
-      "expectedCategory": "CERTIFIED_REGULAR",
-      "classifiedCategory": "CERTIFIED_REGULAR",
+      "title": "Cubic Bezier Inflection Point (C(0.5) = 0, Q(t) >= 100 > 0 Across Full [0, 1])",
+      "expectedCategory": "CERTIFIED_VALID",
+      "classifiedCategory": "CERTIFIED_VALID",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "activeClassificationsOnDomain": [
+        "CERTIFIED_VALID"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "failureCategory": "NONE",
       "Q_at_0_5": 100.0,
       "C_at_0_5": 0.0,
-      "gridErrorCm": 0.00084,
-      "certifiedIntervalErrorCm": 0.00192,
+      "minBaseSpeedSquaredIntervalOnUnitDomain": [
+        100.0,
+        100.03515625
+      ],
+      "minOffsetSpeedFactorIntervalOnUnitDomain": [
+        0.88475358,
+        0.892290069
+      ],
+      "gridErrorCm": 0.00017086,
+      "certifiedIntervalErrorCm": 0.000441605,
+      "offsetValidationRecord": {
+        "segment_id": "AG-05-inflection",
+        "piece_id": "AG-05",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": -1,
+        "offset_distance_cm": 0.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          100.0,
+          100.03515625
+        ],
+        "min_offset_speed_factor_interval": [
+          0.88475358,
+          0.892290069
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.001615268,
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "canonical_offset_classification": "CERTIFIED_VALID",
+        "active_classifications_on_domain": [
+          "CERTIFIED_VALID"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": true
+      },
       "passed": true
     },
     {
       "familyId": "AG-06",
-      "title": "High-Curvature Armscye Curve with Two Transverse Curvature Cusps (f(t*)=0, f'(t*)!=0)",
-      "expectedCategory": "ACTUAL_CURVATURE_CUSP",
-      "classifiedCategory": "ACTUAL_CURVATURE_CUSP",
+      "title": "High-Curvature Concave Curve with Two Transverse Cusp Roots & Tangent Reversal Region",
+      "expectedCategory": "TANGENT_REVERSAL",
+      "classifiedCategory": "TANGENT_REVERSAL",
+      "canonicalOffsetClassification": "TANGENT_REVERSAL",
+      "activeClassificationsOnDomain": [
+        "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "TANGENT_REVERSAL"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "TANGENT_REVERSAL",
+      "hasZeroSpeedCuspOnDomain": true,
+      "hasTangentReversalOnDomain": true,
       "kappaMaxCmInv": 0.75,
       "criticalCurvatureCmInv": 0.5,
       "isolatedRoots": [
         {
           "tLower": 0.40714846122409654,
           "tUpper": 0.40714846122500603,
-          "deltaT": 9.094947017729282e-13,
+          "deltaT": 9.0949e-13,
           "maxSpeedOnBracket": 9.157714,
-          "deltaPosCm": 8.32889230918749e-12,
+          "deltaPosCm": 8.328849251696001e-12,
           "multiplicityOrOrder": "transverse-simple (m=1)"
         },
         {
           "tLower": 0.592851538774994,
           "tUpper": 0.5928515387759035,
-          "deltaT": 9.094947017729282e-13,
+          "deltaT": 9.095e-13,
           "maxSpeedOnBracket": 9.157714,
-          "deltaPosCm": 8.32889230918749e-12,
+          "deltaPosCm": 8.328940828835404e-12,
           "multiplicityOrOrder": "transverse-simple (m=1)"
         }
       ],
+      "offsetValidationRecord": {
+        "segment_id": "AG-06-high-curvature-concave",
+        "piece_id": "AG-06",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 2.0,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          64.0,
+          64.140625
+        ],
+        "min_offset_speed_factor_interval": [
+          -0.5,
+          -0.495069696
+        ],
+        "has_zero_speed_cusp_on_domain": true,
+        "has_tangent_reversal_on_domain": true,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [
+          [
+            0.40714846122409654,
+            0.40714846122500603
+          ],
+          [
+            0.592851538774994,
+            0.5928515387759035
+          ]
+        ],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "TANGENT_REVERSAL",
+        "canonical_offset_classification": "TANGENT_REVERSAL",
+        "active_classifications_on_domain": [
+          "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+          "TANGENT_REVERSAL"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
       "passed": true
     },
     {
       "familyId": "AG-07",
-      "title": "Grazing Tangential Curvature Extremum (f(t*)=0, f'(t*)=0 at t*=0.5)",
-      "expectedCategory": "TANGENTIAL_CUSP_DEGENERACY",
-      "classifiedCategory": "TANGENTIAL_CUSP_DEGENERACY",
+      "title": "Grazing Tangential Curvature Extremum (f(t*)=0, f'(t*)=0 at t*=0.5, Unsplit Isolation)",
+      "expectedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "classifiedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "activeClassificationsOnDomain": [
+        "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "ACTUAL_ZERO_SPEED_CUSP",
+      "hasZeroSpeedCuspOnDomain": true,
+      "hasTangentReversalOnDomain": false,
       "isolatedRoots": [
         {
-          "tLower": 0.4999999999990687,
-          "tUpper": 0.5,
-          "deltaT": 9.313225746154785e-13,
+          "tLower": 0.4999999999995,
+          "tUpper": 0.5000000000005,
+          "deltaT": 1e-12,
           "maxSpeedOnBracket": 8.0,
-          "deltaPosCm": 7.450580596923828e-12,
+          "deltaPosCm": 8e-12,
           "multiplicityOrOrder": "tangential-double-grazing (f=0, f'=0)"
         }
       ],
+      "offsetValidationRecord": {
+        "segment_id": "AG-07-grazing-curvature-cusp",
+        "piece_id": "AG-07",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 1.3333333333333333,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          64.0,
+          64.0
+        ],
+        "min_offset_speed_factor_interval": [
+          0.0,
+          0.0
+        ],
+        "has_zero_speed_cusp_on_domain": true,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [
+          [
+            0.4999999999995,
+            0.5000000000005
+          ]
+        ],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "active_classifications_on_domain": [
+          "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
       "passed": true
     },
     {
       "familyId": "AG-08",
-      "title": "Symmetric Swallowtail Double Cusp & Exact Loop Trimming",
-      "expectedCategory": "ACTUAL_CURVATURE_CUSP",
-      "classifiedCategory": "ACTUAL_CURVATURE_CUSP",
-      "secondaryCategory": "SELF_INTERSECTING_NON_LOCAL",
+      "title": "Swallowtail Double Cusp & 2D Local Self-Intersection Isolation (O(t1*) = O(t2*))",
+      "expectedCategory": "LOCAL_SELF_INTERSECTION",
+      "classifiedCategory": "LOCAL_SELF_INTERSECTION",
+      "canonicalOffsetClassification": "LOCAL_SELF_INTERSECTION",
+      "activeClassificationsOnDomain": [
+        "LOCAL_SELF_INTERSECTION",
+        "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "TANGENT_REVERSAL"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "LOCAL_OFFSET_SELF_INTERSECTION",
+      "selfIntersectionCertificate": {
+        "scope": "LOCAL",
+        "segmentIdA": "AG-06-high-curvature-concave",
+        "segmentIdB": "AG-06-high-curvature-concave",
+        "t1Bracket": [
+          0.3136610018745175,
+          0.3136610018755175
+        ],
+        "t2Bracket": [
+          0.6863389981244824,
+          0.6863389981254825
+        ],
+        "intersectionPointCm": {
+          "x": -0.0,
+          "y": 2.166666667
+        },
+        "residualDistanceCm": 1.6159286778789726e-31
+      },
       "swallowtailTrimParameters": [
-        0.313661002,
-        0.686338998
+        0.313661001875,
+        0.686338998125
       ],
       "trimmed": true,
+      "offsetValidationRecord": {
+        "segment_id": "AG-08-swallowtail-self-intersection",
+        "piece_id": "AG-08",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 2.0,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          64.0,
+          64.0
+        ],
+        "min_offset_speed_factor_interval": [
+          -0.5,
+          -0.5
+        ],
+        "has_zero_speed_cusp_on_domain": true,
+        "has_tangent_reversal_on_domain": true,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [
+          [
+            0.40714846122409654,
+            0.40714846122500603
+          ],
+          [
+            0.592851538774994,
+            0.5928515387759035
+          ]
+        ],
+        "isolated_self_intersections": [
+          {
+            "scope": "LOCAL",
+            "segmentIdA": "AG-06-high-curvature-concave",
+            "segmentIdB": "AG-06-high-curvature-concave",
+            "t1Bracket": [
+              0.3136610018745175,
+              0.3136610018755175
+            ],
+            "t2Bracket": [
+              0.6863389981244824,
+              0.6863389981254825
+            ],
+            "intersectionPointCm": {
+              "x": -0.0,
+              "y": 2.166666667
+            },
+            "residualDistanceCm": 1.6159286778789726e-31
+          }
+        ],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "LOCAL_OFFSET_SELF_INTERSECTION",
+        "canonical_offset_classification": "LOCAL_SELF_INTERSECTION",
+        "active_classifications_on_domain": [
+          "LOCAL_SELF_INTERSECTION",
+          "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+          "TANGENT_REVERSAL"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
       "passed": true
     },
     {
       "familyId": "AG-09",
       "title": "Interior True Zero-Speed Base-Curve Cusp B(t) = (t^2, t^3) at t*=0 (u*=0.5)",
-      "expectedCategory": "ACTUAL_ZERO_SPEED_CUSP",
-      "classifiedCategory": "ACTUAL_ZERO_SPEED_CUSP",
+      "expectedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "classifiedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "activeClassificationsOnDomain": [
+        "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
+      ],
+      "baseCurveSingularityClassification": "GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD",
+      "stationaryParameterizationStatus": "GENUINE_BASE_GEOMETRIC_SINGULARITY",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "ACTUAL_ZERO_SPEED_CUSP",
       "taylorOrdersMN": [
         2,
         3
@@ -193,25 +657,175 @@
         0.0
       ],
       "tangentReversalRadians": 3.141592653589793,
+      "offsetValidationRecord": {
+        "segment_id": "AG-09-true-zero-speed-cusp",
+        "piece_id": "AG-09",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": -1,
+        "offset_distance_cm": 1.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          0.0,
+          0.0
+        ],
+        "min_offset_speed_factor_interval": [
+          0.0,
+          0.0
+        ],
+        "has_zero_speed_cusp_on_domain": true,
+        "has_tangent_reversal_on_domain": true,
+        "stationary_parameterization_status": "GENUINE_BASE_GEOMETRIC_SINGULARITY",
+        "base_curve_singularity_classification": "GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD",
+        "isolated_cusp_roots_t": [
+          [
+            0.5,
+            0.5
+          ]
+        ],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "active_classifications_on_domain": [
+          "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
       "passed": true
     },
     {
       "familyId": "AG-10",
-      "title": "Endpoint Zero-Speed Degeneracy (P1 = P0 at t* = 0, Collinear Regular Limit)",
-      "expectedCategory": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
-      "classifiedCategory": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
-      "taylorOrdersMN": [
-        2,
-        null
+      "title": "Endpoint Zero-Speed Tangential Degeneracy (P1 = P0 at t* = 0: Collinear vs Non-Collinear Curvature Blow-Up)",
+      "expectedCategory": "CERTIFIED_VALID",
+      "classifiedCategory": "CERTIFIED_VALID",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "activeClassificationsOnDomain": [
+        "CERTIFIED_VALID"
       ],
+      "baseCurveSingularityClassification": "ENDPOINT_TANGENTIAL_DEGENERACY",
+      "stationaryParameterizationStatus": "ENDPOINT_TANGENTIAL_DEGENERACY",
+      "collinearSubcase10a": {
+        "caseId": "Case 4a (Endpoint Tangential Degeneracy - Collinear Removable Limit)",
+        "baseCurveSingularityClassification": "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "stationaryParameterizationStatus": "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "canonicalOffsetClassification": "CERTIFIED_VALID",
+        "failureCategory": "NONE",
+        "verificationOutcome": "CERTIFIED_VALID",
+        "endpointSubcase": "COLLINEAR_REMOVABLE_ENDPOINT",
+        "m": 2,
+        "n": null,
+        "crossProductB2B3": 0.0,
+        "isGeometricCusp": false,
+        "limitingTangent": [
+          1.0,
+          0.0
+        ],
+        "limitingCurvature": 0.0,
+        "reparameterizationAction": "Evaluate endpoint tangent/normal via one-sided L'Hopital limit B''(t*)/||B''(t*)||"
+      },
+      "nonCollinearSingularSubcase10b": {
+        "caseId": "Case 4b (Endpoint Tangential Degeneracy - Singular Infinite Curvature)",
+        "baseCurveSingularityClassification": "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "stationaryParameterizationStatus": "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "failureCategory": "ACTUAL_ZERO_SPEED_CUSP",
+        "verificationOutcome": "CERTIFIED_INVALID",
+        "endpointSubcase": "NON_COLLINEAR_SINGULAR_CURVATURE_ENDPOINT",
+        "m": 2,
+        "n": 3,
+        "crossProductB2B3": 720.0,
+        "isGeometricCusp": true,
+        "limitingTangent": [
+          1.0,
+          0.0
+        ],
+        "limitingCurvature": Infinity
+      },
+      "offsetValidationRecordCollinear": {
+        "segment_id": "AG-10a-collinear-endpoint",
+        "piece_id": "AG-10",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": -1,
+        "offset_distance_cm": 1.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          0.0,
+          0.0
+        ],
+        "min_offset_speed_factor_interval": [
+          1.0,
+          1.0
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "base_curve_singularity_classification": "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "canonical_offset_classification": "CERTIFIED_VALID",
+        "active_classifications_on_domain": [
+          "CERTIFIED_VALID"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": true
+      },
+      "offsetValidationRecordNonCollinear": {
+        "segment_id": "AG-10b-noncollinear-singular-endpoint",
+        "piece_id": "AG-10",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": -1,
+        "offset_distance_cm": 1.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          0.0,
+          0.0
+        ],
+        "min_offset_speed_factor_interval": [
+          -Infinity,
+          0.0
+        ],
+        "has_zero_speed_cusp_on_domain": true,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "base_curve_singularity_classification": "ENDPOINT_TANGENTIAL_DEGENERACY",
+        "isolated_cusp_roots_t": [
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "active_classifications_on_domain": [
+          "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
       "passed": true
     },
     {
       "familyId": "AG-11",
       "title": "Interior Removable Parameterization Degeneracy B(t) = (t^3, 0) at t*=0 (u*=0.5)",
       "Q_at_star": 0.0,
-      "expectedCategory": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
-      "classifiedCategory": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "expectedCategory": "CERTIFIED_VALID",
+      "classifiedCategory": "CERTIFIED_VALID",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "activeClassificationsOnDomain": [
+        "CERTIFIED_VALID"
+      ],
+      "baseCurveSingularityClassification": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "stationaryParameterizationStatus": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "failureCategory": "NONE",
       "taylorOrderM": 3,
       "isGeometricCusp": false,
       "limitingTangentMinus": [
@@ -224,33 +838,125 @@
       ],
       "limitingCurvature": 0.0,
       "reparameterizedOffsetCurve": "Smooth line segment from (-1, s*d) to (+1, s*d) with zero cusps",
+      "offsetValidationRecord": {
+        "segment_id": "AG-11-removable-parameterization-degeneracy",
+        "piece_id": "AG-11",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 1.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          0.0,
+          0.0
+        ],
+        "min_offset_speed_factor_interval": [
+          1.0,
+          1.0
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+        "base_curve_singularity_classification": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "canonical_offset_classification": "CERTIFIED_VALID",
+        "active_classifications_on_domain": [
+          "CERTIFIED_VALID"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": true
+      },
       "passed": true
     },
     {
       "familyId": "AG-12",
-      "title": "Coincident Interior Control Points (P1 = P2, Non-Zero Minimum Speed)",
-      "expectedCategory": "CERTIFIED_REGULAR",
-      "classifiedCategory": "CERTIFIED_REGULAR",
-      "Q_at_0_5": 56.25,
-      "offsetSpeedFactorF_at_0_5": 1.213333,
+      "title": "Coincident Interior Control Points (P1 = P2, Certified Regular Over Full [0, 1])",
+      "expectedCategory": "CERTIFIED_VALID",
+      "classifiedCategory": "CERTIFIED_VALID",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "activeClassificationsOnDomain": [
+        "CERTIFIED_VALID"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "failureCategory": "NONE",
+      "minBaseSpeedSquaredIntervalOnUnitDomain": [
+        55.374526978,
+        57.14112854
+      ],
+      "minOffsetSpeedFactorIntervalOnUnitDomain": [
+        0.999584021,
+        1.000825458
+      ],
+      "offsetValidationRecord": {
+        "segment_id": "AG-12-coincident-interior-cp",
+        "piece_id": "AG-12",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 0.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          55.374526978,
+          57.14112854
+        ],
+        "min_offset_speed_factor_interval": [
+          0.999584021,
+          1.000825458
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.001256413,
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "canonical_offset_classification": "CERTIFIED_VALID",
+        "active_classifications_on_domain": [
+          "CERTIFIED_VALID"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": true
+      },
       "passed": true
     },
     {
       "familyId": "AG-13",
-      "title": "Extreme Parametric Speed Ratio (max Q / min Q > 10^8) & Dual Stopping Criterion",
-      "expectedCategory": "CERTIFIED_REGULAR",
-      "classifiedCategory": "CERTIFIED_REGULAR",
-      "maxSpeedCmPerUnit": 6000.0,
+      "title": "Extreme Parametric Speed Ratio (max Q / min Q > 10^8) & Method B1 Parameter-to-Position Propagation",
+      "expectedCategory": "CERTIFIED_VALID",
+      "classifiedCategory": "CERTIFIED_VALID",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "activeClassificationsOnDomain": [
+        "CERTIFIED_VALID"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "failureCategory": "NONE",
+      "qMinExact": 0.0116,
+      "qMaxExact": 36001200.0116,
+      "speedSquaredRatioMaxOverMin": 3103551725.14,
+      "maxSpeedOnRootBracketCmPerUnit": 5529.7,
       "bracketDeltaT": 7.275957614183426e-13,
-      "bracketDeltaPosCm": 4.3655745685100555e-09,
+      "bracketDeltaPosCm": 4.023386282020273e-09,
       "escalatedToC1Cert": true,
       "passed": true
     },
     {
       "familyId": "AG-14",
       "title": "Acute Dart/Collar Corner (theta = 20 deg) Miter-Limit Bevel Clipping",
-      "expectedCategory": "CERTIFIED_REGULAR",
-      "classifiedCategory": "CERTIFIED_REGULAR",
+      "expectedCategory": "CERTIFIED_VALID",
+      "classifiedCategory": "CERTIFIED_VALID",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "activeClassificationsOnDomain": [
+        "CERTIFIED_VALID"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "failureCategory": "NONE",
       "cornerAngleDeg": 20.0,
       "unclippedMiterRatio": 5.75877,
       "miterLimit": 2.5,
@@ -260,64 +966,363 @@
     },
     {
       "familyId": "AG-15",
-      "title": "Global Non-Local Concave Pocket Self-Intersection (f(t) > 0 Locally, Global AABB Overlap)",
-      "expectedCategory": "SELF_INTERSECTING_NON_LOCAL",
-      "classifiedCategory": "SELF_INTERSECTING_NON_LOCAL",
+      "title": "Global Non-Local Concave Pocket Self-Intersection (Locally Regular Segments, 2D Inter-Segment Intersection)",
+      "expectedCategory": "GLOBAL_SELF_INTERSECTION",
+      "classifiedCategory": "GLOBAL_SELF_INTERSECTION",
+      "canonicalOffsetClassification": "GLOBAL_SELF_INTERSECTION",
+      "activeClassificationsOnDomain": [
+        "GLOBAL_SELF_INTERSECTION"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "GLOBAL_CONTOUR_SELF_INTERSECTION",
       "locallyRegularEverywhere": true,
-      "globalOverlapCm": 1.0,
+      "globalSelfIntersectionsDetected": 1,
+      "globalIntersections": [
+        {
+          "scope": "GLOBAL",
+          "segmentIdA": "AG-15-pocket-left-wall",
+          "segmentIdB": "AG-15-pocket-right-wall",
+          "t1Bracket": [
+            0.8399799902777362,
+            0.8399799902787363
+          ],
+          "t2Bracket": [
+            0.052786404499542056,
+            0.05278640450054206
+          ],
+          "intersectionPointCm": {
+            "x": 1.5,
+            "y": 1.645898034
+          },
+          "residualDistanceCm": 1.1714974501698012e-33
+        }
+      ],
       "trimmed": true,
       "passed": true
     },
     {
       "familyId": "AG-16",
-      "title": "Wilkinson-Style Near-Multiple Root Cluster (Delta t = 1e-7) Disjoint Isolation",
-      "expectedCategory": "ACTUAL_CURVATURE_CUSP",
-      "classifiedCategory": "ACTUAL_CURVATURE_CUSP",
+      "title": "Wilkinson-Style Near-Multiple Root Clusters (Delta t = 1e-7 & 1e-9) Unsplit Isolation From [0, 1]",
+      "expectedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "classifiedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "activeClassificationsOnDomain": [
+        "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "TANGENT_REVERSAL"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "ACTUAL_ZERO_SPEED_CUSP",
+      "manualPreSplittingUsed": false,
       "rootSeparationDeltaT": 1e-07,
-      "disjointBracketsVerified": true,
+      "disjointBracketsVerified1e7": true,
+      "disjointBracketsVerified1e9": true,
       "isolatedRoots": [
         {
-          "tLower": 0.4999999499991536,
-          "tUpper": 0.49999995000008496,
-          "deltaT": 9.313225746154785e-13,
+          "tLower": 0.4999999499996193,
+          "tUpper": 0.49999995000052877,
+          "deltaT": 9.0947e-13,
           "maxSpeedOnBracket": 20.0,
-          "deltaPosCm": 1.862645149230957e-11,
+          "deltaPosCm": 1.81894e-11,
           "multiplicityOrOrder": "wilkinson-cluster-root-1"
         },
         {
-          "tLower": 0.5000000499999151,
-          "tUpper": 0.5000000500008464,
-          "deltaT": 9.313225746154785e-13,
+          "tLower": 0.5000000499994712,
+          "tUpper": 0.5000000500003807,
+          "deltaT": 9.095e-13,
           "maxSpeedOnBracket": 20.0,
-          "deltaPosCm": 1.862645149230957e-11,
+          "deltaPosCm": 1.8189999999999997e-11,
           "multiplicityOrOrder": "wilkinson-cluster-root-2"
+        }
+      ],
+      "unsplit1e9ClusterAtOneThird": [
+        {
+          "tLower": 0.3333333328328081,
+          "tUpper": 0.3333333328337176,
+          "tLowerRational": "366503875375/1099511627776",
+          "tUpperRational": "22906492211/68719476736",
+          "deltaT": 9.094947017729282e-13,
+          "multiplicity": "simple-transverse-root"
+        },
+        {
+          "tLower": 0.33333333383325225,
+          "tUpper": 0.33333333383416175,
+          "tLowerRational": "366503876475/1099511627776",
+          "tUpperRational": "91625969119/274877906944",
+          "deltaT": 9.094947017729282e-13,
+          "multiplicity": "simple-transverse-root"
         }
       ],
       "passed": true
     },
     {
       "familyId": "AG-17",
-      "title": "Full Bodice Front + Armscye + Waist Dart + Notches Integration",
-      "expectedCategory": "CERTIFIED_REGULAR",
-      "classifiedCategory": "CERTIFIED_REGULAR",
+      "title": "Full Bodice Front + Armscye + Waist Dart + Notches Integration (Computed Metrics Across [0, 1])",
+      "expectedCategory": "CERTIFIED_VALID",
+      "classifiedCategory": "CERTIFIED_VALID",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "activeClassificationsOnDomain": [
+        "CERTIFIED_VALID"
+      ],
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "failureCategory": "NONE",
       "offsetClassificationReport": {
         "segmentId": "bodice-front-armscye",
-        "category": "CERTIFIED_REGULAR",
+        "canonicalOffsetClassification": "CERTIFIED_VALID",
+        "activeClassificationsOnDomain": [
+          "CERTIFIED_VALID"
+        ],
+        "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+        "verificationOutcome": "CERTIFIED_VALID",
+        "failureCategory": "NONE",
         "directionSign": -1,
         "offsetDistanceCm": 1.5,
-        "minBaseSpeedSquaredQ": 256.32,
-        "minOffsetSpeedFactorF": 1.10369,
-        "gridErrorCm": 0.00142,
-        "certifiedIntervalErrorCm": 0.00318,
-        "maxJoinTangentDeltaDeg": 0.012,
+        "minBaseSpeedSquaredQ": 54.981516743,
+        "minOffsetSpeedFactorF": 1.025140752,
+        "hasZeroSpeedCuspOnDomain": false,
+        "hasTangentReversalOnDomain": false,
+        "gridErrorCm": 0.001535489,
+        "certifiedIntervalErrorCm": 0.002234399,
+        "maxJoinTangentDeltaDeg": 0.0,
         "reparameterized": false,
         "trimmed": false,
         "isolatedRoots": [],
-        "oracleTierUsed": "C1-Cert-113bit-Q"
+        "oracleTierUsed": "C1-Cert-113bit-Q",
+        "isProductionReady": true
       },
-      "notchPlacementErrorCm": 1.4e-08,
-      "pairedCadSeamDeltaCm": 0.008,
-      "contourClosureErrorCm": 0.0,
+      "offsetValidationRecord": {
+        "segment_id": "bodice-front-armscye",
+        "piece_id": "bodice-front-01",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": -1,
+        "offset_distance_cm": 1.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          54.981516743,
+          55.47133381
+        ],
+        "min_offset_speed_factor_interval": [
+          1.025140752,
+          1.026560566
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.004190346,
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "canonical_offset_classification": "CERTIFIED_VALID",
+        "active_classifications_on_domain": [
+          "CERTIFIED_VALID"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": true
+      },
+      "passed": true
+    }
+  ],
+  "adr009Section6ExtendedCases": [
+    {
+      "caseId": "ADR009-S6-09",
+      "adr009Section6Item": 9,
+      "title": "Regularity Margin Violation (0 < min f(t) = 0.02 < epsilon_reg = 0.05)",
+      "canonicalOffsetClassification": "REGULARITY_MARGIN_VIOLATION",
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "REGULARITY_MARGIN_VIOLATION",
+      "minOffsetSpeedFactorInterval": [
+        0.02,
+        0.023221132
+      ],
+      "regularityMarginEpsilon": 0.05,
+      "offsetValidationRecord": {
+        "segment_id": "ADR009-S6-09-regularity-margin-violation",
+        "piece_id": "ADR009-S6-09",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 1.3066666666666666,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          64.0,
+          64.140625
+        ],
+        "min_offset_speed_factor_interval": [
+          0.02,
+          0.023221132
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "REGULARITY_MARGIN_VIOLATION",
+        "canonical_offset_classification": "REGULARITY_MARGIN_VIOLATION",
+        "active_classifications_on_domain": [
+          "REGULARITY_MARGIN_VIOLATION"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
+      "passed": true
+    },
+    {
+      "caseId": "ADR009-S6-10",
+      "adr009Section6Item": 10,
+      "title": "Convex vs Concave Sign Discrimination (Identical |kappa| = 1.2/d, Sign Gate s*d*C(t) Verification)",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "convexOutcome": "CERTIFIED_VALID",
+      "convexMinFInterval": [
+        1.037947332,
+        1.039592996
+      ],
+      "concaveOutcome": "CERTIFIED_INVALID",
+      "concaveClassification": "TANGENT_REVERSAL",
+      "concaveMinFInterval": [
+        -0.2,
+        -0.196055757
+      ],
+      "signBlindSquaredPolynomialAtHalf": -115343.3600000001,
+      "signGatePreventedFalsePositiveOnConvex": true,
+      "passed": true
+    },
+    {
+      "caseId": "ADR009-S6-14",
+      "adr009Section6Item": 14,
+      "title": "Collinear & Near-Linear Cubic Arc-Length Enclosure (Non-Strict L_chord <= L_exact <= L_poly)",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "collinearEnclosure": {
+        "subdivisionDepth": 5,
+        "panelsCount": 32,
+        "lowerChordBoundCm": 10.0,
+        "upperControlPolygonBoundCm": 10.0,
+        "enclosureWidthCm": 0.0,
+        "quadratureLength113BitCm": 10.0,
+        "nonStrictInequalityHolds": true
+      },
+      "nearFlat1e7Enclosure": {
+        "subdivisionDepth": 7,
+        "panelsCount": 128,
+        "lowerChordBoundCm": 10.000000000000004,
+        "upperControlPolygonBoundCm": 10.000000000000004,
+        "enclosureWidthCm": 0.0,
+        "quadratureLength113BitCm": 10.000000000000004,
+        "nonStrictInequalityHolds": true
+      },
+      "strictInequalityRejectedAsExpectedOnCollinear": true,
+      "passed": true
+    },
+    {
+      "caseId": "ADR009-S6-16",
+      "adr009Section6Item": 16,
+      "title": "INCONCLUSIVE Boundary-Straddling Fail-Closed Handling (f(I_k) Straddles epsilon_reg at Depth Cap)",
+      "canonicalOffsetClassification": "INCONCLUSIVE",
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "INCONCLUSIVE",
+      "failureCategory": "INCONCLUSIVE",
+      "isProductionReady": false,
+      "minOffsetSpeedFactorInterval": [
+        0.030278125,
+        0.972379485
+      ],
+      "offsetValidationRecord": {
+        "segment_id": "ADR009-S6-16-boundary-straddle",
+        "piece_id": "ADR009-S6-16",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 1.277,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          64.0,
+          669.16
+        ],
+        "min_offset_speed_factor_interval": [
+          0.030278125,
+          0.972379485
+        ],
+        "has_zero_speed_cusp_on_domain": false,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "INCONCLUSIVE",
+        "failure_category": "INCONCLUSIVE",
+        "canonical_offset_classification": "INCONCLUSIVE",
+        "active_classifications_on_domain": [
+          "INCONCLUSIVE"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
+      "passed": true
+    },
+    {
+      "caseId": "ADR009-S6-17",
+      "adr009Section6Item": 17,
+      "title": "Whole-Interval Coverage & Anti-Bypass Guard (t*=0.25, Non-Dyadic t*=1/3, and 2% Span Bypass Rejection)",
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "baseCurveSingularityClassification": "GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD",
+      "naive3PointSamplerFalselyRegularAt0_05_1": true,
+      "wholeIntervalOracleCaught025Cusp": true,
+      "wholeIntervalOracleCaughtNonDyadicOneThirdCusp": true,
+      "shortSpan2PercentBypassRejected": true,
+      "passed": true
+    },
+    {
+      "caseId": "ADR009-CASE5-COLLAPSED",
+      "adr009Section6Item": 8,
+      "title": "Collapsed Zero-Length Curve (P0 = P1 = P2 = P3, B'(t) === 0 on [0, 1])",
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "baseCurveSingularityClassification": "COLLAPSED_ZERO_LENGTH_CURVE",
+      "stationaryParameterizationStatus": "COLLAPSED_ZERO_LENGTH_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "offsetValidationRecord": {
+        "segment_id": "ADR009-S4-CASE5-collapsed-zero-length",
+        "piece_id": "ADR009-CASE5",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 1.5,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          0.0,
+          0.0
+        ],
+        "min_offset_speed_factor_interval": [
+          0.0,
+          0.0
+        ],
+        "has_zero_speed_cusp_on_domain": true,
+        "has_tangent_reversal_on_domain": false,
+        "stationary_parameterization_status": "COLLAPSED_ZERO_LENGTH_CURVE",
+        "base_curve_singularity_classification": "COLLAPSED_ZERO_LENGTH_CURVE",
+        "isolated_cusp_roots_t": [
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "active_classifications_on_domain": [
+          "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
+        ],
+        "working_precision_bits": 113,
+        "is_production_ready": false
+      },
       "passed": true
     }
   ],

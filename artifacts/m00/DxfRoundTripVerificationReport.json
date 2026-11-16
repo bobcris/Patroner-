@@ -1,6 +1,21 @@
 {
   "milestoneId": "M00.7",
   "artifactName": "DxfRoundTripVerificationReport.json",
+  "sectionsRecovered": [
+    "HEADER",
+    "TABLES",
+    "ENTITIES"
+  ],
+  "acadVersionHeader": "AC1009",
+  "insUnitsHeader": "5",
+  "tableLayersDefined": [
+    "1",
+    "11",
+    "2",
+    "4",
+    "7",
+    "8"
+  ],
   "layersRequired": [
     "1",
     "11",
@@ -18,7 +33,41 @@
     "8"
   ],
   "missingLayers": [],
+  "missingTableLayers": [],
   "maxVertexRoundTripErrorCm": 0.0,
   "toleranceMaxCm": 0.001,
+  "syntheticRoundTripVerified": true,
+  "externalCadInteroperabilityVerified": false,
+  "interoperabilityScopeNote": "Verifies deterministic synthetic DXF R12 (AC1009) / ASTM D6673 emitter-to-parser round-trip in M00.7. External third-party CAD software (Gerber AccuMark, Lectra Modaris, Optitex, CLO3D) file import/export validation is scheduled under M05 Industrial Export.",
+  "dxfExportManifest": {
+    "exportId": "M00-7-REF-BF-001",
+    "standard": "DXF-AAMA / ASTM D6673",
+    "dxfVersion": "AC1009",
+    "geometryUnit": "cm",
+    "requiredLayers": [
+      "1",
+      "2",
+      "4",
+      "7",
+      "8",
+      "11"
+    ],
+    "recoveredLayers": [
+      "1",
+      "11",
+      "2",
+      "4",
+      "7",
+      "8"
+    ],
+    "pieceCodes": [
+      "BF-001"
+    ],
+    "totalVertexCount": 12,
+    "maxRoundTripCoordinateErrorCm": 0.0,
+    "sha256Digest": "5b7bb4a125dd229c943809069169151d4d2b6bdcbed6603d0a892f83435568de",
+    "syntheticRoundTripVerified": true,
+    "externalCadInteroperabilityVerified": false
+  },
   "allPassed": true
 }

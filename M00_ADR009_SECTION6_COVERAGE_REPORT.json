@@ -1,0 +1,368 @@
+{
+  "deliverable": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
+  "checkpoint": "15",
+  "governingADR": "ADR-009 (R2.1.2-R1 \u00a76 Mandatory Test Cases)",
+  "totalSpecificationItemsRequired": 18,
+  "totalSpecificationItemsImplemented": 18,
+  "totalSpecificationItemsPassed": 18,
+  "previouslyMissingItemsNowImplementedAndVerified": [
+    9,
+    10,
+    14,
+    16,
+    17
+  ],
+  "coverageMatrix": [
+    {
+      "adr009Section6Item": 1,
+      "specificationRequirement": "CCW Circle Case 1: Inward sub-critical offset (R=10, s=+1, d=1.5 < R -> f=0.85 >= 0.05)",
+      "implementedByIds": [
+        "AG-01"
+      ],
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "computedMetrics": {
+        "offsetSpeedFactorF": 0.85,
+        "gridErrorCm": 3.6087e-05,
+        "certifiedIntervalErrorCm": 0.013230542
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 2,
+      "specificationRequirement": "CCW Circle Case 2: Inward critical focal collapse (R=10, s=+1, d=10.0 = R -> f=0.0, O'(t)=0)",
+      "implementedByIds": [
+        "AG-02"
+      ],
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "computedMetrics": {
+        "offsetSpeedFactorF": 0.0,
+        "hasZeroSpeedCuspOnDomain": true,
+        "hasTangentReversalOnDomain": false
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 3,
+      "specificationRequirement": "CCW Circle Case 3: Inward super-critical tangent reversal (R=10, s=+1, d=12.0 > R -> f=-0.20 < 0, ||O'||=2 > 0)",
+      "implementedByIds": [
+        "AG-03"
+      ],
+      "canonicalOffsetClassification": "TANGENT_REVERSAL",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "computedMetrics": {
+        "offsetSpeedFactorF": -0.2,
+        "offsetSpeedMagnitudeCmPerRad": 2.0,
+        "hasZeroSpeedCuspOnDomain": false,
+        "hasTangentReversalOnDomain": true
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 4,
+      "specificationRequirement": "CCW Circle Case 4: Outward convex offset for both d=1.5 cm < R and d=12.0 cm > R (s=-1 -> f=1.15 and f=2.20)",
+      "implementedByIds": [
+        "AG-04"
+      ],
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "computedMetrics": {
+        "subcase_d1_5_F": 1.15,
+        "subcase_d12_0_F": 2.2
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 5,
+      "specificationRequirement": "Interior removable parameterization degeneracy counterexample B(t) = (t^3, 0) at t*=0 (u*=0.5, m=3 odd)",
+      "implementedByIds": [
+        "AG-11"
+      ],
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "baseCurveSingularityClassification": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "verificationOutcome": "CERTIFIED_VALID",
+      "computedMetrics": {
+        "taylorOrderM": 3,
+        "limitingTangentMinus": [
+          1.0,
+          0.0
+        ],
+        "limitingTangentPlus": [
+          1.0,
+          0.0
+        ],
+        "limitingCurvature": 0.0
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 6,
+      "specificationRequirement": "Interior genuine zero-speed base-curve geometric cusp B(t) = (t^2, t^3) at t*=0 (u*=0.5, m=2 even, n=3)",
+      "implementedByIds": [
+        "AG-09"
+      ],
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "baseCurveSingularityClassification": "GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "computedMetrics": {
+        "taylorOrdersMN": [
+          2,
+          3
+        ],
+        "tangentReversalRadians": 3.141592653589793
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 7,
+      "specificationRequirement": "Endpoint tangential degeneracy P1=P0 at t*=0: both collinear removable limit (B''x B'''=0) and non-collinear curvature blow-up (B''x B'''!=0)",
+      "implementedByIds": [
+        "AG-10",
+        "AG-10a",
+        "AG-10b"
+      ],
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "baseCurveSingularityClassification": "ENDPOINT_TANGENTIAL_DEGENERACY",
+      "computedMetrics": {
+        "collinearSubcase10aOutcome": "CERTIFIED_VALID",
+        "nonCollinearSubcase10bOutcome": "CERTIFIED_INVALID",
+        "nonCollinearCrossProductB2B3": 720.0
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 8,
+      "specificationRequirement": "Coincident interior control points P1=P2 (AG-12) and Collapsed zero-length curve P0=P1=P2=P3 (ADR009-CASE5-COLLAPSED)",
+      "implementedByIds": [
+        "AG-12",
+        "ADR009-CASE5-COLLAPSED"
+      ],
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "baseCurveSingularityClassification": "COLLAPSED_ZERO_LENGTH_CURVE",
+      "computedMetrics": {
+        "ag12MinQInterval": [
+          55.374526978,
+          57.14112854
+        ],
+        "collapsedOutcome": "CERTIFIED_INVALID"
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 9,
+      "specificationRequirement": "Regularity margin violation (0 < min f(t) = 0.02 < epsilon_reg = 0.05 -> REGULARITY_MARGIN_VIOLATION)",
+      "implementedByIds": [
+        "ADR009-S6-09"
+      ],
+      "canonicalOffsetClassification": "REGULARITY_MARGIN_VIOLATION",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "computedMetrics": {
+        "minOffsetSpeedFactorInterval": [
+          0.02,
+          0.023221132
+        ],
+        "regularityMarginEpsilon": 0.05
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 10,
+      "specificationRequirement": "Convex vs concave mirror-image sign discrimination with identical |kappa(t)| = 1.2/d and sign gate s*d*C(t)",
+      "implementedByIds": [
+        "ADR009-S6-10"
+      ],
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "computedMetrics": {
+        "convexOutcome": "CERTIFIED_VALID",
+        "concaveOutcome": "CERTIFIED_INVALID",
+        "concaveClassification": "TANGENT_REVERSAL",
+        "signBlindSquaredPolynomialAtHalf": -115343.3600000001
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 11,
+      "specificationRequirement": "Grazing tangential curvature extremum (f(t*)=0, f'(t*)=0, f(t)>=0 at t*=0.5) & High-curvature transverse cusp pair",
+      "implementedByIds": [
+        "AG-06",
+        "AG-07"
+      ],
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "computedMetrics": {
+        "ag06IsolatedRootsCount": 2,
+        "ag07IsolatedGrazingRoot": {
+          "tLower": 0.4999999999995,
+          "tUpper": 0.5000000000005,
+          "deltaT": 1e-12,
+          "maxSpeedOnBracket": 8.0,
+          "deltaPosCm": 8e-12,
+          "multiplicityOrOrder": "tangential-double-grazing (f=0, f'=0)"
+        }
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 12,
+      "specificationRequirement": "Local swallowtail self-intersection O(t1*) = O(t2*) isolation & trimming",
+      "implementedByIds": [
+        "AG-08"
+      ],
+      "canonicalOffsetClassification": "LOCAL_SELF_INTERSECTION",
+      "computedMetrics": {
+        "selfIntersectionCertificate": {
+          "scope": "LOCAL",
+          "segmentIdA": "AG-06-high-curvature-concave",
+          "segmentIdB": "AG-06-high-curvature-concave",
+          "t1Bracket": [
+            0.3136610018745175,
+            0.3136610018755175
+          ],
+          "t2Bracket": [
+            0.6863389981244824,
+            0.6863389981254825
+          ],
+          "intersectionPointCm": {
+            "x": -0.0,
+            "y": 2.166666667
+          },
+          "residualDistanceCm": 1.6159286778789726e-31
+        },
+        "swallowtailTrimParameters": [
+          0.313661001875,
+          0.686338998125
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 13,
+      "specificationRequirement": "Global non-local contour self-intersection O_i(t1*) = O_j(t2*) where individual segments are locally regular",
+      "implementedByIds": [
+        "AG-15"
+      ],
+      "canonicalOffsetClassification": "GLOBAL_SELF_INTERSECTION",
+      "computedMetrics": {
+        "locallyRegularEverywhere": true,
+        "globalSelfIntersectionsDetected": 1,
+        "globalIntersections": [
+          {
+            "scope": "GLOBAL",
+            "segmentIdA": "AG-15-pocket-left-wall",
+            "segmentIdB": "AG-15-pocket-right-wall",
+            "t1Bracket": [
+              0.8399799902777362,
+              0.8399799902787363
+            ],
+            "t2Bracket": [
+              0.052786404499542056,
+              0.05278640450054206
+            ],
+            "intersectionPointCm": {
+              "x": 1.5,
+              "y": 1.645898034
+            },
+            "residualDistanceCm": 1.1714974501698012e-33
+          }
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 14,
+      "specificationRequirement": "Collinear & near-flat (1e-7 cm deflection) cubic Bezier Method C1-Cert non-strict arc-length enclosure (L_chord <= L_exact <= L_poly)",
+      "implementedByIds": [
+        "ADR009-S6-14"
+      ],
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "computedMetrics": {
+        "collinearEnclosure": {
+          "subdivisionDepth": 5,
+          "panelsCount": 32,
+          "lowerChordBoundCm": 10.0,
+          "upperControlPolygonBoundCm": 10.0,
+          "enclosureWidthCm": 0.0,
+          "quadratureLength113BitCm": 10.0,
+          "nonStrictInequalityHolds": true
+        },
+        "nearFlat1e7Enclosure": {
+          "subdivisionDepth": 7,
+          "panelsCount": 128,
+          "lowerChordBoundCm": 10.000000000000004,
+          "upperControlPolygonBoundCm": 10.000000000000004,
+          "enclosureWidthCm": 0.0,
+          "quadratureLength113BitCm": 10.000000000000004,
+          "nonStrictInequalityHolds": true
+        }
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 15,
+      "specificationRequirement": "Extreme parametric speed ratio (max Q / min Q > 10^8) & Method B1 parameter-to-position propagation Delta_pos <= ||B'||_max * dt <= 1e-7 cm",
+      "implementedByIds": [
+        "AG-13"
+      ],
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "computedMetrics": {
+        "speedSquaredRatioMaxOverMin": 3103551725.14,
+        "maxSpeedOnRootBracketCmPerUnit": 5529.7,
+        "bracketDeltaT": 7.275957614183426e-13,
+        "bracketDeltaPosCm": 4.023386282020273e-09
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 16,
+      "specificationRequirement": "INCONCLUSIVE boundary-straddling fail-closed handling (f(I_k) straddles epsilon_reg at depth limit -> INCONCLUSIVE, is_production_ready=False)",
+      "implementedByIds": [
+        "ADR009-S6-16"
+      ],
+      "canonicalOffsetClassification": "INCONCLUSIVE",
+      "verificationOutcome": "INCONCLUSIVE",
+      "computedMetrics": {
+        "minOffsetSpeedFactorInterval": [
+          0.030278125,
+          0.972379485
+        ],
+        "isProductionReady": false
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 17,
+      "specificationRequirement": "Whole-interval [0, 1] coverage & anti-bypass guard (interior cusp at t*=0.25, non-dyadic cusp at t*=1/3, and 2% short-span bypass rejection)",
+      "implementedByIds": [
+        "ADR009-S6-17"
+      ],
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "computedMetrics": {
+        "naive3PointSamplerFalselyRegularAt0_05_1": true,
+        "wholeIntervalOracleCaught025Cusp": true,
+        "wholeIntervalOracleCaughtNonDyadicOneThirdCusp": true,
+        "shortSpan2PercentBypassRejected": true
+      },
+      "status": "PASS"
+    },
+    {
+      "adr009Section6Item": 18,
+      "specificationRequirement": "Wilkinson near-multiple root clusters (Delta t = 1e-7 and 1e-9) unsplit isolation from [0, 1], inflection point (AG-05), acute miter bevel (AG-14), and full bodice integration (AG-17)",
+      "implementedByIds": [
+        "AG-05",
+        "AG-14",
+        "AG-16",
+        "AG-17"
+      ],
+      "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+      "computedMetrics": {
+        "ag16ManualPreSplittingUsed": false,
+        "ag16Disjoint1e7": true,
+        "ag16Disjoint1e9": true,
+        "ag17GridErrorCm": 0.001535489,
+        "ag17CertifiedIntervalErrorCm": 0.002234399
+      },
+      "status": "PASS"
+    }
+  ],
+  "allPassed": true
+}
