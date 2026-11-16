@@ -13,6 +13,7 @@ export * from './dependency-types';
 export * from './dependency-invalidation';
 export * from './manufacturing-types';
 export * from './piece-production-sheet';
+export * from './dxf-aama-exporter';
 
 export { canonicalizeJson } from './pattern-revision-snapshot';
 export type { OidcJwtHeader, OidcJwtPayload } from './garment-specification-types';

@@ -5,7 +5,9 @@
     "blueprint": "R2.1.2-R1",
     "gateAuth1Commit": "6938f808629276fd1b0860fba407b42f5cb40aaf",
     "checkpoint13aAuditCommit": "0f89b292d402a4c829fdfa78a07b8dc4143df2cb",
-    "remediationBranch": "fix/m00-evidence-remediation"
+    "mainBaselineCommit": "1221eb05497a59e52c4af851614085748c92a2d1",
+    "packageId": "PKG-P00-01",
+    "executionBranch": "feat/m00-p00-qualification"
   },
   "summary": {
     "totalCanonicalAGFamilies": 17,
@@ -188,7 +190,7 @@
     },
     {
       "familyId": "AG-15",
-      "title": "Global Non-Local Concave Pocket Self-Intersection (Locally Regular Segments, 2D Inter-Segment Intersection)",
+      "title": "Global Non-Local Concave Pocket Self-Intersection (Validated Interval AABB + Krawczyk Existence/Uniqueness)",
       "canonicalOffsetClassification": "GLOBAL_SELF_INTERSECTION",
       "activeClassificationsOnDomain": [
         "GLOBAL_SELF_INTERSECTION"
@@ -299,22 +301,32 @@
       "canonicalOffsetClassification": "CERTIFIED_VALID",
       "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
       "collinearEnclosure": {
+        "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
         "subdivisionDepth": 5,
         "panelsCount": 32,
         "lowerChordBoundCm": 10.0,
         "upperControlPolygonBoundCm": 10.0,
+        "certifiedReferenceLengthCm": 10.0,
+        "certifiedHalfWidthCm": 0.0,
         "enclosureWidthCm": 0.0,
+        "nonStrictInequalityHolds": true,
+        "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
         "quadratureLength113BitCm": 10.0,
-        "nonStrictInequalityHolds": true
+        "diagnosticQuadWithinCertifiedEnclosure": true
       },
       "nearFlat1e7Enclosure": {
+        "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
         "subdivisionDepth": 7,
         "panelsCount": 128,
         "lowerChordBoundCm": 10.000000000000004,
         "upperControlPolygonBoundCm": 10.000000000000004,
+        "certifiedReferenceLengthCm": 10.000000000000004,
+        "certifiedHalfWidthCm": 0.0,
         "enclosureWidthCm": 0.0,
+        "nonStrictInequalityHolds": true,
+        "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
         "quadratureLength113BitCm": 10.000000000000004,
-        "nonStrictInequalityHolds": true
+        "diagnosticQuadWithinCertifiedEnclosure": true
       },
       "strictInequalityRejectedAsExpectedOnCollinear": true,
       "passed": true

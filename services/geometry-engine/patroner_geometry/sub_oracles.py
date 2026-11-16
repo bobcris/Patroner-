@@ -19,7 +19,11 @@ from typing import Any, Dict, List, Tuple
 import mpmath
 from mpmath import iv
 
-from .c1_cert_oracle import ExactCubicBezier2D, method_c1_cert_arc_length_enclosure
+from .c1_cert_oracle import (
+    ExactCubicBezier2D,
+    compute_interval_max_speed_on_domain_cm_per_t,
+    method_c1_cert_arc_length_enclosure,
+)
 from .contracts import BodyProfile, DxfExportManifest, NumericalVerificationRecord
 
 # 5-point Gauss-Legendre nodes and weights on [-1, 1] in high precision
@@ -162,12 +166,12 @@ def inverse_arc_length_newton_brent(
 
     # Certified local speed upper bound on [lo, hi] in 113-bit mpmath.iv (Method B1)
     iv.prec = 113
-    t_iv = iv.mpf([str(lo), str(hi)])
+    t_iv = iv.mpf([iv.mpf(lo).a, iv.mpf(hi).b])
     ax_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[0]]
     ay_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[1]]
     dx_iv = ax_iv[1] + t_iv * (2 * ax_iv[2] + 3 * ax_iv[3] * t_iv)
     dy_iv = ay_iv[1] + t_iv * (2 * ay_iv[2] + 3 * ay_iv[3] * t_iv)
-    spd_iv = iv.sqrt(dx_iv * dx_iv + dy_iv * dy_iv)
+    spd_iv = iv.sqrt((dx_iv ** 2) + (dy_iv ** 2))
     local_speed_upper_bound = float(spd_iv.b)
 
     delta_t = max(0.0, hi - lo)
@@ -200,8 +204,9 @@ def inverse_arc_length_newton_brent(
 
 
 def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
-    """Verifies M00.5 Method C1-Cert De Casteljau Chord/Polygon Enclosure, Adaptive Gauss-Legendre Quadrature,
-    and Monotone Newton-Brent Inversion with Method B1 parameter-to-output propagation.
+    """Verifies M00.5 Method C1-Cert De Casteljau Chord/Polygon Enclosure (sole certification authority),
+    Diagnostic Adaptive Gauss-Legendre Quadrature, and Monotone Newton-Brent Inversion with Method B1
+    parameter-to-output propagation.
     """
     mpmath.mp.prec = 113
     curve = ExactCubicBezier2D.from_floats(
@@ -211,21 +216,9 @@ def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
         (19.2, 14.0),
         (20.5, 4.2),
     )
-    ax, ay = curve.power_coeffs_xy()
-    ax_mp = [mpmath.mpf(c.numerator) / mpmath.mpf(c.denominator) for c in ax]
-    ay_mp = [mpmath.mpf(c.numerator) / mpmath.mpf(c.denominator) for c in ay]
 
-    def speed_mp(u):
-        dx = ax_mp[1] + u * (2 * ax_mp[2] + 3 * ax_mp[3] * u)
-        dy = ay_mp[1] + u * (2 * ay_mp[2] + 3 * ay_mp[3] * u)
-        return mpmath.sqrt(dx * dx + dy * dy)
-
-    cert_len = float(mpmath.quad(speed_mp, [0, 1]))
-    fast_len, panels = adaptive_gauss_legendre_arc_length(curve, 1.0)
-    forward_error_cm = abs(fast_len - cert_len)
-
-    # Method C1-Cert De Casteljau Chord/Control-Polygon Interval Enclosure on armscye, collinear, and near-flat cubics
-    c1_cert_armscye = method_c1_cert_arc_length_enclosure(curve, subdivision_depth=8)
+    # Method C1-Cert De Casteljau Chord/Control-Polygon Interval Enclosure is the SOLE certification authority
+    c1_cert_armscye = method_c1_cert_arc_length_enclosure(curve, subdivision_depth=10)
     collinear_curve = ExactCubicBezier2D(
         segment_id="collinear-cubic-m005",
         p0=(Fraction(0), Fraction(0)),
@@ -235,26 +228,44 @@ def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
     )
     c1_cert_collinear = method_c1_cert_arc_length_enclosure(collinear_curve, subdivision_depth=5)
 
+    # Diagnostic quadrature comparisons checked against the C1-Cert enclosure [L_chord, L_poly]
+    cert_quad_diag_len = c1_cert_armscye["quadratureLength113BitCm"]
+    fast_len, panels = adaptive_gauss_legendre_arc_length(curve, 1.0)
+    forward_error_cm = abs(fast_len - cert_quad_diag_len)
+    gl5_within_c1_cert = (
+        c1_cert_armscye["lowerChordBoundCm"] - 1e-12
+        <= fast_len
+        <= c1_cert_armscye["upperControlPolygonBoundCm"] + 1e-12
+    )
+
+    # Certified 113-bit mpmath.iv supremum of ||B'(t)||_2 across t in [0, 1] (no hardcoded speed constant)
+    sup_speed_cm_per_t = compute_interval_max_speed_on_domain_cm_per_t(curve, 0.0, 1.0, panels=64)
+    domain_param_dt = 0.0
+    propagated_pos_err_cm = sup_speed_cm_per_t * domain_param_dt
+
     forward_num_record = NumericalVerificationRecord(
         curve_id=curve.segment_id,
         operation_type="ARC_LENGTH",
         parameter_bracket_t=(0.0, 1.0),
-        parameter_uncertainty_dt=0.0,
-        local_speed_upper_bound_cm_per_t=25.0,
-        propagated_position_error_cm=0.0,
-        direct_geometric_error_bound_cm=c1_cert_armscye["enclosureWidthCm"],
+        parameter_uncertainty_dt=domain_param_dt,
+        local_speed_upper_bound_cm_per_t=round(sup_speed_cm_per_t, 8),
+        propagated_position_error_cm=propagated_pos_err_cm,
+        direct_geometric_error_bound_cm=c1_cert_armscye["certifiedHalfWidthCm"],
         propagation_method="C1_CERT_CHORD_POLYGON_BOUNDS",
         working_precision_bits=113,
         adaptive_subdivision_panels=c1_cert_armscye["panelsCount"],
         certified_within_tolerance=(
-            c1_cert_armscye["nonStrictInequalityHolds"] and forward_error_cm <= 1e-6
+            c1_cert_armscye["nonStrictInequalityHolds"]
+            and c1_cert_armscye["diagnosticQuadWithinCertifiedEnclosure"]
+            and gl5_within_c1_cert
+            and forward_error_cm <= 1e-6
         ),
     )
 
     # Test inverse arc-length at 25%, 50%, 75% of total length
     inversion_checks = []
     for frac in (0.25, 0.50, 0.75):
-        target_s = frac * fast_len
+        target_s = frac * c1_cert_armscye["certifiedReferenceLengthCm"]
         inv_res = inverse_arc_length_newton_brent(curve, target_s)
         inversion_checks.append(
             {
@@ -278,8 +289,13 @@ def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
     return {
         "milestoneId": "M00.5",
         "artifactName": "ArcLengthVerificationReport.json",
-        "certifiedQuadLengthCm": round(cert_len, 10),
+        "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
+        "certifiedReferenceLengthCm": c1_cert_armscye["certifiedReferenceLengthCm"],
+        "certifiedHalfWidthCm": c1_cert_armscye["certifiedHalfWidthCm"],
+        "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
+        "diagnosticQuadLength113BitCm": round(cert_quad_diag_len, 10),
         "adaptiveGaussLegendreLengthCm": round(fast_len, 10),
+        "adaptiveGaussLegendreWithinC1CertEnclosure": gl5_within_c1_cert,
         "forwardLengthErrorCm": forward_error_cm,
         "forwardToleranceMaxCm": 1e-6,
         "panelsEvaluated": panels,
@@ -289,6 +305,8 @@ def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
         "inverseArcLengthChecks": inversion_checks,
         "allPassed": (
             forward_error_cm <= 1e-6
+            and gl5_within_c1_cert
+            and c1_cert_armscye["diagnosticQuadWithinCertifiedEnclosure"]
             and c1_cert_armscye["nonStrictInequalityHolds"]
             and c1_cert_collinear["nonStrictInequalityHolds"]
             and all(c["passed"] for c in inversion_checks)

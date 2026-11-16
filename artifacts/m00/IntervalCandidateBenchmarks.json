@@ -1,0 +1,49 @@
+{
+  "artifactName": "IntervalCandidateBenchmarks.json",
+  "note": "Wall-clock runtime metrics are separated from deterministic SHA-256 mathematical reports.",
+  "environment": {
+    "pythonVersion": "3.12.16",
+    "pythonImplementation": "CPython",
+    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+    "machine": "x86_64",
+    "pythonHashSeed": "0"
+  },
+  "fullPopulation200kChecksRuntimeMs": {
+    "mpmathIvFractionMs": 6201.39,
+    "pythonFlintArbFmpqMs": 2756.43,
+    "decimalIntervalFractionMs": 3567.21,
+    "totalSuiteMs": 12548.78
+  },
+  "perCurveLatencyBenchmarks": {
+    "environment": {
+      "pythonVersion": "3.12.16",
+      "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+      "machine": "x86_64",
+      "pythonHashSeed": "0"
+    },
+    "mpmathIvFraction": {
+      "iterations": 20,
+      "medianMs": 0.9903,
+      "p95Ms": 1.1608,
+      "maxMs": 1.4953,
+      "latencyBudgetMaxMs": 50.0,
+      "withinLatencyBudget": true
+    },
+    "pythonFlintArbFmpq": {
+      "iterations": 20,
+      "medianMs": 0.0154,
+      "p95Ms": 0.0297,
+      "maxMs": 0.0802,
+      "latencyBudgetMaxMs": 50.0,
+      "withinLatencyBudget": true
+    },
+    "decimalIntervalFraction": {
+      "iterations": 20,
+      "medianMs": 0.1141,
+      "p95Ms": 0.1435,
+      "maxMs": 0.1439,
+      "latencyBudgetMaxMs": 50.0,
+      "withinLatencyBudget": true
+    }
+  }
+}

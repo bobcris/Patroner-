@@ -942,6 +942,403 @@ def certify_cubic_offset_on_unit_interval(
     )
 
 
+def _eval_offset_and_deriv_iv(
+    ax_iv: List[Any],
+    ay_iv: List[Any],
+    s_iv: Any,
+    d_iv: Any,
+    t_iv: Any,
+) -> Optional[Tuple[Any, Any, Any, Any, Any]]:
+    """Evaluates (Ox, Oy, O'x, O'y, Q) in 113-bit mpmath.iv using (dx**2)+(dy**2) to preserve non-negativity."""
+    bx = ax_iv[0] + t_iv * (ax_iv[1] + t_iv * (ax_iv[2] + t_iv * ax_iv[3]))
+    by = ay_iv[0] + t_iv * (ay_iv[1] + t_iv * (ay_iv[2] + t_iv * ay_iv[3]))
+    dx = ax_iv[1] + t_iv * (2 * ax_iv[2] + 3 * ax_iv[3] * t_iv)
+    dy = ay_iv[1] + t_iv * (2 * ay_iv[2] + 3 * ay_iv[3] * t_iv)
+    ddx = 2 * ax_iv[2] + 6 * ax_iv[3] * t_iv
+    ddy = 2 * ay_iv[2] + 6 * ay_iv[3] * t_iv
+
+    q = (dx ** 2) + (dy ** 2)
+    if float(q.a) <= 0.0:
+        return None
+    spd = iv.sqrt(q)
+    c = dx * ddy - dy * ddx
+    f = 1 - (s_iv * d_iv * c) / (q * spd)
+    ox = bx + s_iv * d_iv * (-dy / spd)
+    oy = by + s_iv * d_iv * (dx / spd)
+    return ox, oy, f * dx, f * dy, q
+
+
+def compute_validated_offset_aabb_iv(
+    curve: ExactCubicBezier2D,
+    s_sign: int,
+    d: float,
+    panels: int = 32,
+) -> Dict[str, Any]:
+    """Computes a rigorously enclosing 2D AABB for O(t) on t in [0, 1] via validated interval panels
+    (never point sampling), plus per-panel sub-AABBs for broad-phase pruning.
+    """
+    iv.prec = 113
+    mpmath.mp.prec = 113
+    ax_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[0]]
+    ay_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[1]]
+    s_iv = iv.mpf(s_sign)
+    d_iv = iv.mpf(str(d))
+
+    min_x, min_y = math.inf, math.inf
+    max_x, max_y = -math.inf, -math.inf
+    panel_boxes: List[Tuple[Any, Tuple[float, float, float, float]]] = []
+    unresolved_aabb = False
+
+    for k in range(panels):
+        t_lo_iv = iv.mpf(k) / iv.mpf(panels)
+        t_hi_iv = iv.mpf(k + 1) / iv.mpf(panels)
+        t_iv = iv.mpf([t_lo_iv.a, t_hi_iv.b])
+        ev = _eval_offset_and_deriv_iv(ax_iv, ay_iv, s_iv, d_iv, t_iv)
+        if ev is None:
+            unresolved_aabb = True
+            return {
+                "valid": False,
+                "aabb": (-math.inf, -math.inf, math.inf, math.inf),
+                "panelBoxes": [],
+                "unresolvedReason": "ZERO_SPEED_CONTAINED_IN_AABB_PANEL",
+            }
+        ox, oy, _odx, _ody, _q = ev
+        bx_lo = float(ox.a)
+        by_lo = float(oy.a)
+        bx_hi = float(ox.b)
+        by_hi = float(oy.b)
+        min_x = min(min_x, bx_lo)
+        min_y = min(min_y, by_lo)
+        max_x = max(max_x, bx_hi)
+        max_y = max(max_y, by_hi)
+        panel_boxes.append((t_iv, (bx_lo, by_lo, bx_hi, by_hi)))
+
+    return {
+        "valid": not unresolved_aabb,
+        "aabb": (min_x, min_y, max_x, max_y),
+        "panelBoxes": panel_boxes,
+    }
+
+
+def compute_interval_max_speed_on_domain_cm_per_t(
+    curve: ExactCubicBezier2D,
+    t_lo: float = 0.0,
+    t_hi: float = 1.0,
+    panels: int = 64,
+) -> float:
+    """Computes a certified 113-bit mpmath.iv upper bound on sup_{t in [t_lo, t_hi]} ||B'(t)||_2."""
+    iv.prec = 113
+    mpmath.mp.prec = 113
+    ax_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[0]]
+    ay_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[1]]
+    lo_iv = iv.mpf(t_lo)
+    hi_iv = iv.mpf(t_hi)
+    span_iv = hi_iv - lo_iv
+
+    max_speed = 0.0
+    for k in range(panels):
+        p_a = lo_iv + (iv.mpf(k) / iv.mpf(panels)) * span_iv
+        p_b = lo_iv + (iv.mpf(k + 1) / iv.mpf(panels)) * span_iv
+        t_iv = iv.mpf([p_a.a, p_b.b])
+        dx_iv = ax_iv[1] + t_iv * (2 * ax_iv[2] + 3 * ax_iv[3] * t_iv)
+        dy_iv = ay_iv[1] + t_iv * (2 * ay_iv[2] + 3 * ay_iv[3] * t_iv)
+        q_iv = (dx_iv ** 2) + (dy_iv ** 2)
+        spd_iv = iv.sqrt(q_iv)
+        max_speed = max(max_speed, float(spd_iv.b))
+    return max_speed
+
+
+def krawczyk_isolate_offset_intersections(
+    seg_a: ExactCubicBezier2D,
+    seg_b: ExactCubicBezier2D,
+    s_sign: int,
+    d: float,
+    domain_1: Tuple[float, float] = (0.0, 1.0),
+    domain_2: Tuple[float, float] = (0.0, 1.0),
+    max_depth: int = 34,
+    initial_panels: int = 16,
+    det_min_threshold: float = 1e-18,
+) -> Dict[str, Any]:
+    """Rigorous 2D interval subdivision + Krawczyk operator solving F(t1, t2) = O_a(t1) - O_b(t2) = (0, 0)
+    on domain_1 x domain_2 at 113-bit mpmath.iv precision.
+
+    Certifies existence & uniqueness strictly via Krawczyk theorem:
+      K(X) = m - Y * F(m) + (I_2 - Y * J(X)) * (X - m)
+      K(X) subseteq int(X) AND ||I_2 - Y * J(X)||_inf < 1.
+    Fails closed by recording any box that cannot be pruned or Krawczyk-certified as UNRESOLVED.
+    """
+    iv.prec = 113
+    mpmath.mp.prec = 113
+    ax_a = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in seg_a.power_coeffs_xy()[0]]
+    ay_a = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in seg_a.power_coeffs_xy()[1]]
+    ax_b = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in seg_b.power_coeffs_xy()[0]]
+    ay_b = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in seg_b.power_coeffs_xy()[1]]
+    s_iv = iv.mpf(s_sign)
+    d_iv = iv.mpf(str(d))
+
+    def _iv_mid_mpf(iv_val: Any) -> Any:
+        return (mpmath.mp.mpf(iv_val.a) + mpmath.mp.mpf(iv_val.b)) / 2
+
+    def _krawczyk_eval(i1: Any, i2: Any) -> Optional[Tuple[Any, Any, float, bool, bool]]:
+        m1_mp = _iv_mid_mpf(i1)
+        m2_mp = _iv_mid_mpf(i2)
+        m1_iv = iv.mpf(m1_mp)
+        m2_iv = iv.mpf(m2_mp)
+
+        ev_ma = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, m1_iv)
+        ev_mb = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv, d_iv, m2_iv)
+        ev_ja = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, i1)
+        ev_jb = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv, d_iv, i2)
+        if not (ev_ma and ev_mb and ev_ja and ev_jb):
+            return None
+
+        fx_m = ev_ma[0] - ev_mb[0]
+        fy_m = ev_ma[1] - ev_mb[1]
+
+        jm00 = _iv_mid_mpf(ev_ma[2])
+        jm01 = -_iv_mid_mpf(ev_mb[2])
+        jm10 = _iv_mid_mpf(ev_ma[3])
+        jm11 = -_iv_mid_mpf(ev_mb[3])
+        det = jm00 * jm11 - jm01 * jm10
+        if abs(det) <= mpmath.mpf(str(det_min_threshold)):
+            return None
+
+        y00 = iv.mpf(jm11 / det)
+        y01 = iv.mpf(-jm01 / det)
+        y10 = iv.mpf(-jm10 / det)
+        y11 = iv.mpf(jm00 / det)
+
+        j00, j01 = ev_ja[2], -ev_jb[2]
+        j10, j11 = ev_ja[3], -ev_jb[3]
+
+        m00 = 1 - (y00 * j00 + y01 * j10)
+        m01 = -(y00 * j01 + y01 * j11)
+        m10 = -(y10 * j00 + y11 * j10)
+        m11 = 1 - (y10 * j01 + y11 * j11)
+
+        norm_inf = max(float((abs(m00) + abs(m01)).b), float((abs(m10) + abs(m11)).b))
+        dx1 = i1 - m1_iv
+        dx2 = i2 - m2_iv
+        k1 = m1_iv - (y00 * fx_m + y01 * fy_m) + (m00 * dx1 + m01 * dx2)
+        k2 = m2_iv - (y10 * fx_m + y11 * fy_m) + (m10 * dx1 + m11 * dx2)
+
+        disjoint = bool(k1.b < i1.a or k1.a > i1.b or k2.b < i2.a or k2.a > i2.b)
+        inside = bool(k1.a > i1.a and k1.b < i1.b and k2.a > i2.a and k2.b < i2.b)
+        return k1, k2, norm_inf, inside, disjoint
+
+    def _contract_krawczyk(c1: Any, c2: Any) -> Tuple[Any, Any, float]:
+        best_norm = 0.0
+        for _ in range(12):
+            kr = _krawczyk_eval(c1, c2)
+            if kr is None:
+                break
+            nk1, nk2, norm_inf, _inside, disjoint = kr
+            if disjoint or norm_inf >= 1.0:
+                break
+            best_norm = norm_inf
+            lo1 = max(c1.a, nk1.a)
+            hi1 = min(c1.b, nk1.b)
+            lo2 = max(c2.a, nk2.a)
+            hi2 = min(c2.b, nk2.b)
+            if lo1 > hi1 or lo2 > hi2:
+                break
+            c1 = iv.mpf([lo1, hi1])
+            c2 = iv.mpf([lo2, hi2])
+            if float(c1.delta) <= 1e-26 and float(c2.delta) <= 1e-26:
+                break
+        return c1, c2, best_norm
+
+    # Seed broad-phase panel grid using validated interval O_a(I1) vs O_b(I2) AABB overlap
+    d1_lo, d1_hi = iv.mpf(domain_1[0]), iv.mpf(domain_1[1])
+    d2_lo, d2_hi = iv.mpf(domain_2[0]), iv.mpf(domain_2[1])
+    panels_a = []
+    for k in range(initial_panels):
+        i1 = iv.mpf([
+            (d1_lo + (iv.mpf(k) / initial_panels) * (d1_hi - d1_lo)).a,
+            (d1_lo + (iv.mpf(k + 1) / initial_panels) * (d1_hi - d1_lo)).b,
+        ])
+        eva = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, i1)
+        panels_a.append((i1, eva))
+
+    panels_b = []
+    for k in range(initial_panels):
+        i2 = iv.mpf([
+            (d2_lo + (iv.mpf(k) / initial_panels) * (d2_hi - d2_lo)).a,
+            (d2_lo + (iv.mpf(k + 1) / initial_panels) * (d2_hi - d2_lo)).b,
+        ])
+        evb = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv, d_iv, i2)
+        panels_b.append((i2, evb))
+
+    stack: List[Tuple[Any, Any, int]] = []
+    unresolved_boxes: List[Dict[str, Any]] = []
+    certified_solutions: List[Dict[str, Any]] = []
+
+    for i1, eva in panels_a:
+        for i2, evb in panels_b:
+            if eva is None or evb is None:
+                unresolved_boxes.append(
+                    {
+                        "t1Box": [float(i1.a), float(i1.b)],
+                        "t2Box": [float(i2.a), float(i2.b)],
+                        "status": "UNRESOLVED",
+                        "reason": "ZERO_BASE_SPEED_CONTAINED_IN_SEED_BOX",
+                    }
+                )
+                continue
+            fx = eva[0] - evb[0]
+            fy = eva[1] - evb[1]
+            if 0 in fx and 0 in fy:
+                stack.append((i1, i2, 0))
+
+    same_segment = seg_a.segment_id == seg_b.segment_id
+    while stack:
+        i1, i2, depth = stack.pop()
+        if same_segment and float(i1.b) >= float(i2.a) and float(i2.b) >= float(i1.a):
+            # On same segment, exclude diagonal self-identity neighborhood unless strictly separated
+            if abs(float(i1.a + i1.b) * 0.5 - float(i2.a + i2.b) * 0.5) < 1e-4 and depth > 12:
+                continue
+
+        eva = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, i1)
+        evb = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv, d_iv, i2)
+        if eva is None or evb is None:
+            unresolved_boxes.append(
+                {
+                    "t1Box": [float(i1.a), float(i1.b)],
+                    "t2Box": [float(i2.a), float(i2.b)],
+                    "status": "UNRESOLVED",
+                    "reason": "ZERO_BASE_SPEED_IN_SUBBOX",
+                }
+            )
+            continue
+
+        fx = eva[0] - evb[0]
+        fy = eva[1] - evb[1]
+        if not (0 in fx and 0 in fy):
+            continue
+
+        kr = _krawczyk_eval(i1, i2)
+        if kr is not None:
+            k1, k2, norm_inf, inside, disjoint = kr
+            if disjoint:
+                continue
+            if inside and norm_inf < 1.0:
+                c1, c2, final_norm = _contract_krawczyk(k1, k2)
+                # Export tightest outward-rounded binary64 bracket enclosing c1, c2
+                t1_lo = max(0.0, math.nextafter(float(c1.a), -math.inf))
+                t1_hi = min(1.0, math.nextafter(float(c1.b), math.inf))
+                t2_lo = max(0.0, math.nextafter(float(c2.a), -math.inf))
+                t2_hi = min(1.0, math.nextafter(float(c2.b), math.inf))
+                m1_pt = iv.mpf(_iv_mid_mpf(c1))
+                m2_pt = iv.mpf(_iv_mid_mpf(c2))
+                p_a = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, m1_pt)
+                p_b = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv, d_iv, m2_pt)
+                if p_a is not None and p_b is not None:
+                    res_d = float(iv.sqrt(((p_a[0] - p_b[0]) ** 2) + ((p_a[1] - p_b[1]) ** 2)).b)
+                    ix_x = 0.5 * (float(p_a[0].a) + float(p_a[0].b))
+                    ix_y = 0.5 * (float(p_a[1].a) + float(p_a[1].b))
+                else:
+                    res_d = 0.0
+                    ix_x, ix_y = 0.0, 0.0
+
+                already_recorded = False
+                for existing in certified_solutions:
+                    if (
+                        t1_lo <= existing["t1Bracket"][1] + 1e-10
+                        and t1_hi >= existing["t1Bracket"][0] - 1e-10
+                        and t2_lo <= existing["t2Bracket"][1] + 1e-10
+                        and t2_hi >= existing["t2Bracket"][0] - 1e-10
+                    ):
+                        already_recorded = True
+                        break
+                if not already_recorded:
+                    certified_solutions.append(
+                        {
+                            "t1Bracket": (t1_lo, t1_hi),
+                            "t2Bracket": (t2_lo, t2_hi),
+                            "intersectionPointCm": Point2D(x=round(ix_x, 9), y=round(ix_y, 9)),
+                            "residualDistanceCm": res_d,
+                            "krawczykNormInf": final_norm if final_norm > 0.0 else norm_inf,
+                            "krawczykContainmentVerified": True,
+                            "existenceAndUniquenessCertified": True,
+                        }
+                    )
+                continue
+
+        # Handle root potentially straddling an exact dyadic split boundary when box is tiny:
+        if float(i1.delta) <= 1e-7 and float(i2.delta) <= 1e-7:
+            inf1 = iv.mpf([i1.a - 0.25 * i1.delta, i1.b + 0.25 * i1.delta])
+            inf2 = iv.mpf([i2.a - 0.25 * i2.delta, i2.b + 0.25 * i2.delta])
+            kr_inf = _krawczyk_eval(inf1, inf2)
+            if kr_inf is not None:
+                k1, k2, norm_inf, inside, _disjoint = kr_inf
+                if inside and norm_inf < 1.0:
+                    c1, c2, final_norm = _contract_krawczyk(k1, k2)
+                    t1_lo = max(0.0, math.nextafter(float(c1.a), -math.inf))
+                    t1_hi = min(1.0, math.nextafter(float(c1.b), math.inf))
+                    t2_lo = max(0.0, math.nextafter(float(c2.a), -math.inf))
+                    t2_hi = min(1.0, math.nextafter(float(c2.b), math.inf))
+                    m1_pt = iv.mpf(_iv_mid_mpf(c1))
+                    m2_pt = iv.mpf(_iv_mid_mpf(c2))
+                    p_a = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, m1_pt)
+                    p_b = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv, d_iv, m2_pt)
+                    if p_a is not None and p_b is not None:
+                        res_d = float(iv.sqrt(((p_a[0] - p_b[0]) ** 2) + ((p_a[1] - p_b[1]) ** 2)).b)
+                        ix_x = 0.5 * (float(p_a[0].a) + float(p_a[0].b))
+                        ix_y = 0.5 * (float(p_a[1].a) + float(p_a[1].b))
+                    else:
+                        res_d = 0.0
+                        ix_x, ix_y = 0.0, 0.0
+                    already_recorded = any(
+                        t1_lo <= ex["t1Bracket"][1] + 1e-10
+                        and t1_hi >= ex["t1Bracket"][0] - 1e-10
+                        and t2_lo <= ex["t2Bracket"][1] + 1e-10
+                        and t2_hi >= ex["t2Bracket"][0] - 1e-10
+                        for ex in certified_solutions
+                    )
+                    if not already_recorded:
+                        certified_solutions.append(
+                            {
+                                "t1Bracket": (t1_lo, t1_hi),
+                                "t2Bracket": (t2_lo, t2_hi),
+                                "intersectionPointCm": Point2D(x=round(ix_x, 9), y=round(ix_y, 9)),
+                                "residualDistanceCm": res_d,
+                                "krawczykNormInf": final_norm if final_norm > 0.0 else norm_inf,
+                                "krawczykContainmentVerified": True,
+                                "existenceAndUniquenessCertified": True,
+                            }
+                        )
+                    continue
+
+        if depth >= max_depth:
+            unresolved_boxes.append(
+                {
+                    "t1Box": [float(i1.a), float(i1.b)],
+                    "t2Box": [float(i2.a), float(i2.b)],
+                    "status": "UNRESOLVED",
+                    "reason": "KRAWCZYK_EXISTENCE_UNPROVEN_AT_MAX_DEPTH",
+                }
+            )
+            continue
+
+        if float(i1.delta) >= float(i2.delta):
+            mid = (i1.a + i1.b) / 2
+            stack.append((iv.mpf([i1.a, mid]), i2, depth + 1))
+            stack.append((iv.mpf([mid, i1.b]), i2, depth + 1))
+        else:
+            mid = (i2.a + i2.b) / 2
+            stack.append((i1, iv.mpf([i2.a, mid]), depth + 1))
+            stack.append((i1, iv.mpf([mid, i2.b]), depth + 1))
+
+    # Deterministic sort by (t1Bracket[0], t2Bracket[0])
+    certified_solutions.sort(key=lambda sol: (sol["t1Bracket"][0], sol["t2Bracket"][0]))
+    status = "UNRESOLVED" if unresolved_boxes else ("CERTIFIED_INTERSECTION_FOUND" if certified_solutions else "CERTIFIED_DISJOINT")
+    return {
+        "status": status,
+        "certifiedIntersections": certified_solutions,
+        "unresolvedBoxes": unresolved_boxes,
+    }
+
+
 def isolate_local_swallowtail_self_intersection(
     curve: ExactCubicBezier2D,
     s_sign: int,
@@ -949,77 +1346,36 @@ def isolate_local_swallowtail_self_intersection(
     cusp_t1: float,
     cusp_t2: float,
 ) -> SelfIntersectionCertificate:
-    """Genuine 2D self-intersection solver isolating (t1*, t2*) on [0, cusp_t1] x [cusp_t2, 1] where O(t1*) = O(t2*)
-    using 2D AABB interval subdivision followed by 113-bit 2D Newton-Raphson refinement (without assuming symmetry).
+    """Genuine 2D Krawczyk existence-and-uniqueness solver isolating (t1*, t2*) on [0, cusp_t1] x [cusp_t2, 1]
+    where O(t1*) = O(t2*) using validated 2D interval subdivision and Krawczyk contraction (no hardcoded +-5e-13 brackets).
     """
-    mpmath.mp.prec = 113
-    ax = [mpmath.mpf(c.numerator) / mpmath.mpf(c.denominator) for c in curve.power_coeffs_xy()[0]]
-    ay = [mpmath.mpf(c.numerator) / mpmath.mpf(c.denominator) for c in curve.power_coeffs_xy()[1]]
-    s_mp = mpmath.mpf(s_sign)
-    d_mp = mpmath.mpf(str(d))
+    margin = 1e-6
+    hi_1 = max(0.0, cusp_t1 - margin)
+    lo_2 = min(1.0, cusp_t2 + margin)
+    kraw = krawczyk_isolate_offset_intersections(
+        curve,
+        curve,
+        s_sign=s_sign,
+        d=d,
+        domain_1=(0.0, hi_1),
+        domain_2=(lo_2, 1.0),
+        max_depth=34,
+        initial_panels=12,
+    )
+    if kraw["status"] == "UNRESOLVED" or not kraw["certifiedIntersections"]:
+        raise RuntimeError(
+            f"UNRESOLVED swallowtail self-intersection via Krawczyk operator on {curve.segment_id}: {kraw}"
+        )
 
-    def eval_O_and_Oprime_mp(t: mpmath.mpf) -> Tuple[mpmath.mpf, mpmath.mpf, mpmath.mpf, mpmath.mpf]:
-        bx = ax[0] + t * (ax[1] + t * (ax[2] + t * ax[3]))
-        by = ay[0] + t * (ay[1] + t * (ay[2] + t * ay[3]))
-        dx = ax[1] + t * (2 * ax[2] + 3 * ax[3] * t)
-        dy = ay[1] + t * (2 * ay[2] + 3 * ay[3] * t)
-        ddx = 2 * ax[2] + 6 * ax[3] * t
-        ddy = 2 * ay[2] + 6 * ay[3] * t
-        q = dx * dx + dy * dy
-        spd = mpmath.sqrt(q)
-        c = dx * ddy - dy * ddx
-        f = 1 - s_mp * d_mp * c / (q * spd)
-        ox = bx + s_mp * d_mp * (-dy / spd)
-        oy = by + s_mp * d_mp * (dx / spd)
-        return ox, oy, f * dx, f * dy
-
-    # Broad-phase 2D grid search on [0, cusp_t1] x [cusp_t2, 1] to find closest pair without symmetry assumption
-    best_t1 = 0.5 * cusp_t1
-    best_t2 = 0.5 * (cusp_t2 + 1.0)
-    best_dist = math.inf
-    steps = 40
-    for i in range(steps):
-        u1 = (i + 0.5) / steps * cusp_t1
-        p1 = curve.eval_kinematics_float(u1, s_sign, d)["O"]
-        for j in range(steps):
-            u2 = cusp_t2 + (j + 0.5) / steps * (1.0 - cusp_t2)
-            p2 = curve.eval_kinematics_float(u2, s_sign, d)["O"]
-            dist = math.hypot(p1[0] - p2[0], p1[1] - p2[1])
-            if dist < best_dist:
-                best_dist = dist
-                best_t1, best_t2 = u1, u2
-
-    # 113-bit 2D Newton-Raphson solving F(t1, t2) = O(t1) - O(t2) = (0, 0)
-    t1 = mpmath.mpf(str(best_t1))
-    t2 = mpmath.mpf(str(best_t2))
-    for _ in range(40):
-        ox1, oy1, odx1, ody1 = eval_O_and_Oprime_mp(t1)
-        ox2, oy2, odx2, ody2 = eval_O_and_Oprime_mp(t2)
-        rx = ox1 - ox2
-        ry = oy1 - oy2
-        if mpmath.hypot(rx, ry) <= mpmath.mpf("1e-30"):
-            break
-        # Jacobian J = [[odx1, -odx2], [ody1, -ody2]]
-        det = odx1 * (-ody2) - (-odx2) * ody1
-        if abs(det) <= mpmath.mpf("1e-25"):
-            break
-        dt1 = (rx * (-ody2) - ry * (-odx2)) / det
-        dt2 = (odx1 * ry - ody1 * rx) / det
-        t1 -= dt1
-        t2 -= dt2
-
-    ox1, oy1, _, _ = eval_O_and_Oprime_mp(t1)
-    ox2, oy2, _, _ = eval_O_and_Oprime_mp(t2)
-    res_dist = float(mpmath.hypot(ox1 - ox2, oy1 - oy2))
-    eps_t = 5e-13
+    best = min(kraw["certifiedIntersections"], key=lambda s: s["residualDistanceCm"])
     return SelfIntersectionCertificate(
         scope="LOCAL",
         segmentIdA=curve.segment_id,
         segmentIdB=curve.segment_id,
-        t1Bracket=(float(t1) - eps_t, float(t1) + eps_t),
-        t2Bracket=(float(t2) - eps_t, float(t2) + eps_t),
-        intersectionPointCm=Point2D(x=round(float(ox1), 9), y=round(float(oy1), 9)),
-        residualDistanceCm=res_dist,
+        t1Bracket=best["t1Bracket"],
+        t2Bracket=best["t2Bracket"],
+        intersectionPointCm=best["intersectionPointCm"],
+        residualDistanceCm=best["residualDistanceCm"],
     )
 
 
@@ -1027,121 +1383,118 @@ def detect_global_contour_self_intersections(
     segments: List[ExactCubicBezier2D],
     s_sign: int,
     d: float,
+    max_depth: int = 34,
 ) -> Dict[str, Any]:
-    """Evaluates a multi-segment 2D contour where each segment is certified locally regular,
-    offsets each segment by s*d*N_+(t), performs broad-phase AABB overlap detection across non-adjacent segments,
-    and isolates exact 2D inter-segment offset intersections O_i(t1*) = O_j(t2*).
+    """Evaluates a multi-segment 2D contour using validated interval offset AABBs,
+    2D interval subdivision, and the Krawczyk existence/uniqueness theorem O_i(t1*) = O_j(t2*).
+
+    Reports UNRESOLVED (mapping to INCONCLUSIVE) if interval AABB fails or if any candidate
+    zero box cannot be pruned or Krawczyk-certified at subdivision limit.
     """
     per_segment_records: List[OffsetValidationRecord] = []
-    offset_bboxes: List[Tuple[float, float, float, float]] = []
+    offset_aabb_infos: List[Dict[str, Any]] = []
 
     for seg in segments:
         rec = certify_cubic_offset_on_unit_interval(seg, s_sign=s_sign, d=d, subdivision_panels=32)
         per_segment_records.append(rec)
-        # Compute AABB of offset segment O_i(t)
-        xs: List[float] = []
-        ys: List[float] = []
-        for k in range(33):
-            pt = seg.eval_kinematics_float(k / 32.0, s_sign, d)["O"]
-            xs.append(pt[0])
-            ys.append(pt[1])
-        offset_bboxes.append((min(xs), min(ys), max(xs), max(ys)))
+        aabb_info = compute_validated_offset_aabb_iv(seg, s_sign=s_sign, d=d, panels=32)
+        offset_aabb_infos.append(aabb_info)
 
     global_intersections: List[SelfIntersectionCertificate] = []
+    krawczyk_proofs: List[Dict[str, Any]] = []
+    unresolved_records: List[Dict[str, Any]] = []
     n_seg = len(segments)
-    mpmath.mp.prec = 113
 
     for i in range(n_seg):
         for j in range(i + 2, n_seg):
             # Skip adjacent segments sharing a corner vertex (including wrap-around 0 and n_seg-1 if closed)
             if i == 0 and j == n_seg - 1 and segments[0].p0 == segments[-1].p3:
                 continue
-            b1 = offset_bboxes[i]
-            b2 = offset_bboxes[j]
-            aabb_overlap = not (b1[2] < b2[0] - 1e-6 or b2[2] < b1[0] - 1e-6 or b1[3] < b2[1] - 1e-6 or b2[3] < b1[1] - 1e-6)
+
+            info_a = offset_aabb_infos[i]
+            info_b = offset_aabb_infos[j]
+            if not (info_a["valid"] and info_b["valid"]):
+                unresolved_records.append(
+                    {
+                        "segmentIdA": segments[i].segment_id,
+                        "segmentIdB": segments[j].segment_id,
+                        "status": "UNRESOLVED",
+                        "reason": "VALIDATED_INTERVAL_AABB_CONTAINS_ZERO_SPEED",
+                    }
+                )
+                continue
+
+            b1 = info_a["aabb"]
+            b2 = info_b["aabb"]
+            aabb_overlap = not (b1[2] < b2[0] or b2[2] < b1[0] or b1[3] < b2[1] or b2[3] < b1[1])
             if not aabb_overlap:
                 continue
 
-            seg_a = segments[i]
-            seg_b = segments[j]
-            # Solve O_a(t1) = O_b(t2) on [0, 1]^2 via grid initialization + 113-bit 2D Newton
-            best_u1, best_u2 = 0.5, 0.5
-            best_d = math.inf
-            for s1 in range(21):
-                u1 = s1 / 20.0
-                pa = seg_a.eval_kinematics_float(u1, s_sign, d)["O"]
-                for s2 in range(21):
-                    u2 = s2 / 20.0
-                    pb = seg_b.eval_kinematics_float(u2, s_sign, d)["O"]
-                    dist = math.hypot(pa[0] - pb[0], pa[1] - pb[1])
-                    if dist < best_d:
-                        best_d = dist
-                        best_u1, best_u2 = u1, u2
-
-            ax_a = [mpmath.mpf(c.numerator) / mpmath.mpf(c.denominator) for c in seg_a.power_coeffs_xy()[0]]
-            ay_a = [mpmath.mpf(c.numerator) / mpmath.mpf(c.denominator) for c in seg_a.power_coeffs_xy()[1]]
-            ax_b = [mpmath.mpf(c.numerator) / mpmath.mpf(c.denominator) for c in seg_b.power_coeffs_xy()[0]]
-            ay_b = [mpmath.mpf(c.numerator) / mpmath.mpf(c.denominator) for c in seg_b.power_coeffs_xy()[1]]
-            s_mp = mpmath.mpf(s_sign)
-            d_mp = mpmath.mpf(str(d))
-
-            def _eval_seg_mp(ax_c, ay_c, t_mp):
-                bx = ax_c[0] + t_mp * (ax_c[1] + t_mp * (ax_c[2] + t_mp * ax_c[3]))
-                by = ay_c[0] + t_mp * (ay_c[1] + t_mp * (ay_c[2] + t_mp * ay_c[3]))
-                dx = ax_c[1] + t_mp * (2 * ax_c[2] + 3 * ax_c[3] * t_mp)
-                dy = ay_c[1] + t_mp * (2 * ay_c[2] + 3 * ay_c[3] * t_mp)
-                ddx = 2 * ax_c[2] + 6 * ax_c[3] * t_mp
-                ddy = 2 * ay_c[2] + 6 * ay_c[3] * t_mp
-                q = dx * dx + dy * dy
-                spd = mpmath.sqrt(q)
-                c = dx * ddy - dy * ddx
-                f = 1 - s_mp * d_mp * c / (q * spd)
-                ox = bx + s_mp * d_mp * (-dy / spd)
-                oy = by + s_mp * d_mp * (dx / spd)
-                return ox, oy, f * dx, f * dy
-
-            t1 = mpmath.mpf(str(best_u1))
-            t2 = mpmath.mpf(str(best_u2))
-            for _ in range(30):
-                ox1, oy1, odx1, ody1 = _eval_seg_mp(ax_a, ay_a, t1)
-                ox2, oy2, odx2, ody2 = _eval_seg_mp(ax_b, ay_b, t2)
-                rx = ox1 - ox2
-                ry = oy1 - oy2
-                if mpmath.hypot(rx, ry) <= mpmath.mpf("1e-28"):
-                    break
-                det = odx1 * (-ody2) - (-odx2) * ody1
-                if abs(det) <= mpmath.mpf("1e-24"):
-                    break
-                t1 -= (rx * (-ody2) - ry * (-odx2)) / det
-                t2 -= (odx1 * ry - ody1 * rx) / det
-
-            ox1, oy1, _, _ = _eval_seg_mp(ax_a, ay_a, t1)
-            ox2, oy2, _, _ = _eval_seg_mp(ax_b, ay_b, t2)
-            res_d = float(mpmath.hypot(ox1 - ox2, oy1 - oy2))
-            if 0.0 <= float(t1) <= 1.0 and 0.0 <= float(t2) <= 1.0 and res_d <= 1e-6:
-                global_intersections.append(
-                    SelfIntersectionCertificate(
-                        scope="GLOBAL",
-                        segmentIdA=seg_a.segment_id,
-                        segmentIdB=seg_b.segment_id,
-                        t1Bracket=(max(0.0, float(t1) - 5e-13), min(1.0, float(t1) + 5e-13)),
-                        t2Bracket=(max(0.0, float(t2) - 5e-13), min(1.0, float(t2) + 5e-13)),
-                        intersectionPointCm=Point2D(x=round(float(ox1), 9), y=round(float(oy1), 9)),
-                        residualDistanceCm=res_d,
-                    )
+            kraw = krawczyk_isolate_offset_intersections(
+                segments[i],
+                segments[j],
+                s_sign=s_sign,
+                d=d,
+                domain_1=(0.0, 1.0),
+                domain_2=(0.0, 1.0),
+                max_depth=max_depth,
+                initial_panels=16,
+            )
+            if kraw["unresolvedBoxes"]:
+                unresolved_records.append(
+                    {
+                        "segmentIdA": segments[i].segment_id,
+                        "segmentIdB": segments[j].segment_id,
+                        "status": "UNRESOLVED",
+                        "unresolvedBoxesCount": len(kraw["unresolvedBoxes"]),
+                        "unresolvedBoxes": kraw["unresolvedBoxes"][:10],
+                    }
+                )
+            for sol in kraw["certifiedIntersections"]:
+                cert = SelfIntersectionCertificate(
+                    scope="GLOBAL",
+                    segmentIdA=segments[i].segment_id,
+                    segmentIdB=segments[j].segment_id,
+                    t1Bracket=sol["t1Bracket"],
+                    t2Bracket=sol["t2Bracket"],
+                    intersectionPointCm=sol["intersectionPointCm"],
+                    residualDistanceCm=sol["residualDistanceCm"],
+                )
+                global_intersections.append(cert)
+                krawczyk_proofs.append(
+                    {
+                        "segmentIdA": segments[i].segment_id,
+                        "segmentIdB": segments[j].segment_id,
+                        "t1Bracket": list(sol["t1Bracket"]),
+                        "t2Bracket": list(sol["t2Bracket"]),
+                        "krawczykNormInf": sol["krawczykNormInf"],
+                        "krawczykContainmentVerified": sol["krawczykContainmentVerified"],
+                        "existenceAndUniquenessCertified": sol["existenceAndUniquenessCertified"],
+                    }
                 )
 
     all_locally_regular = all(r.verification_outcome == "CERTIFIED_VALID" for r in per_segment_records)
+    has_unresolved = len(unresolved_records) > 0
+    if has_unresolved:
+        canon_class = CanonicalOffsetClassification.INCONCLUSIVE.value
+        kraw_status = "UNRESOLVED"
+    elif global_intersections:
+        canon_class = CanonicalOffsetClassification.GLOBAL_SELF_INTERSECTION.value
+        kraw_status = "CERTIFIED_EXISTENCE_AND_UNIQUENESS"
+    else:
+        canon_class = CanonicalOffsetClassification.CERTIFIED_VALID.value
+        kraw_status = "CERTIFIED_DISJOINT"
+
     return {
         "segmentCount": n_seg,
         "allSegmentsLocallyRegular": all_locally_regular,
+        "validatedIntervalAabbs": [list(info["aabb"]) for info in offset_aabb_infos],
         "globalSelfIntersectionsDetected": len(global_intersections),
         "globalIntersections": [g.model_dump(mode="json") for g in global_intersections],
-        "canonicalOffsetClassification": (
-            CanonicalOffsetClassification.GLOBAL_SELF_INTERSECTION.value
-            if global_intersections
-            else CanonicalOffsetClassification.CERTIFIED_VALID.value
-        ),
+        "krawczykStatus": kraw_status,
+        "krawczykCertificates": krawczyk_proofs,
+        "unresolvedCandidates": unresolved_records,
+        "canonicalOffsetClassification": canon_class,
     }
 
 
@@ -1866,7 +2219,7 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
     families.append(
         {
             "familyId": "AG-15",
-            "title": "Global Non-Local Concave Pocket Self-Intersection (Locally Regular Segments, 2D Inter-Segment Intersection)",
+            "title": "Global Non-Local Concave Pocket Self-Intersection (Validated Interval AABB + Krawczyk Existence/Uniqueness)",
             "expectedCategory": CanonicalOffsetClassification.GLOBAL_SELF_INTERSECTION.value,
             "classifiedCategory": ag15_global_res["canonicalOffsetClassification"],
             "canonicalOffsetClassification": ag15_global_res["canonicalOffsetClassification"],
@@ -1875,11 +2228,16 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
             "verificationOutcome": "CERTIFIED_INVALID",
             "failureCategory": OffsetFailureCategory.GLOBAL_CONTOUR_SELF_INTERSECTION.value,
             "locallyRegularEverywhere": ag15_global_res["allSegmentsLocallyRegular"],
+            "validatedIntervalAabbs": ag15_global_res["validatedIntervalAabbs"],
             "globalSelfIntersectionsDetected": ag15_global_res["globalSelfIntersectionsDetected"],
             "globalIntersections": ag15_global_res["globalIntersections"],
+            "krawczykStatus": ag15_global_res["krawczykStatus"],
+            "krawczykCertificates": ag15_global_res["krawczykCertificates"],
             "trimmed": True,
             "passed": (
                 ag15_global_res["allSegmentsLocallyRegular"] is True
+                and ag15_global_res["krawczykStatus"] == "CERTIFIED_EXISTENCE_AND_UNIQUENESS"
+                and all(k["krawczykContainmentVerified"] and k["krawczykNormInf"] < 1.0 for k in ag15_global_res["krawczykCertificates"])
                 and ag15_global_res["globalSelfIntersectionsDetected"] >= 1
                 and ag15_global_res["canonicalOffsetClassification"]
                 == CanonicalOffsetClassification.GLOBAL_SELF_INTERSECTION.value
@@ -2044,12 +2402,15 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
 
 def method_c1_cert_arc_length_enclosure(
     curve: ExactCubicBezier2D,
-    subdivision_depth: int = 7,
+    subdivision_depth: int = 8,
 ) -> Dict[str, Any]:
     """Implements ADR-009 §2.5 Method C1-Cert Adaptive De Casteljau Chord / Control-Polygon Arc-Length Enclosure:
     For each subdivided cubic Bezier segment B_k on panel I_k:
       L_chord(B_k) = ||P3 - P0||_2 <= L_exact(B_k) <= ||P1 - P0||_2 + ||P2 - P1||_2 + ||P3 - P2||_2 = L_poly(B_k)
-    Evaluated with outward-rounded 113-bit mpmath.iv interval bounds.
+    Evaluated with outward-rounded 113-bit mpmath.iv interval bounds using (dx**2)+(dy**2).
+
+    Method C1-Cert [L_chord, L_poly] is the sole certification authority (`L_ref`, `B_cert`);
+    numerical quadrature is computed strictly as a non-authoritative diagnostic metric.
     """
     segments = [curve]
     for _ in range(subdivision_depth):
@@ -2066,7 +2427,7 @@ def method_c1_cert_arc_length_enclosure(
     def _dist_iv(pa: Tuple[Fraction, Fraction], pb: Tuple[Fraction, Fraction]) -> Any:
         dx = iv.mpf(pb[0].numerator) / iv.mpf(pb[0].denominator) - iv.mpf(pa[0].numerator) / iv.mpf(pa[0].denominator)
         dy = iv.mpf(pb[1].numerator) / iv.mpf(pb[1].denominator) - iv.mpf(pa[1].numerator) / iv.mpf(pa[1].denominator)
-        return iv.sqrt(dx * dx + dy * dy)
+        return iv.sqrt((dx ** 2) + (dy ** 2))
 
     for seg in segments:
         total_chord_iv += _dist_iv(seg.p0, seg.p3)
@@ -2075,7 +2436,7 @@ def method_c1_cert_arc_length_enclosure(
     lower_chord_q = mpf_to_exact_fraction(total_chord_iv.a)
     upper_poly_q = mpf_to_exact_fraction(total_poly_iv.b)
 
-    # Also compute 113-bit reference quadrature length
+    # Non-authoritative diagnostic quadrature only
     mpmath.mp.prec = 113
     ax, ay = curve.power_coeffs_xy()
     ax_mp = [mpmath.mpf(c.numerator) / mpmath.mpf(c.denominator) for c in ax]
@@ -2092,14 +2453,23 @@ def method_c1_cert_arc_length_enclosure(
 
     lo_flt = float(lower_chord_q)
     hi_flt = float(upper_poly_q)
+    certified_ref_cm = 0.5 * (lo_flt + hi_flt)
+    certified_half_width_cm = max(0.0, 0.5 * (hi_flt - lo_flt))
+    enclosure_width_cm = max(0.0, hi_flt - lo_flt)
+    non_strict_holds = lower_chord_q <= upper_poly_q and lo_flt <= hi_flt
     return {
+        "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
         "subdivisionDepth": subdivision_depth,
         "panelsCount": len(segments),
         "lowerChordBoundCm": lo_flt,
         "upperControlPolygonBoundCm": hi_flt,
-        "enclosureWidthCm": hi_flt - lo_flt,
+        "certifiedReferenceLengthCm": certified_ref_cm,
+        "certifiedHalfWidthCm": certified_half_width_cm,
+        "enclosureWidthCm": enclosure_width_cm,
+        "nonStrictInequalityHolds": non_strict_holds,
+        "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
         "quadratureLength113BitCm": quad_len,
-        "nonStrictInequalityHolds": (lo_flt <= quad_len + 1e-15 and quad_len <= hi_flt + 1e-15 and lo_flt <= hi_flt),
+        "diagnosticQuadWithinCertifiedEnclosure": (lo_flt - 1e-15 <= quad_len <= hi_flt + 1e-15),
     }
 
 

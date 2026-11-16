@@ -215,18 +215,18 @@
           "segmentIdA": "AG-06-high-curvature-concave",
           "segmentIdB": "AG-06-high-curvature-concave",
           "t1Bracket": [
-            0.3136610018745175,
-            0.3136610018755175
+            0.31366100187501744,
+            0.31366100187501755
           ],
           "t2Bracket": [
-            0.6863389981244824,
-            0.6863389981254825
+            0.6863389981249823,
+            0.6863389981249826
           ],
           "intersectionPointCm": {
             "x": -0.0,
             "y": 2.166666667
           },
-          "residualDistanceCm": 1.6159286778789726e-31
+          "residualDistanceCm": 3.291030531612745e-33
         },
         "swallowtailTrimParameters": [
           0.313661001875,
@@ -251,18 +251,18 @@
             "segmentIdA": "AG-15-pocket-left-wall",
             "segmentIdB": "AG-15-pocket-right-wall",
             "t1Bracket": [
-              0.8399799902777362,
-              0.8399799902787363
+              0.8399799902782361,
+              0.8399799902782363
             ],
             "t2Bracket": [
-              0.052786404499542056,
-              0.05278640450054206
+              0.05278640450004205,
+              0.052786404500042065
             ],
             "intersectionPointCm": {
               "x": 1.5,
               "y": 1.645898034
             },
-            "residualDistanceCm": 1.1714974501698012e-33
+            "residualDistanceCm": 2.254243204812153e-33
           }
         ]
       },
@@ -277,22 +277,32 @@
       "canonicalOffsetClassification": "CERTIFIED_VALID",
       "computedMetrics": {
         "collinearEnclosure": {
+          "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
           "subdivisionDepth": 5,
           "panelsCount": 32,
           "lowerChordBoundCm": 10.0,
           "upperControlPolygonBoundCm": 10.0,
+          "certifiedReferenceLengthCm": 10.0,
+          "certifiedHalfWidthCm": 0.0,
           "enclosureWidthCm": 0.0,
+          "nonStrictInequalityHolds": true,
+          "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
           "quadratureLength113BitCm": 10.0,
-          "nonStrictInequalityHolds": true
+          "diagnosticQuadWithinCertifiedEnclosure": true
         },
         "nearFlat1e7Enclosure": {
+          "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
           "subdivisionDepth": 7,
           "panelsCount": 128,
           "lowerChordBoundCm": 10.000000000000004,
           "upperControlPolygonBoundCm": 10.000000000000004,
+          "certifiedReferenceLengthCm": 10.000000000000004,
+          "certifiedHalfWidthCm": 0.0,
           "enclosureWidthCm": 0.0,
+          "nonStrictInequalityHolds": true,
+          "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
           "quadratureLength113BitCm": 10.000000000000004,
-          "nonStrictInequalityHolds": true
+          "diagnosticQuadWithinCertifiedEnclosure": true
         }
       },
       "status": "PASS"

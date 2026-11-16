@@ -11,8 +11,11 @@ from patroner_geometry.c1_cert_oracle import (
     ExactCubicBezier2D,
     certify_cubic_offset_on_unit_interval,
     classify_zero_speed_point_exact,
+    compute_interval_max_speed_on_domain_cm_per_t,
+    detect_global_contour_self_intersections,
     execute_17_adversarial_geometry_families,
     execute_adr009_section6_complete_suite,
+    krawczyk_isolate_offset_intersections,
     verify_four_circle_sanity_cases,
 )
 from patroner_geometry.contracts import (
@@ -47,16 +50,36 @@ def test_m00_4_step1_interval_library_qualification_report() -> None:
     report = generate_interval_library_qualification_report()
     assert report["allCandidatesQualified"] is True
     assert report["deterministicMathematicalEvidenceOnly"] is True
+
+    pop_spec = report["populationSpecification"]
+    assert pop_spec["rationalIntervalPairsPerTier"] == 10000
+    assert pop_spec["sqrtRationalInputsPerTier"] == 10000
+    assert pop_spec["precisionTiersBits"] == [53, 113, 170, 336]
+    assert pop_spec["totalChecksPerCandidate"] == 200000
+    assert pop_spec["totalChecksAcrossAllThreeCandidates"] == 600000
+
     candidates = report["candidatesEvaluated"]
     assert len(candidates) == 3
     for cand in candidates:
         assert cand["outwardDirectedRoundingVerified"] is True
+        assert cand["outwardRoundingChecksTotal"] == 200000
+        assert cand["outwardRoundingChecksPassed"] == 200000
+        assert cand["outwardRoundingFailuresCount"] == 0
+        assert cand["failureRecords"] == []
+        assert len(cand["precisionTierBreakdown"]) == 4
         assert cand["grazingTangencyNoFalseNegative"] is True
         assert cand["wilkinsonClusterSeparationVerified"] is True
         assert cand["domainTrapsVerified"]["divisionByStraddlingZeroDetected"] is True
         assert cand["domainTrapsVerified"]["negativeSqrtDomainTrapDetected"] is True
         assert cand["unsplitRootIsolationFromUnitInterval"]["manualPreSplittingUsed"] is False
         assert cand["unsplitRootIsolationFromUnitInterval"]["allPassed"] is True
+
+    # Audit of mpmath.iv semantic properties and pitfalls must pass explicitly
+    semantic_audit = candidates[0]["mpmathIvSemanticAudit"]
+    assert semantic_audit["allSemanticAuditsPassed"] is True
+    assert semantic_audit["semanticChecks"]["zeroStraddlingSquarePitfall"]["uTimesUProducesSpuriousNegativeLowerBound"] is True
+    assert semantic_audit["semanticChecks"]["zeroStraddlingSquarePitfall"]["uPow2PreservesNonNegativity"] is True
+    assert semantic_audit["semanticChecks"]["zeroStraddlingDivisionSilentInfinity"]["returnsMinusInfPlusInfWithoutException"] is True
 
 
 def test_m00_4_four_circle_sanity_cases_exact_adr009_taxonomy() -> None:
@@ -129,6 +152,44 @@ def test_m00_4_five_way_base_curve_singularity_taxonomy() -> None:
     assert res_col["isGeometricCusp"] is True
 
 
+def test_m00_4_krawczyk_existence_uniqueness_and_unresolved_fail_closed() -> None:
+    """Verifies Krawczyk existence/uniqueness proofs on AG-15 and fail-closed UNRESOLVED behavior
+    on a tangential/coincident offset intersection where the 2D Jacobian is singular.
+    """
+    # Part 1: Independent geometric invariant check on AG-15 Krawczyk global intersection
+    seg0 = ExactCubicBezier2D.from_floats("kraw-left", (0.0, 10.0), (0.0, 6.5), (0.0, 3.5), (0.0, 0.0))
+    seg1 = ExactCubicBezier2D.from_floats("kraw-bot", (0.0, 0.0), (1.0, 0.5), (2.0, 1.2), (3.0, 2.0))
+    seg2 = ExactCubicBezier2D.from_floats("kraw-right", (3.0, 2.0), (2.0, 4.0), (1.0, 6.0), (0.0, 8.0))
+    g_res = detect_global_contour_self_intersections([seg0, seg1, seg2], s_sign=+1, d=1.5)
+    assert g_res["krawczykStatus"] == "CERTIFIED_EXISTENCE_AND_UNIQUENESS"
+    assert g_res["canonicalOffsetClassification"] == CanonicalOffsetClassification.GLOBAL_SELF_INTERSECTION.value
+    assert len(g_res["globalIntersections"]) >= 1
+    assert len(g_res["krawczykCertificates"]) == len(g_res["globalIntersections"])
+    for cert, kproof in zip(g_res["globalIntersections"], g_res["krawczykCertificates"]):
+        assert kproof["krawczykContainmentVerified"] is True
+        assert kproof["existenceAndUniquenessCertified"] is True
+        assert kproof["krawczykNormInf"] < 1.0
+        # Independently verify O_0(t1_mid) approx == O_2(t2_mid) from the curve equations
+        t1_mid = 0.5 * (cert["t1Bracket"][0] + cert["t1Bracket"][1])
+        t2_mid = 0.5 * (cert["t2Bracket"][0] + cert["t2Bracket"][1])
+        o_a = seg0.eval_kinematics_float(t1_mid, +1, 1.5)["O"]
+        o_b = seg2.eval_kinematics_float(t2_mid, +1, 1.5)["O"]
+        dist = ((o_a[0] - o_b[0]) ** 2 + (o_a[1] - o_b[1]) ** 2) ** 0.5
+        assert dist <= 1e-6
+
+    # Part 2: Fail-closed UNRESOLVED on coincident/collinear segments (singular 2D Jacobian -> Krawczyk cannot certify)
+    tangent_a = ExactCubicBezier2D.from_floats("tan-a", (0.0, 0.0), (3.0, 0.0), (7.0, 0.0), (10.0, 0.0))
+    tangent_mid = ExactCubicBezier2D.from_floats("tan-mid", (10.0, 0.0), (10.0, 1.0), (10.0, 2.0), (10.0, 3.0))
+    tangent_b = ExactCubicBezier2D.from_floats("tan-b", (0.0, 0.0), (3.0, 0.0), (7.0, 0.0), (10.0, 0.0))
+    kraw_unres = krawczyk_isolate_offset_intersections(tangent_a, tangent_b, s_sign=+1, d=1.0, max_depth=8)
+    assert kraw_unres["status"] == "UNRESOLVED"
+    assert len(kraw_unres["unresolvedBoxes"]) > 0
+
+    g_unres = detect_global_contour_self_intersections([tangent_a, tangent_mid, tangent_b], s_sign=+1, d=1.0, max_depth=8)
+    assert g_unres["krawczykStatus"] == "UNRESOLVED"
+    assert g_unres["canonicalOffsetClassification"] == CanonicalOffsetClassification.INCONCLUSIVE.value
+
+
 def test_m00_4_all_17_adversarial_geometry_families() -> None:
     report = execute_17_adversarial_geometry_families()
     assert report["totalFamiliesRequired"] == 17
@@ -179,8 +240,26 @@ def test_m00_4_adr009_section6_complete_suite_and_negative_guards() -> None:
 def test_m00_5_arc_length_and_brent_inversion() -> None:
     res = execute_m00_5_arc_length_verification()
     assert res["allPassed"] is True
+    assert res["certificationAuthority"] == "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS"
+    assert res["quadratureRole"] == "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE"
+    assert res["adaptiveGaussLegendreWithinC1CertEnclosure"] is True
     assert res["forwardLengthErrorCm"] <= 1e-6
-    assert res["methodC1CertArmscyeEnclosure"]["nonStrictInequalityHolds"] is True
+
+    armscye_c1 = res["methodC1CertArmscyeEnclosure"]
+    assert armscye_c1["certificationAuthority"] == "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS"
+    assert armscye_c1["nonStrictInequalityHolds"] is True
+    assert armscye_c1["lowerChordBoundCm"] <= armscye_c1["upperControlPolygonBoundCm"]
+    assert armscye_c1["enclosureWidthCm"] <= 1e-3
+
+    # Verify Method B1 interval speed is computed from the curve, not hardcoded (was previously 25.0)
+    fwd_rec = res["forwardNumericalVerificationRecord"]
+    expected_curve = ExactCubicBezier2D.from_floats(
+        "bodice-front-armscye-m005", (23.5, 19.5), (21.0, 19.5), (19.2, 14.0), (20.5, 4.2)
+    )
+    computed_sup = compute_interval_max_speed_on_domain_cm_per_t(expected_curve, 0.0, 1.0, panels=64)
+    assert abs(fwd_rec["local_speed_upper_bound_cm_per_t"] - round(computed_sup, 8)) <= 1e-7
+    assert fwd_rec["local_speed_upper_bound_cm_per_t"] != 25.0
+
     assert res["methodC1CertCollinearEnclosure"]["nonStrictInequalityHolds"] is True
     assert res["methodC1CertCollinearEnclosure"]["enclosureWidthCm"] == 0.0
 

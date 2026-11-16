@@ -1,6 +1,7 @@
 {
   "deliverable": "M00_REPRODUCIBILITY_REPORT.json",
   "checkpoint": "15",
+  "packageId": "PKG-P00-01",
   "pythonHashSeed": "0",
   "consecutiveRunsCompared": 2,
   "allMathematicalArtifactsBitExactAcrossRuns": true,
@@ -13,20 +14,20 @@
     },
     {
       "artifact": "IntervalLibraryQualificationReport.json",
-      "run1Sha256": "8382162acde12c6a26d4911598bf9cc7f8627c0ce9d299da6da3ee0434c89a53",
-      "run2Sha256": "8382162acde12c6a26d4911598bf9cc7f8627c0ce9d299da6da3ee0434c89a53",
+      "run1Sha256": "77361745d14fe08fa92b51fe043a09dbb1309c1f298436d9cdf45d5fa774a6cc",
+      "run2Sha256": "77361745d14fe08fa92b51fe043a09dbb1309c1f298436d9cdf45d5fa774a6cc",
       "identicalAcrossRuns": true
     },
     {
       "artifact": "AdversarialGeometryVerificationReport.json",
-      "run1Sha256": "71d440ca22da6ba302f59cd2c281de7cb25f656e3fd928d242e3bbc16b5cb277",
-      "run2Sha256": "71d440ca22da6ba302f59cd2c281de7cb25f656e3fd928d242e3bbc16b5cb277",
+      "run1Sha256": "8d68ff25ee519209a92e42e3c8520f9d7687817508e7034f2933e7687095a2cf",
+      "run2Sha256": "8d68ff25ee519209a92e42e3c8520f9d7687817508e7034f2933e7687095a2cf",
       "identicalAcrossRuns": true
     },
     {
       "artifact": "ArcLengthVerificationReport.json",
-      "run1Sha256": "ebd505eb3a154e8fb5f0cef1deaad3f84cedfe76087d8330ee91eb75cbb294d2",
-      "run2Sha256": "ebd505eb3a154e8fb5f0cef1deaad3f84cedfe76087d8330ee91eb75cbb294d2",
+      "run1Sha256": "a2a85235e5834a2edc42a63cd7e29b137668c3b52d57544252d65139a0983146",
+      "run2Sha256": "a2a85235e5834a2edc42a63cd7e29b137668c3b52d57544252d65139a0983146",
       "identicalAcrossRuns": true
     },
     {
@@ -54,10 +55,11 @@
       "identicalAcrossRuns": true
     }
   ],
+  "runtimeBenchmarksArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
   "latencyQualificationPolicy": {
     "wallClockTimestampsExcludedFromCanonicalJson": true,
     "perCurveLatencyBudgetMaxMs": 50.0,
-    "allThreeCandidatesVerifiedUnder5MsP95": true,
+    "allThreeCandidatesVerifiedUnder5MsP95": false,
     "deterministicOperationCountsPerBenchmarkIteration": {
       "degree12PowerToBernsteinConversions": 1,
       "deCasteljauExactSubdivisions": 2,

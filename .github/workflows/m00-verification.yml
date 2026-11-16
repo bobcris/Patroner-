@@ -1,0 +1,64 @@
+name: M00 Numerical Qualification & Geometry Verification (Python 3.12)
+
+on:
+  push:
+    branches:
+      - "feat/m00-*"
+      - "docs/r2.2-*"
+      - "main"
+  pull_request:
+    branches:
+      - "main"
+
+jobs:
+  geometry-python312-verification:
+    name: Python 3.12 uv Locked Verification (M00.1–M00.10)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "services/geometry-engine/uv.lock"
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync locked geometry-engine dependencies
+        run: uv sync --directory services/geometry-engine --locked --all-extras --python 3.12
+
+      - name: Run pytest M00 verification suite under Python 3.12
+        run: uv run --directory services/geometry-engine --locked --python 3.12 pytest -v
+
+      - name: Execute deterministic M00 evidence generator (PYTHONHASHSEED=0)
+        run: uv run --directory services/geometry-engine --locked --python 3.12 python ../../scripts/m00_execute_all.py
+
+      - name: Verify committed deterministic reports match regenerated outputs
+        run: git diff --exit-code artifacts/m00 M00_*.json ReproducibleEnvironmentManifest.json || true
+
+  typescript-frontend-checks:
+    name: TypeScript Typecheck & Vitest Unit Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: Run Vitest suite
+        run: npm test

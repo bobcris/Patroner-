@@ -1,0 +1,175 @@
+{
+  "artifactName": "ProductionDxfRoundTripReport.json",
+  "packageId": "PKG-DXF-SEAM-WORKSTREAM-B",
+  "sourceDraftingModules": [
+    "src/engine/drafting/bodice-block.ts",
+    "src/engine/drafting/sleeve-block.ts",
+    "src/engine/drafting/skirt-block.ts",
+    "src/engine/assembly/bodice-sleeve-assembly.ts",
+    "src/engine/production/dxf-aama-exporter.ts"
+  ],
+  "missingDependenciesForVerticalSlice1": [
+    {
+      "dependency": "src/engine/drafting/trouser-block.ts",
+      "impact": "Vertical Slice 1 requires Bodice, Skirt, Sleeve, and Trouser canonical blocks; Trouser drafting module is absent.",
+      "status": "BLOCKED_MISSING_TROUSER_BLOCK"
+    }
+  ],
+  "toleranceMaxCm": 0.001,
+  "syntheticRoundTripVerified": true,
+  "externalCadInteroperabilityVerified": false,
+  "interoperabilityPolicyNote": "Synthetic DXF R12 (AC1009) round-trip verification passes against actual drafted Bodice (Front, Back), Sleeve, and Skirt (Front, Back) contours. External third-party CAD software interoperability remains unverified (scheduled under M05). Vertical Slice 1 remains incomplete until src/engine/drafting/trouser-block.ts is built.",
+  "sizeReports": [
+    {
+      "sizeLabel": "XS",
+      "exportId": "PATRONER-CANONICAL-XS",
+      "pieceCodes": [
+        "BOD-F-01",
+        "BOD-B-01",
+        "SLV-01",
+        "SK-01-F",
+        "SK-02-B"
+      ],
+      "sectionsRecovered": [
+        "HEADER",
+        "TABLES",
+        "ENTITIES"
+      ],
+      "acadVersionHeader": "AC1009",
+      "insUnitsHeader": "5",
+      "tableLayersDefined": [
+        "1",
+        "11",
+        "2",
+        "4",
+        "7",
+        "8"
+      ],
+      "entityLayersFound": [
+        "1",
+        "11",
+        "2",
+        "4",
+        "7",
+        "8"
+      ],
+      "missingTableLayers": [],
+      "missingEntityLayers": [],
+      "cutPolylinesRecovered": 5,
+      "sewPolylinesRecovered": 5,
+      "grainLinesRecovered": 5,
+      "notchLinesRecovered": 16,
+      "drillPointsRecovered": 5,
+      "internalPolylinesRecovered": 5,
+      "totalCutVertices": 276,
+      "totalSewVertices": 264,
+      "maxVertexRoundTripErrorCm": 0.0,
+      "dxfPayloadSha256": "a3555ded395f2eda914d326373ed544eac2be7705c0ef9d3992c207491682e18",
+      "tsRoundTripAllPassed": true,
+      "syntheticRoundTripVerified": true,
+      "externalCadInteroperabilityVerified": false,
+      "allPassed": true
+    },
+    {
+      "sizeLabel": "M",
+      "exportId": "PATRONER-CANONICAL-M",
+      "pieceCodes": [
+        "BOD-F-01",
+        "BOD-B-01",
+        "SLV-01",
+        "SK-01-F",
+        "SK-02-B"
+      ],
+      "sectionsRecovered": [
+        "HEADER",
+        "TABLES",
+        "ENTITIES"
+      ],
+      "acadVersionHeader": "AC1009",
+      "insUnitsHeader": "5",
+      "tableLayersDefined": [
+        "1",
+        "11",
+        "2",
+        "4",
+        "7",
+        "8"
+      ],
+      "entityLayersFound": [
+        "1",
+        "11",
+        "2",
+        "4",
+        "7",
+        "8"
+      ],
+      "missingTableLayers": [],
+      "missingEntityLayers": [],
+      "cutPolylinesRecovered": 5,
+      "sewPolylinesRecovered": 5,
+      "grainLinesRecovered": 5,
+      "notchLinesRecovered": 16,
+      "drillPointsRecovered": 5,
+      "internalPolylinesRecovered": 5,
+      "totalCutVertices": 287,
+      "totalSewVertices": 272,
+      "maxVertexRoundTripErrorCm": 0.0,
+      "dxfPayloadSha256": "7349f1fa39a197362e6763cadd874f0446f176ffa4329ea5f6101de5ce317f74",
+      "tsRoundTripAllPassed": true,
+      "syntheticRoundTripVerified": true,
+      "externalCadInteroperabilityVerified": false,
+      "allPassed": true
+    },
+    {
+      "sizeLabel": "XL",
+      "exportId": "PATRONER-CANONICAL-XL",
+      "pieceCodes": [
+        "BOD-F-01",
+        "BOD-B-01",
+        "SLV-01",
+        "SK-01-F",
+        "SK-02-B"
+      ],
+      "sectionsRecovered": [
+        "HEADER",
+        "TABLES",
+        "ENTITIES"
+      ],
+      "acadVersionHeader": "AC1009",
+      "insUnitsHeader": "5",
+      "tableLayersDefined": [
+        "1",
+        "11",
+        "2",
+        "4",
+        "7",
+        "8"
+      ],
+      "entityLayersFound": [
+        "1",
+        "11",
+        "2",
+        "4",
+        "7",
+        "8"
+      ],
+      "missingTableLayers": [],
+      "missingEntityLayers": [],
+      "cutPolylinesRecovered": 5,
+      "sewPolylinesRecovered": 5,
+      "grainLinesRecovered": 5,
+      "notchLinesRecovered": 16,
+      "drillPointsRecovered": 5,
+      "internalPolylinesRecovered": 5,
+      "totalCutVertices": 304,
+      "totalSewVertices": 290,
+      "maxVertexRoundTripErrorCm": 0.0,
+      "dxfPayloadSha256": "e6b70060950151862cab28dfa03242dfd708b12d3fda283838dbbf19ad67c988",
+      "tsRoundTripAllPassed": true,
+      "syntheticRoundTripVerified": true,
+      "externalCadInteroperabilityVerified": false,
+      "allPassed": true
+    }
+  ],
+  "allPassed": true
+}

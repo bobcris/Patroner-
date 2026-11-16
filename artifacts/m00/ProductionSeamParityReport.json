@@ -1,0 +1,297 @@
+{
+  "artifactName": "ProductionSeamParityReport.json",
+  "packageId": "PKG-DXF-SEAM-WORKSTREAM-B",
+  "governingDecision": "DEC-11 (Two-Tier Seam Tolerance: Tier 1 CAD <= 0.05 cm; Tier 2 Physical <= 0.20 cm)",
+  "sourceDraftingModules": [
+    "src/engine/drafting/bodice-block.ts",
+    "src/engine/drafting/sleeve-block.ts",
+    "src/engine/drafting/skirt-block.ts",
+    "src/engine/assembly/bodice-sleeve-assembly.ts",
+    "src/engine/production/dxf-aama-exporter.ts"
+  ],
+  "missingDependenciesForVerticalSlice1": [
+    {
+      "dependency": "src/engine/drafting/trouser-block.ts",
+      "impact": "Vertical Slice 1 requires Bodice, Skirt, Sleeve, and Trouser canonical blocks; Trouser drafting module is absent.",
+      "status": "BLOCKED_MISSING_TROUSER_BLOCK"
+    }
+  ],
+  "dec11Tier1CadToleranceCm": 0.05,
+  "dec11Tier2PhysicalToleranceCm": 0.2,
+  "sizeReports": [
+    {
+      "sizeLabel": "XS",
+      "pairedSeamChecks": [
+        {
+          "seamPair": "Bodice Front Side Seam <-> Bodice Back Side Seam",
+          "tsEdgeACm": 20.09,
+          "tsEdgeBCm": 20.09,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            20.089801,
+            20.089801
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            20.08538,
+            20.08538
+          ],
+          "pythonMidpointDeltaCm": 0.004421,
+          "pythonWorstCaseIntervalDeltaCm": 0.004421,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+          "tsEdgeACm": 12,
+          "tsEdgeBCm": 12,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            11.996933,
+            11.996933
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            11.997683,
+            11.997683
+          ],
+          "pythonMidpointDeltaCm": 0.00075,
+          "pythonWorstCaseIntervalDeltaCm": 0.00075,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "seamPair": "Skirt Front Side Seam (Lower + Hip Bezier) <-> Skirt Back Side Seam",
+          "tsEdgeACm": 68.9792,
+          "tsEdgeBCm": 68.9792,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            68.979187,
+            68.979191
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            68.979187,
+            68.979191
+          ],
+          "pythonMidpointDeltaCm": 0.0,
+          "pythonWorstCaseIntervalDeltaCm": 3e-06,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "seamPair": "Sleeve Front Inseam <-> Sleeve Back Underarm Inseam",
+          "tsEdgeACm": 47.38,
+          "tsEdgeBCm": 47.38,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            47.376382,
+            47.376382
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            47.378832,
+            47.378832
+          ],
+          "pythonMidpointDeltaCm": 0.002449,
+          "pythonWorstCaseIntervalDeltaCm": 0.002449,
+          "withinTier1CadTolerance0_05Cm": true
+        }
+      ],
+      "bodiceSleeveAssemblyEase": {
+        "status": "verified-valid",
+        "isValid": true,
+        "frontBodiceArmholeLengthCm": 16.471542989365524,
+        "backBodiceArmholeLengthCm": 16.275617533971044,
+        "frontSleeveCapLengthCm": 18.347209806974874,
+        "backSleeveCapLengthCm": 18.253795354657147,
+        "frontEaseCm": 1.8756668176093498,
+        "backEaseCm": 1.9781778206861027,
+        "totalEaseCm": 3.8538446382954525,
+        "targetTotalEaseCm": 1.8,
+        "isTotalEasePermitted": true,
+        "isDistributionBalanced": true,
+        "isTargetCompliant": false,
+        "inseamParityDeltaCm": 0,
+        "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
+      },
+      "allPassed": true
+    },
+    {
+      "sizeLabel": "M",
+      "pairedSeamChecks": [
+        {
+          "seamPair": "Bodice Front Side Seam <-> Bodice Back Side Seam",
+          "tsEdgeACm": 19.59,
+          "tsEdgeBCm": 19.59,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            19.592348,
+            19.592348
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            19.58756,
+            19.58756
+          ],
+          "pythonMidpointDeltaCm": 0.004788,
+          "pythonWorstCaseIntervalDeltaCm": 0.004788,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+          "tsEdgeACm": 12.7,
+          "tsEdgeBCm": 12.7,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            12.702189,
+            12.702189
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            12.701748,
+            12.701748
+          ],
+          "pythonMidpointDeltaCm": 0.000441,
+          "pythonWorstCaseIntervalDeltaCm": 0.000441,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "seamPair": "Skirt Front Side Seam (Lower + Hip Bezier) <-> Skirt Back Side Seam",
+          "tsEdgeACm": 68.965,
+          "tsEdgeBCm": 68.965,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            68.964955,
+            68.964959
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            68.964955,
+            68.964959
+          ],
+          "pythonMidpointDeltaCm": 0.0,
+          "pythonWorstCaseIntervalDeltaCm": 3e-06,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "seamPair": "Sleeve Front Inseam <-> Sleeve Back Underarm Inseam",
+          "tsEdgeACm": 49.55,
+          "tsEdgeBCm": 49.55,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            49.548441,
+            49.548441
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            49.554883,
+            49.554883
+          ],
+          "pythonMidpointDeltaCm": 0.006442,
+          "pythonWorstCaseIntervalDeltaCm": 0.006442,
+          "withinTier1CadTolerance0_05Cm": true
+        }
+      ],
+      "bodiceSleeveAssemblyEase": {
+        "status": "verified-valid",
+        "isValid": true,
+        "frontBodiceArmholeLengthCm": 18.55970034410153,
+        "backBodiceArmholeLengthCm": 18.23349890240222,
+        "frontSleeveCapLengthCm": 20.14975822668334,
+        "backSleeveCapLengthCm": 19.90385112364924,
+        "frontEaseCm": 1.5900578825818101,
+        "backEaseCm": 1.6703522212470183,
+        "totalEaseCm": 3.2604101038288285,
+        "targetTotalEaseCm": 1.8,
+        "isTotalEasePermitted": true,
+        "isDistributionBalanced": true,
+        "isTargetCompliant": false,
+        "inseamParityDeltaCm": 0,
+        "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
+      },
+      "allPassed": true
+    },
+    {
+      "sizeLabel": "XL",
+      "pairedSeamChecks": [
+        {
+          "seamPair": "Bodice Front Side Seam <-> Bodice Back Side Seam",
+          "tsEdgeACm": 19.09,
+          "tsEdgeBCm": 19.09,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            19.085083,
+            19.085083
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            19.089853,
+            19.089853
+          ],
+          "pythonMidpointDeltaCm": 0.00477,
+          "pythonWorstCaseIntervalDeltaCm": 0.00477,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+          "tsEdgeACm": 13.5,
+          "tsEdgeBCm": 13.5,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            13.498004,
+            13.498004
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            13.496018,
+            13.496018
+          ],
+          "pythonMidpointDeltaCm": 0.001986,
+          "pythonWorstCaseIntervalDeltaCm": 0.001986,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "seamPair": "Skirt Front Side Seam (Lower + Hip Bezier) <-> Skirt Back Side Seam",
+          "tsEdgeACm": 68.9521,
+          "tsEdgeBCm": 68.9521,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            68.952104,
+            68.952107
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            68.952104,
+            68.952107
+          ],
+          "pythonMidpointDeltaCm": 0.0,
+          "pythonWorstCaseIntervalDeltaCm": 3e-06,
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "seamPair": "Sleeve Front Inseam <-> Sleeve Back Underarm Inseam",
+          "tsEdgeACm": 50.19,
+          "tsEdgeBCm": 50.19,
+          "tsCadDeltaCm": 0,
+          "pythonC1CertEdgeAIntervalCm": [
+            50.19347,
+            50.19347
+          ],
+          "pythonC1CertEdgeBIntervalCm": [
+            50.193495,
+            50.193495
+          ],
+          "pythonMidpointDeltaCm": 2.5e-05,
+          "pythonWorstCaseIntervalDeltaCm": 2.5e-05,
+          "withinTier1CadTolerance0_05Cm": true
+        }
+      ],
+      "bodiceSleeveAssemblyEase": {
+        "status": "verified-valid",
+        "isValid": true,
+        "frontBodiceArmholeLengthCm": 21.889686415176442,
+        "backBodiceArmholeLengthCm": 21.372251948675625,
+        "frontSleeveCapLengthCm": 23.7948369780472,
+        "backSleeveCapLengthCm": 23.343011014476986,
+        "frontEaseCm": 1.9051505628707588,
+        "backEaseCm": 1.97075906580136,
+        "totalEaseCm": 3.875909628672119,
+        "targetTotalEaseCm": 1.8,
+        "isTotalEasePermitted": true,
+        "isDistributionBalanced": true,
+        "isTargetCompliant": false,
+        "inseamParityDeltaCm": 0,
+        "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
+      },
+      "allPassed": true
+    }
+  ],
+  "allPassed": true
+}

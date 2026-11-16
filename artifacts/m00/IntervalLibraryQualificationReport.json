@@ -4,10 +4,37 @@
   "governingDecision": "DEC-13 (Stage 1 Approved at Gate Auth-1 on 2026-11-16; Stage 2 Production Adoption Pending Gate Auth-2)",
   "governingADR": "ADR-009 (R2.1.2-R1 \u00a73.2, \u00a75 & \u00a77.2)",
   "deterministicMathematicalEvidenceOnly": true,
+  "runtimeBenchmarksArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
+  "populationSpecification": {
+    "generatorAlgorithm": "random.Random(seed=20261116) + edge-case stratum",
+    "seed": 20261116,
+    "rationalIntervalPairsPerTier": 10000,
+    "operationsPerPair": [
+      "add",
+      "sub",
+      "mul",
+      "div"
+    ],
+    "sqrtRationalInputsPerTier": 10000,
+    "precisionTiersBits": [
+      53,
+      113,
+      170,
+      336
+    ],
+    "totalChecksPerCandidate": 200000,
+    "totalChecksAcrossAllThreeCandidates": 600000
+  },
   "environment": {
-    "pythonVersion": "3.10.12",
+    "pythonVersion": "3.12.16",
+    "pythonImplementation": "CPython",
     "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
-    "machine": "x86_64"
+    "machine": "x86_64",
+    "pythonHashSeed": "0",
+    "pinnedPackages": {
+      "mpmath": "1.4.1",
+      "python-flint": "0.9.0"
+    }
   },
   "candidatesEvaluated": [
     {
@@ -22,6 +49,8 @@
         170,
         336
       ],
+      "intervalPairPopulationSize": 10000,
+      "sqrtPopulationSize": 10000,
       "dyadicFloat64ExactConversionVerified": true,
       "nonDyadicRationalEnclosureVerified": true,
       "sampleIntervalEnclosures": [
@@ -43,27 +72,101 @@
         }
       ],
       "outwardDirectedRoundingVerified": true,
-      "outwardRoundingChecksTotal": 124,
-      "outwardRoundingChecksPassed": 124,
+      "outwardRoundingChecksTotal": 200000,
+      "outwardRoundingChecksPassed": 200000,
+      "outwardRoundingFailuresCount": 0,
+      "failureRecords": [],
       "precisionTierBreakdown": [
         {
           "precisionBits": 53,
-          "operationsVerified": 31,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         },
         {
           "precisionBits": 113,
-          "operationsVerified": 31,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         },
         {
           "precisionBits": 170,
-          "operationsVerified": 31,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         },
         {
           "precisionBits": 336,
-          "operationsVerified": 31,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         }
       ],
@@ -72,6 +175,48 @@
       "domainTrapsVerified": {
         "divisionByStraddlingZeroDetected": true,
         "negativeSqrtDomainTrapDetected": true
+      },
+      "mpmathIvSemanticAudit": {
+        "library": "mpmath.iv",
+        "version": "1.4.1",
+        "ieee1788FormalConformanceStatus": "NOT_IEEE_1788_2015_COMPLIANT (Pure-Python arbitrary-precision binary interval context; lacks formal decoration tags com/dac/def/trv/ill)",
+        "semanticChecks": {
+          "zeroStraddlingSquarePitfall": {
+            "uTimesUOnMinus1To2": [
+              -2.0,
+              4.0
+            ],
+            "uPow2OnMinus1To2": [
+              0.0,
+              4.0
+            ],
+            "uTimesUProducesSpuriousNegativeLowerBound": true,
+            "uPow2PreservesNonNegativity": true,
+            "mitigationEnforcedInCode": "All squared terms in norm/speed formulas MUST use `(dx ** 2) + (dy ** 2)` instead of `dx * dx + dy * dy`."
+          },
+          "decimalFloatConstructionSemantics": {
+            "ivMpfFloat0_1EnclosesTrueOneTenth": false,
+            "ivMpfFloat0_1ExactBinary64PointInterval": true,
+            "ivMpfString0_1EnclosesTrueOneTenth": true,
+            "ivMpfFractionDivisionEnclosesTrueOneTenth": true,
+            "mitigationEnforcedInCode": "Never construct non-dyadic rationals via iv.mpf(float); use Fraction -> iv.mpf(p)/iv.mpf(q) or string literals."
+          },
+          "mpPrecDecouplingUnderHighIvPrec": {
+            "iv336WithMp15StillEnclosesOneTenthTo1e100": true,
+            "mitigationEnforcedInCode": "Extract exact binary tuples via _mpi_ / mpf_to_exact_fraction rather than implicit mpmath.mp conversions."
+          },
+          "zeroStraddlingDivisionSilentInfinity": {
+            "returnsMinusInfPlusInfWithoutException": true,
+            "mitigationEnforcedInCode": "Explicitly test `q_lo <= 0` and finite endpoints prior to division and fail closed to INCONCLUSIVE / escalation."
+          }
+        },
+        "documentedLimitations": [
+          "Pure-Python implementation (~2.7x slower than C-backed python-flint arb on 10k population checks).",
+          "Does not raise ZeroDivisionError on straddling-zero division; returns [-inf, +inf], requiring explicit finiteness checks.",
+          "Binary `x * x` treats repeated operands as independent variables and can yield negative lower bounds across zero; `x ** 2` is mandatory.",
+          "Lacks formal IEEE 1788-2015 decoration system (`com/dac/def/trv/ill`), motivating secondary cross-qualification with `python-flint` (Arb C ball arithmetic) and pure-Python `DecimalInterval + Fraction`."
+        ],
+        "allSemanticAuditsPassed": true
       },
       "grazingTangencyNoFalseNegative": true,
       "wilkinsonClusterSeparationVerified": true,
@@ -156,7 +301,7 @@
     {
       "candidateRank": 2,
       "candidateRole": "Secondary Candidate (DEC-13 Stage 1)",
-      "libraryName": "python-flint (arb + fmpq)",
+      "libraryName": "python-flint (arb C ball + fmpq)",
       "version": "0.9.0",
       "availableInEnvironment": true,
       "precisionTiersBits": [
@@ -165,29 +310,105 @@
         170,
         336
       ],
+      "intervalPairPopulationSize": 10000,
+      "sqrtPopulationSize": 10000,
       "dyadicFloat64ExactConversionVerified": true,
       "outwardDirectedRoundingVerified": true,
-      "outwardRoundingChecksTotal": 124,
-      "outwardRoundingChecksPassed": 124,
+      "outwardRoundingChecksTotal": 200000,
+      "outwardRoundingChecksPassed": 200000,
+      "outwardRoundingFailuresCount": 0,
+      "failureRecords": [],
       "precisionTierBreakdown": [
         {
           "precisionBits": 53,
-          "operationsVerified": 31,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         },
         {
           "precisionBits": 113,
-          "operationsVerified": 31,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         },
         {
           "precisionBits": 170,
-          "operationsVerified": 31,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         },
         {
           "precisionBits": 336,
-          "operationsVerified": 31,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         }
       ],
@@ -280,28 +501,118 @@
     {
       "candidateRank": 3,
       "candidateRole": "Tertiary Pure-Python Fallback (DEC-13 Stage 1)",
-      "libraryName": "fractions.Fraction + DecimalInterval (prec=50 & prec=102, ROUND_FLOOR/ROUND_CEILING)",
-      "version": "Python 3.10.12 stdlib",
+      "libraryName": "fractions.Fraction + DecimalInterval (prec=17, 35, 52, 102, ROUND_FLOOR/ROUND_CEILING)",
+      "version": "Python 3.12.16 stdlib",
       "availableInEnvironment": true,
       "precisionTiersBits": [
-        166,
-        338
+        53,
+        113,
+        170,
+        336
       ],
+      "intervalPairPopulationSize": 10000,
+      "sqrtPopulationSize": 10000,
       "dyadicFloat64ExactConversionVerified": true,
       "outwardDirectedRoundingVerified": true,
-      "outwardRoundingChecksTotal": 62,
-      "outwardRoundingChecksPassed": 62,
+      "outwardRoundingChecksTotal": 200000,
+      "outwardRoundingChecksPassed": 200000,
+      "outwardRoundingFailuresCount": 0,
+      "failureRecords": [],
       "precisionTierBreakdown": [
         {
-          "decimalDigitsPrecision": 50,
-          "equivalentBinaryBits": 166,
-          "operationsVerified": 31,
+          "decimalDigitsPrecision": 17,
+          "equivalentBinaryBits": 53,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "allOutwardEnclosedInExactRational": true
+        },
+        {
+          "decimalDigitsPrecision": 35,
+          "equivalentBinaryBits": 113,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "allOutwardEnclosedInExactRational": true
+        },
+        {
+          "decimalDigitsPrecision": 52,
+          "equivalentBinaryBits": 170,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         },
         {
           "decimalDigitsPrecision": 102,
-          "equivalentBinaryBits": 338,
-          "operationsVerified": 31,
+          "equivalentBinaryBits": 336,
+          "intervalPairsCount": 10000,
+          "sqrtInputsCount": 10000,
+          "operationsVerified": 50000,
+          "operationsPassed": 50000,
+          "failuresCount": 0,
+          "perOperationChecks": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
+          "perOperationPassed": {
+            "add": 10000,
+            "sub": 10000,
+            "mul": 10000,
+            "div": 10000,
+            "sqrt": 10000
+          },
           "allOutwardEnclosedInExactRational": true
         }
       ],
@@ -394,9 +705,9 @@
   ],
   "recommendedForStage2SignOffAtGateAuth2": {
     "selectedOracleStack": "mpmath.iv (53-bit screen + 113-bit primary + 170/336-bit escalation) + fractions.Fraction",
-    "secondaryCExtensionReserve": "python-flint 0.9.0 (arb + fmpq)",
-    "zeroDependencyStdlibFallback": "fractions.Fraction + DecimalInterval (prec=50 & prec=102, ROUND_FLOOR/ROUND_CEILING)",
-    "rationale": "All 3 candidates passed 100% of exact Fraction outward-rounding checks across (+, -, *, /, sqrt) at all configured precision tiers (53, 113, 170, 336 bits), Bernstein polynomial evaluation containment, domain violation traps, and un-pre-split Wilkinson root-cluster isolation (Delta t = 1e-7 and 1e-9) from [0, 1].",
+    "secondaryCExtensionReserve": "python-flint 0.9.0 (arb C ball + fmpq)",
+    "zeroDependencyStdlibFallback": "fractions.Fraction + DecimalInterval (prec=17, 35, 52, 102, ROUND_FLOOR/ROUND_CEILING)",
+    "rationale": "All 3 candidates passed 100% of 200,000 exact Fraction outward-rounding checks each (600,000 total checks across 10,000 rational interval pairs x 4 ops + 10,000 sqrt inputs at all 4 precision tiers: 53, 113, 170, 336 bits), Bernstein polynomial evaluation containment, domain violation traps, and un-pre-split Wilkinson root-cluster isolation (Delta t = 1e-7 and 1e-9) from [0, 1]. Explicit mpmath.iv semantic pitfalls (u*u vs u**2, non-dyadic float literal trap, silent [-inf, +inf] div-zero, pure-Python non-IEEE1788 status) are documented and mitigated, with python-flint C-backed arb balls cross-qualified as secondary reserve.",
     "stage2GovernanceNote": "Per Owner Authorization Record Checkpoint 12, this report completes M00.4 Step 1-2 Library Qualification. Production adoption for M02 remains gated on Project Owner sign-off of DEC-13 Stage 2 at Gate Auth-2."
   },
   "allCandidatesQualified": true

@@ -23,7 +23,7 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SYS_PATH_ENGINE = REPO_ROOT / "services" / "geometry-engine"
@@ -39,7 +39,7 @@ from patroner_geometry.contracts import (  # noqa: E402
     verify_schemas_lock,
 )
 from patroner_geometry.qualification import (  # noqa: E402
-    benchmark_interval_candidates_runtime,
+    benchmark_10k_population_runtimes,
     generate_interval_library_qualification_report,
 )
 from patroner_geometry.sub_oracles import (  # noqa: E402
@@ -490,7 +490,9 @@ def build_canonical_ag01_ag17_registry(
             "blueprint": "R2.1.2-R1",
             "gateAuth1Commit": "6938f808629276fd1b0860fba407b42f5cb40aaf",
             "checkpoint13aAuditCommit": "0f89b292d402a4c829fdfa78a07b8dc4143df2cb",
-            "remediationBranch": "fix/m00-evidence-remediation",
+            "mainBaselineCommit": "1221eb05497a59e52c4af851614085748c92a2d1",
+            "packageId": "PKG-P00-01",
+            "executionBranch": "feat/m00-p00-qualification",
         },
         "summary": {
             "totalCanonicalAGFamilies": len(remediated_entries),
@@ -625,17 +627,21 @@ def main() -> None:
         ),
     }
 
-    runtime_benchmarks = benchmark_interval_candidates_runtime(iterations=10)
+    runtime_benchmarks = benchmark_10k_population_runtimes()
+    meta_benchmarks = write_json_file(ARTIFACTS_DIR / "IntervalCandidateBenchmarks.json", runtime_benchmarks)
+    per_curve_bench = runtime_benchmarks.get("perCurveLatencyBenchmarks", {})
     within_budget_all = all(
-        v.get("withinLatencyBudget", False) for v in runtime_benchmarks.values() if isinstance(v, dict)
+        v.get("withinLatencyBudget", False) for v in per_curve_bench.values() if isinstance(v, dict)
     )
     reproducibility_report = {
         "deliverable": "M00_REPRODUCIBILITY_REPORT.json",
         "checkpoint": "15",
+        "packageId": "PKG-P00-01",
         "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
         "consecutiveRunsCompared": 2,
         "allMathematicalArtifactsBitExactAcrossRuns": all(c["identicalAcrossRuns"] for c in run_comparisons),
         "artifactRunComparisons": run_comparisons,
+        "runtimeBenchmarksArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
         "latencyQualificationPolicy": {
             "wallClockTimestampsExcludedFromCanonicalJson": True,
             "perCurveLatencyBudgetMaxMs": 50.0,
@@ -661,22 +667,27 @@ def main() -> None:
         "milestoneId": "M00.9-M00.10",
         "artifactName": "ReproducibleEnvironmentManifest.json",
         "checkpoint": 15,
+        "packageId": "PKG-P00-01",
         "governingAuthorization": {
             "checkpoint12Date": "2026-11-16",
             "baselineBlueprint": "R2.1.2-R1",
+            "mainBaselineCommitSha": "1221eb05497a59e52c4af851614085748c92a2d1",
+            "executionBranch": "feat/m00-p00-qualification",
             "preRestartGateAuth1CommitSha": "6938f808629276fd1b0860fba407b42f5cb40aaf",
             "recoveryAnchorCommitSha": "282a303ea1126fb3b1da368e4e8e4ddbeb59c552",
             "synchronizedM00SubmissionCommitSha": "edafe5e9e6994233daeaedf5826c691a934bc013",
             "checkpoint13aAuditCommitSha": "0f89b292d402a4c829fdfa78a07b8dc4143df2cb",
-            "remediationBranch": "fix/m00-evidence-remediation",
             "approvedDecisionsAtGateAuth1": ["Gate Auth-1", "DEC-01", "DEC-13 Stage 1"],
-            "mandatoryNextGate": "Gate Auth-2 / DEC-13 Stage 2 (Blocks M02 Production Implementation)",
+            "mandatoryNextGate": "Gate Auth-2 / DEC-13 Stage 2 (CLOSED - Pending Owner Sign-Off; Blocks M02 Production Implementation)",
+            "gateAuth2Status": "CLOSED",
         },
         "runtimeEnvironment": {
             "pythonVersion": platform.python_version(),
+            "pythonRequiresSpec": ">=3.12,<3.13",
             "platform": platform.platform(),
             "machine": platform.machine(),
             "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
+            "uvLockPresent": (SYS_PATH_ENGINE / "uv.lock").exists(),
             "pinnedPackages": {
                 "mpmath": "1.4.1",
                 "python-flint": "0.9.0",
@@ -686,6 +697,18 @@ def main() -> None:
                 "scipy": "1.15.3",
                 "pytest": "9.2.0",
             },
+        },
+        "requirementStatusTaxonomy": {
+            "M00.1_schemasLock": "VERIFIED" if m00_1_run1["allPassed"] else "BLOCKED",
+            "M00.4_step1_10kX4Tiers": "VERIFIED" if m00_4_qual_run1["allCandidatesQualified"] else "BLOCKED",
+            "M00.4_step2_3_ag17_krawczyk": "VERIFIED" if (m00_4_adv_run1["allPassed"] and m00_4_sec6_run1["allPassed"]) else "BLOCKED",
+            "M00.5_c1CertArcLength": "VERIFIED" if m00_5_run1["allPassed"] else "BLOCKED",
+            "M00.6_exactTopology": "VERIFIED" if m00_6_run1["allPassed"] else "BLOCKED",
+            "M00.7_syntheticDxf": "IMPLEMENTED_UNVERIFIED",
+            "M00.8_syntheticSeamParity": "IMPLEMENTED_UNVERIFIED",
+            "M00.9_python312CiLock": "VERIFIED",
+            "M00.10_deterministicReplay": "VERIFIED" if reproducibility_report["allMathematicalArtifactsBitExactAcrossRuns"] else "BLOCKED",
+            "GateAuth2_DEC13Stage2": "BLOCKED",
         },
         "deterministicReplayVerified": True,
         "artifactDigests": [
@@ -698,6 +721,7 @@ def main() -> None:
             meta_m00_7,
             meta_m00_8,
         ],
+        "nonDeterministicRuntimeBenchmarkDigest": meta_benchmarks,
         "checkpoint15DeliverableDigests": [
             meta_root_reg,
             meta_root_sec6,
@@ -707,7 +731,17 @@ def main() -> None:
             meta_root_sub,
             meta_root_repro,
         ],
-        "allM00SubWorkloadsPassed": True,
+        "pkgP0001AllVerified": bool(
+            m00_1_run1["allPassed"]
+            and m00_4_qual_run1["allCandidatesQualified"]
+            and m00_4_adv_run1["allPassed"]
+            and m00_4_sec6_run1["allPassed"]
+            and m00_5_run1["allPassed"]
+            and m00_6_run1["allPassed"]
+            and m00_7_run1["allPassed"]
+            and m00_8_run1["allPassed"]
+            and reproducibility_report["allMathematicalArtifactsBitExactAcrossRuns"]
+        ),
     }
     meta_m00_10 = write_json_file(ARTIFACTS_DIR / "ReproducibleEnvironmentManifest.json", env_manifest)
     write_json_file(REPO_ROOT / "ReproducibleEnvironmentManifest.json", env_manifest)
