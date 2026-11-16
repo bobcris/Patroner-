@@ -1,0 +1,12 @@
+pyproject.toml
+patroner_geometry/__init__.py
+patroner_geometry/c1_cert_oracle.py
+patroner_geometry/contracts.py
+patroner_geometry/qualification.py
+patroner_geometry/sub_oracles.py
+patroner_geometry_engine.egg-info/PKG-INFO
+patroner_geometry_engine.egg-info/SOURCES.txt
+patroner_geometry_engine.egg-info/dependency_links.txt
+patroner_geometry_engine.egg-info/requires.txt
+patroner_geometry_engine.egg-info/top_level.txt
+tests/test_m00_verification_suite.py
