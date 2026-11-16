@@ -32,16 +32,28 @@
         "edgeACm": 21.102068,
         "edgeBCm": 21.102068,
         "edgeAC1CertIntervalCm": [
-          21.102068,
-          21.102068
+          21.102067505045312,
+          21.10206819204052
         ],
         "edgeBC1CertIntervalCm": [
-          21.102068,
-          21.102068
+          21.102067505045312,
+          21.10206819204052
         ],
+        "worstCaseC1CertDeltaCm": 6.869952073884633e-07,
+        "exactRationalWorstCaseDeltaCm": 6.869952022557429e-07,
         "quadraturePanelsUsed": 6,
         "targetEaseCm": 0.0,
         "cadDeltaCm": 0.0,
+        "diagnosticFields": [
+          "edgeACm",
+          "edgeBCm",
+          "cadDeltaCm"
+        ],
+        "certificationFields": [
+          "edgeAC1CertIntervalCm",
+          "edgeBC1CertIntervalCm",
+          "worstCaseC1CertDeltaCm"
+        ],
         "withinTier1CadTolerance0_05Cm": true
       },
       {
@@ -50,16 +62,28 @@
         "edgeACm": 12.8,
         "edgeBCm": 12.8,
         "edgeAC1CertIntervalCm": [
-          12.8,
+          12.799999999999999,
           12.8
         ],
         "edgeBC1CertIntervalCm": [
           12.8,
-          12.8
+          12.800000000000002
         ],
+        "worstCaseC1CertDeltaCm": 3.552713678800501e-15,
+        "exactRationalWorstCaseDeltaCm": 2.8531695488854613e-15,
         "quadraturePanelsUsed": 6,
         "targetEaseCm": 0.0,
         "cadDeltaCm": 0.0,
+        "diagnosticFields": [
+          "edgeACm",
+          "edgeBCm",
+          "cadDeltaCm"
+        ],
+        "certificationFields": [
+          "edgeAC1CertIntervalCm",
+          "edgeBC1CertIntervalCm",
+          "worstCaseC1CertDeltaCm"
+        ],
         "withinTier1CadTolerance0_05Cm": true
       },
       {
@@ -68,16 +92,28 @@
         "edgeACm": 66.117865,
         "edgeBCm": 66.115728,
         "edgeAC1CertIntervalCm": [
-          66.117613,
-          66.118116
+          66.1176129036137,
+          66.11811625406723
         ],
         "edgeBC1CertIntervalCm": [
-          66.115478,
-          66.115978
+          66.1154780127599,
+          66.11597802979355
         ],
+        "worstCaseC1CertDeltaCm": 0.0026382413073378075,
+        "exactRationalWorstCaseDeltaCm": 0.002638241307313923,
         "quadraturePanelsUsed": 38,
         "targetEaseCm": 0.0,
         "cadDeltaCm": 0.002137,
+        "diagnosticFields": [
+          "edgeACm",
+          "edgeBCm",
+          "cadDeltaCm"
+        ],
+        "certificationFields": [
+          "edgeAC1CertIntervalCm",
+          "edgeBC1CertIntervalCm",
+          "worstCaseC1CertDeltaCm"
+        ],
         "withinTier1CadTolerance0_05Cm": true
       }
     ]

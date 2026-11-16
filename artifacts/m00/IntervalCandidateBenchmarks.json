@@ -1,6 +1,7 @@
 {
   "artifactName": "IntervalCandidateBenchmarks.json",
-  "note": "Wall-clock runtime metrics are separated from deterministic SHA-256 mathematical reports.",
+  "nonDeterministicRuntimeObservation": true,
+  "note": "Wall-clock runtime metrics are strictly separated from deterministic SHA-256 mathematical reports and manifests.",
   "environment": {
     "pythonVersion": "3.12.16",
     "pythonImplementation": "CPython",
@@ -9,41 +10,153 @@
     "pythonHashSeed": "0"
   },
   "fullPopulation200kChecksRuntimeMs": {
-    "mpmathIvFractionMs": 6201.39,
-    "pythonFlintArbFmpqMs": 2756.43,
-    "decimalIntervalFractionMs": 3567.21,
-    "totalSuiteMs": 12548.78
+    "mpmathIvFractionMs": 6281.52,
+    "pythonFlintArbFmpqMs": 2744.81,
+    "decimalIntervalFractionMs": 3552.85,
+    "totalSuiteMs": 12605.73
   },
   "perCurveLatencyBenchmarks": {
-    "environment": {
-      "pythonVersion": "3.12.16",
-      "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
-      "machine": "x86_64",
-      "pythonHashSeed": "0"
+    "metadata": {
+      "environment": {
+        "pythonVersion": "3.12.16",
+        "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+        "machine": "x86_64",
+        "pythonHashSeed": "0"
+      }
     },
-    "mpmathIvFraction": {
-      "iterations": 20,
-      "medianMs": 0.9903,
-      "p95Ms": 1.1608,
-      "maxMs": 1.4953,
-      "latencyBudgetMaxMs": 50.0,
-      "withinLatencyBudget": true
-    },
-    "pythonFlintArbFmpq": {
-      "iterations": 20,
-      "medianMs": 0.0154,
-      "p95Ms": 0.0297,
-      "maxMs": 0.0802,
-      "latencyBudgetMaxMs": 50.0,
-      "withinLatencyBudget": true
-    },
-    "decimalIntervalFraction": {
-      "iterations": 20,
-      "medianMs": 0.1141,
-      "p95Ms": 0.1435,
-      "maxMs": 0.1439,
-      "latencyBudgetMaxMs": 50.0,
-      "withinLatencyBudget": true
+    "candidates": {
+      "mpmathIvFraction": {
+        "available": true,
+        "iterations": 20,
+        "medianMs": 0.9883,
+        "p95Ms": 1.2243,
+        "maxMs": 1.2903,
+        "samplesMs": [
+          1.122616,
+          0.970009,
+          1.224254,
+          1.290309,
+          1.219052,
+          1.220023,
+          1.208679,
+          1.057892,
+          0.970198,
+          1.004331,
+          0.956854,
+          0.958073,
+          0.992227,
+          0.984334,
+          0.953202,
+          0.946109,
+          0.944578,
+          0.939386,
+          0.995168,
+          0.951471
+        ],
+        "p95TargetMaxMs": 5.0,
+        "withinP95Target5Ms": true,
+        "latencyBudgetMaxMs": 50.0,
+        "withinLatencyBudget": true
+      },
+      "pythonFlintArbFmpq": {
+        "available": true,
+        "iterations": 20,
+        "medianMs": 0.0152,
+        "p95Ms": 0.0181,
+        "maxMs": 0.0788,
+        "samplesMs": [
+          0.07879,
+          0.018097,
+          0.016406,
+          0.015525,
+          0.015776,
+          0.015075,
+          0.015356,
+          0.015166,
+          0.015366,
+          0.015286,
+          0.014946,
+          0.015155,
+          0.015186,
+          0.015276,
+          0.015246,
+          0.015126,
+          0.015025,
+          0.015156,
+          0.015186,
+          0.014936
+        ],
+        "p95TargetMaxMs": 5.0,
+        "withinP95Target5Ms": true,
+        "latencyBudgetMaxMs": 50.0,
+        "withinLatencyBudget": true
+      },
+      "decimalIntervalFraction": {
+        "available": true,
+        "iterations": 20,
+        "medianMs": 0.1139,
+        "p95Ms": 0.1259,
+        "maxMs": 0.1417,
+        "samplesMs": [
+          0.141733,
+          0.117914,
+          0.125857,
+          0.114553,
+          0.114023,
+          0.114143,
+          0.113303,
+          0.112903,
+          0.110922,
+          0.112503,
+          0.121326,
+          0.114373,
+          0.113774,
+          0.114093,
+          0.113623,
+          0.113093,
+          0.113333,
+          0.113343,
+          0.113434,
+          0.121836
+        ],
+        "p95TargetMaxMs": 5.0,
+        "withinP95Target5Ms": true,
+        "latencyBudgetMaxMs": 50.0,
+        "withinLatencyBudget": true
+      }
     }
+  },
+  "latencyQualificationEvaluation": {
+    "allThreeCandidatesVerifiedUnder5MsP95": true,
+    "thresholdMs": 5.0,
+    "requiredCandidates": [
+      "mpmathIvFraction",
+      "pythonFlintArbFmpq",
+      "decimalIntervalFraction"
+    ],
+    "candidateResults": {
+      "mpmathIvFraction": {
+        "present": true,
+        "p95Ms": 1.224254,
+        "thresholdMs": 5.0,
+        "passed": true,
+        "reason": "OK"
+      },
+      "pythonFlintArbFmpq": {
+        "present": true,
+        "p95Ms": 0.018097,
+        "thresholdMs": 5.0,
+        "passed": true,
+        "reason": "OK"
+      },
+      "decimalIntervalFraction": {
+        "present": true,
+        "p95Ms": 0.125857,
+        "thresholdMs": 5.0,
+        "passed": true,
+        "reason": "OK"
+      }
+    },
+    "failures": []
   }
 }

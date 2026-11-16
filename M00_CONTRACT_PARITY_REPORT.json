@@ -1,11 +1,12 @@
 {
   "deliverable": "M00_CONTRACT_PARITY_REPORT.json",
-  "checkpoint": "15",
+  "checkpoint": "16",
+  "packageId": "PKG-M00-02",
   "remediatedFinding": "FINDING-CONTRACTS-01",
   "schemasLockReport": {
     "milestoneId": "M00.1",
     "artifactName": "SchemasLockReport.json",
-    "schemaPath": "/app/applet/packages/contracts/schemas/canonical_contracts.schema.json",
+    "schemaPath": "packages/contracts/schemas/canonical_contracts.schema.json",
     "schemaSha256": "b8520e9d46948aa8b636ef22b190fd38fea669f315ca61a82deab64ea5665960",
     "draftVersion": "https://json-schema.org/draft/2020-12/schema",
     "canonicalCoordinateFrame": {

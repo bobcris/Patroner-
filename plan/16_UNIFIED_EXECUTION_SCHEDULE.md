@@ -1,7 +1,7 @@
 # 16 — Unified Resource-Loaded Execution Schedule (`M00`–`M10` Through 31 March 2027)
 
 **Document ID:** `PATRONER-R2.2-16`  
-**Revision Layer:** `Blueprint R2.2` (`docs/r2.2-unified-execution-blueprint`)  
+**Revision Layer:** `Blueprint R2.2` (`docs/r2.2-unified-execution-blueprint` consolidated in `fix/m00-integrated-consolidation`)  
 **Planning Window:** `2026-11-16` (`Checkpoint 12` / `Gate Auth-1`) through **`2027-03-31`** (19.3 calendar weeks / 96 engineering working days)  
 **Scope Envelope:** Full Patroner Vision (**`M00`–`M10`**; strictly **NO `M11`**; zero MVP feature reduction)  
 **Governance Premise:** Production code implementation in `M01`–`M10` remains gated by `Gate Auth-2` (2026-11-27 Target), `Gate Auth-3` (2027-02-05 Target), and `Gate Auth-4` (2027-02-26 Target).
@@ -14,7 +14,8 @@
 [2026-11-16] Gate Auth-1 (APPROVED)
    │
    ▼
-M00 (M00.1–M00.10 + PKG-P00-01 + DXF/Seam + R2.2 Reconcile)  [2026-11-16 → 2026-11-25]
+M00 (M00.1–M00.10 + PKG-P00-01 + DXF/Seam + R2.2 Reconcile       [2026-11-16 → 2026-11-25]
+     → Integration d2977cc → PKG-M00-02 Consolidation Checkpoint 16)
    │
    ▼
 [2026-11-27] ★ GATE AUTH-2 (DEC-13 Stage 2, DEC-02 S1, DEC-03 S1, DEC-04..06, DEC-09, DEC-11)
@@ -52,7 +53,7 @@ M00 (M00.1–M00.10 + PKG-P00-01 + DXF/Seam + R2.2 Reconcile)  [2026-11-16 → 2
 
 | Milestone | Scope Summary & Key Technical Gates | Lead & Support Tracks | Effort (Eng-Weeks) | Target Start | Target Finish | Hard Dependencies & Exit Criteria |
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- |
-| **`M00`** | `M00.1`–`M00.10`, `PKG-P00-01` (`uv` Python 3.12, 10k x 4 tiers, `AG-01`–`AG-17`, Krawczyk `AG-15`), Workstream B DXF/seam parity, `R2.2` Reconciliation (`15`–`18`), final consolidated Owner bundle. | `CompGeom` (1.0), `Verification/CAM-QA` (1.0), `FullStack-TS` (0.5) | **4.0** | `2026-11-16` | `2026-11-25` | `Gate Auth-1` done; emits deterministic SHA-256 bundle for `Gate Auth-2`. |
+| **`M00`** | `M00.1`–`M00.10`, `PKG-P00-01` (`uv` Python 3.12, 10k x 4 tiers, `AG-01`–`AG-17`, Krawczyk `AG-15`), Workstream B DXF/seam parity (`d5a7075`), `R2.2` Docs (`68f7d2d`), integrated at `d2977cc` & consolidated in **`PKG-M00-02`** (`Checkpoint 16` outward binary64, MVT diagonal exclusion, isolated wall-clock observation). | `CompGeom` (1.0), `Verification/CAM-QA` (1.0), `FullStack-TS` (0.5) | **4.0** | `2026-11-16` | `2026-11-25` | `Gate Auth-1` done; emits consolidated deterministic Checkpoint 16 SHA-256 bundle (`fix/m00-integrated-consolidation`) for `Gate Auth-2`. |
 | **`Gate Auth-2`** | Owner audit of `M00` bundle + sign-off on `DEC-13 Stage 2`, `DEC-02 S1`, `DEC-03 S1`, `DEC-04`, `DEC-05`, `DEC-06`, `DEC-09`, `DEC-11`. | Project Owner + Arch Lead | **0.4** | `2026-11-26` | `2026-11-27` | **Hard Blocking Gate** before any `M01`–`M10` production code. |
 | **`M01`** | Monorepo scaffolding (`apps/web`, `services/geometry-engine`, `packages/contracts`), Next.js 15 BFF/Strangler proxy, PostgreSQL 16 + S3/GCS content store, Celery/Temporal async workers, RBAC/Auth. | `FullStack-TS` (1.0), `Backend/Ledger` (1.0) | **6.0** | `2026-11-30` | `2026-12-18` | `Gate Auth-2`, `DEC-01`, `DEC-04`, `DEC-05`. Parity harness green. |
 | **`M02`** | Python 3.12 deterministic 2D engine (`M02a`–`M02h`): `C1-Fast` + `C1-Cert` escalation, **`trouser-block` canonical drafting (Slice 1 gap fix)**, **`sleeve-block` `Class B` `M02b` cap-height ($H_{\mathrm{cap}}$) re-solve for target ease**, `M02c` offsets, `M02d` grading, `M02h` NFP marker solver. | `CompGeom` (1.5), `Verification/CAM-QA` (0.5) | **12.0** | `2026-11-30` | `2027-01-15` | `DEC-13 Stage 2`, `DEC-06`, `DEC-11`. `100%` pass on `AG-01`–`AG-17` & `DEC-11` (`<= 0.05 cm`). |
@@ -82,5 +83,5 @@ M00 (M00.1–M00.10 + PKG-P00-01 + DXF/Seam + R2.2 Reconcile)  [2026-11-16 → 2
 ## 4. Immediate Pre-`Gate Auth-2` Action Queue (Next 5 Working Days)
 
 1. **Resolve Vertical Slice 1 Drafting Completeness Baseline (`M02a` / `M00` Entry):** Scope `src/engine/drafting/trouser-block.ts` specification & `sleeve-block.ts` cap-height (`H_cap`) `Class B` upgrade inside `M02` sprint 1 immediately upon `Gate Auth-2` opening.
-2. **Owner Review Package Consolidation (`M00.10`):** Combine Workstream A (`feat/m00-p00-qualification`, `d1a7940`) + Workstream B (`feat/m00-production-dxf-verification`, `d5a7075`) + Workstream C (`docs/r2.2-unified-execution-blueprint`) for single-pass **`Gate Auth-2` + `DEC-13 Stage 2`** Project Owner decision.
+2. **Owner Review of Consolidated `PKG-M00-02` Package (`M00.10` / Checkpoint 16):** Review `fix/m00-integrated-consolidation` (descending from `integration/m00-r2.2-review` `d2977ccc868c7c8152282477c597044e3ca07556`, integrating `d1a7940`, `d5a7075`, and `68f7d2d`) for single-pass **`Gate Auth-2` + `DEC-13 Stage 2`** Project Owner decision (`mpmath.iv` reference with `python-flint` qualified high-throughput reserve).
 3. **Zero Premature Execution:** No `M01`/`M02`/`M03` production merges to `main` occur prior to explicit signed `Gate Auth-2` authorization record.

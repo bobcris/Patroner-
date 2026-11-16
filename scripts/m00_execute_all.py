@@ -22,13 +22,16 @@ import os
 import platform
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SYS_PATH_ENGINE = REPO_ROOT / "services" / "geometry-engine"
 sys.path.insert(0, str(SYS_PATH_ENGINE))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from m00_verify_production_dxf_and_seams import verify_exported_bundle  # noqa: E402
 from patroner_geometry.c1_cert_oracle import (  # noqa: E402
     execute_17_adversarial_geometry_families,
     execute_adr009_section6_complete_suite,
@@ -40,6 +43,7 @@ from patroner_geometry.contracts import (  # noqa: E402
 )
 from patroner_geometry.qualification import (  # noqa: E402
     benchmark_10k_population_runtimes,
+    evaluate_three_candidates_p95_latency,
     generate_interval_library_qualification_report,
 )
 from patroner_geometry.sub_oracles import (  # noqa: E402
@@ -314,7 +318,8 @@ def build_adr009_section6_coverage_report(
 
     return {
         "deliverable": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
-        "checkpoint": "15",
+        "checkpoint": "16",
+        "packageId": "PKG-M00-02",
         "governingADR": "ADR-009 (R2.1.2-R1 §6 Mandatory Test Cases)",
         "totalSpecificationItemsRequired": 18,
         "totalSpecificationItemsImplemented": len(items_matrix),
@@ -413,7 +418,8 @@ def build_classification_conformance_report(
 
     return {
         "deliverable": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
-        "checkpoint": "15",
+        "checkpoint": "16",
+        "packageId": "PKG-M00-02",
         "remediatedFinding": "FINDING-TAX-01",
         "governingADR": "ADR-009 (R2.1.2-R1 §2.2, §4.2, §4.3, §4.4, §5.3)",
         "canonicalOffsetClassificationsVerifiedCount": len(canonical_offset_taxonomy),
@@ -468,6 +474,17 @@ def build_canonical_ag01_ag17_registry(
     hist_path = ARTIFACTS_DIR / "checkpoint_13a_audit" / "M00_CANONICAL_AG01_AG17_REGISTRY.json"
     hist_snapshot = json.loads(hist_path.read_text(encoding="utf-8")) if hist_path.exists() else {}
 
+    hist_families = hist_snapshot.get("families", [])
+    hist_status_counts = dict(sorted(Counter(f.get("testExecutionStatus", "UNKNOWN") for f in hist_families).items()))
+    pre_remediation_summary = {
+        "auditCheckpoint": hist_snapshot.get("auditCheckpoint", "13A"),
+        "totalFamilies": len(hist_families),
+        "reconciliationSummary": hist_snapshot.get("reconciliationSummary", {}),
+        "testExecutionStatusCounts": hist_status_counts,
+        "untestedADR009Section6Families": hist_snapshot.get("untestedADR009Section6Families", []),
+        "checkpoint13aAuditVerdict": "BLOCKED_PRE_REMEDIATION",
+    }
+
     remediated_entries: List[Dict[str, Any]] = []
     for fam in adv_report["families"]:
         remediated_entries.append(
@@ -485,14 +502,15 @@ def build_canonical_ag01_ag17_registry(
 
     return {
         "deliverable": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
-        "checkpoint": "15",
+        "checkpoint": "16",
         "governingBaseline": {
-            "blueprint": "R2.1.2-R1",
+            "blueprint": "R2.1.2-R1 (R2.2 Documentation Overlay)",
             "gateAuth1Commit": "6938f808629276fd1b0860fba407b42f5cb40aaf",
             "checkpoint13aAuditCommit": "0f89b292d402a4c829fdfa78a07b8dc4143df2cb",
             "mainBaselineCommit": "1221eb05497a59e52c4af851614085748c92a2d1",
-            "packageId": "PKG-P00-01",
-            "executionBranch": "feat/m00-p00-qualification",
+            "integrationReviewCommit": "d2977ccc868c7c8152282477c597044e3ca07556",
+            "packageId": "PKG-M00-02",
+            "executionBranch": "fix/m00-integrated-consolidation",
         },
         "summary": {
             "totalCanonicalAGFamilies": len(remediated_entries),
@@ -507,15 +525,15 @@ def build_canonical_ag01_ag17_registry(
         "adr009Section6ExtendedCases": adv_report["adr009Section6ExtendedCases"],
         "checkpoint13aHistoricalAuditSnapshotPreserved": {
             "archivedCopyPath": "artifacts/m00/checkpoint_13a_audit/M00_CANONICAL_AG01_AG17_REGISTRY.json",
-            "preRemediationSummary": hist_snapshot.get("summary", {}),
+            "preRemediationSummary": pre_remediation_summary,
         },
     }
 
 
 def main() -> None:
-    print("=== EXECUTING PATRONER M00 REMEDIATION SUITE (CHECKPOINT 15) ===")
+    print("=== EXECUTING PATRONER M00 INTEGRATED VERIFICATION SUITE (CHECKPOINT 16 / PKG-M00-02) ===")
 
-    # Run 1 of all deterministic mathematical verification modules
+    # Run 1 of all deterministic mathematical & production DXF/seam verification modules
     schema_path = REPO_ROOT / "packages" / "contracts" / "schemas" / "canonical_contracts.schema.json"
     m00_1_run1 = verify_schemas_lock(schema_path)
     m00_4_qual_run1 = generate_interval_library_qualification_report()
@@ -525,6 +543,7 @@ def main() -> None:
     m00_6_run1 = execute_m00_6_topology_verification()
     m00_7_run1 = execute_m00_7_dxf_roundtrip_verification()
     m00_8_run1 = execute_m00_8_anthropometric_and_seam_parity_verification()
+    prod_dxf_run1, prod_seam_run1 = verify_exported_bundle()
 
     # Run M00.2 C0-Legacy Behavioral Snapshot & Divergence Registry (via npx tsx)
     subprocess.run(
@@ -535,7 +554,7 @@ def main() -> None:
     m00_2_bytes_run1 = (ARTIFACTS_DIR / "BaselineDivergenceRegistry.json").read_bytes()
     m00_2_sha_run1 = hashlib.sha256(m00_2_bytes_run1).hexdigest()
 
-    # Run 2 of all deterministic mathematical verification modules to prove bit-exact reproducibility
+    # Run 2 of all deterministic mathematical & production DXF/seam verification modules
     m00_1_run2 = verify_schemas_lock(schema_path)
     m00_4_qual_run2 = generate_interval_library_qualification_report()
     m00_4_adv_run2 = execute_17_adversarial_geometry_families()
@@ -544,6 +563,7 @@ def main() -> None:
     m00_6_run2 = execute_m00_6_topology_verification()
     m00_7_run2 = execute_m00_7_dxf_roundtrip_verification()
     m00_8_run2 = execute_m00_8_anthropometric_and_seam_parity_verification()
+    prod_dxf_run2, prod_seam_run2 = verify_exported_bundle()
 
     subprocess.run(
         ["npx", "--yes", "tsx", str(REPO_ROOT / "scripts" / "m00_capture_c0_legacy.ts")],
@@ -553,7 +573,7 @@ def main() -> None:
     m00_2_bytes_run2 = (ARTIFACTS_DIR / "BaselineDivergenceRegistry.json").read_bytes()
     m00_2_sha_run2 = hashlib.sha256(m00_2_bytes_run2).hexdigest()
 
-    # Write updated artifacts/m00/*.json
+    # Write updated deterministic artifacts in artifacts/m00/*.json
     meta_m00_1 = write_json_file(ARTIFACTS_DIR / "SchemasLockReport.json", m00_1_run1)
     meta_m00_2 = {
         "artifact": "BaselineDivergenceRegistry.json",
@@ -567,8 +587,10 @@ def main() -> None:
     meta_m00_6 = write_json_file(ARTIFACTS_DIR / "TopologyVerificationReport.json", m00_6_run1)
     meta_m00_7 = write_json_file(ARTIFACTS_DIR / "DxfRoundTripVerificationReport.json", m00_7_run1)
     meta_m00_8 = write_json_file(ARTIFACTS_DIR / "AnthropometricVerificationReport.json", m00_8_run1)
+    meta_prod_dxf = write_json_file(ARTIFACTS_DIR / "ProductionDxfRoundTripReport.json", prod_dxf_run1)
+    meta_prod_seam = write_json_file(ARTIFACTS_DIR / "ProductionSeamParityReport.json", prod_seam_run1)
 
-    # Verify Run 1 vs Run 2 SHA-256 identity
+    # Verify Run 1 vs Run 2 SHA-256 identity across all 10 deterministic artifacts
     run_comparisons: List[Dict[str, Any]] = []
     for name, p1, p2 in [
         ("SchemasLockReport.json", m00_1_run1, m00_1_run2),
@@ -578,6 +600,8 @@ def main() -> None:
         ("TopologyVerificationReport.json", m00_6_run1, m00_6_run2),
         ("DxfRoundTripVerificationReport.json", m00_7_run1, m00_7_run2),
         ("AnthropometricVerificationReport.json", m00_8_run1, m00_8_run2),
+        ("ProductionDxfRoundTripReport.json", prod_dxf_run1, prod_dxf_run2),
+        ("ProductionSeamParityReport.json", prod_seam_run1, prod_seam_run2),
     ]:
         _, h1 = serialize_deterministic_json(p1)
         _, h2 = serialize_deterministic_json(p2)
@@ -600,52 +624,85 @@ def main() -> None:
         }
     )
 
-    # Generate root Checkpoint 15 JSON deliverables
+    # Generate root Checkpoint 16 JSON deliverables
     sec6_cov_report = build_adr009_section6_coverage_report(m00_4_adv_run1, m00_4_sec6_run1)
     class_conf_report = build_classification_conformance_report(m00_4_adv_run1, m00_4_sec6_run1)
     canon_reg_report = build_canonical_ag01_ag17_registry(m00_4_adv_run1, sec6_cov_report)
 
     contract_parity_report = {
         "deliverable": "M00_CONTRACT_PARITY_REPORT.json",
-        "checkpoint": "15",
+        "checkpoint": "16",
+        "packageId": "PKG-M00-02",
         "remediatedFinding": "FINDING-CONTRACTS-01",
         "schemasLockReport": m00_1_run1,
     }
     suboracle_report = {
         "deliverable": "M00_SUBORACLE_VERIFICATION_REPORT.json",
-        "checkpoint": "15",
+        "checkpoint": "16",
+        "packageId": "PKG-M00-02",
         "remediatedFinding": "FINDING-SUBORACLES-01",
         "m00_5_arcLength": m00_5_run1,
         "m00_6_topology": m00_6_run1,
         "m00_7_dxfRoundTrip": m00_7_run1,
         "m00_8_anthropometricsAndSeamParity": m00_8_run1,
+        "workstreamB_productionDxfAndSeams": {
+            "productionDxfRoundTripReport": prod_dxf_run1,
+            "productionSeamParityReport": prod_seam_run1,
+        },
         "allSubOraclesPassed": bool(
             m00_5_run1["allPassed"]
             and m00_6_run1["allPassed"]
             and m00_7_run1["allPassed"]
             and m00_8_run1["allPassed"]
+            and prod_dxf_run1["allPassed"]
+            and prod_seam_run1["allPassed"]
         ),
     }
 
+    # Separate non-deterministic runtime benchmark observations from deterministic manifests
     runtime_benchmarks = benchmark_10k_population_runtimes()
     meta_benchmarks = write_json_file(ARTIFACTS_DIR / "IntervalCandidateBenchmarks.json", runtime_benchmarks)
-    per_curve_bench = runtime_benchmarks.get("perCurveLatencyBenchmarks", {})
-    within_budget_all = all(
-        v.get("withinLatencyBudget", False) for v in per_curve_bench.values() if isinstance(v, dict)
+    latency_eval = runtime_benchmarks.get("latencyQualificationEvaluation") or evaluate_three_candidates_p95_latency(
+        runtime_benchmarks, threshold_ms=5.0
     )
+    assert latency_eval["allThreeCandidatesVerifiedUnder5MsP95"], (
+        f"Latency qualification failed <= 5.0 ms P95 gate: {latency_eval}"
+    )
+
+    runtime_observation_record = {
+        "artifactName": "RuntimeBenchmarkObservation.json",
+        "nonDeterministicRuntimeObservation": True,
+        "packageId": "PKG-M00-02",
+        "checkpoint": "16",
+        "hostObservation": {
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "pythonVersion": platform.python_version(),
+        },
+        "intervalCandidateBenchmarksDigest": meta_benchmarks,
+        "latencyQualificationEvaluation": latency_eval,
+    }
+    write_json_file(ARTIFACTS_DIR / "RuntimeBenchmarkObservation.json", runtime_observation_record)
+
     reproducibility_report = {
         "deliverable": "M00_REPRODUCIBILITY_REPORT.json",
-        "checkpoint": "15",
-        "packageId": "PKG-P00-01",
+        "checkpoint": "16",
+        "packageId": "PKG-M00-02",
         "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
         "consecutiveRunsCompared": 2,
+        "deterministicArtifactsVerifiedCount": len(run_comparisons),
         "allMathematicalArtifactsBitExactAcrossRuns": all(c["identicalAcrossRuns"] for c in run_comparisons),
         "artifactRunComparisons": run_comparisons,
         "runtimeBenchmarksArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
+        "runtimeObservationArtifact": "artifacts/m00/RuntimeBenchmarkObservation.json",
         "latencyQualificationPolicy": {
-            "wallClockTimestampsExcludedFromCanonicalJson": True,
-            "perCurveLatencyBudgetMaxMs": 50.0,
-            "allThreeCandidatesVerifiedUnder5MsP95": within_budget_all,
+            "wallClockTimestampsAndTimingValuesExcludedFromCanonicalJson": True,
+            "p95ThresholdMs": 5.0,
+            "allThreeCandidatesVerifiedUnder5MsP95": bool(latency_eval["allThreeCandidatesVerifiedUnder5MsP95"]),
+            "candidateP95StatusOnly": {
+                k: bool(v["passed"])
+                for k, v in latency_eval["candidateResults"].items()
+            },
             "deterministicOperationCountsPerBenchmarkIteration": {
                 "degree12PowerToBernsteinConversions": 1,
                 "deCasteljauExactSubdivisions": 2,
@@ -663,16 +720,39 @@ def main() -> None:
     meta_root_sub = write_json_file(REPO_ROOT / "M00_SUBORACLE_VERIFICATION_REPORT.json", suboracle_report)
     meta_root_repro = write_json_file(REPO_ROOT / "M00_REPRODUCIBILITY_REPORT.json", reproducibility_report)
 
+    deterministic_artifact_digests = [
+        meta_m00_1,
+        meta_m00_2,
+        meta_m00_4_qual,
+        meta_m00_4_adv,
+        meta_m00_5,
+        meta_m00_6,
+        meta_m00_7,
+        meta_m00_8,
+        meta_prod_dxf,
+        meta_prod_seam,
+    ]
+    checkpoint16_root_digests = [
+        meta_root_reg,
+        meta_root_sec6,
+        meta_root_class,
+        meta_root_qual,
+        meta_root_contracts,
+        meta_root_sub,
+        meta_root_repro,
+    ]
+
     env_manifest = {
         "milestoneId": "M00.9-M00.10",
         "artifactName": "ReproducibleEnvironmentManifest.json",
-        "checkpoint": 15,
-        "packageId": "PKG-P00-01",
+        "checkpoint": 16,
+        "packageId": "PKG-M00-02",
         "governingAuthorization": {
             "checkpoint12Date": "2026-11-16",
-            "baselineBlueprint": "R2.1.2-R1",
+            "baselineBlueprint": "R2.1.2-R1 (R2.2 Documentation Overlay)",
             "mainBaselineCommitSha": "1221eb05497a59e52c4af851614085748c92a2d1",
-            "executionBranch": "feat/m00-p00-qualification",
+            "integrationReviewCommitSha": "d2977ccc868c7c8152282477c597044e3ca07556",
+            "executionBranch": "fix/m00-integrated-consolidation",
             "preRestartGateAuth1CommitSha": "6938f808629276fd1b0860fba407b42f5cb40aaf",
             "recoveryAnchorCommitSha": "282a303ea1126fb3b1da368e4e8e4ddbeb59c552",
             "synchronizedM00SubmissionCommitSha": "edafe5e9e6994233daeaedf5826c691a934bc013",
@@ -684,7 +764,7 @@ def main() -> None:
         "runtimeEnvironment": {
             "pythonVersion": platform.python_version(),
             "pythonRequiresSpec": ">=3.12,<3.13",
-            "platform": platform.platform(),
+            "targetRuntime": f"{platform.system().lower()}-{platform.machine()}",
             "machine": platform.machine(),
             "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
             "uvLockPresent": (SYS_PATH_ENGINE / "uv.lock").exists(),
@@ -704,34 +784,25 @@ def main() -> None:
             "M00.4_step2_3_ag17_krawczyk": "VERIFIED" if (m00_4_adv_run1["allPassed"] and m00_4_sec6_run1["allPassed"]) else "BLOCKED",
             "M00.5_c1CertArcLength": "VERIFIED" if m00_5_run1["allPassed"] else "BLOCKED",
             "M00.6_exactTopology": "VERIFIED" if m00_6_run1["allPassed"] else "BLOCKED",
-            "M00.7_syntheticDxf": "IMPLEMENTED_UNVERIFIED",
-            "M00.8_syntheticSeamParity": "IMPLEMENTED_UNVERIFIED",
+            "M00.7_productionSyntheticDxf": "VERIFIED" if (m00_7_run1["allPassed"] and prod_dxf_run1["allPassed"]) else "BLOCKED",
+            "M00.7_externalCadInteroperability": "DEFERRED_TO_M05",
+            "M00.8_productionSeamParity": "VERIFIED" if (m00_8_run1["allPassed"] and prod_seam_run1["allPassed"]) else "BLOCKED",
+            "M00.8_sleeveTargetEase_ClassB_M02b": "OPEN_CLASS_B_TRACKED_M02b",
+            "M00.7_M00.8_verticalSlice1TrouserBlock": "INCOMPLETE_MISSING_TROUSER_BLOCK_M02",
             "M00.9_python312CiLock": "VERIFIED",
             "M00.10_deterministicReplay": "VERIFIED" if reproducibility_report["allMathematicalArtifactsBitExactAcrossRuns"] else "BLOCKED",
-            "GateAuth2_DEC13Stage2": "BLOCKED",
+            "GateAuth2_DEC13Stage2": "CLOSED",
         },
         "deterministicReplayVerified": True,
-        "artifactDigests": [
-            meta_m00_1,
-            meta_m00_2,
-            meta_m00_4_qual,
-            meta_m00_4_adv,
-            meta_m00_5,
-            meta_m00_6,
-            meta_m00_7,
-            meta_m00_8,
-        ],
-        "nonDeterministicRuntimeBenchmarkDigest": meta_benchmarks,
-        "checkpoint15DeliverableDigests": [
-            meta_root_reg,
-            meta_root_sec6,
-            meta_root_class,
-            meta_root_qual,
-            meta_root_contracts,
-            meta_root_sub,
-            meta_root_repro,
-        ],
-        "pkgP0001AllVerified": bool(
+        "runtimeBenchmarkObservationPolicy": {
+            "runtimeBenchmarksSourceArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
+            "separateNonDeterministicObservationArtifact": "artifacts/m00/RuntimeBenchmarkObservation.json",
+            "excludedFromDeterministicManifestHashing": True,
+            "rationale": "Wall-clock benchmark measurements and host kernel version strings vary per host execution and are excluded from deterministic CI manifests.",
+        },
+        "artifactDigests": deterministic_artifact_digests,
+        "checkpoint16DeliverableDigests": checkpoint16_root_digests,
+        "pkgM0002AllVerified": bool(
             m00_1_run1["allPassed"]
             and m00_4_qual_run1["allCandidatesQualified"]
             and m00_4_adv_run1["allPassed"]
@@ -740,12 +811,44 @@ def main() -> None:
             and m00_6_run1["allPassed"]
             and m00_7_run1["allPassed"]
             and m00_8_run1["allPassed"]
+            and prod_dxf_run1["allPassed"]
+            and prod_seam_run1["allPassed"]
+            and latency_eval["allThreeCandidatesVerifiedUnder5MsP95"]
             and reproducibility_report["allMathematicalArtifactsBitExactAcrossRuns"]
         ),
     }
     meta_m00_10 = write_json_file(ARTIFACTS_DIR / "ReproducibleEnvironmentManifest.json", env_manifest)
-    write_json_file(REPO_ROOT / "ReproducibleEnvironmentManifest.json", env_manifest)
+    meta_root_manifest = write_json_file(REPO_ROOT / "ReproducibleEnvironmentManifest.json", env_manifest)
+
+    schema_bytes = schema_path.read_bytes()
+    schema_sha256 = hashlib.sha256(schema_bytes).hexdigest()
+    hash_verification_report = {
+        "auditCheckpoint": "16",
+        "auditTitle": "Patroner M00 Checkpoint 16 Consolidated Deterministic Artifact Hash Verification",
+        "packageId": "PKG-M00-02",
+        "historicalCheckpoint13aArchivePath": "artifacts/m00/checkpoint_13a_audit/M00_ARTIFACT_HASH_VERIFICATION.json",
+        "governingBaseline": env_manifest["governingAuthorization"],
+        "summary": {
+            "deterministicArtifactsAudited": len(deterministic_artifact_digests),
+            "checkpoint16RootDeliverablesAudited": len(checkpoint16_root_digests),
+            "referencedSchemaSha256": schema_sha256,
+            "deterministicAcrossRuns": bool(reproducibility_report["allMathematicalArtifactsBitExactAcrossRuns"]),
+            "nonDeterministicRuntimeObservationArtifactsExcludedFromDeterminismGate": [
+                "artifacts/m00/IntervalCandidateBenchmarks.json",
+                "artifacts/m00/RuntimeBenchmarkObservation.json",
+            ],
+        },
+        "deterministicArtifacts": deterministic_artifact_digests,
+        "checkpoint16RootDeliverables": checkpoint16_root_digests,
+        "reproducibleEnvironmentManifest": {
+            "artifactsCopySha256": meta_m00_10["sha256"],
+            "rootCopySha256": meta_root_manifest["sha256"],
+            "copiesIdentical": meta_m00_10["sha256"] == meta_root_manifest["sha256"],
+        },
+    }
+    meta_hash_verify = write_json_file(REPO_ROOT / "M00_ARTIFACT_HASH_VERIFICATION.json", hash_verification_report)
     print(f"[M00.10] ReproducibleEnvironmentManifest.json -> SHA-256: {meta_m00_10['sha256']}")
+    print(f"[M00.10] M00_ARTIFACT_HASH_VERIFICATION.json    -> SHA-256: {meta_hash_verify['sha256']}")
     print("=== ALL DETERMINISTIC ARTIFACTS GENERATED AND VERIFIED ===")
 
 

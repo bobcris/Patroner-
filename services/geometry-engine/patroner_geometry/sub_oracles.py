@@ -25,6 +25,10 @@ from .c1_cert_oracle import (
     method_c1_cert_arc_length_enclosure,
 )
 from .contracts import BodyProfile, DxfExportManifest, NumericalVerificationRecord
+from .qualification import (
+    fraction_pair_to_outward_f64_pair,
+    mpf_to_outward_upper_f64,
+)
 
 # 5-point Gauss-Legendre nodes and weights on [-1, 1] in high precision
 _GL5_NODES = [
@@ -172,7 +176,7 @@ def inverse_arc_length_newton_brent(
     dx_iv = ax_iv[1] + t_iv * (2 * ax_iv[2] + 3 * ax_iv[3] * t_iv)
     dy_iv = ay_iv[1] + t_iv * (2 * ay_iv[2] + 3 * ay_iv[3] * t_iv)
     spd_iv = iv.sqrt((dx_iv ** 2) + (dy_iv ** 2))
-    local_speed_upper_bound = float(spd_iv.b)
+    local_speed_upper_bound = mpf_to_outward_upper_f64(spd_iv.b)
 
     delta_t = max(0.0, hi - lo)
     delta_pos = local_speed_upper_bound * delta_t
@@ -196,7 +200,7 @@ def inverse_arc_length_newton_brent(
         "tBracket": [lo, hi],
         "arcLengthResidualCm": final_res,
         "deltaT": delta_t,
-        "localSpeedUpperBoundCmPerT": round(local_speed_upper_bound, 8),
+        "localSpeedUpperBoundCmPerT": local_speed_upper_bound,
         "deltaPosCm": delta_pos,
         "iterations": iters,
         "numericalVerificationRecord": num_record.model_dump(mode="json"),
@@ -248,7 +252,7 @@ def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
         operation_type="ARC_LENGTH",
         parameter_bracket_t=(0.0, 1.0),
         parameter_uncertainty_dt=domain_param_dt,
-        local_speed_upper_bound_cm_per_t=round(sup_speed_cm_per_t, 8),
+        local_speed_upper_bound_cm_per_t=sup_speed_cm_per_t,
         propagated_position_error_cm=propagated_pos_err_cm,
         direct_geometric_error_bound_cm=c1_cert_armscye["certifiedHalfWidthCm"],
         propagation_method="C1_CERT_CHORD_POLYGON_BOUNDS",
@@ -827,18 +831,36 @@ def _draft_paired_seam_curves_for_profile(profile: BodyProfile) -> List[Dict[str
         enc_a = method_c1_cert_arc_length_enclosure(curve_a, subdivision_depth=6)
         enc_b = method_c1_cert_arc_length_enclosure(curve_b, subdivision_depth=6)
         cad_delta = abs((len_a - len_b) - target_ease)
+        a_lo_q = Fraction(enc_a["lowerChordBoundRational"])
+        a_hi_q = Fraction(enc_a["upperControlPolygonBoundRational"])
+        b_lo_q = Fraction(enc_b["lowerChordBoundRational"])
+        b_hi_q = Fraction(enc_b["upperControlPolygonBoundRational"])
+        edge_a_outward = list(fraction_pair_to_outward_f64_pair(a_lo_q, a_hi_q))
+        edge_b_outward = list(fraction_pair_to_outward_f64_pair(b_lo_q, b_hi_q))
+        worst_case_q = max(
+            abs((a_hi_q - b_lo_q) - Fraction(str(target_ease))),
+            abs((b_hi_q - a_lo_q) - Fraction(str(target_ease))),
+        )
+        worst_case_delta = max(
+            abs((edge_a_outward[1] - edge_b_outward[0]) - target_ease),
+            abs((edge_b_outward[1] - edge_a_outward[0]) - target_ease),
+        )
         results.append(
             {
                 "profileId": profile.profileId,
                 "seamPair": label,
                 "edgeACm": round(len_a, 6),
                 "edgeBCm": round(len_b, 6),
-                "edgeAC1CertIntervalCm": [round(enc_a["lowerChordBoundCm"], 6), round(enc_a["upperControlPolygonBoundCm"], 6)],
-                "edgeBC1CertIntervalCm": [round(enc_b["lowerChordBoundCm"], 6), round(enc_b["upperControlPolygonBoundCm"], 6)],
+                "edgeAC1CertIntervalCm": edge_a_outward,
+                "edgeBC1CertIntervalCm": edge_b_outward,
+                "worstCaseC1CertDeltaCm": worst_case_delta,
+                "exactRationalWorstCaseDeltaCm": float(worst_case_q),
                 "quadraturePanelsUsed": panels_a + panels_b,
                 "targetEaseCm": target_ease,
                 "cadDeltaCm": round(cad_delta, 6),
-                "withinTier1CadTolerance0_05Cm": cad_delta <= 0.05,
+                "diagnosticFields": ["edgeACm", "edgeBCm", "cadDeltaCm"],
+                "certificationFields": ["edgeAC1CertIntervalCm", "edgeBC1CertIntervalCm", "worstCaseC1CertDeltaCm"],
+                "withinTier1CadTolerance0_05Cm": worst_case_delta <= 0.05 and cad_delta <= 0.05,
             }
         )
     return results

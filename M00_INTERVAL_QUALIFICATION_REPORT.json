@@ -28,7 +28,7 @@
   "environment": {
     "pythonVersion": "3.12.16",
     "pythonImplementation": "CPython",
-    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+    "targetRuntime": "linux-x86_64",
     "machine": "x86_64",
     "pythonHashSeed": "0",
     "pinnedPackages": {

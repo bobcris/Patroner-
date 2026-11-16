@@ -33,6 +33,11 @@ sys.path.insert(0, str(SYS_PATH_ENGINE))
 from patroner_geometry.c1_cert_oracle import (  # noqa: E402
     ExactCubicBezier2D,
     method_c1_cert_arc_length_enclosure,
+    mpf_to_exact_fraction,
+)
+from patroner_geometry.qualification import (  # noqa: E402
+    fraction_pair_to_outward_f64_pair,
+    fraction_to_outward_upper_f64,
 )
 
 ARTIFACTS_DIR = REPO_ROOT / "artifacts" / "m00"
@@ -200,14 +205,14 @@ def parse_dxf_aama_multi_piece(dxf_text: str) -> Dict[str, Any]:
     }
 
 
-def _segment_c1_cert_arc_length(seg: Dict[str, Any]) -> Tuple[float, float]:
-    """Computes (lower_bound_cm, upper_bound_cm) arc length on a line or cubic Bezier segment."""
+def _segment_c1_cert_arc_length(seg: Dict[str, Any]) -> Tuple[Fraction, Fraction]:
+    """Computes exact rational enclosing (lower_bound_cm, upper_bound_cm) arc length on a line or cubic Bezier segment."""
     if seg["type"] == "line":
         iv.prec = 113
         dx = iv.mpf(str(seg["p3"]["x"])) - iv.mpf(str(seg["p0"]["x"]))
         dy = iv.mpf(str(seg["p3"]["y"])) - iv.mpf(str(seg["p0"]["y"]))
         dist_iv = iv.sqrt((dx ** 2) + (dy ** 2))
-        return float(dist_iv.a), float(dist_iv.b)
+        return mpf_to_exact_fraction(dist_iv.a), mpf_to_exact_fraction(dist_iv.b)
 
     curve = ExactCubicBezier2D.from_floats(
         seg["id"],
@@ -217,7 +222,7 @@ def _segment_c1_cert_arc_length(seg: Dict[str, Any]) -> Tuple[float, float]:
         (seg["p3"]["x"], seg["p3"]["y"]),
     )
     enc = method_c1_cert_arc_length_enclosure(curve, subdivision_depth=8)
-    return float(enc["lowerChordBoundCm"]), float(enc["upperControlPolygonBoundCm"])
+    return Fraction(enc["lowerChordBoundRational"]), Fraction(enc["upperControlPolygonBoundRational"])
 
 
 def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -291,7 +296,7 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
                 "internalPolylinesRecovered": len(parsed["internalPolylines"]),
                 "totalCutVertices": combined["totalCutVertices"],
                 "totalSewVertices": combined["totalSewVertices"],
-                "maxVertexRoundTripErrorCm": round(max_err, 9),
+                "maxVertexRoundTripErrorCm": max_err,
                 "dxfPayloadSha256": parsed["sha256Digest"],
                 "tsRoundTripAllPassed": bundle["combinedTsRoundTrip"]["allPassed"],
                 "syntheticRoundTripVerified": size_dxf_ok,
@@ -303,27 +308,36 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         # Seam Parity Verification via Python Method C1-Cert on actual drafted curves
         py_paired_checks: List[Dict[str, Any]] = []
         for check in bundle["seamAudit"]["pairedSeamChecks"]:
-            a_lo = sum(_segment_c1_cert_arc_length(s)[0] for s in check["edgeASegments"])
-            a_hi = sum(_segment_c1_cert_arc_length(s)[1] for s in check["edgeASegments"])
-            b_lo = sum(_segment_c1_cert_arc_length(s)[0] for s in check["edgeBSegments"])
-            b_hi = sum(_segment_c1_cert_arc_length(s)[1] for s in check["edgeBSegments"])
+            a_lo_q = sum((_segment_c1_cert_arc_length(s)[0] for s in check["edgeASegments"]), Fraction(0))
+            a_hi_q = sum((_segment_c1_cert_arc_length(s)[1] for s in check["edgeASegments"]), Fraction(0))
+            b_lo_q = sum((_segment_c1_cert_arc_length(s)[0] for s in check["edgeBSegments"]), Fraction(0))
+            b_hi_q = sum((_segment_c1_cert_arc_length(s)[1] for s in check["edgeBSegments"]), Fraction(0))
+            a_lo, a_hi = fraction_pair_to_outward_f64_pair(a_lo_q, a_hi_q)
+            b_lo, b_hi = fraction_pair_to_outward_f64_pair(b_lo_q, b_hi_q)
+
+            ease_q = Fraction(str(check["targetEaseCm"]))
+            worst_case_q = max(abs((a_hi_q - b_lo_q) - ease_q), abs((b_hi_q - a_lo_q) - ease_q))
+            worst_case_delta = fraction_to_outward_upper_f64(worst_case_q)
+
             a_mid = 0.5 * (a_lo + a_hi)
             b_mid = 0.5 * (b_lo + b_hi)
             delta_mid = abs((a_mid - b_mid) - check["targetEaseCm"])
-            worst_case_delta = max(
-                abs((a_hi - b_lo) - check["targetEaseCm"]),
-                abs((b_hi - a_lo) - check["targetEaseCm"]),
-            )
             py_paired_checks.append(
                 {
                     "seamPair": check["seamPair"],
                     "tsEdgeACm": check["edgeALengthCm"],
                     "tsEdgeBCm": check["edgeBLengthCm"],
                     "tsCadDeltaCm": check["cadDeltaCm"],
-                    "pythonC1CertEdgeAIntervalCm": [round(a_lo, 6), round(a_hi, 6)],
-                    "pythonC1CertEdgeBIntervalCm": [round(b_lo, 6), round(b_hi, 6)],
-                    "pythonMidpointDeltaCm": round(delta_mid, 6),
-                    "pythonWorstCaseIntervalDeltaCm": round(worst_case_delta, 6),
+                    "pythonC1CertEdgeAIntervalCm": [a_lo, a_hi],
+                    "pythonC1CertEdgeBIntervalCm": [b_lo, b_hi],
+                    "pythonMidpointDeltaCm": delta_mid,
+                    "pythonWorstCaseIntervalDeltaCm": worst_case_delta,
+                    "diagnosticFields": ["tsEdgeACm", "tsEdgeBCm", "tsCadDeltaCm", "pythonMidpointDeltaCm"],
+                    "certificationFields": [
+                        "pythonC1CertEdgeAIntervalCm",
+                        "pythonC1CertEdgeBIntervalCm",
+                        "pythonWorstCaseIntervalDeltaCm",
+                    ],
                     "withinTier1CadTolerance0_05Cm": worst_case_delta <= 0.05 and check["withinTier1CadTolerance0_05Cm"],
                 }
             )
@@ -348,7 +362,7 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     dxf_report = {
         "artifactName": "ProductionDxfRoundTripReport.json",
-        "packageId": "PKG-DXF-SEAM-WORKSTREAM-B",
+        "packageId": "PKG-M00-02",
         "sourceDraftingModules": exported["draftedModulesUsed"],
         "missingDependenciesForVerticalSlice1": exported["missingDependencies"],
         "toleranceMaxCm": 0.001,
@@ -365,12 +379,21 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     seam_report = {
         "artifactName": "ProductionSeamParityReport.json",
-        "packageId": "PKG-DXF-SEAM-WORKSTREAM-B",
+        "packageId": "PKG-M00-02",
         "governingDecision": "DEC-11 (Two-Tier Seam Tolerance: Tier 1 CAD <= 0.05 cm; Tier 2 Physical <= 0.20 cm)",
         "sourceDraftingModules": exported["draftedModulesUsed"],
         "missingDependenciesForVerticalSlice1": exported["missingDependencies"],
         "dec11Tier1CadToleranceCm": 0.05,
         "dec11Tier2PhysicalToleranceCm": 0.20,
+        "serializationAssuranceMetadata": {
+            "certificationAuthority": "METHOD_C1_CERT_EXACT_RATIONAL_SUM_OUTWARD_F64",
+            "diagnosticOnlyFields": ["tsEdgeACm", "tsEdgeBCm", "tsCadDeltaCm", "pythonMidpointDeltaCm"],
+            "certificationBearingFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm",
+            ],
+        },
         "sizeReports": seam_results,
         "allPassed": all(r["allPassed"] for r in seam_results),
     }

@@ -1,13 +1,14 @@
 {
   "deliverable": "M00_SUBORACLE_VERIFICATION_REPORT.json",
-  "checkpoint": "15",
+  "checkpoint": "16",
+  "packageId": "PKG-M00-02",
   "remediatedFinding": "FINDING-SUBORACLES-01",
   "m00_5_arcLength": {
     "milestoneId": "M00.5",
     "artifactName": "ArcLengthVerificationReport.json",
     "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
     "certifiedReferenceLengthCm": 16.665650514560983,
-    "certifiedHalfWidthCm": 1.704779805322687e-06,
+    "certifiedHalfWidthCm": 1.7047798047256008e-06,
     "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
     "diagnosticQuadLength113BitCm": 16.6656505146,
     "adaptiveGaussLegendreLengthCm": 16.6656505146,
@@ -17,13 +18,16 @@
     "panelsEvaluated": 23,
     "methodC1CertArmscyeEnclosure": {
       "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
+      "exactRationalEnclosureAvailable": true,
+      "lowerChordBoundRational": "5408312247529469291799214695681059/324518553658426726783156020576256",
+      "upperControlPolygonBoundRational": "338019584624676397693337936866609/20282409603651670423947251286016",
       "subdivisionDepth": 10,
       "panelsCount": 1024,
       "lowerChordBoundCm": 16.665648809781178,
-      "upperControlPolygonBoundCm": 16.66565221934079,
+      "upperControlPolygonBoundCm": 16.665652219340792,
       "certifiedReferenceLengthCm": 16.665650514560983,
-      "certifiedHalfWidthCm": 1.704779805322687e-06,
-      "enclosureWidthCm": 3.409559610645374e-06,
+      "certifiedHalfWidthCm": 1.7047798047256008e-06,
+      "enclosureWidthCm": 3.4095596094512016e-06,
       "nonStrictInequalityHolds": true,
       "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
       "quadratureLength113BitCm": 16.66565051456102,
@@ -31,6 +35,9 @@
     },
     "methodC1CertCollinearEnclosure": {
       "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
+      "exactRationalEnclosureAvailable": true,
+      "lowerChordBoundRational": "10/1",
+      "upperControlPolygonBoundRational": "10/1",
       "subdivisionDepth": 5,
       "panelsCount": 32,
       "lowerChordBoundCm": 10.0,
@@ -51,9 +58,9 @@
         1.0
       ],
       "parameter_uncertainty_dt": 0.0,
-      "local_speed_upper_bound_cm_per_t": 29.71330786,
+      "local_speed_upper_bound_cm_per_t": 29.71330786133547,
       "propagated_position_error_cm": 0.0,
-      "direct_geometric_error_bound_cm": 1.704779805322687e-06,
+      "direct_geometric_error_bound_cm": 1.7047798047256008e-06,
       "propagation_method": "C1_CERT_CHORD_POLYGON_BOUNDS",
       "working_precision_bits": 113,
       "adaptive_subdivision_panels": 1024,
@@ -70,8 +77,8 @@
         ],
         "arcLengthResidualCm": 8.881784197001252e-16,
         "deltaT": 5.551115123125783e-17,
-        "localSpeedUpperBoundCmPerT": 14.10102359,
-        "deltaPosCm": 7.827640529571465e-16,
+        "localSpeedUpperBoundCmPerT": 14.101023588867298,
+        "deltaPosCm": 7.827640529571466e-16,
         "numericalVerificationRecord": {
           "curve_id": "bodice-front-armscye-m005",
           "operation_type": "INVERSE_ARC_LENGTH",
@@ -80,8 +87,8 @@
             0.4256576177230204
           ],
           "parameter_uncertainty_dt": 5.551115123125783e-17,
-          "local_speed_upper_bound_cm_per_t": 14.101023588867296,
-          "propagated_position_error_cm": 7.827640529571465e-16,
+          "local_speed_upper_bound_cm_per_t": 14.101023588867298,
+          "propagated_position_error_cm": 7.827640529571466e-16,
           "direct_geometric_error_bound_cm": 8.881784197001252e-16,
           "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
           "working_precision_bits": 113,
@@ -100,8 +107,8 @@
         ],
         "arcLengthResidualCm": 6.227907078937278e-12,
         "deltaT": 6.082911951921233e-13,
-        "localSpeedUpperBoundCmPerT": 20.46983071,
-        "deltaPosCm": 1.245161779074639e-11,
+        "localSpeedUpperBoundCmPerT": 20.469830714570282,
+        "deltaPosCm": 1.2451617790746392e-11,
         "numericalVerificationRecord": {
           "curve_id": "bodice-front-armscye-m005",
           "operation_type": "INVERSE_ARC_LENGTH",
@@ -110,8 +117,8 @@
             0.6672109771076993
           ],
           "parameter_uncertainty_dt": 6.082911951921233e-13,
-          "local_speed_upper_bound_cm_per_t": 20.46983071457028,
-          "propagated_position_error_cm": 1.245161779074639e-11,
+          "local_speed_upper_bound_cm_per_t": 20.469830714570282,
+          "propagated_position_error_cm": 1.2451617790746392e-11,
           "direct_geometric_error_bound_cm": 6.227907078937278e-12,
           "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
           "working_precision_bits": 113,
@@ -130,8 +137,8 @@
         ],
         "arcLengthResidualCm": 1.7763568394002505e-15,
         "deltaT": 1.1102230246251565e-16,
-        "localSpeedUpperBoundCmPerT": 25.44632635,
-        "deltaPosCm": 2.8251097400949874e-15,
+        "localSpeedUpperBoundCmPerT": 25.446326345545092,
+        "deltaPosCm": 2.825109740094988e-15,
         "numericalVerificationRecord": {
           "curve_id": "bodice-front-armscye-m005",
           "operation_type": "INVERSE_ARC_LENGTH",
@@ -140,8 +147,8 @@
             0.8487550415554228
           ],
           "parameter_uncertainty_dt": 1.1102230246251565e-16,
-          "local_speed_upper_bound_cm_per_t": 25.44632634554509,
-          "propagated_position_error_cm": 2.8251097400949874e-15,
+          "local_speed_upper_bound_cm_per_t": 25.446326345545092,
+          "propagated_position_error_cm": 2.825109740094988e-15,
           "direct_geometric_error_bound_cm": 1.7763568394002505e-15,
           "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
           "working_precision_bits": 113,
@@ -293,16 +300,28 @@
           "edgeACm": 21.102068,
           "edgeBCm": 21.102068,
           "edgeAC1CertIntervalCm": [
-            21.102068,
-            21.102068
+            21.102067505045312,
+            21.10206819204052
           ],
           "edgeBC1CertIntervalCm": [
-            21.102068,
-            21.102068
+            21.102067505045312,
+            21.10206819204052
           ],
+          "worstCaseC1CertDeltaCm": 6.869952073884633e-07,
+          "exactRationalWorstCaseDeltaCm": 6.869952022557429e-07,
           "quadraturePanelsUsed": 6,
           "targetEaseCm": 0.0,
           "cadDeltaCm": 0.0,
+          "diagnosticFields": [
+            "edgeACm",
+            "edgeBCm",
+            "cadDeltaCm"
+          ],
+          "certificationFields": [
+            "edgeAC1CertIntervalCm",
+            "edgeBC1CertIntervalCm",
+            "worstCaseC1CertDeltaCm"
+          ],
           "withinTier1CadTolerance0_05Cm": true
         },
         {
@@ -311,16 +330,28 @@
           "edgeACm": 12.8,
           "edgeBCm": 12.8,
           "edgeAC1CertIntervalCm": [
-            12.8,
+            12.799999999999999,
             12.8
           ],
           "edgeBC1CertIntervalCm": [
             12.8,
-            12.8
+            12.800000000000002
           ],
+          "worstCaseC1CertDeltaCm": 3.552713678800501e-15,
+          "exactRationalWorstCaseDeltaCm": 2.8531695488854613e-15,
           "quadraturePanelsUsed": 6,
           "targetEaseCm": 0.0,
           "cadDeltaCm": 0.0,
+          "diagnosticFields": [
+            "edgeACm",
+            "edgeBCm",
+            "cadDeltaCm"
+          ],
+          "certificationFields": [
+            "edgeAC1CertIntervalCm",
+            "edgeBC1CertIntervalCm",
+            "worstCaseC1CertDeltaCm"
+          ],
           "withinTier1CadTolerance0_05Cm": true
         },
         {
@@ -329,21 +360,653 @@
           "edgeACm": 66.117865,
           "edgeBCm": 66.115728,
           "edgeAC1CertIntervalCm": [
-            66.117613,
-            66.118116
+            66.1176129036137,
+            66.11811625406723
           ],
           "edgeBC1CertIntervalCm": [
-            66.115478,
-            66.115978
+            66.1154780127599,
+            66.11597802979355
           ],
+          "worstCaseC1CertDeltaCm": 0.0026382413073378075,
+          "exactRationalWorstCaseDeltaCm": 0.002638241307313923,
           "quadraturePanelsUsed": 38,
           "targetEaseCm": 0.0,
           "cadDeltaCm": 0.002137,
+          "diagnosticFields": [
+            "edgeACm",
+            "edgeBCm",
+            "cadDeltaCm"
+          ],
+          "certificationFields": [
+            "edgeAC1CertIntervalCm",
+            "edgeBC1CertIntervalCm",
+            "worstCaseC1CertDeltaCm"
+          ],
           "withinTier1CadTolerance0_05Cm": true
         }
       ]
     },
     "allPassed": true
+  },
+  "workstreamB_productionDxfAndSeams": {
+    "productionDxfRoundTripReport": {
+      "artifactName": "ProductionDxfRoundTripReport.json",
+      "packageId": "PKG-M00-02",
+      "sourceDraftingModules": [
+        "src/engine/drafting/bodice-block.ts",
+        "src/engine/drafting/sleeve-block.ts",
+        "src/engine/drafting/skirt-block.ts",
+        "src/engine/assembly/bodice-sleeve-assembly.ts",
+        "src/engine/production/dxf-aama-exporter.ts"
+      ],
+      "missingDependenciesForVerticalSlice1": [
+        {
+          "dependency": "src/engine/drafting/trouser-block.ts",
+          "impact": "Vertical Slice 1 requires Bodice, Skirt, Sleeve, and Trouser canonical blocks; Trouser drafting module is absent.",
+          "status": "BLOCKED_MISSING_TROUSER_BLOCK"
+        }
+      ],
+      "toleranceMaxCm": 0.001,
+      "syntheticRoundTripVerified": true,
+      "externalCadInteroperabilityVerified": false,
+      "interoperabilityPolicyNote": "Synthetic DXF R12 (AC1009) round-trip verification passes against actual drafted Bodice (Front, Back), Sleeve, and Skirt (Front, Back) contours. External third-party CAD software interoperability remains unverified (scheduled under M05). Vertical Slice 1 remains incomplete until src/engine/drafting/trouser-block.ts is built.",
+      "sizeReports": [
+        {
+          "sizeLabel": "XS",
+          "exportId": "PATRONER-CANONICAL-XS",
+          "pieceCodes": [
+            "BOD-F-01",
+            "BOD-B-01",
+            "SLV-01",
+            "SK-01-F",
+            "SK-02-B"
+          ],
+          "sectionsRecovered": [
+            "HEADER",
+            "TABLES",
+            "ENTITIES"
+          ],
+          "acadVersionHeader": "AC1009",
+          "insUnitsHeader": "5",
+          "tableLayersDefined": [
+            "1",
+            "11",
+            "2",
+            "4",
+            "7",
+            "8"
+          ],
+          "entityLayersFound": [
+            "1",
+            "11",
+            "2",
+            "4",
+            "7",
+            "8"
+          ],
+          "missingTableLayers": [],
+          "missingEntityLayers": [],
+          "cutPolylinesRecovered": 5,
+          "sewPolylinesRecovered": 5,
+          "grainLinesRecovered": 5,
+          "notchLinesRecovered": 16,
+          "drillPointsRecovered": 5,
+          "internalPolylinesRecovered": 5,
+          "totalCutVertices": 276,
+          "totalSewVertices": 264,
+          "maxVertexRoundTripErrorCm": 0.0,
+          "dxfPayloadSha256": "a3555ded395f2eda914d326373ed544eac2be7705c0ef9d3992c207491682e18",
+          "tsRoundTripAllPassed": true,
+          "syntheticRoundTripVerified": true,
+          "externalCadInteroperabilityVerified": false,
+          "allPassed": true
+        },
+        {
+          "sizeLabel": "M",
+          "exportId": "PATRONER-CANONICAL-M",
+          "pieceCodes": [
+            "BOD-F-01",
+            "BOD-B-01",
+            "SLV-01",
+            "SK-01-F",
+            "SK-02-B"
+          ],
+          "sectionsRecovered": [
+            "HEADER",
+            "TABLES",
+            "ENTITIES"
+          ],
+          "acadVersionHeader": "AC1009",
+          "insUnitsHeader": "5",
+          "tableLayersDefined": [
+            "1",
+            "11",
+            "2",
+            "4",
+            "7",
+            "8"
+          ],
+          "entityLayersFound": [
+            "1",
+            "11",
+            "2",
+            "4",
+            "7",
+            "8"
+          ],
+          "missingTableLayers": [],
+          "missingEntityLayers": [],
+          "cutPolylinesRecovered": 5,
+          "sewPolylinesRecovered": 5,
+          "grainLinesRecovered": 5,
+          "notchLinesRecovered": 16,
+          "drillPointsRecovered": 5,
+          "internalPolylinesRecovered": 5,
+          "totalCutVertices": 287,
+          "totalSewVertices": 272,
+          "maxVertexRoundTripErrorCm": 0.0,
+          "dxfPayloadSha256": "7349f1fa39a197362e6763cadd874f0446f176ffa4329ea5f6101de5ce317f74",
+          "tsRoundTripAllPassed": true,
+          "syntheticRoundTripVerified": true,
+          "externalCadInteroperabilityVerified": false,
+          "allPassed": true
+        },
+        {
+          "sizeLabel": "XL",
+          "exportId": "PATRONER-CANONICAL-XL",
+          "pieceCodes": [
+            "BOD-F-01",
+            "BOD-B-01",
+            "SLV-01",
+            "SK-01-F",
+            "SK-02-B"
+          ],
+          "sectionsRecovered": [
+            "HEADER",
+            "TABLES",
+            "ENTITIES"
+          ],
+          "acadVersionHeader": "AC1009",
+          "insUnitsHeader": "5",
+          "tableLayersDefined": [
+            "1",
+            "11",
+            "2",
+            "4",
+            "7",
+            "8"
+          ],
+          "entityLayersFound": [
+            "1",
+            "11",
+            "2",
+            "4",
+            "7",
+            "8"
+          ],
+          "missingTableLayers": [],
+          "missingEntityLayers": [],
+          "cutPolylinesRecovered": 5,
+          "sewPolylinesRecovered": 5,
+          "grainLinesRecovered": 5,
+          "notchLinesRecovered": 16,
+          "drillPointsRecovered": 5,
+          "internalPolylinesRecovered": 5,
+          "totalCutVertices": 304,
+          "totalSewVertices": 290,
+          "maxVertexRoundTripErrorCm": 0.0,
+          "dxfPayloadSha256": "e6b70060950151862cab28dfa03242dfd708b12d3fda283838dbbf19ad67c988",
+          "tsRoundTripAllPassed": true,
+          "syntheticRoundTripVerified": true,
+          "externalCadInteroperabilityVerified": false,
+          "allPassed": true
+        }
+      ],
+      "allPassed": true
+    },
+    "productionSeamParityReport": {
+      "artifactName": "ProductionSeamParityReport.json",
+      "packageId": "PKG-M00-02",
+      "governingDecision": "DEC-11 (Two-Tier Seam Tolerance: Tier 1 CAD <= 0.05 cm; Tier 2 Physical <= 0.20 cm)",
+      "sourceDraftingModules": [
+        "src/engine/drafting/bodice-block.ts",
+        "src/engine/drafting/sleeve-block.ts",
+        "src/engine/drafting/skirt-block.ts",
+        "src/engine/assembly/bodice-sleeve-assembly.ts",
+        "src/engine/production/dxf-aama-exporter.ts"
+      ],
+      "missingDependenciesForVerticalSlice1": [
+        {
+          "dependency": "src/engine/drafting/trouser-block.ts",
+          "impact": "Vertical Slice 1 requires Bodice, Skirt, Sleeve, and Trouser canonical blocks; Trouser drafting module is absent.",
+          "status": "BLOCKED_MISSING_TROUSER_BLOCK"
+        }
+      ],
+      "dec11Tier1CadToleranceCm": 0.05,
+      "dec11Tier2PhysicalToleranceCm": 0.2,
+      "serializationAssuranceMetadata": {
+        "certificationAuthority": "METHOD_C1_CERT_EXACT_RATIONAL_SUM_OUTWARD_F64",
+        "diagnosticOnlyFields": [
+          "tsEdgeACm",
+          "tsEdgeBCm",
+          "tsCadDeltaCm",
+          "pythonMidpointDeltaCm"
+        ],
+        "certificationBearingFields": [
+          "pythonC1CertEdgeAIntervalCm",
+          "pythonC1CertEdgeBIntervalCm",
+          "pythonWorstCaseIntervalDeltaCm"
+        ]
+      },
+      "sizeReports": [
+        {
+          "sizeLabel": "XS",
+          "pairedSeamChecks": [
+            {
+              "seamPair": "Bodice Front Side Seam <-> Bodice Back Side Seam",
+              "tsEdgeACm": 20.09,
+              "tsEdgeBCm": 20.09,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                20.08980089498151,
+                20.089800894981515
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                20.08538025530012,
+                20.085380255300123
+              ],
+              "pythonMidpointDeltaCm": 0.004420639681391947,
+              "pythonWorstCaseIntervalDeltaCm": 0.004420639681390833,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            },
+            {
+              "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+              "tsEdgeACm": 12,
+              "tsEdgeBCm": 12,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                11.996932941381308,
+                11.99693294138131
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                11.997683109667465,
+                11.997683109667467
+              ],
+              "pythonMidpointDeltaCm": 0.0007501682861565939,
+              "pythonWorstCaseIntervalDeltaCm": 0.0007501682861565624,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            },
+            {
+              "seamPair": "Skirt Front Side Seam (Lower + Hip Bezier) <-> Skirt Back Side Seam",
+              "tsEdgeACm": 68.9792,
+              "tsEdgeBCm": 68.9792,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                68.97918733784974,
+                68.97919081633701
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                68.97918733784974,
+                68.97919081633701
+              ],
+              "pythonMidpointDeltaCm": 0.0,
+              "pythonWorstCaseIntervalDeltaCm": 3.4784872500186114e-06,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            },
+            {
+              "seamPair": "Sleeve Front Inseam <-> Sleeve Back Underarm Inseam",
+              "tsEdgeACm": 47.38,
+              "tsEdgeBCm": 47.38,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                47.37638230173342,
+                47.37638230173343
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                47.37883177116126,
+                47.378831771161266
+              ],
+              "pythonMidpointDeltaCm": 0.0024494694278303086,
+              "pythonWorstCaseIntervalDeltaCm": 0.002449469427840105,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            }
+          ],
+          "bodiceSleeveAssemblyEase": {
+            "status": "verified-valid",
+            "isValid": true,
+            "frontBodiceArmholeLengthCm": 16.471542989365524,
+            "backBodiceArmholeLengthCm": 16.275617533971044,
+            "frontSleeveCapLengthCm": 18.347209806974874,
+            "backSleeveCapLengthCm": 18.253795354657147,
+            "frontEaseCm": 1.8756668176093498,
+            "backEaseCm": 1.9781778206861027,
+            "totalEaseCm": 3.8538446382954525,
+            "targetTotalEaseCm": 1.8,
+            "isTotalEasePermitted": true,
+            "isDistributionBalanced": true,
+            "isTargetCompliant": false,
+            "inseamParityDeltaCm": 0,
+            "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
+          },
+          "allPassed": true
+        },
+        {
+          "sizeLabel": "M",
+          "pairedSeamChecks": [
+            {
+              "seamPair": "Bodice Front Side Seam <-> Bodice Back Side Seam",
+              "tsEdgeACm": 19.59,
+              "tsEdgeBCm": 19.59,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                19.59234799609276,
+                19.592347996092762
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                19.587559827604863,
+                19.587559827604867
+              ],
+              "pythonMidpointDeltaCm": 0.0047881684878987585,
+              "pythonWorstCaseIntervalDeltaCm": 0.004788168487893475,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            },
+            {
+              "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+              "tsEdgeACm": 12.7,
+              "tsEdgeBCm": 12.7,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                12.702188787764099,
+                12.7021887877641
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                12.701747911212848,
+                12.70174791121285
+              ],
+              "pythonMidpointDeltaCm": 0.000440876551252245,
+              "pythonWorstCaseIntervalDeltaCm": 0.00044087655124928096,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            },
+            {
+              "seamPair": "Skirt Front Side Seam (Lower + Hip Bezier) <-> Skirt Back Side Seam",
+              "tsEdgeACm": 68.965,
+              "tsEdgeBCm": 68.965,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                68.9649554643436,
+                68.96495883837353
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                68.9649554643436,
+                68.96495883837353
+              ],
+              "pythonMidpointDeltaCm": 0.0,
+              "pythonWorstCaseIntervalDeltaCm": 3.374029918561818e-06,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            },
+            {
+              "seamPair": "Sleeve Front Inseam <-> Sleeve Back Underarm Inseam",
+              "tsEdgeACm": 49.55,
+              "tsEdgeBCm": 49.55,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                49.548440944191164,
+                49.54844094419117
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                49.55488270594533,
+                49.55488270594534
+              ],
+              "pythonMidpointDeltaCm": 0.00644176175416078,
+              "pythonWorstCaseIntervalDeltaCm": 0.0064417617541641424,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            }
+          ],
+          "bodiceSleeveAssemblyEase": {
+            "status": "verified-valid",
+            "isValid": true,
+            "frontBodiceArmholeLengthCm": 18.55970034410153,
+            "backBodiceArmholeLengthCm": 18.23349890240222,
+            "frontSleeveCapLengthCm": 20.14975822668334,
+            "backSleeveCapLengthCm": 19.90385112364924,
+            "frontEaseCm": 1.5900578825818101,
+            "backEaseCm": 1.6703522212470183,
+            "totalEaseCm": 3.2604101038288285,
+            "targetTotalEaseCm": 1.8,
+            "isTotalEasePermitted": true,
+            "isDistributionBalanced": true,
+            "isTargetCompliant": false,
+            "inseamParityDeltaCm": 0,
+            "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
+          },
+          "allPassed": true
+        },
+        {
+          "sizeLabel": "XL",
+          "pairedSeamChecks": [
+            {
+              "seamPair": "Bodice Front Side Seam <-> Bodice Back Side Seam",
+              "tsEdgeACm": 19.09,
+              "tsEdgeBCm": 19.09,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                19.085083180326983,
+                19.085083180326986
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                19.089853325785402,
+                19.089853325785406
+              ],
+              "pythonMidpointDeltaCm": 0.004770145458422803,
+              "pythonWorstCaseIntervalDeltaCm": 0.00477014545841728,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            },
+            {
+              "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+              "tsEdgeACm": 13.5,
+              "tsEdgeBCm": 13.5,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                13.498003556081914,
+                13.498003556081915
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                13.496017931226973,
+                13.496017931226975
+              ],
+              "pythonMidpointDeltaCm": 0.0019856248549423583,
+              "pythonWorstCaseIntervalDeltaCm": 0.0019856248549405577,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            },
+            {
+              "seamPair": "Skirt Front Side Seam (Lower + Hip Bezier) <-> Skirt Back Side Seam",
+              "tsEdgeACm": 68.9521,
+              "tsEdgeBCm": 68.9521,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                68.95210352507014,
+                68.95210680823375
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                68.95210352507014,
+                68.95210680823375
+              ],
+              "pythonMidpointDeltaCm": 0.0,
+              "pythonWorstCaseIntervalDeltaCm": 3.28316358733744e-06,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            },
+            {
+              "seamPair": "Sleeve Front Inseam <-> Sleeve Back Underarm Inseam",
+              "tsEdgeACm": 50.19,
+              "tsEdgeBCm": 50.19,
+              "tsCadDeltaCm": 0,
+              "pythonC1CertEdgeAIntervalCm": [
+                50.19346969477204,
+                50.19346969477205
+              ],
+              "pythonC1CertEdgeBIntervalCm": [
+                50.19349459840388,
+                50.19349459840389
+              ],
+              "pythonMidpointDeltaCm": 2.490363183937916e-05,
+              "pythonWorstCaseIntervalDeltaCm": 2.4903631837086485e-05,
+              "diagnosticFields": [
+                "tsEdgeACm",
+                "tsEdgeBCm",
+                "tsCadDeltaCm",
+                "pythonMidpointDeltaCm"
+              ],
+              "certificationFields": [
+                "pythonC1CertEdgeAIntervalCm",
+                "pythonC1CertEdgeBIntervalCm",
+                "pythonWorstCaseIntervalDeltaCm"
+              ],
+              "withinTier1CadTolerance0_05Cm": true
+            }
+          ],
+          "bodiceSleeveAssemblyEase": {
+            "status": "verified-valid",
+            "isValid": true,
+            "frontBodiceArmholeLengthCm": 21.889686415176442,
+            "backBodiceArmholeLengthCm": 21.372251948675625,
+            "frontSleeveCapLengthCm": 23.7948369780472,
+            "backSleeveCapLengthCm": 23.343011014476986,
+            "frontEaseCm": 1.9051505628707588,
+            "backEaseCm": 1.97075906580136,
+            "totalEaseCm": 3.875909628672119,
+            "targetTotalEaseCm": 1.8,
+            "isTotalEasePermitted": true,
+            "isDistributionBalanced": true,
+            "isTargetCompliant": false,
+            "inseamParityDeltaCm": 0,
+            "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
+          },
+          "allPassed": true
+        }
+      ],
+      "allPassed": true
+    }
   },
   "allSubOraclesPassed": true
 }

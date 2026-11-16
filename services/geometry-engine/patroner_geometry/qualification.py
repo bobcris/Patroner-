@@ -21,6 +21,7 @@ import os
 import platform
 import random
 import statistics
+import sys
 import time
 from fractions import Fraction
 from typing import Any, Dict, List, Optional, Tuple
@@ -71,6 +72,97 @@ def arb_bounds_to_exact_fractions(ball: Any, prec_bits: int) -> Tuple[Fraction, 
     m_q = Fraction(0) if m_i == 0 else (Fraction(m_i << me) if me >= 0 else Fraction(m_i, 1 << (-me)))
     r_q = Fraction(0) if r_i == 0 else (Fraction(r_i << re) if re >= 0 else Fraction(r_i, 1 << (-re)))
     return m_q - r_q, m_q + r_q
+
+
+_F64_MAX_FRACTION = Fraction(sys.float_info.max)
+
+
+def fraction_to_outward_lower_f64(q: Fraction) -> float:
+    """Returns the greatest IEEE-754 binary64 float <= exact Fraction q (never rounds inward/upward)."""
+    if q == 0:
+        return 0.0
+    if q > _F64_MAX_FRACTION:
+        return sys.float_info.max
+    if q < -_F64_MAX_FRACTION:
+        return -math.inf
+    f = float(q)
+    if Fraction(f) > q:
+        f = math.nextafter(f, -math.inf)
+    if f == 0.0:
+        return 0.0
+    return f
+
+
+def fraction_to_outward_upper_f64(q: Fraction) -> float:
+    """Returns the least IEEE-754 binary64 float >= exact Fraction q (never rounds inward/downward)."""
+    if q == 0:
+        return 0.0
+    if q > _F64_MAX_FRACTION:
+        return math.inf
+    if q < -_F64_MAX_FRACTION:
+        return -sys.float_info.max
+    f = float(q)
+    if Fraction(f) < q:
+        f = math.nextafter(f, math.inf)
+    if f == 0.0:
+        return 0.0
+    return f
+
+
+def fraction_pair_to_outward_f64_pair(lo_q: Fraction, hi_q: Fraction) -> Tuple[float, float]:
+    """Converts exact [lo_q, hi_q] into outward-rounded IEEE-754 binary64 bounds (lo_f64 <= lo_q, hi_f64 >= hi_q)."""
+    if lo_q > hi_q:
+        raise ValueError(f"Inverted rational interval bounds: {lo_q} > {hi_q}")
+    return fraction_to_outward_lower_f64(lo_q), fraction_to_outward_upper_f64(hi_q)
+
+
+def mpf_to_outward_lower_f64(x: Any) -> float:
+    """Converts an mpmath.mpf or iv endpoint strictly outward (<= exact x) to IEEE-754 binary64."""
+    if hasattr(x, "a") and hasattr(x, "_mpi_"):
+        x = x.a
+    if mpmath.isnan(x):
+        raise ValueError("NaN encountered during outward lower f64 serialization")
+    if x == mpmath.mpf("-inf"):
+        return -math.inf
+    if x == mpmath.mpf("inf"):
+        return math.inf
+    return fraction_to_outward_lower_f64(mpf_to_exact_fraction(x))
+
+
+def mpf_to_outward_upper_f64(x: Any) -> float:
+    """Converts an mpmath.mpf or iv endpoint strictly outward (>= exact x) to IEEE-754 binary64."""
+    if hasattr(x, "b") and hasattr(x, "_mpi_"):
+        x = x.b
+    if mpmath.isnan(x):
+        raise ValueError("NaN encountered during outward upper f64 serialization")
+    if x == mpmath.mpf("-inf"):
+        return -math.inf
+    if x == mpmath.mpf("inf"):
+        return math.inf
+    return fraction_to_outward_upper_f64(mpf_to_exact_fraction(x))
+
+
+def iv_to_outward_f64_pair(val_iv: Any) -> Tuple[float, float]:
+    """Converts an mpmath.iv interval strictly outward into IEEE-754 binary64 (lo_f64 <= val_iv.a, hi_f64 >= val_iv.b)."""
+    return mpf_to_outward_lower_f64(val_iv.a), mpf_to_outward_upper_f64(val_iv.b)
+
+
+def float_to_outward_lower_f64(val: float) -> float:
+    """Steps a binary64 value 1 ULP downward unless exact 0 or non-finite."""
+    if math.isnan(val):
+        raise ValueError("NaN cannot be serialized as outward lower bound")
+    if not math.isfinite(val) or val == 0.0:
+        return 0.0 if val == 0.0 else val
+    return math.nextafter(val, -math.inf)
+
+
+def float_to_outward_upper_f64(val: float) -> float:
+    """Steps a binary64 value 1 ULP upward unless exact 0 or non-finite."""
+    if math.isnan(val):
+        raise ValueError("NaN cannot be serialized as outward upper bound")
+    if not math.isfinite(val) or val == 0.0:
+        return 0.0 if val == 0.0 else val
+    return math.nextafter(val, math.inf)
 
 
 class DecimalInterval:
@@ -1275,6 +1367,147 @@ def evaluate_candidate_pure_python_decimal_fraction() -> Dict[str, Any]:
     }
 
 
+REQUIRED_BENCHMARK_CANDIDATE_KEYS: Tuple[str, ...] = (
+    "mpmathIvFraction",
+    "pythonFlintArbFmpq",
+    "decimalIntervalFraction",
+)
+
+
+def compute_p95_from_samples_ms(samples_ms: Any) -> float:
+    """Computes the exact 95th percentile from a non-empty list of finite non-negative timings (ms)."""
+    if not isinstance(samples_ms, list) or len(samples_ms) == 0:
+        raise ValueError("Timing samples must be a non-empty list")
+    validated: List[float] = []
+    for sample in samples_ms:
+        if isinstance(sample, bool) or not isinstance(sample, (int, float)):
+            raise ValueError(f"Non-numeric timing sample: {sample!r}")
+        val = float(sample)
+        if not math.isfinite(val) or val < 0.0:
+            raise ValueError(f"Non-finite or negative timing sample: {sample!r}")
+        validated.append(val)
+    s_sorted = sorted(validated)
+    p95_idx = min(len(s_sorted) - 1, int(math.ceil(0.95 * len(s_sorted))) - 1)
+    return s_sorted[p95_idx]
+
+
+def evaluate_three_candidates_p95_latency(
+    benchmark_payload: Dict[str, Any],
+    threshold_ms: float = 5.0,
+) -> Dict[str, Any]:
+    """Pure classifier determining whether ALL three DEC-13 Stage 1 candidates pass P95 <= threshold_ms (5.0 ms).
+
+    Strictly separates candidate benchmark records (`mpmathIvFraction`, `pythonFlintArbFmpq`, `decimalIntervalFraction`)
+    from metadata blocks (`environment`, `metadata`, etc.), validates sample data, and enforces the exact threshold.
+    """
+    if not isinstance(benchmark_payload, dict):
+        return {
+            "allThreeCandidatesVerifiedUnder5MsP95": False,
+            "thresholdMs": threshold_ms,
+            "candidateResults": {},
+            "failures": ["INVALID_BENCHMARK_PAYLOAD_TYPE"],
+        }
+
+    # Support either full IntervalCandidateBenchmarks payload, perCurveLatencyBenchmarks, or direct candidates dict
+    per_curve = benchmark_payload.get("perCurveLatencyBenchmarks", benchmark_payload)
+    if isinstance(per_curve, dict) and isinstance(per_curve.get("candidates"), dict):
+        candidates_map = per_curve["candidates"]
+    elif isinstance(per_curve, dict):
+        candidates_map = per_curve
+    else:
+        return {
+            "allThreeCandidatesVerifiedUnder5MsP95": False,
+            "thresholdMs": threshold_ms,
+            "candidateResults": {},
+            "failures": ["INVALID_PER_CURVE_CONTAINER"],
+        }
+
+    candidate_results: Dict[str, Any] = {}
+    failures: List[str] = []
+
+    for key in REQUIRED_BENCHMARK_CANDIDATE_KEYS:
+        entry = candidates_map.get(key)
+        if not isinstance(entry, dict):
+            failures.append(f"{key}: MISSING_CANDIDATE")
+            candidate_results[key] = {
+                "present": False,
+                "passed": False,
+                "reason": "MISSING_CANDIDATE",
+            }
+            continue
+
+        if entry.get("available") is False:
+            failures.append(f"{key}: CANDIDATE_UNAVAILABLE")
+            candidate_results[key] = {
+                "present": True,
+                "passed": False,
+                "reason": "CANDIDATE_UNAVAILABLE",
+            }
+            continue
+
+        p95_val: Optional[float] = None
+        if "samplesMs" in entry:
+            try:
+                p95_val = compute_p95_from_samples_ms(entry["samplesMs"])
+            except ValueError as exc:
+                failures.append(f"{key}: INVALID_SAMPLES ({exc})")
+                candidate_results[key] = {
+                    "present": True,
+                    "passed": False,
+                    "reason": f"INVALID_SAMPLES: {exc}",
+                }
+                continue
+        elif "p95Ms" in entry:
+            raw_p95 = entry["p95Ms"]
+            if isinstance(raw_p95, bool) or not isinstance(raw_p95, (int, float)):
+                failures.append(f"{key}: INVALID_P95_TYPE")
+                candidate_results[key] = {
+                    "present": True,
+                    "passed": False,
+                    "reason": "INVALID_P95_TYPE",
+                }
+                continue
+            val = float(raw_p95)
+            if not math.isfinite(val) or val < 0.0:
+                failures.append(f"{key}: INVALID_P95_VALUE")
+                candidate_results[key] = {
+                    "present": True,
+                    "passed": False,
+                    "reason": "INVALID_P95_VALUE",
+                }
+                continue
+            p95_val = val
+        else:
+            failures.append(f"{key}: MISSING_TIMING_DATA")
+            candidate_results[key] = {
+                "present": True,
+                "passed": False,
+                "reason": "MISSING_TIMING_DATA",
+            }
+            continue
+
+        passed_candidate = bool(p95_val <= threshold_ms)
+        if not passed_candidate:
+            failures.append(f"{key}: P95_EXCEEDS_THRESHOLD ({p95_val:.6f} ms > {threshold_ms} ms)")
+        candidate_results[key] = {
+            "present": True,
+            "p95Ms": p95_val,
+            "thresholdMs": threshold_ms,
+            "passed": passed_candidate,
+            "reason": "OK" if passed_candidate else "P95_EXCEEDS_THRESHOLD",
+        }
+
+    return {
+        "allThreeCandidatesVerifiedUnder5MsP95": len(failures) == 0 and all(
+            candidate_results[k]["passed"] for k in REQUIRED_BENCHMARK_CANDIDATE_KEYS
+        ),
+        "thresholdMs": threshold_ms,
+        "requiredCandidates": list(REQUIRED_BENCHMARK_CANDIDATE_KEYS),
+        "candidateResults": candidate_results,
+        "failures": failures,
+    }
+
+
 def benchmark_interval_candidates_runtime(iterations: int = 20) -> Dict[str, Any]:
     """Executes runtime latency and 10k-population throughput benchmarks separately from deterministic mathematical qualification."""
     sample_deg12_power = [Fraction((-1) ** k * math.comb(12, k), k + 1) for k in range(13)]
@@ -1325,27 +1558,35 @@ def benchmark_interval_candidates_runtime(iterations: int = 20) -> Dict[str, Any
         if not samples:
             return {"available": False}
         s_sorted = sorted(samples)
-        p95_idx = min(len(s_sorted) - 1, int(math.ceil(0.95 * len(s_sorted))) - 1)
+        p95_val = compute_p95_from_samples_ms(samples)
         med = statistics.median(s_sorted)
         return {
+            "available": True,
             "iterations": len(s_sorted),
             "medianMs": round(med, 4),
-            "p95Ms": round(s_sorted[p95_idx], 4),
+            "p95Ms": round(p95_val, 4),
             "maxMs": round(s_sorted[-1], 4),
+            "samplesMs": [round(s, 6) for s in samples],
+            "p95TargetMaxMs": 5.0,
+            "withinP95Target5Ms": p95_val <= 5.0,
             "latencyBudgetMaxMs": 50.0,
-            "withinLatencyBudget": s_sorted[p95_idx] <= 50.0,
+            "withinLatencyBudget": p95_val <= 50.0,
         }
 
     return {
-        "environment": {
-            "pythonVersion": platform.python_version(),
-            "platform": platform.platform(),
-            "machine": platform.machine(),
-            "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
+        "metadata": {
+            "environment": {
+                "pythonVersion": platform.python_version(),
+                "platform": platform.platform(),
+                "machine": platform.machine(),
+                "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
+            }
         },
-        "mpmathIvFraction": _stats(mp_samples_ms),
-        "pythonFlintArbFmpq": _stats(flint_samples_ms),
-        "decimalIntervalFraction": _stats(dec_samples_ms),
+        "candidates": {
+            "mpmathIvFraction": _stats(mp_samples_ms),
+            "pythonFlintArbFmpq": _stats(flint_samples_ms),
+            "decimalIntervalFraction": _stats(dec_samples_ms),
+        },
     }
 
 
@@ -1365,9 +1606,10 @@ def benchmark_10k_population_runtimes() -> Dict[str, Any]:
     dec_ms = (time.perf_counter() - t2) * 1000.0
 
     per_curve = benchmark_interval_candidates_runtime(iterations=20)
-    return {
+    payload: Dict[str, Any] = {
         "artifactName": "IntervalCandidateBenchmarks.json",
-        "note": "Wall-clock runtime metrics are separated from deterministic SHA-256 mathematical reports.",
+        "nonDeterministicRuntimeObservation": True,
+        "note": "Wall-clock runtime metrics are strictly separated from deterministic SHA-256 mathematical reports and manifests.",
         "environment": {
             "pythonVersion": platform.python_version(),
             "pythonImplementation": platform.python_implementation(),
@@ -1383,6 +1625,8 @@ def benchmark_10k_population_runtimes() -> Dict[str, Any]:
         },
         "perCurveLatencyBenchmarks": per_curve,
     }
+    payload["latencyQualificationEvaluation"] = evaluate_three_candidates_p95_latency(payload, threshold_ms=5.0)
+    return payload
 
 
 def generate_interval_library_qualification_report() -> Dict[str, Any]:
@@ -1420,7 +1664,7 @@ def generate_interval_library_qualification_report() -> Dict[str, Any]:
         "environment": {
             "pythonVersion": platform.python_version(),
             "pythonImplementation": platform.python_implementation(),
-            "platform": platform.platform(),
+            "targetRuntime": f"{platform.system().lower()}-{platform.machine()}",
             "machine": platform.machine(),
             "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
             "pinnedPackages": {

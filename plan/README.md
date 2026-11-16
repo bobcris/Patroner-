@@ -1,11 +1,11 @@
 # Patroner — Blueprint Revision 2.2 (`plan/`) Master Index
 
-**Current Planning Baseline:** `Blueprint Revision 2.2` (`docs/r2.2-unified-execution-blueprint`, layered cleanly above immutable `R2.1.2-R1`)  
-**Repository Baseline Anchor:** `origin/main` `1221eb05497a59e52c4af851614085748c92a2d1` (`R2.1.2-R1` Complete: `6938f808629276fd1b0860fba407b42f5cb40aaf`; Recovery Anchor: `282a303ea1126fb3b1da368e4e8e4ddbeb59c552`; `R2.1.2`: `95eb441dd4e01de4137e6b262c7afb8aa4ab56c3`; `R2.1.1`: `8805140b1e6e7799922348369d7e29881102a75e`; `R2.1`: `617cc7f5d9e41b8cd55ed96b64d2363cdb29557b`)  
+**Current Planning Baseline:** `Blueprint Revision 2.2` (`docs/r2.2-unified-execution-blueprint` consolidated in `fix/m00-integrated-consolidation` at Checkpoint 16, layered cleanly above immutable `R2.1.2-R1`)  
+**Repository Baseline Anchor:** `origin/main` `1221eb05497a59e52c4af851614085748c92a2d1` $\to$ `integration/m00-r2.2-review` `d2977ccc868c7c8152282477c597044e3ca07556` (`R2.1.2-R1` Complete: `6938f808629276fd1b0860fba407b42f5cb40aaf`; Recovery Anchor: `282a303ea1126fb3b1da368e4e8e4ddbeb59c552`; `R2.1.2`: `95eb441dd4e01de4137e6b262c7afb8aa4ab56c3`; `R2.1.1`: `8805140b1e6e7799922348369d7e29881102a75e`; `R2.1`: `617cc7f5d9e41b8cd55ed96b64d2363cdb29557b`)  
 **Scope Envelope:** Strictly **`M00`–`M10`** (Full Patroner Vision through **31 March 2027**; zero `M11` scope)  
-**Governance Status:** **`GATE AUTH-1` APPROVED (`Checkpoint 12`, `2026-11-16`) — `M00` AUTHORIZED & VERIFIED ON WORKSTREAM BRANCHES (`d1a7940`, `d5a7075`); `GATE AUTH-2`, `DEC-13 STAGE 2`, AND `M01`–`M10` PRODUCTION CUTOVER REMAIN CLOSED PENDING OWNER SIGN-OFF**
+**Governance Status:** **`GATE AUTH-1` APPROVED (`Checkpoint 12`, `2026-11-16`) — `M00` CONSOLIDATED & VERIFIED IN `PKG-M00-02` (`Checkpoint 16`, integrating `d1a7940`, `d5a7075`, `68f7d2d`); `GATE AUTH-2`, `DEC-13 STAGE 2`, `GATE AUTH-3`, AND `GATE AUTH-4` REMAIN STRICTLY CLOSED PENDING OWNER SIGN-OFF**
 
-> **Mandatory Governance Boundary (`R2.2`):** Documents `00`–`14` and `ADR-001`–`ADR-009` preserve immutable `R2.1.2-R1` history; Document `15` (`15_R2.2_CROSS_DOCUMENT_RECONCILIATION_MATRIX.md`) governs all cross-document harmonization (`M00`–`M10` scope, `services/geometry-engine/` layout, `AG-15` Krawczyk & `mpmath.iv` assurance bounds, and `M00.7`/`M00.8` blockers).
+> **Mandatory Governance Boundary (`R2.2` / `PKG-M00-02`):** Documents `00`–`14`, `ADR-001`–`ADR-009`, and `artifacts/m00/checkpoint_13a_audit/*` preserve immutable history; Document `15` (`15_R2.2_CROSS_DOCUMENT_RECONCILIATION_MATRIX.md`) governs all cross-document harmonization (`M00`–`M10` scope, `services/geometry-engine/` layout, `AG-15` Krawczyk + MVT diagonal exclusion, 5-category `mpmath.iv` assurance & `python-flint` retain decision, outward binary64 serialization, and `M00.7`/`M00.8` blockers).
 
 ---
 
@@ -28,10 +28,10 @@
 | **`12`** | [`12_BLUEPRINT_R2_1_TO_R2_1_1_CHANGELOG.md`](./12_BLUEPRINT_R2_1_TO_R2_1_1_CHANGELOG.md) | Historical Changelog: Blueprint `R2.1` $\to$ `R2.1.1` | Historical Record (Immutable) |
 | **`13`** | [`13_BLUEPRINT_R2_1_1_TO_R2_1_2_CHANGELOG.md`](./13_BLUEPRINT_R2_1_1_TO_R2_1_2_CHANGELOG.md) | Historical Changelog: Blueprint `R2.1.1` $\to$ `R2.1.2` | Historical Record (Immutable) |
 | **`14`** | [`14_BLUEPRINT_R2_1_2_TO_R2_1_2_R1_CHANGELOG.md`](./14_BLUEPRINT_R2_1_2_TO_R2_1_2_R1_CHANGELOG.md) | Historical Changelog: Blueprint `R2.1.2` $\to$ `R2.1.2-R1` | Historical Record (Immutable) |
-| **`15`** | [`15_R2.2_CROSS_DOCUMENT_RECONCILIATION_MATRIX.md`](./15_R2.2_CROSS_DOCUMENT_RECONCILIATION_MATRIX.md) | **`R2.2` Governing Cross-Document Reconciliation Matrix & Audit Remediation Overlay** | **New in `R2.2` (Authoritative)** |
-| **`16`** | [`16_UNIFIED_EXECUTION_SCHEDULE.md`](./16_UNIFIED_EXECUTION_SCHEDULE.md) | **Resource-Loaded `M00`–`M10` Schedule Through `2027-03-31` (Target, Risk-Adjusted & Recovery)** | **New in `R2.2` (Authoritative)** |
-| **`17`** | [`17_GEMINI4_WORKLOAD_EXECUTION_PROTOCOL.md`](./17_GEMINI4_WORKLOAD_EXECUTION_PROTOCOL.md) | **Automated Workload Execution, Branch Isolation, `uv --locked` Deterministic CI & Fail-Closed Assurance Protocol** | **New in `R2.2` (Authoritative)** |
-| **`18`** | [`18_REQUIREMENT_IMPLEMENTATION_EVIDENCE_TRACEABILITY.md`](./18_REQUIREMENT_IMPLEMENTATION_EVIDENCE_TRACEABILITY.md) | **Requirement-to-Implementation-to-Evidence Traceability & Shared `R2.2` Execution Register** | **New in `R2.2` (Authoritative)** |
+| **`15`** | [`15_R2.2_CROSS_DOCUMENT_RECONCILIATION_MATRIX.md`](./15_R2.2_CROSS_DOCUMENT_RECONCILIATION_MATRIX.md) | **`R2.2` Governing Cross-Document Reconciliation Matrix, 5-Category Numerical Assurance Statement & `python-flint` Retain Decision** | **Updated Checkpoint 16 (`PKG-M00-02`)** |
+| **`16`** | [`16_UNIFIED_EXECUTION_SCHEDULE.md`](./16_UNIFIED_EXECUTION_SCHEDULE.md) | **Resource-Loaded `M00`–`M10` Schedule Through `2027-03-31` (`PKG-M00-02` $\to$ `Gate Auth-2` Review)** | **Updated Checkpoint 16 (`PKG-M00-02`)** |
+| **`17`** | [`17_GEMINI4_WORKLOAD_EXECUTION_PROTOCOL.md`](./17_GEMINI4_WORKLOAD_EXECUTION_PROTOCOL.md) | **Branch Isolation, `uv --locked` Strict CI Replay Gate, Outward Binary64 Serialization & MVT Diagonal Exclusion Protocol** | **Updated Checkpoint 16 (`PKG-M00-02`)** |
+| **`18`** | [`18_REQUIREMENT_IMPLEMENTATION_EVIDENCE_TRACEABILITY.md`](./18_REQUIREMENT_IMPLEMENTATION_EVIDENCE_TRACEABILITY.md) | **Requirement-to-Evidence Traceability & Checkpoint 16 Consolidated Execution Register (`M00`–`M10`)** | **Updated Checkpoint 16 (`PKG-M00-02`)** |
 
 ---
 

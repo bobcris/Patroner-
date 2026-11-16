@@ -1,13 +1,14 @@
 {
   "milestoneId": "M00.9-M00.10",
   "artifactName": "ReproducibleEnvironmentManifest.json",
-  "checkpoint": 15,
-  "packageId": "PKG-P00-01",
+  "checkpoint": 16,
+  "packageId": "PKG-M00-02",
   "governingAuthorization": {
     "checkpoint12Date": "2026-11-16",
-    "baselineBlueprint": "R2.1.2-R1",
+    "baselineBlueprint": "R2.1.2-R1 (R2.2 Documentation Overlay)",
     "mainBaselineCommitSha": "1221eb05497a59e52c4af851614085748c92a2d1",
-    "executionBranch": "feat/m00-p00-qualification",
+    "integrationReviewCommitSha": "d2977ccc868c7c8152282477c597044e3ca07556",
+    "executionBranch": "fix/m00-integrated-consolidation",
     "preRestartGateAuth1CommitSha": "6938f808629276fd1b0860fba407b42f5cb40aaf",
     "recoveryAnchorCommitSha": "282a303ea1126fb3b1da368e4e8e4ddbeb59c552",
     "synchronizedM00SubmissionCommitSha": "edafe5e9e6994233daeaedf5826c691a934bc013",
@@ -23,7 +24,7 @@
   "runtimeEnvironment": {
     "pythonVersion": "3.12.16",
     "pythonRequiresSpec": ">=3.12,<3.13",
-    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+    "targetRuntime": "linux-x86_64",
     "machine": "x86_64",
     "pythonHashSeed": "0",
     "uvLockPresent": true,
@@ -43,19 +44,28 @@
     "M00.4_step2_3_ag17_krawczyk": "VERIFIED",
     "M00.5_c1CertArcLength": "VERIFIED",
     "M00.6_exactTopology": "VERIFIED",
-    "M00.7_syntheticDxf": "IMPLEMENTED_UNVERIFIED",
-    "M00.8_syntheticSeamParity": "IMPLEMENTED_UNVERIFIED",
+    "M00.7_productionSyntheticDxf": "VERIFIED",
+    "M00.7_externalCadInteroperability": "DEFERRED_TO_M05",
+    "M00.8_productionSeamParity": "VERIFIED",
+    "M00.8_sleeveTargetEase_ClassB_M02b": "OPEN_CLASS_B_TRACKED_M02b",
+    "M00.7_M00.8_verticalSlice1TrouserBlock": "INCOMPLETE_MISSING_TROUSER_BLOCK_M02",
     "M00.9_python312CiLock": "VERIFIED",
     "M00.10_deterministicReplay": "VERIFIED",
-    "GateAuth2_DEC13Stage2": "BLOCKED"
+    "GateAuth2_DEC13Stage2": "CLOSED"
   },
   "deterministicReplayVerified": true,
+  "runtimeBenchmarkObservationPolicy": {
+    "runtimeBenchmarksSourceArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
+    "separateNonDeterministicObservationArtifact": "artifacts/m00/RuntimeBenchmarkObservation.json",
+    "excludedFromDeterministicManifestHashing": true,
+    "rationale": "Wall-clock benchmark measurements and host kernel version strings vary per host execution and are excluded from deterministic CI manifests."
+  },
   "artifactDigests": [
     {
       "artifact": "SchemasLockReport.json",
       "path": "artifacts/m00/SchemasLockReport.json",
-      "sha256": "8a0035cbd13390f223c122b25f902485faf739fe403e407bb944a2b72d1259da",
-      "bytes": "6528"
+      "sha256": "d18dc854c0fe103b0151b417968dd7181d52039daf9dae708a4c1d782123bbc4",
+      "bytes": "6516"
     },
     {
       "artifact": "BaselineDivergenceRegistry.json",
@@ -66,20 +76,20 @@
     {
       "artifact": "IntervalLibraryQualificationReport.json",
       "path": "artifacts/m00/IntervalLibraryQualificationReport.json",
-      "sha256": "77361745d14fe08fa92b51fe043a09dbb1309c1f298436d9cdf45d5fa774a6cc",
-      "bytes": "24926"
+      "sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
+      "bytes": "24902"
     },
     {
       "artifact": "AdversarialGeometryVerificationReport.json",
       "path": "artifacts/m00/AdversarialGeometryVerificationReport.json",
-      "sha256": "8d68ff25ee519209a92e42e3c8520f9d7687817508e7034f2933e7687095a2cf",
-      "bytes": "49293"
+      "sha256": "42bbb531fcc8d99dd2c316790e8a4901e56345d3ce28af9843949ba27f853250",
+      "bytes": "51177"
     },
     {
       "artifact": "ArcLengthVerificationReport.json",
       "path": "artifacts/m00/ArcLengthVerificationReport.json",
-      "sha256": "a2a85235e5834a2edc42a63cd7e29b137668c3b52d57544252d65139a0983146",
-      "bytes": "5571"
+      "sha256": "c62626710ace4bae8f7b828e5ec85db1840add22449d658dec7edad38cdaad2e",
+      "bytes": "5995"
     },
     {
       "artifact": "TopologyVerificationReport.json",
@@ -96,59 +106,65 @@
     {
       "artifact": "AnthropometricVerificationReport.json",
       "path": "artifacts/m00/AnthropometricVerificationReport.json",
-      "sha256": "fb8dede0172764f59b999351b50eec8ab87b01474954001c9547df7d5a642d51",
-      "bytes": "2243"
+      "sha256": "5cff9cd5b5d75ed0fbf0e5893934310927f52b8220dd2dc749814ea259e02a89",
+      "bytes": "3463"
+    },
+    {
+      "artifact": "ProductionDxfRoundTripReport.json",
+      "path": "artifacts/m00/ProductionDxfRoundTripReport.json",
+      "sha256": "269ebd4806473c7e3c62d0f72ee033cffb586bd331bed8c021cb30b227ed9ab7",
+      "bytes": "4827"
+    },
+    {
+      "artifact": "ProductionSeamParityReport.json",
+      "path": "artifacts/m00/ProductionSeamParityReport.json",
+      "sha256": "a33d733451b5a1ac8ab22c65d249906de18aa670c16d4d791bed99deed4c05fe",
+      "bytes": "15423"
     }
   ],
-  "nonDeterministicRuntimeBenchmarkDigest": {
-    "artifact": "IntervalCandidateBenchmarks.json",
-    "path": "artifacts/m00/IntervalCandidateBenchmarks.json",
-    "sha256": "1770636e7f9019d0a8303c83a513bb33cc675353209a926c6eebbdec732982b4",
-    "bytes": "1373"
-  },
-  "checkpoint15DeliverableDigests": [
+  "checkpoint16DeliverableDigests": [
     {
       "artifact": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
       "path": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
-      "sha256": "6421a269ac9be19e21135a0e0166f18d1cc2b79d53cfbde6ccb6efa000a61aba",
-      "bytes": "17726"
+      "sha256": "25806d0f8f10684d0922ac4fded5d2571a7c60989e0f67b694246fc16d11204f",
+      "bytes": "22326"
     },
     {
       "artifact": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
       "path": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
-      "sha256": "da676c7fcdad228e5c0ee3c6e9a8791b7039145f7f9e4f48c3c79b0415e73397",
-      "bytes": "13211"
+      "sha256": "08d5b86c1396914da6a125efa91d77e27730fb61fa3c2903d32439b27311610b",
+      "bytes": "13865"
     },
     {
       "artifact": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
       "path": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
-      "sha256": "e776001524569e1adcdabb6b0f14e463e53c9d1881ade40662f1cdf3c19bb7a1",
-      "bytes": "6353"
+      "sha256": "ccbad9a633e9bbb99ba03e7a0e9175d51e5f600314f09b4c538d4c7ffcd7ebb6",
+      "bytes": "6382"
     },
     {
       "artifact": "M00_INTERVAL_QUALIFICATION_REPORT.json",
       "path": "M00_INTERVAL_QUALIFICATION_REPORT.json",
-      "sha256": "77361745d14fe08fa92b51fe043a09dbb1309c1f298436d9cdf45d5fa774a6cc",
-      "bytes": "24926"
+      "sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
+      "bytes": "24902"
     },
     {
       "artifact": "M00_CONTRACT_PARITY_REPORT.json",
       "path": "M00_CONTRACT_PARITY_REPORT.json",
-      "sha256": "5136264faf0be46ec07d25cfa8c17ad9b0840f96b0b0ace7d6c9a16ae930271d",
-      "bytes": "7074"
+      "sha256": "2918bf434eaeca754451c30306e2bf338fc296dd161b0ef661aea107b66b5601",
+      "bytes": "7091"
     },
     {
       "artifact": "M00_SUBORACLE_VERIFICATION_REPORT.json",
       "path": "M00_SUBORACLE_VERIFICATION_REPORT.json",
-      "sha256": "fa692c153bc0646e1fef8f8a0ebf40ca575b17a0d78d9ac34c8fe9e821092041",
-      "bytes": "11291"
+      "sha256": "e6b96d768ac6a90aa0da90893081b354659a92d0a2cff732fc19aab8b8f880e3",
+      "bytes": "35879"
     },
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "6ef23a78149612d2733eded48da11e8cd234d027330442c98d0abc244cc5f936",
-      "bytes": "2990"
+      "sha256": "b89d4e4f91938b64a02ce1777a874c03d5229ea3f4b4b30ac0718995002da90e",
+      "bytes": "3815"
     }
   ],
-  "pkgP0001AllVerified": true
+  "pkgM0002AllVerified": true
 }

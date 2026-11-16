@@ -1,6 +1,6 @@
 {
   "artifactName": "ProductionDxfRoundTripReport.json",
-  "packageId": "PKG-DXF-SEAM-WORKSTREAM-B",
+  "packageId": "PKG-M00-02",
   "sourceDraftingModules": [
     "src/engine/drafting/bodice-block.ts",
     "src/engine/drafting/sleeve-block.ts",

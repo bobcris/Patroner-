@@ -1,6 +1,7 @@
 {
   "deliverable": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
-  "checkpoint": "15",
+  "checkpoint": "16",
+  "packageId": "PKG-M00-02",
   "governingADR": "ADR-009 (R2.1.2-R1 \u00a76 Mandatory Test Cases)",
   "totalSpecificationItemsRequired": 18,
   "totalSpecificationItemsImplemented": 18,
@@ -23,8 +24,8 @@
       "verificationOutcome": "CERTIFIED_VALID",
       "computedMetrics": {
         "offsetSpeedFactorF": 0.85,
-        "gridErrorCm": 3.6087e-05,
-        "certifiedIntervalErrorCm": 0.013230542
+        "gridErrorCm": 3.60867991987695e-05,
+        "certifiedIntervalErrorCm": 3.614495014129166e-05
       },
       "status": "PASS"
     },
@@ -142,8 +143,8 @@
       "baseCurveSingularityClassification": "COLLAPSED_ZERO_LENGTH_CURVE",
       "computedMetrics": {
         "ag12MinQInterval": [
-          55.374526978,
-          57.14112854
+          55.37452697753906,
+          57.14112854003906
         ],
         "collapsedOutcome": "CERTIFIED_INVALID"
       },
@@ -159,8 +160,8 @@
       "verificationOutcome": "CERTIFIED_INVALID",
       "computedMetrics": {
         "minOffsetSpeedFactorInterval": [
-          0.02,
-          0.023221132
+          0.02000000000000005,
+          0.023221131747995408
         ],
         "regularityMarginEpsilon": 0.05
       },
@@ -192,11 +193,11 @@
       "computedMetrics": {
         "ag06IsolatedRootsCount": 2,
         "ag07IsolatedGrazingRoot": {
-          "tLower": 0.4999999999995,
-          "tUpper": 0.5000000000005,
-          "deltaT": 1e-12,
-          "maxSpeedOnBracket": 8.0,
-          "deltaPosCm": 8e-12,
+          "tLower": 0.49999999999949996,
+          "tUpper": 0.5,
+          "deltaT": 5.000000000000001e-13,
+          "maxSpeedOnBracket": 8.000000000000002,
+          "deltaPosCm": 4.0000000000000015e-12,
           "multiplicityOrOrder": "tangential-double-grazing (f=0, f'=0)"
         }
       },
@@ -215,18 +216,18 @@
           "segmentIdA": "AG-06-high-curvature-concave",
           "segmentIdB": "AG-06-high-curvature-concave",
           "t1Bracket": [
-            0.31366100187501744,
+            0.3136610018750175,
             0.31366100187501755
           ],
           "t2Bracket": [
-            0.6863389981249823,
+            0.6863389981249824,
             0.6863389981249826
           ],
           "intersectionPointCm": {
-            "x": -0.0,
-            "y": 2.166666667
+            "x": -9.62964972193618e-35,
+            "y": 2.1666666666666665
           },
-          "residualDistanceCm": 3.291030531612745e-33
+          "residualDistanceCm": 3.291030531612746e-33
         },
         "swallowtailTrimParameters": [
           0.313661001875,
@@ -251,18 +252,18 @@
             "segmentIdA": "AG-15-pocket-left-wall",
             "segmentIdB": "AG-15-pocket-right-wall",
             "t1Bracket": [
-              0.8399799902782361,
+              0.8399799902782362,
               0.8399799902782363
             ],
             "t2Bracket": [
-              0.05278640450004205,
+              0.05278640450004206,
               0.052786404500042065
             ],
             "intersectionPointCm": {
               "x": 1.5,
-              "y": 1.645898034
+              "y": 1.6458980337503153
             },
-            "residualDistanceCm": 2.254243204812153e-33
+            "residualDistanceCm": 2.2542432048121533e-33
           }
         ]
       },
@@ -278,6 +279,9 @@
       "computedMetrics": {
         "collinearEnclosure": {
           "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
+          "exactRationalEnclosureAvailable": true,
+          "lowerChordBoundRational": "10/1",
+          "upperControlPolygonBoundRational": "10/1",
           "subdivisionDepth": 5,
           "panelsCount": 32,
           "lowerChordBoundCm": 10.0,
@@ -292,13 +296,16 @@
         },
         "nearFlat1e7Enclosure": {
           "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
+          "exactRationalEnclosureAvailable": true,
+          "lowerChordBoundRational": "6490371073168536341399150201736139/649037107316853453566312041152512",
+          "upperControlPolygonBoundRational": "202824096036516760676921983981305/20282409603651670423947251286016",
           "subdivisionDepth": 7,
           "panelsCount": 128,
-          "lowerChordBoundCm": 10.000000000000004,
+          "lowerChordBoundCm": 10.000000000000002,
           "upperControlPolygonBoundCm": 10.000000000000004,
           "certifiedReferenceLengthCm": 10.000000000000004,
-          "certifiedHalfWidthCm": 0.0,
-          "enclosureWidthCm": 0.0,
+          "certifiedHalfWidthCm": 2.0210961954871922e-19,
+          "enclosureWidthCm": 4.0421923909743844e-19,
           "nonStrictInequalityHolds": true,
           "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
           "quadratureLength113BitCm": 10.000000000000004,
@@ -316,9 +323,9 @@
       "canonicalOffsetClassification": "CERTIFIED_VALID",
       "computedMetrics": {
         "speedSquaredRatioMaxOverMin": 3103551725.14,
-        "maxSpeedOnRootBracketCmPerUnit": 5529.7,
+        "maxSpeedOnRootBracketCmPerUnit": 5529.700000144674,
         "bracketDeltaT": 7.275957614183426e-13,
-        "bracketDeltaPosCm": 4.023386282020273e-09
+        "bracketDeltaPosCm": 4.023386282020274e-09
       },
       "status": "PASS"
     },
@@ -333,7 +340,7 @@
       "computedMetrics": {
         "minOffsetSpeedFactorInterval": [
           0.030278125,
-          0.972379485
+          0.97237948457947
         ],
         "isProductionReady": false
       },
@@ -368,8 +375,8 @@
         "ag16ManualPreSplittingUsed": false,
         "ag16Disjoint1e7": true,
         "ag16Disjoint1e9": true,
-        "ag17GridErrorCm": 0.001535489,
-        "ag17CertifiedIntervalErrorCm": 0.002234399
+        "ag17GridErrorCm": 0.0015354890280147434,
+        "ag17CertifiedIntervalErrorCm": 0.0022343990336762902
       },
       "status": "PASS"
     }

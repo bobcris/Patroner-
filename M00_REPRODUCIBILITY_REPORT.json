@@ -1,33 +1,34 @@
 {
   "deliverable": "M00_REPRODUCIBILITY_REPORT.json",
-  "checkpoint": "15",
-  "packageId": "PKG-P00-01",
+  "checkpoint": "16",
+  "packageId": "PKG-M00-02",
   "pythonHashSeed": "0",
   "consecutiveRunsCompared": 2,
+  "deterministicArtifactsVerifiedCount": 10,
   "allMathematicalArtifactsBitExactAcrossRuns": true,
   "artifactRunComparisons": [
     {
       "artifact": "SchemasLockReport.json",
-      "run1Sha256": "8a0035cbd13390f223c122b25f902485faf739fe403e407bb944a2b72d1259da",
-      "run2Sha256": "8a0035cbd13390f223c122b25f902485faf739fe403e407bb944a2b72d1259da",
+      "run1Sha256": "d18dc854c0fe103b0151b417968dd7181d52039daf9dae708a4c1d782123bbc4",
+      "run2Sha256": "d18dc854c0fe103b0151b417968dd7181d52039daf9dae708a4c1d782123bbc4",
       "identicalAcrossRuns": true
     },
     {
       "artifact": "IntervalLibraryQualificationReport.json",
-      "run1Sha256": "77361745d14fe08fa92b51fe043a09dbb1309c1f298436d9cdf45d5fa774a6cc",
-      "run2Sha256": "77361745d14fe08fa92b51fe043a09dbb1309c1f298436d9cdf45d5fa774a6cc",
+      "run1Sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
+      "run2Sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
       "identicalAcrossRuns": true
     },
     {
       "artifact": "AdversarialGeometryVerificationReport.json",
-      "run1Sha256": "8d68ff25ee519209a92e42e3c8520f9d7687817508e7034f2933e7687095a2cf",
-      "run2Sha256": "8d68ff25ee519209a92e42e3c8520f9d7687817508e7034f2933e7687095a2cf",
+      "run1Sha256": "42bbb531fcc8d99dd2c316790e8a4901e56345d3ce28af9843949ba27f853250",
+      "run2Sha256": "42bbb531fcc8d99dd2c316790e8a4901e56345d3ce28af9843949ba27f853250",
       "identicalAcrossRuns": true
     },
     {
       "artifact": "ArcLengthVerificationReport.json",
-      "run1Sha256": "a2a85235e5834a2edc42a63cd7e29b137668c3b52d57544252d65139a0983146",
-      "run2Sha256": "a2a85235e5834a2edc42a63cd7e29b137668c3b52d57544252d65139a0983146",
+      "run1Sha256": "c62626710ace4bae8f7b828e5ec85db1840add22449d658dec7edad38cdaad2e",
+      "run2Sha256": "c62626710ace4bae8f7b828e5ec85db1840add22449d658dec7edad38cdaad2e",
       "identicalAcrossRuns": true
     },
     {
@@ -44,8 +45,20 @@
     },
     {
       "artifact": "AnthropometricVerificationReport.json",
-      "run1Sha256": "fb8dede0172764f59b999351b50eec8ab87b01474954001c9547df7d5a642d51",
-      "run2Sha256": "fb8dede0172764f59b999351b50eec8ab87b01474954001c9547df7d5a642d51",
+      "run1Sha256": "5cff9cd5b5d75ed0fbf0e5893934310927f52b8220dd2dc749814ea259e02a89",
+      "run2Sha256": "5cff9cd5b5d75ed0fbf0e5893934310927f52b8220dd2dc749814ea259e02a89",
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "ProductionDxfRoundTripReport.json",
+      "run1Sha256": "269ebd4806473c7e3c62d0f72ee033cffb586bd331bed8c021cb30b227ed9ab7",
+      "run2Sha256": "269ebd4806473c7e3c62d0f72ee033cffb586bd331bed8c021cb30b227ed9ab7",
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "ProductionSeamParityReport.json",
+      "run1Sha256": "a33d733451b5a1ac8ab22c65d249906de18aa670c16d4d791bed99deed4c05fe",
+      "run2Sha256": "a33d733451b5a1ac8ab22c65d249906de18aa670c16d4d791bed99deed4c05fe",
       "identicalAcrossRuns": true
     },
     {
@@ -56,10 +69,16 @@
     }
   ],
   "runtimeBenchmarksArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
+  "runtimeObservationArtifact": "artifacts/m00/RuntimeBenchmarkObservation.json",
   "latencyQualificationPolicy": {
-    "wallClockTimestampsExcludedFromCanonicalJson": true,
-    "perCurveLatencyBudgetMaxMs": 50.0,
-    "allThreeCandidatesVerifiedUnder5MsP95": false,
+    "wallClockTimestampsAndTimingValuesExcludedFromCanonicalJson": true,
+    "p95ThresholdMs": 5.0,
+    "allThreeCandidatesVerifiedUnder5MsP95": true,
+    "candidateP95StatusOnly": {
+      "mpmathIvFraction": true,
+      "pythonFlintArbFmpq": true,
+      "decimalIntervalFraction": true
+    },
     "deterministicOperationCountsPerBenchmarkIteration": {
       "degree12PowerToBernsteinConversions": 1,
       "deCasteljauExactSubdivisions": 2,

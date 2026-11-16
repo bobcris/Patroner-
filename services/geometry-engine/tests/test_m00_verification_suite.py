@@ -33,6 +33,18 @@ from patroner_geometry.sub_oracles import (
     execute_m00_7_dxf_roundtrip_verification,
     execute_m00_8_anthropometric_and_seam_parity_verification,
 )
+from patroner_geometry.c1_cert_oracle import (
+    _compute_circle_octant_bezier_errors,
+    method_c1_cert_arc_length_enclosure,
+)
+from patroner_geometry.qualification import (
+    evaluate_three_candidates_p95_latency,
+    fraction_pair_to_outward_f64_pair,
+    fraction_to_outward_lower_f64,
+    fraction_to_outward_upper_f64,
+    mpf_to_outward_lower_f64,
+    mpf_to_outward_upper_f64,
+)
 
 
 def test_m00_1_canonical_schemas_lock_and_negative_parity() -> None:
@@ -288,3 +300,174 @@ def test_m00_8_anthropometrics_and_dec11_seam_parity() -> None:
     assert res["allPassed"] is True
     assert res["invalidAnatomicalCovarianceRejected"] is True
     assert res["dec11TwoTierSeamTolerancePolicy"]["computedFromDraftedBezierCurves"] is True
+
+
+def test_pkg_m00_02_zero_straddling_squaring_and_circle_octant() -> None:
+    """Verifies (u ** 2) preserves non-negativity across zero-straddling operands and circle octant certification."""
+    from mpmath import iv
+
+    iv.prec = 113
+    u = iv.mpf(["-0.25", "0.5"])
+    sq_mul = u * u
+    sq_pow = u ** 2
+    assert float(sq_mul.a) < 0.0
+    assert float(sq_pow.a) >= 0.0
+
+    e_grid, e_cert = _compute_circle_octant_bezier_errors(10.0)
+    assert e_grid <= e_cert
+    assert e_cert < 0.003
+
+
+def test_pkg_m00_02_p95_benchmark_classifier_boundaries() -> None:
+    """Verifies evaluate_three_candidates_p95_latency strictly validates all 3 candidates and rejects edge defects."""
+    valid_payload = {
+        "metadata": {"environment": {"pythonVersion": "3.12.16"}},
+        "candidates": {
+            "mpmathIvFraction": {"available": True, "samplesMs": [0.2, 0.3, 0.4, 5.0]},
+            "pythonFlintArbFmpq": {"available": True, "samplesMs": [0.01, 0.02, 0.03]},
+            "decimalIntervalFraction": {"available": True, "samplesMs": [0.1, 0.2, 0.3]},
+        },
+    }
+    res_ok = evaluate_three_candidates_p95_latency(valid_payload, threshold_ms=5.0)
+    assert res_ok["allThreeCandidatesVerifiedUnder5MsP95"] is True
+
+    # Missing candidate
+    missing = {
+        "candidates": {
+            "mpmathIvFraction": {"available": True, "samplesMs": [0.2]},
+            "pythonFlintArbFmpq": {"available": True, "samplesMs": [0.02]},
+        }
+    }
+    assert evaluate_three_candidates_p95_latency(missing)["allThreeCandidatesVerifiedUnder5MsP95"] is False
+
+    # Unavailable candidate
+    unavail = {
+        "candidates": {
+            "mpmathIvFraction": {"available": True, "samplesMs": [0.2]},
+            "pythonFlintArbFmpq": {"available": False, "samplesMs": [0.02]},
+            "decimalIntervalFraction": {"available": True, "samplesMs": [0.1]},
+        }
+    }
+    assert evaluate_three_candidates_p95_latency(unavail)["allThreeCandidatesVerifiedUnder5MsP95"] is False
+
+    # Invalid samples: NaN, negative, or bool (caught even though isinstance(True, int) in Python!)
+    for bad_sample in ([float("nan")], [-0.1], [True]):
+        bad_payload = {
+            "candidates": {
+                "mpmathIvFraction": {"available": True, "samplesMs": bad_sample},
+                "pythonFlintArbFmpq": {"available": True, "samplesMs": [0.02]},
+                "decimalIntervalFraction": {"available": True, "samplesMs": [0.1]},
+            }
+        }
+        assert evaluate_three_candidates_p95_latency(bad_payload)["allThreeCandidatesVerifiedUnder5MsP95"] is False
+
+    # Exact 5.0001 ms fails while 5.0 ms passes; empty metadata blocks are ignored
+    just_over = {
+        "environment": {"pythonVersion": "3.12.16"},
+        "candidates": {
+            "mpmathIvFraction": {"available": True, "samplesMs": [5.0001]},
+            "pythonFlintArbFmpq": {"available": True, "samplesMs": [0.02]},
+            "decimalIntervalFraction": {"available": True, "samplesMs": [0.1]},
+        },
+    }
+    assert evaluate_three_candidates_p95_latency(just_over)["allThreeCandidatesVerifiedUnder5MsP95"] is False
+
+
+def test_pkg_m00_02_ag15_mvt_diagonal_exclusion() -> None:
+    """Verifies AG-15 MVT injectivity pruning:
+    (a) regular injective segment prunes diagonal cleanly as CERTIFIED_DISJOINT,
+    (b) nontrivial near-diagonal self-intersection (< 1e-4 parameter separation) is NOT skipped and is Krawczyk-certified,
+    (c) singular cusp diagonal fails closed as UNRESOLVED rather than silently continuing.
+    """
+    # (a) Regular injective parabolic arc -> CERTIFIED_DISJOINT with 0 unresolvedBoxes
+    reg_curve = ExactCubicBezier2D.from_floats("reg-parab", (0.0, 0.0), (3.0, 1.0), (7.0, 1.0), (10.0, 0.0))
+    res_reg = krawczyk_isolate_offset_intersections(reg_curve, reg_curve, s_sign=-1, d=0.5, max_depth=24)
+    assert res_reg["status"] == "CERTIFIED_DISJOINT"
+    assert res_reg["unresolvedBoxes"] == []
+
+    # (b) Regular cubic loop B(u) = (u^2 - a^2, 500 * u * (u^2 - a^2)), u = 2t - 1, a = 6e-5
+    # Exact self-intersection at t1* = 0.5 - 3e-5 = 0.49997, t2* = 0.5 + 3e-5 = 0.50003 (|t2*-t1*| = 6e-5 < 1e-4!).
+    # Note: legacy heuristic |t_mid1 - t_mid2| < 1e-4 & depth > 12 would have silently dropped this crossing!
+    a_q = Fraction(6, 100000)
+    a2 = a_q * a_q
+    c3_y = Fraction(500) * 8
+    c2_y = Fraction(-12) * 500
+    c1_y = Fraction(500) * (6 - 2 * a2)
+    c0_y = Fraction(500) * (-1 + a2)
+    p0x = 1 - a2
+    p1x = (1 - a2) + Fraction(-4, 3)
+    p2x = (1 - a2) - Fraction(8, 3) + Fraction(4, 3)
+    p3x = 1 - a2  # since (2*1-1)^2 - a^2 = 1 - a^2
+    # Convert exact power coeffs x(t) = (1 - a^2) - 4 t + 4 t^2, y(t) = c0 + c1 t + c2 t^2 + c3 t^3 to Bernstein:
+    bx_0 = 1 - a2
+    bx_1 = bx_0 + Fraction(-4, 3)
+    bx_2 = bx_0 + Fraction(-8, 3) + Fraction(4, 3)
+    bx_3 = bx_0 - 4 + 4
+    by_0 = c0_y
+    by_1 = c0_y + c1_y / 3
+    by_2 = c0_y + 2 * c1_y / 3 + c2_y / 3
+    by_3 = c0_y + c1_y + c2_y + c3_y
+    near_diag_loop = ExactCubicBezier2D(
+        segment_id="near-diag-loop",
+        p0=(bx_0, by_0),
+        p1=(bx_1, by_1),
+        p2=(bx_2, by_2),
+        p3=(bx_3, by_3),
+    )
+    res_loop = krawczyk_isolate_offset_intersections(near_diag_loop, near_diag_loop, s_sign=+1, d=0.0, max_depth=36)
+    assert res_loop["status"] == "CERTIFIED_INTERSECTION_FOUND"
+    assert len(res_loop["certifiedIntersections"]) >= 1
+    found_near = any(
+        sol["t1Bracket"][0] <= 0.49997 <= sol["t1Bracket"][1]
+        and sol["t2Bracket"][0] <= 0.50003 <= sol["t2Bracket"][1]
+        for sol in res_loop["certifiedIntersections"]
+    )
+    assert found_near
+
+    # (c) Singular interior cusp B(u) = (u^2, u^3) -> zero base speed on diagonal fails closed to UNRESOLVED
+    cusp_curve = ExactCubicBezier2D(
+        segment_id="diag-cusp-unresolved",
+        p0=(Fraction(1), Fraction(-1)),
+        p1=(Fraction(-1, 3), Fraction(1)),
+        p2=(Fraction(-1, 3), Fraction(-1)),
+        p3=(Fraction(1), Fraction(1)),
+    )
+    res_cusp = krawczyk_isolate_offset_intersections(cusp_curve, cusp_curve, s_sign=-1, d=1.5, max_depth=16)
+    assert res_cusp["status"] == "UNRESOLVED"
+    assert len(res_cusp["unresolvedBoxes"]) > 0
+
+
+def test_pkg_m00_02_outward_binary64_json_roundtrip_containment() -> None:
+    """Verifies directed outward IEEE-754 binary64 conversion & JSON round-trip enclosure across extreme scales."""
+    import json
+    from mpmath import iv
+
+    samples = [
+        (Fraction(-1, 3), Fraction(1, 3)),  # zero-straddling
+        (Fraction(1, 10**300), Fraction(2, 10**300)),  # extreme subnormal / tiny scale
+        (Fraction(10**12) + Fraction(1, 7), Fraction(10**12) + Fraction(2, 7)),  # large magnitude ULP shift
+        (Fraction(-10**12) - Fraction(2, 3), Fraction(10**12) + Fraction(2, 3)),  # wide zero-straddling large scale
+    ]
+    for q_lo, q_hi in samples:
+        f_lo, f_hi = fraction_pair_to_outward_f64_pair(q_lo, q_hi)
+        re_lo, re_hi = json.loads(json.dumps([f_lo, f_hi]))
+        assert Fraction(re_lo) <= q_lo
+        assert Fraction(re_hi) >= q_hi
+
+    iv.prec = 113
+    iv_test = iv.mpf(["-0.33333333333333333333333333333333", "0.66666666666666666666666666666667"])
+    m_lo = mpf_to_outward_lower_f64(iv_test.a)
+    m_hi = mpf_to_outward_upper_f64(iv_test.b)
+    re_m_lo, re_m_hi = json.loads(json.dumps([m_lo, m_hi]))
+    assert re_m_lo <= float(iv_test.a)
+    assert re_m_hi >= float(iv_test.b)
+
+    # Verify Method C1-Cert outward containment against exact rational endpoints
+    armscye = ExactCubicBezier2D.from_floats(
+        "outward-check", (23.5, 19.5), (21.0, 19.5), (19.2, 14.0), (20.5, 4.2)
+    )
+    enc = method_c1_cert_arc_length_enclosure(armscye, subdivision_depth=8)
+    lo_q = Fraction(enc["lowerChordBoundRational"])
+    hi_q = Fraction(enc["upperControlPolygonBoundRational"])
+    assert Fraction(enc["lowerChordBoundCm"]) <= lo_q <= hi_q <= Fraction(enc["upperControlPolygonBoundCm"])
+

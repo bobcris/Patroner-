@@ -1,0 +1,50 @@
+{
+  "artifactName": "RuntimeBenchmarkObservation.json",
+  "nonDeterministicRuntimeObservation": true,
+  "packageId": "PKG-M00-02",
+  "checkpoint": "16",
+  "hostObservation": {
+    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+    "machine": "x86_64",
+    "pythonVersion": "3.12.16"
+  },
+  "intervalCandidateBenchmarksDigest": {
+    "artifact": "IntervalCandidateBenchmarks.json",
+    "path": "artifacts/m00/IntervalCandidateBenchmarks.json",
+    "sha256": "4644934731121936737793d6515cfa62a8ecb62c4b38ada87f1584200663b0ab",
+    "bytes": "3923"
+  },
+  "latencyQualificationEvaluation": {
+    "allThreeCandidatesVerifiedUnder5MsP95": true,
+    "thresholdMs": 5.0,
+    "requiredCandidates": [
+      "mpmathIvFraction",
+      "pythonFlintArbFmpq",
+      "decimalIntervalFraction"
+    ],
+    "candidateResults": {
+      "mpmathIvFraction": {
+        "present": true,
+        "p95Ms": 1.224254,
+        "thresholdMs": 5.0,
+        "passed": true,
+        "reason": "OK"
+      },
+      "pythonFlintArbFmpq": {
+        "present": true,
+        "p95Ms": 0.018097,
+        "thresholdMs": 5.0,
+        "passed": true,
+        "reason": "OK"
+      },
+      "decimalIntervalFraction": {
+        "present": true,
+        "p95Ms": 0.125857,
+        "thresholdMs": 5.0,
+        "passed": true,
+        "reason": "OK"
+      }
+    },
+    "failures": []
+  }
+}

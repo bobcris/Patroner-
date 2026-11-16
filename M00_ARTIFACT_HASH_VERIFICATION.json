@@ -1,157 +1,145 @@
 {
-  "auditCheckpoint": "13A",
-  "auditTitle": "Patroner M00 Pre-Gate Auth-2 Artifact Hash & Content Integrity Verification",
-  "auditDate": "2026-11-16",
+  "auditCheckpoint": "16",
+  "auditTitle": "Patroner M00 Checkpoint 16 Consolidated Deterministic Artifact Hash Verification",
+  "packageId": "PKG-M00-02",
+  "historicalCheckpoint13aArchivePath": "artifacts/m00/checkpoint_13a_audit/M00_ARTIFACT_HASH_VERIFICATION.json",
   "governingBaseline": {
-    "blueprintRevision": "R2.1.2-R1",
+    "checkpoint12Date": "2026-11-16",
+    "baselineBlueprint": "R2.1.2-R1 (R2.2 Documentation Overlay)",
+    "mainBaselineCommitSha": "1221eb05497a59e52c4af851614085748c92a2d1",
+    "integrationReviewCommitSha": "d2977ccc868c7c8152282477c597044e3ca07556",
+    "executionBranch": "fix/m00-integrated-consolidation",
+    "preRestartGateAuth1CommitSha": "6938f808629276fd1b0860fba407b42f5cb40aaf",
     "recoveryAnchorCommitSha": "282a303ea1126fb3b1da368e4e8e4ddbeb59c552",
-    "recoveryAnchorTreeSha": "16ebb94c7f02af88a5a3b82a2f31d560f89d6615",
-    "reportedPreRestartGateAuth1CommitSha": "6938f808629276fd1b0860fba407b42f5cb40aaf",
-    "reportedPreRestartGateAuth1TreeSha": "651d5fc152b7c248e184a7f208812797cec40d13",
-    "reportedPreRestartM00CommitSha": "b5feeb922fbbc3fa17f3ab0057030ea68a0d03b8",
-    "publishedRemoteM00SquashedCommitSha": "edafe5e9e6994233daeaedf5826c691a934bc013",
-    "verifiedM00TreeSha": "6173c486993afbb6e4f3d900c9528803d3af7c06"
+    "synchronizedM00SubmissionCommitSha": "edafe5e9e6994233daeaedf5826c691a934bc013",
+    "checkpoint13aAuditCommitSha": "0f89b292d402a4c829fdfa78a07b8dc4143df2cb",
+    "approvedDecisionsAtGateAuth1": [
+      "Gate Auth-1",
+      "DEC-01",
+      "DEC-13 Stage 1"
+    ],
+    "mandatoryNextGate": "Gate Auth-2 / DEC-13 Stage 2 (CLOSED - Pending Owner Sign-Off; Blocks M02 Production Implementation)",
+    "gateAuth2Status": "CLOSED"
   },
   "summary": {
-    "totalArtifactsAudited": 9,
-    "byteLevelHashMatchesManifest": 8,
-    "manifestSelfHashVerified": true,
-    "allByteHashesIntactOnDisk": true,
-    "chatReportSummariesMatchJsonContents": false,
-    "deterministicAcrossRuns": false,
-    "nonDeterministicArtifacts": [
-      "artifacts/m00/IntervalLibraryQualificationReport.json"
+    "deterministicArtifactsAudited": 10,
+    "checkpoint16RootDeliverablesAudited": 7,
+    "referencedSchemaSha256": "b8520e9d46948aa8b636ef22b190fd38fea669f315ca61a82deab64ea5665960",
+    "deterministicAcrossRuns": true,
+    "nonDeterministicRuntimeObservationArtifactsExcludedFromDeterminismGate": [
+      "artifacts/m00/IntervalCandidateBenchmarks.json",
+      "artifacts/m00/RuntimeBenchmarkObservation.json"
     ]
   },
-  "artifacts": [
+  "deterministicArtifacts": [
     {
-      "index": 1,
-      "artifactName": "SchemasLockReport.json",
-      "exactPath": "artifacts/m00/SchemasLockReport.json",
-      "sizeBytes": 1610,
-      "recomputedSha256": "3e6263070f0cf6434d79db0c99a631b55719ca24c9fb77cf0fd061e1934d076f",
-      "manifestRecordedSha256": "3e6263070f0cf6434d79db0c99a631b55719ca24c9fb77cf0fd061e1934d076f",
-      "hashMatchesManifest": true,
-      "referencedSchemaPath": "/app/applet/packages/contracts/schemas/canonical_contracts.schema.json",
-      "referencedSchemaSha256": "d4455b583d51e2b9c791227cdb09c4b3b3bafecb111b575543687c170c0aeddd",
-      "referencedSchemaRecomputedSha256": "d4455b583d51e2b9c791227cdb09c4b3b3bafecb111b575543687c170c0aeddd",
-      "jsonContentSummary": "Verifies 7 entities (CoordinateFrameSpec, BezierSegment, SeamAllowanceSpec, NotchSpec, OffsetClassificationReport, BodyProfile, PatternPiece) between JSON Schema Draft 2020-12 and Pydantic v2.",
-      "discrepanciesAgainstSubmittedReportsAndADR009": [
-        "Submitted chat summary claimed entities verified were (BodyProfile, GarmentSpec, PatternPiece, Notch, SeamAllowance, DxfExportManifest, GeometryWarning); actual JSON verifies (CoordinateFrameSpec, BezierSegment, SeamAllowanceSpec, NotchSpec, OffsetClassificationReport, BodyProfile, PatternPiece).",
-        "Omits ADR-009 §2.5 NumericalVerificationRecord and ADR-009 §5.3 OffsetValidationRecord schemas."
-      ]
+      "artifact": "SchemasLockReport.json",
+      "path": "artifacts/m00/SchemasLockReport.json",
+      "sha256": "d18dc854c0fe103b0151b417968dd7181d52039daf9dae708a4c1d782123bbc4",
+      "bytes": "6516"
     },
     {
-      "index": 2,
-      "artifactName": "BaselineDivergenceRegistry.json",
-      "exactPath": "artifacts/m00/BaselineDivergenceRegistry.json",
-      "sizeBytes": 4987,
-      "recomputedSha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d",
-      "manifestRecordedSha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d",
-      "hashMatchesManifest": true,
-      "jsonContentSummary": "Captures C0-Legacy counts across 6 sizes (XS..XXL) for bodice and skirt blocks, sample armscye length/offset metrics, and 4 divergence entries (DIV-01 Class A; DIV-02, DIV-03, DIV-04 Class B).",
-      "discrepanciesAgainstSubmittedReportsAndADR009": [
-        "Captures only high-level piece/seam/notch counts across XS..XXL and one sample armscye curve diagnostic rather than full coordinate/DXF geometry snapshots across all blocks."
-      ]
+      "artifact": "BaselineDivergenceRegistry.json",
+      "path": "artifacts/m00/BaselineDivergenceRegistry.json",
+      "sha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d",
+      "bytes": "4987"
     },
     {
-      "index": 3,
-      "artifactName": "IntervalLibraryQualificationReport.json",
-      "exactPath": "artifacts/m00/IntervalLibraryQualificationReport.json",
-      "sizeBytes": 3326,
-      "recomputedSha256": "e34c60d1567149dd6fb89d83227b1291bc171a3b9cf8024b0bcaa69cae8e1c22",
-      "manifestRecordedSha256": "e34c60d1567149dd6fb89d83227b1291bc171a3b9cf8024b0bcaa69cae8e1c22",
-      "hashMatchesManifest": true,
-      "jsonContentSummary": "Evaluates 3 candidate stacks: (1) mpmath.iv 1.4.1 + fractions.Fraction (2.4142 ms/curve), (2) python-flint 0.9.0 (0.024 ms/curve), (3) fractions.Fraction + decimal.Decimal prec=50 (0.1662 ms/curve). Records boolean flags outwardDirectedRoundingVerified=true, grazingTangencyNoFalseNegative=true, wilkinsonClusterSeparationVerified=true.",
-      "discrepanciesAgainstSubmittedReportsAndADR009": [
-        "CONFLICTING CHAT WIDTHS RESOLVED: Submitted Chat Report A claimed widths (2.86e-16, 4.44e-16, 2.00e-50); Submitted Chat Report B claimed widths (2.13e-16, 3.70e-16, 2.00e-50). Actual IntervalLibraryQualificationReport.json contains NO width fields at all (only boolean outwardDirectedRoundingVerified: true).",
-        "Actual computed widths in qualification.py for c = 1/3 + 1/7 are: mpmath.iv (prec=53) = 1.110223e-16, mpmath.iv (prec=113) = 9.629650e-35; flint.arb (prec=113) diameter = 1.444447e-34 (at prec=53 diameter = 1.665335e-16, sqrt(2) diameter = 4.440892e-16); DecimalInterval (prec=50) c width = 2.00e-50, sqrt(2) width = 1.00e-49.",
-        "Does not satisfy ADR-009 §3.2 8-point qualification protocol (tested 1 rational pair instead of 10,000; tested 1 sqrt instead of 10,000; compared mpmath.iv against 256-bit mpmath.mpf instead of fractions.Fraction; flint.arb used .overlaps() instead of strict containment; embeds wall-clock timing making artifact non-deterministic across runs)."
-      ]
+      "artifact": "IntervalLibraryQualificationReport.json",
+      "path": "artifacts/m00/IntervalLibraryQualificationReport.json",
+      "sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
+      "bytes": "24902"
     },
     {
-      "index": 4,
-      "artifactName": "AdversarialGeometryVerificationReport.json",
-      "exactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json",
-      "sizeBytes": 10223,
-      "recomputedSha256": "0792f63511590b15c326129723acd470566e77d01b28cbcc2d2168495e5f2cb4",
-      "manifestRecordedSha256": "0792f63511590b15c326129723acd470566e77d01b28cbcc2d2168495e5f2cb4",
-      "hashMatchesManifest": true,
-      "jsonContentSummary": "Records 17 test family entries (AG-01..AG-17) generated by execute_17_adversarial_geometry_families() in services/geometry-engine/patroner_geometry/c1_cert_oracle.py.",
-      "discrepanciesAgainstSubmittedReportsAndADR009": [
-        "Submitted Chat Report A and Submitted Chat Report B both contradict the actual JSON contents on AG-01, AG-02, AG-03, AG-04, AG-05, AG-06, AG-08, AG-10, AG-12, AG-14, AG-15, AG-16, and AG-17.",
-        "AG-02 (CCW Circle s=+1, d=10=R collapse) is classified as TANGENTIAL_CUSP_DEGENERACY in JSON instead of ADR-009 §4.2 Case 2 ACTUAL_OFFSET_SINGULARITY / ACTUAL_ZERO_SPEED_CUSP.",
-        "AG-03 (CCW Circle s=+1, d=12>R=10 over-offset) is classified as ACTUAL_CURVATURE_CUSP in JSON, directly violating ADR-009 §4.2 Case 3 & §6 #3 which require TANGENT_REVERSAL with has_zero_speed_cusp_on_domain=false.",
-        "Multiple family entries (AG-01..AG-05, AG-14, AG-15, AG-17) rely on hardcoded error metrics or point evaluations rather than complete-interval [0, 1] Bernstein/interval enclosures."
-      ]
+      "artifact": "AdversarialGeometryVerificationReport.json",
+      "path": "artifacts/m00/AdversarialGeometryVerificationReport.json",
+      "sha256": "42bbb531fcc8d99dd2c316790e8a4901e56345d3ce28af9843949ba27f853250",
+      "bytes": "51177"
     },
     {
-      "index": 5,
-      "artifactName": "ArcLengthVerificationReport.json",
-      "exactPath": "artifacts/m00/ArcLengthVerificationReport.json",
-      "sizeBytes": 1149,
-      "recomputedSha256": "76a5c26f355f7ce5038f1728049d3e4cf21eef87b054bd5f4d4face3e661f891",
-      "manifestRecordedSha256": "76a5c26f355f7ce5038f1728049d3e4cf21eef87b054bd5f4d4face3e661f891",
-      "hashMatchesManifest": true,
-      "jsonContentSummary": "Compares 5-point adaptive Gauss-Legendre arc length (16.6656505146 cm, 23 panels) against 113-bit mpmath.quad (forwardLengthErrorCm = 1.4210854715202004e-14 cm) and checks Newton-Brent inversion at 25%, 50%, 75%.",
-      "discrepanciesAgainstSubmittedReportsAndADR009": [
-        "Submitted chat reports claimed 'forward error 0.0 cm <= 1e-6 cm' and '16-node Gauss-Legendre + 24-node adaptive Simpson on AG-13'; actual JSON tests 5-point Gauss-Legendre on 'bodice-front-armscye-m005' with forwardLengthErrorCm = 1.4210854715202004e-14 cm.",
-        "Uses mpmath.quad (HIGH_PRECISION_NUMERICAL_REFERENCE) instead of ADR-009 §2.4 Method C1-Cert adaptive De Casteljau chord/control-polygon enclosure (CERTIFIED_ENCLOSURE)."
-      ]
+      "artifact": "ArcLengthVerificationReport.json",
+      "path": "artifacts/m00/ArcLengthVerificationReport.json",
+      "sha256": "c62626710ace4bae8f7b828e5ec85db1840add22449d658dec7edad38cdaad2e",
+      "bytes": "5995"
     },
     {
-      "index": 6,
-      "artifactName": "TopologyVerificationReport.json",
-      "exactPath": "artifacts/m00/TopologyVerificationReport.json",
-      "sizeBytes": 654,
-      "recomputedSha256": "006d3bb3a6aeb817c6938c590610741c37ed5a302687facd972465fcf421765b",
-      "manifestRecordedSha256": "006d3bb3a6aeb817c6938c590610741c37ed5a302687facd972465fcf421765b",
-      "hashMatchesManifest": true,
-      "jsonContentSummary": "Verifies exact rational orient2d and shoelace signed area on 4 synthetic polygons: CCW exterior (1008.0 cm^2), CW cutout (-25.0 cm^2), bowtie self-intersection, and micro-sliver (< 1e-4 cm^2).",
-      "discrepanciesAgainstSubmittedReportsAndADR009": [
-        "segments_properly_intersect_exact in sub_oracles.py:239 checks only strict proper crossings (o1*o2 < 0 and o3*o4 < 0) and does not handle collinear overlapping segments or vertex-on-edge intersections (orient2d == 0)."
-      ]
+      "artifact": "TopologyVerificationReport.json",
+      "path": "artifacts/m00/TopologyVerificationReport.json",
+      "sha256": "c6e21e20645977515e6f9cbd4387f1438813367d6f62380d139aa59a8d55e255",
+      "bytes": "904"
     },
     {
-      "index": 7,
-      "artifactName": "DxfRoundTripVerificationReport.json",
-      "exactPath": "artifacts/m00/DxfRoundTripVerificationReport.json",
-      "sizeBytes": 356,
-      "recomputedSha256": "126200f7b948f4faf75dd5f243357a246c5558b67824f1387e9c80ce0982b99d",
-      "manifestRecordedSha256": "126200f7b948f4faf75dd5f243357a246c5558b67824f1387e9c80ce0982b99d",
-      "hashMatchesManifest": true,
-      "jsonContentSummary": "Recovers layers ['1', '11', '2', '4', '7', '8'] with maxVertexRoundTripErrorCm = 0.0 cm from a synthetic ENTITIES-only DXF string emitted by emit_reference_dxf_aama().",
-      "discrepanciesAgainstSubmittedReportsAndADR009": [
-        "Does not test round-trip against the application's actual DXF exporter (src/engine/export/) and omits DXF R12 (AC1009) HEADER and TABLES sections."
-      ]
+      "artifact": "DxfRoundTripVerificationReport.json",
+      "path": "artifacts/m00/DxfRoundTripVerificationReport.json",
+      "sha256": "e3552388ecbe36fdfbd51b6bd167d70a4c86f4f53d644712c23ddcf899347c01",
+      "bytes": "1623"
     },
     {
-      "index": 8,
-      "artifactName": "AnthropometricVerificationReport.json",
-      "exactPath": "artifacts/m00/AnthropometricVerificationReport.json",
-      "sizeBytes": 924,
-      "recomputedSha256": "590c874482bd4fa02904bf1fdee1655e088b3baefdb3c74f3b1895e5ae3f9dd7",
-      "manifestRecordedSha256": "590c874482bd4fa02904bf1fdee1655e088b3baefdb3c74f3b1895e5ae3f9dd7",
-      "hashMatchesManifest": true,
-      "jsonContentSummary": "Validates 3 golden BodyProfiles (STD-XS, STD-M, PLUS-XXL), rejects 1 invalid profile (lowHipCm=80 < highHipCm=96 - 2), and checks 3 hardcoded seam-pair deltas against DEC-11 (0.05 cm CAD / 0.20 cm sewn).",
-      "discrepanciesAgainstSubmittedReportsAndADR009": [
-        "Submitted Chat Report A claimed rejection was for 'chest_cm < bust_arc_half_cm * 2'; actual code in contracts.py:133 rejects 'lowHipCm < highHipCm - 2.0'.",
-        "DEC-11 paired seam values in sub_oracles.py:524-528 are static hardcoded numbers rather than computed from drafted pattern pieces."
-      ]
+      "artifact": "AnthropometricVerificationReport.json",
+      "path": "artifacts/m00/AnthropometricVerificationReport.json",
+      "sha256": "5cff9cd5b5d75ed0fbf0e5893934310927f52b8220dd2dc749814ea259e02a89",
+      "bytes": "3463"
     },
     {
-      "index": 9,
-      "artifactName": "ReproducibleEnvironmentManifest.json",
-      "exactPath": "artifacts/m00/ReproducibleEnvironmentManifest.json",
-      "sizeBytes": 2767,
-      "recomputedSha256": "c1b94668e0adbad29f485268b5b7c950ea81a6919d8f1a2193641e05bd893a07",
-      "manifestRecordedSha256": "SELF_MANIFEST",
-      "hashMatchesManifest": true,
-      "jsonContentSummary": "Records Checkpoint 12 governance metadata, Python 3.10.12 environment, pinned package versions, and SHA-256 digests of the other 8 artifacts.",
-      "discrepanciesAgainstSubmittedReportsAndADR009": [
-        "Records Python 3.10.12 (container system Python) whereas M00.3 / ADR-009 §3.2 specify Python 3.12.x with uv.lock.",
-        "Claims deterministicReplayVerified: true, but scripts/m00_execute_all.py:117 only replays execute_17_adversarial_geometry_families(), whereas generate_interval_library_qualification_report() embeds live time.perf_counter() latency measurements."
-      ]
+      "artifact": "ProductionDxfRoundTripReport.json",
+      "path": "artifacts/m00/ProductionDxfRoundTripReport.json",
+      "sha256": "269ebd4806473c7e3c62d0f72ee033cffb586bd331bed8c021cb30b227ed9ab7",
+      "bytes": "4827"
+    },
+    {
+      "artifact": "ProductionSeamParityReport.json",
+      "path": "artifacts/m00/ProductionSeamParityReport.json",
+      "sha256": "a33d733451b5a1ac8ab22c65d249906de18aa670c16d4d791bed99deed4c05fe",
+      "bytes": "15423"
     }
-  ]
+  ],
+  "checkpoint16RootDeliverables": [
+    {
+      "artifact": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
+      "path": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
+      "sha256": "25806d0f8f10684d0922ac4fded5d2571a7c60989e0f67b694246fc16d11204f",
+      "bytes": "22326"
+    },
+    {
+      "artifact": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
+      "path": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
+      "sha256": "08d5b86c1396914da6a125efa91d77e27730fb61fa3c2903d32439b27311610b",
+      "bytes": "13865"
+    },
+    {
+      "artifact": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
+      "path": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
+      "sha256": "ccbad9a633e9bbb99ba03e7a0e9175d51e5f600314f09b4c538d4c7ffcd7ebb6",
+      "bytes": "6382"
+    },
+    {
+      "artifact": "M00_INTERVAL_QUALIFICATION_REPORT.json",
+      "path": "M00_INTERVAL_QUALIFICATION_REPORT.json",
+      "sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
+      "bytes": "24902"
+    },
+    {
+      "artifact": "M00_CONTRACT_PARITY_REPORT.json",
+      "path": "M00_CONTRACT_PARITY_REPORT.json",
+      "sha256": "2918bf434eaeca754451c30306e2bf338fc296dd161b0ef661aea107b66b5601",
+      "bytes": "7091"
+    },
+    {
+      "artifact": "M00_SUBORACLE_VERIFICATION_REPORT.json",
+      "path": "M00_SUBORACLE_VERIFICATION_REPORT.json",
+      "sha256": "e6b96d768ac6a90aa0da90893081b354659a92d0a2cff732fc19aab8b8f880e3",
+      "bytes": "35879"
+    },
+    {
+      "artifact": "M00_REPRODUCIBILITY_REPORT.json",
+      "path": "M00_REPRODUCIBILITY_REPORT.json",
+      "sha256": "b89d4e4f91938b64a02ce1777a874c03d5229ea3f4b4b30ac0718995002da90e",
+      "bytes": "3815"
+    }
+  ],
+  "reproducibleEnvironmentManifest": {
+    "artifactsCopySha256": "1507c296915e026a185c14e1566dfd881f1958be48778e90838cb0f2e77c197e",
+    "rootCopySha256": "1507c296915e026a185c14e1566dfd881f1958be48778e90838cb0f2e77c197e",
+    "copiesIdentical": true
+  }
 }

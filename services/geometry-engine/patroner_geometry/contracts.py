@@ -744,7 +744,7 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
     return {
         "milestoneId": "M00.1",
         "artifactName": "SchemasLockReport.json",
-        "schemaPath": str(schema_path),
+        "schemaPath": "packages/contracts/schemas/canonical_contracts.schema.json",
         "schemaSha256": schema_sha256,
         "draftVersion": "https://json-schema.org/draft/2020-12/schema",
         "canonicalCoordinateFrame": sample_coord.model_dump(mode="json"),

@@ -1,13 +1,14 @@
 {
   "deliverable": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
-  "checkpoint": "15",
+  "checkpoint": "16",
   "governingBaseline": {
-    "blueprint": "R2.1.2-R1",
+    "blueprint": "R2.1.2-R1 (R2.2 Documentation Overlay)",
     "gateAuth1Commit": "6938f808629276fd1b0860fba407b42f5cb40aaf",
     "checkpoint13aAuditCommit": "0f89b292d402a4c829fdfa78a07b8dc4143df2cb",
     "mainBaselineCommit": "1221eb05497a59e52c4af851614085748c92a2d1",
-    "packageId": "PKG-P00-01",
-    "executionBranch": "feat/m00-p00-qualification"
+    "integrationReviewCommit": "d2977ccc868c7c8152282477c597044e3ca07556",
+    "packageId": "PKG-M00-02",
+    "executionBranch": "fix/m00-integrated-consolidation"
   },
   "summary": {
     "totalCanonicalAGFamilies": 17,
@@ -236,8 +237,8 @@
       "verificationOutcome": "CERTIFIED_INVALID",
       "failureCategory": "REGULARITY_MARGIN_VIOLATION",
       "minOffsetSpeedFactorInterval": [
-        0.02,
-        0.023221132
+        0.02000000000000005,
+        0.023221131747995408
       ],
       "regularityMarginEpsilon": 0.05,
       "offsetValidationRecord": {
@@ -252,8 +253,8 @@
           64.140625
         ],
         "min_offset_speed_factor_interval": [
-          0.02,
-          0.023221132
+          0.02000000000000005,
+          0.023221131747995408
         ],
         "has_zero_speed_cusp_on_domain": false,
         "has_tangent_reversal_on_domain": false,
@@ -281,14 +282,14 @@
       "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
       "convexOutcome": "CERTIFIED_VALID",
       "convexMinFInterval": [
-        1.037947332,
-        1.039592996
+        1.0379473319220205,
+        1.0395929959324142
       ],
       "concaveOutcome": "CERTIFIED_INVALID",
       "concaveClassification": "TANGENT_REVERSAL",
       "concaveMinFInterval": [
         -0.2,
-        -0.196055757
+        -0.19605575704327097
       ],
       "signBlindSquaredPolynomialAtHalf": -115343.3600000001,
       "signGatePreventedFalsePositiveOnConvex": true,
@@ -302,6 +303,9 @@
       "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
       "collinearEnclosure": {
         "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
+        "exactRationalEnclosureAvailable": true,
+        "lowerChordBoundRational": "10/1",
+        "upperControlPolygonBoundRational": "10/1",
         "subdivisionDepth": 5,
         "panelsCount": 32,
         "lowerChordBoundCm": 10.0,
@@ -316,13 +320,16 @@
       },
       "nearFlat1e7Enclosure": {
         "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
+        "exactRationalEnclosureAvailable": true,
+        "lowerChordBoundRational": "6490371073168536341399150201736139/649037107316853453566312041152512",
+        "upperControlPolygonBoundRational": "202824096036516760676921983981305/20282409603651670423947251286016",
         "subdivisionDepth": 7,
         "panelsCount": 128,
-        "lowerChordBoundCm": 10.000000000000004,
+        "lowerChordBoundCm": 10.000000000000002,
         "upperControlPolygonBoundCm": 10.000000000000004,
         "certifiedReferenceLengthCm": 10.000000000000004,
-        "certifiedHalfWidthCm": 0.0,
-        "enclosureWidthCm": 0.0,
+        "certifiedHalfWidthCm": 2.0210961954871922e-19,
+        "enclosureWidthCm": 4.0421923909743844e-19,
         "nonStrictInequalityHolds": true,
         "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
         "quadratureLength113BitCm": 10.000000000000004,
@@ -342,7 +349,7 @@
       "isProductionReady": false,
       "minOffsetSpeedFactorInterval": [
         0.030278125,
-        0.972379485
+        0.97237948457947
       ],
       "offsetValidationRecord": {
         "segment_id": "ADR009-S6-16-boundary-straddle",
@@ -353,11 +360,11 @@
         "regularity_margin_epsilon": 0.05,
         "min_base_speed_squared_interval": [
           64.0,
-          669.16
+          669.1600000000001
         ],
         "min_offset_speed_factor_interval": [
           0.030278125,
-          0.972379485
+          0.97237948457947
         ],
         "has_zero_speed_cusp_on_domain": false,
         "has_tangent_reversal_on_domain": false,
@@ -438,6 +445,64 @@
   ],
   "checkpoint13aHistoricalAuditSnapshotPreserved": {
     "archivedCopyPath": "artifacts/m00/checkpoint_13a_audit/M00_CANONICAL_AG01_AG17_REGISTRY.json",
-    "preRemediationSummary": {}
+    "preRemediationSummary": {
+      "auditCheckpoint": "13A",
+      "totalFamilies": 17,
+      "reconciliationSummary": {
+        "totalFamilies": 17,
+        "rootCauseOfDiscrepancies": "Three-way divergence between: (1) ADR-009 \u00a76 (the authoritative R2.1.2-R1 17-family specification), (2) plan/06_ACCEPTANCE_AND_EVIDENCE_FRAMEWORK.md \u00a73 + services/geometry-engine/patroner_geometry/c1_cert_oracle.py (the implemented AG-01..AG-17 suite), and (3) two mutually contradictory tables emitted in the previous turn's chat response (Submitted Chat Report A and Submitted Chat Report B).",
+        "canonicalRule": "Stable family IDs AG-01 through AG-17 are preserved without renumbering. Each entry below records the exact implemented geometry in c1_cert_oracle.py, the committed JSON output in AdversarialGeometryVerificationReport.json, what Submitted Chat Reports A and B claimed, the governing ADR-009 R2.1.2-R1 canonical classification, and the exact technical/audit gap."
+      },
+      "testExecutionStatusCounts": {
+        "FAILED_GOVERNING_SPEC_ADR009 (Passes Pytest Only Because Pytest Asserts the Misclassification)": 1,
+        "PASSED (pytest Assertion Passes; Implementation Uses Scalar Formula rather than Interval Bezier Enclosure)": 1,
+        "PASSED_ANALYTICAL_FORMULA_ONLY": 1,
+        "PASSED_COLLINEAR_SUBCASE_ONLY": 1,
+        "PASSED_GENUINE_EXACT_RATIONAL_JET_VERIFICATION": 2,
+        "PASSED_IN_PYTEST_WITH_TAXONOMY_DISCREPANCY": 1,
+        "PASSED_POINT_CHECK_ONLY": 2,
+        "PASSED_POINT_EVAL_WITH_HARDCODED_METRICS": 1,
+        "PASSED_PRE_SPLIT_SCALAR_BISECTION": 1,
+        "PASSED_SYNTHETIC_LAMBDA_TEST": 1,
+        "PASSED_TRIVIAL_SCALAR_FORMULA": 1,
+        "PASSED_WITH_HEURISTIC_TERNARY_SEARCH": 1,
+        "PASSED_WITH_PARAMETER_GAP": 1,
+        "PASSED_WITH_TAXONOMY_AND_METHOD_GAP": 1,
+        "UNIMPLEMENTED_STUB_HARDCODED_TRUE": 1
+      },
+      "untestedADR009Section6Families": [
+        {
+          "adr009Sec6Row": 9,
+          "title": "Smooth Curve with 0 < min f(t) < epsilon_reg (Margin Violation Only)",
+          "expectedOutcome": "CERTIFIED_INVALID (failure_category: REGULARITY_MARGIN_VIOLATION)",
+          "statusInC1CertOraclePy": "NOT_IMPLEMENTED (REGULARITY_MARGIN_VIOLATION is missing from OffsetClassificationCategory enum)"
+        },
+        {
+          "adr009Sec6Row": 10,
+          "title": "Convex vs. Concave Curves with Identical |kappa| and Opposite Curvature Sign (max |kappa| = 1.2/d)",
+          "expectedOutcome": "B_convex -> CERTIFIED_VALID (NONE); B_concave -> CERTIFIED_INVALID (TANGENT_REVERSAL)",
+          "statusInC1CertOraclePy": "NOT_IMPLEMENTED (s*d*C(t) > 0 Bernstein sign gate not implemented)"
+        },
+        {
+          "adr009Sec6Row": 14,
+          "title": "Almost-Flat Cubic Segment (Method C1-Cert Non-Strict Inequality L_chord <= L_exact <= L_control_polygon)",
+          "expectedOutcome": "CERTIFIED_VALID (B_cert(L) <= 1e-4 cm, accepting equality L_chord == L_control_polygon on collinear segments)",
+          "statusInC1CertOraclePy": "NOT_IMPLEMENTED (Method C1-Cert De Casteljau chord/polygon interval arc-length enclosure not implemented in Python)"
+        },
+        {
+          "adr009Sec6Row": 16,
+          "title": "Subdivision-Limit / Straddling Interval Case (INCONCLUSIVE)",
+          "expectedOutcome": "INCONCLUSIVE (failure_category: INCONCLUSIVE_VERIFICATION, is_production_ready: false)",
+          "statusInC1CertOraclePy": "NOT_IMPLEMENTED (INCONCLUSIVE outcome and 4-step escalation ladder not implemented)"
+        },
+        {
+          "adr009Sec6Row": 17,
+          "title": "Non-Dyadic (t* = 1/3) & Interior t = 0.25 Singularities + Short-Span 2% Bypass (DEF-M00-02)",
+          "expectedOutcome": "CERTIFIED_INVALID (ACTUAL_ZERO_SPEED_CUSP / TANGENT_REVERSAL / PRIMARY_OFFSET_SPAN_INSUFFICIENT)",
+          "statusInC1CertOraclePy": "NOT_IMPLEMENTED"
+        }
+      ],
+      "checkpoint13aAuditVerdict": "BLOCKED_PRE_REMEDIATION"
+    }
   }
 }
