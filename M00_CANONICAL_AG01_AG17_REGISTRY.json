@@ -1,0 +1,649 @@
+{
+  "auditCheckpoint": "13A",
+  "registryVersion": "1.0.0-audit-reconciled",
+  "governingSpecification": "plan/decisions/ADR-009_NUMERICAL_CERTIFICATION_AND_OFFSET_VERIFICATION.md (R2.1.2-R1 §4.2, §4.3, §4.4, §5.3, §6)",
+  "secondaryPlanReference": "plan/06_ACCEPTANCE_AND_EVIDENCE_FRAMEWORK.md (§2.2 & §3)",
+  "implementationSourceFile": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py",
+  "testSourceFile": "services/geometry-engine/tests/test_m00_verification_suite.py",
+  "committedEvidenceArtifact": "artifacts/m00/AdversarialGeometryVerificationReport.json",
+  "committedEvidenceArtifactSha256": "0792f63511590b15c326129723acd470566e77d01b28cbcc2d2168495e5f2cb4",
+  "reconciliationSummary": {
+    "totalFamilies": 17,
+    "rootCauseOfDiscrepancies": "Three-way divergence between: (1) ADR-009 §6 (the authoritative R2.1.2-R1 17-family specification), (2) plan/06_ACCEPTANCE_AND_EVIDENCE_FRAMEWORK.md §3 + services/geometry-engine/patroner_geometry/c1_cert_oracle.py (the implemented AG-01..AG-17 suite), and (3) two mutually contradictory tables emitted in the previous turn's chat response (Submitted Chat Report A and Submitted Chat Report B).",
+    "canonicalRule": "Stable family IDs AG-01 through AG-17 are preserved without renumbering. Each entry below records the exact implemented geometry in c1_cert_oracle.py, the committed JSON output in AdversarialGeometryVerificationReport.json, what Submitted Chat Reports A and B claimed, the governing ADR-009 R2.1.2-R1 canonical classification, and the exact technical/audit gap."
+  },
+  "families": [
+    {
+      "familyId": "AG-01",
+      "canonicalName": "Exact CCW Circle Inward Regular Offset (Sub-Critical, Case 1)",
+      "mathematicalGeometry": "B(t) = (R cos t, R sin t), R = 10.0 cm, CCW orientation, N_+(t) = (-cos t, -sin t) inward",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 2*pi] (and 4-quadrant/8-octant cubic Bezier approximation on [0, 1])",
+        "R_cm": 10.0,
+        "s_sign": 1,
+        "d_cm_implemented": 1.5,
+        "d_cm_adr009_sec6_row1": 2.0,
+        "epsilon_reg": 0.05
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "has_zero_speed_cusp_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "f_exact": 0.85
+      },
+      "actualImplementationClassification": {
+        "enumValue": "CERTIFIED_REGULAR",
+        "offsetSpeedFactorF": 0.85,
+        "analyticalOffsetRadiusCm": 8.5,
+        "O_at_t0": [8.5, 0.0],
+        "O_prime_at_t0": [0.0, 8.5],
+        "gridErrorCm": 1.666e-5,
+        "certifiedIntervalErrorCm": 2.082e-5
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed R=10, d=+2 (1 + kappa*d = 1.2 > 0), Radius 12.0 cm, arc length 6*pi cm (stale R2.1.1 sign convention).",
+        "reportB": "Claimed R=10, d=-1.5 => R_off = 11.5 cm (swapped AG-01 and AG-04)."
+      },
+      "assertionsAndMetrics": "Asserts offsetSpeedFactorF == 0.85 and classifiedCategory == 'CERTIFIED_REGULAR' in test_m00_4_four_circle_sanity_cases.",
+      "testExecutionStatus": "PASSED (pytest Assertion Passes; Implementation Uses Scalar Formula rather than Interval Bezier Enclosure)",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::verify_four_circle_sanity_cases (lines 339-389); tests/test_m00_verification_suite.py::test_m00_4_four_circle_sanity_cases (lines 44-55)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 18-40)",
+      "auditFinding": "Sign convention s=+1, f = 1 - d/R = 0.85 matches ADR-009 §4.2 Case 1. However, gridErrorCm and certifiedIntervalErrorCm are computed via hardcoded scalar multiplication (1.96e-6 * eff_r) rather than Method C3 interval enclosure."
+    },
+    {
+      "familyId": "AG-02",
+      "canonicalName": "Exact CCW Circle Inward Collapse (Critical Focal Collapse, Case 2)",
+      "mathematicalGeometry": "B(t) = (R cos t, R sin t), R = 10.0 cm, s = +1 (inward), d = R = 10.0 cm => O(t) === (0, 0), O'(t) === (0, 0)",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 2*pi]",
+        "R_cm": 10.0,
+        "s_sign": 1,
+        "d_cm": 10.0,
+        "epsilon_reg": 0.05
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "adr009_alias": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+        "has_zero_speed_cusp_on_domain": true,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "f_exact": 0.0
+      },
+      "actualImplementationClassification": {
+        "enumValue": "TANGENTIAL_CUSP_DEGENERACY",
+        "offsetSpeedFactorF": 0.0,
+        "analyticalOffsetRadiusCm": 0.0,
+        "O_at_t0": [0.0, 0.0],
+        "O_prime_at_t0": [0.0, 0.0],
+        "gridErrorCm": 0.0,
+        "certifiedIntervalErrorCm": 0.0
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed R=10, d=-2 (1 + kappa*d = 0.8 > 0), Radius 8.0 cm, Category 1.",
+        "reportB": "Claimed R=10, d=+3.0 => R_off = 7.0 cm, Category 1."
+      },
+      "assertionsAndMetrics": "Asserts offsetSpeedFactorF == 0.0 and classifiedCategory == 'TANGENTIAL_CUSP_DEGENERACY'.",
+      "testExecutionStatus": "PASSED_IN_PYTEST_WITH_TAXONOMY_DISCREPANCY",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::verify_four_circle_sanity_cases (lines 339-389)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 41-63)",
+      "auditFinding": "DISCREPANCY (FINDING-TAX-01): ADR-009 §4.2 Case 2 & §6 #2 mandate classification as CERTIFIED_INVALID (ACTUAL_OFFSET_SINGULARITY / ACTUAL_ZERO_SPEED_CUSP, has_zero_speed_cusp_on_domain: true). Following 06_ACCEPTANCE_AND_EVIDENCE_FRAMEWORK.md §3, c1_cert_oracle.py classified it as TANGENTIAL_CUSP_DEGENERACY."
+    },
+    {
+      "familyId": "AG-03",
+      "canonicalName": "Exact CCW Circle Inward Over-Offset (Super-Critical Tangent Reversal, Case 3)",
+      "mathematicalGeometry": "B(t) = (R cos t, R sin t), R = 10.0 cm, s = +1 (inward), d = 12.0 cm > R => O(t) = (-2 cos t, -2 sin t), ||O'(t)||_2 = 2.0 cm > 0 everywhere, f(t) = -0.20 < 0 everywhere (NO zero-speed point)",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 2*pi]",
+        "R_cm": 10.0,
+        "s_sign": 1,
+        "d_cm": 12.0,
+        "epsilon_reg": 0.05
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "TANGENT_REVERSAL",
+        "has_zero_speed_cusp_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "f_exact": -0.2
+      },
+      "actualImplementationClassification": {
+        "enumValue": "ACTUAL_CURVATURE_CUSP",
+        "offsetSpeedFactorF": -0.2,
+        "analyticalOffsetRadiusCm": -2.0,
+        "O_at_t0": [-2.0, 0.0],
+        "O_prime_at_t0": [0.0, -2.0000000000000018],
+        "gridErrorCm": 3.92e-6,
+        "certifiedIntervalErrorCm": 4.9e-6
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed d=-10 (1 + kappa*d = 0 Collapse), Category 3.",
+        "reportB": "Claimed d=+10.0 (1 - d*kappa = 0 Exact Evolute Cusp), Category 2b."
+      },
+      "assertionsAndMetrics": "Asserts offsetSpeedFactorF == -0.2 and classifiedCategory == 'ACTUAL_CURVATURE_CUSP'.",
+      "testExecutionStatus": "FAILED_GOVERNING_SPEC_ADR009 (Passes Pytest Only Because Pytest Asserts the Misclassification)",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::verify_four_circle_sanity_cases (lines 339-389)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 64-86)",
+      "auditFinding": "CRITICAL MATHEMATICAL VIOLATION OF ADR-009 §4.2 Case 3, §4.4.3 & §6 #3: On a CCW circle with s=+1, d=12 > R=10, f(t) = -0.2 < 0 is strictly negative everywhere and ||O'(t)||_2 = 2 cm > 0 everywhere. There is NO zero-speed cusp point anywhere on the domain. ADR-009 explicitly prohibits classifying Case 3 as a cusp and requires failure_category = 'TANGENT_REVERSAL' with has_zero_speed_cusp_on_domain = false."
+    },
+    {
+      "familyId": "AG-04",
+      "canonicalName": "Exact CCW Circle Outward Seam Allowance (Convex Side, Case 4)",
+      "mathematicalGeometry": "B(t) = (R cos t, R sin t), R = 10.0 cm, s = -1 (outward along -N_+), d > 0 => f(t) = 1 + d/R > 1",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 2*pi]",
+        "R_cm": 10.0,
+        "s_sign": -1,
+        "d_cm_implemented": 1.5,
+        "d_cm_adr009_sec6_row4": 12.0,
+        "epsilon_reg": 0.05
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "has_zero_speed_cusp_on_domain": false,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "f_exact_implemented": 1.15,
+        "f_exact_adr009_d12": 2.20
+      },
+      "actualImplementationClassification": {
+        "enumValue": "CERTIFIED_REGULAR",
+        "offsetSpeedFactorF": 1.15,
+        "analyticalOffsetRadiusCm": 11.5,
+        "O_at_t0": [11.5, 0.0],
+        "O_prime_at_t0": [0.0, 11.5],
+        "gridErrorCm": 2.254e-5,
+        "certifiedIntervalErrorCm": 2.817e-5
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed d=-12 (1 + kappa*d = -0.2 < 0 Inversion), Category 4.",
+        "reportB": "Claimed d=+12.0 (1 - d*kappa = -0.2 < 0 Super-Critical Inversion), Category 2b."
+      },
+      "assertionsAndMetrics": "Asserts offsetSpeedFactorF == 1.15 and classifiedCategory == 'CERTIFIED_REGULAR'.",
+      "testExecutionStatus": "PASSED_WITH_PARAMETER_GAP",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::verify_four_circle_sanity_cases (lines 339-389)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 87-109)",
+      "auditFinding": "ADR-009 §6 #4 specifies d = 12.0 cm > R = 10.0 cm with s = -1 specifically so that P_exact(t) = Q^3 - d^2 C^2 = 10^6 - 1.44e6 < 0 while s*d*C = -1200 < 0, testing that the concave sign gate s*d*C > 0 prevents false rejection of outward convex offsets when d > R. c1_cert_oracle.py used d = 1.5 cm < R (where P_exact > 0 anyway), leaving the convex sign gate untested."
+    },
+    {
+      "familyId": "AG-05",
+      "canonicalName": "Cubic Bezier Inflection Point (C(t*) = 0, C'(t*) != 0 at t* = 0.5)",
+      "mathematicalGeometry": "Cubic Bezier P0=(0,-4), P1=(10/3,4), P2=(20/3,-4), P3=(10,4) => B(t) = (10t, 4(2t-1)^3) on [0, 1]",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 1]",
+        "controlPointsCm": [[0.0, -4.0], [3.3333333333333335, 4.0], [6.666666666666667, -4.0], [10.0, 4.0]],
+        "inflectionParameterT": 0.5
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "adr009_sec6_correspondence": "ADR-009 §6 Family #11a (Cubic with Inflection Point)"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "CERTIFIED_REGULAR",
+        "Q_at_0_5": 100.0,
+        "C_at_0_5": 0.0,
+        "gridErrorCm": 0.00084,
+        "certifiedIntervalErrorCm": 0.00192
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'Gently Curved Waist Dart Cubic (d=-1.0 cm), min(1+kappa*d)=0.7858 > 0, Hausdorff 0.000185 cm'.",
+        "reportB": "Claimed 'Near-Critical Armscye Gouge: 1 - d*kappa_max = -0.05 < 0 (Category 2b)'."
+      },
+      "assertionsAndMetrics": "Checks c_at_half == 0 and q_at_half == 100 in exact Fraction arithmetic at t = 1/2.",
+      "testExecutionStatus": "PASSED_POINT_CHECK_ONLY",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 397-420)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 110-120)",
+      "auditFinding": "Only evaluates Q(0.5) and C(0.5) at t = 0.5; does not perform De Casteljau subdivision across [0, 0.5] and [0.5, 1] or test Sub-case 11b (where the concave half exceeds 1/d), and hardcodes gridErrorCm/certifiedIntervalErrorCm."
+    },
+    {
+      "familyId": "AG-06",
+      "canonicalName": "High-Curvature Armscye Curve with Two Transverse Curvature Cusps (f(t*) = 0, f'(t*) != 0)",
+      "mathematicalGeometry": "B(t) = (4(2t-1), 6(2t-1)^2) on [0, 1]; Q(t) = 64 + 576(2t-1)^2, C(t) = 384, kappa(0.5) = 0.75 cm^-1; s = +1, d = 2.0 cm => f(0.5) = -0.5 < 0, two roots where kappa(t*) = 0.5 cm^-1",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 1]",
+        "s_sign": 1,
+        "d_cm": 2.0,
+        "kappaMaxCmInv": 0.75,
+        "criticalCurvatureCmInv": 0.5
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "TANGENT_REVERSAL",
+        "detected_failure_categories": ["ACTUAL_ZERO_SPEED_CUSP", "TANGENT_REVERSAL"],
+        "has_zero_speed_cusp_on_domain": true,
+        "adr009_sec6_correspondence": "ADR-009 §6 Family #8 (Smooth Curve Where f(t) Crosses from Positive to Negative)"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "ACTUAL_CURVATURE_CUSP",
+        "isolatedRoots": [
+          {
+            "tLower": 0.40714846122409654,
+            "tUpper": 0.40714846122500603,
+            "deltaT": 9.094947017729282e-13,
+            "maxSpeedOnBracket": 9.157714,
+            "deltaPosCm": 8.32889230918749e-12
+          },
+          {
+            "tLower": 0.592851538774994,
+            "tUpper": 0.5928515387759035,
+            "deltaT": 9.094947017729282e-13,
+            "maxSpeedOnBracket": 9.157714,
+            "deltaPosCm": 8.32889230918749e-12
+          }
+        ]
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed roots [0.3827, 0.6173] and Category 4.",
+        "reportB": "Claimed 'Exact Evolute Tangency: kappa_max = 1/d => P_cusp(t) double root (Category 3)'."
+      },
+      "assertionsAndMetrics": "Asserts root1.deltaT <= 1e-12, root1.deltaPosCm <= 1e-7, root2.deltaT <= 1e-12, root2.deltaPosCm <= 1e-7.",
+      "testExecutionStatus": "PASSED_WITH_TAXONOMY_AND_METHOD_GAP",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 422-454)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 121-147)",
+      "auditFinding": "Isolates the two roots (u = +/- sqrt(2^(2/3) - 1)/3 => t ≈ 0.4071484612245 and 0.5928515387755) to deltaT = 9.09e-13 and deltaPosCm = 8.33e-12 cm. However: (1) uses scalar mpmath.mpf bisection instead of mpmath.iv / Bernstein root isolation, (2) refine_root_bracket_dual_criterion clamps deltaT/deltaPosCm via min(..., tol), and (3) per ADR-009 §4.4.3 & §6 #8, a curve where f(t) crosses from >0 to <0 must record both ACTUAL_ZERO_SPEED_CUSP and TANGENT_REVERSAL."
+    },
+    {
+      "familyId": "AG-07",
+      "canonicalName": "Grazing Tangential Curvature Extremum (f(t*) = 0, f'(t*) = 0 at t* = 0.5)",
+      "mathematicalGeometry": "B(t) = (4(2t-1), 6(2t-1)^2) on [0, 1]; kappa_max = 0.75 cm^-1 at t* = 0.5; s = +1, d = 4/3 cm => f(0.5) = 0, f'(0.5) = 0, f(t) > 0 for t != 0.5",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 1]",
+        "s_sign": 1,
+        "d_cm": "4/3",
+        "t_star": 0.5
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "has_zero_speed_cusp_on_domain": true,
+        "adr009_sec6_correspondence": "ADR-009 §6 Family #7 (Smooth Curve with Exact Offset Cusp f(t*) = 0 at One Interior Point)"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "TANGENTIAL_CUSP_DEGENERACY",
+        "isolatedRoots": [
+          {
+            "tLower": 0.4999999999990687,
+            "tUpper": 0.5,
+            "deltaT": 9.313225746154785e-13,
+            "maxSpeedOnBracket": 8.0,
+            "deltaPosCm": 7.450580596923828e-12
+          }
+        ]
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'Tangential Grazing Offset (R_min = 1.5 cm, d=-1.5 cm), Exact Bernstein [1, -1, 1]'.",
+        "reportB": "Claimed 'Grazing Tangency Polynomial: P(t) = (1 - 2t)^2 on [0, 1]'."
+      },
+      "assertionsAndMetrics": "Asserts abs(0.5 - midpoint) <= 1e-11.",
+      "testExecutionStatus": "PASSED_WITH_HEURISTIC_TERNARY_SEARCH",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 456-478)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 148-164)",
+      "auditFinding": "Uses uncertified ternary search on scalar f_ag07 over pre-bracketed [0.499, 0.501] rather than exact rational Bernstein sign-variation + GCD square-free factorization on P_exact(t) = Q(t)^3 - d^2 C(t)^2 over [0, 1]. Per ADR-009 §6 #7, without exact rational tangency verification, floating-point interval evaluation must return INCONCLUSIVE rather than claiming a certified root."
+    },
+    {
+      "familyId": "AG-08",
+      "canonicalName": "Symmetric Swallowtail Double Cusp & Self-Crossing Loop",
+      "mathematicalGeometry": "x(u) = 4u, y(u) = 6u^2 (u = 2t-1 in [-1, 1]), s = +1, d = 2.0 cm => swallowtail self-intersection at x_O(u) = 0 where u = +/- sqrt(5/36)",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 1]",
+        "s_sign": 1,
+        "d_cm": 2.0
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "LOCAL_OFFSET_SELF_INTERSECTION",
+        "detected_failure_categories": ["ACTUAL_ZERO_SPEED_CUSP", "TANGENT_REVERSAL", "LOCAL_OFFSET_SELF_INTERSECTION"],
+        "has_zero_speed_cusp_on_domain": true,
+        "adr009_sec6_correspondence": "ADR-009 §6 Family #8 & Family #12 (Local Offset Self-Intersection)"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "ACTUAL_CURVATURE_CUSP",
+        "secondaryCategory": "SELF_INTERSECTING_NON_LOCAL",
+        "swallowtailTrimParameters": [0.313661002, 0.686338998],
+        "trimmed": true
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'Double-Inflection S-Curve Lapel Roll Line, Category 1, roots t = 0.2113, 0.7887'.",
+        "reportB": "Claimed 'Inflection Point Transition: y = x^3 curvature sign change across t=0.5 (Category 1)'."
+      },
+      "assertionsAndMetrics": "Computes u_self_cross = math.sqrt(5.0 / 36.0) and asserts 0.31 < t_trim_left < 0.32 and 0.68 < t_trim_right < 0.69.",
+      "testExecutionStatus": "PASSED_ANALYTICAL_FORMULA_ONLY",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 480-498)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 165-177)",
+      "auditFinding": "Evaluates closed-form algebraic formula sqrt(5/36) in float64 rather than isolating self-intersection via 2D Bezier fat-line clipping + interval Krawczyk root isolation (ADR-009 §4.4.4 / §6 #12). Also mislabels intra-segment swallowtail self-intersection as SELF_INTERSECTING_NON_LOCAL instead of LOCAL_OFFSET_SELF_INTERSECTION."
+    },
+    {
+      "familyId": "AG-09",
+      "canonicalName": "Interior True Zero-Speed Base-Curve Cusp B(t) = (t^2, t^3) at t* = 0 (u* = 0.5)",
+      "mathematicalGeometry": "Cubic Bezier P0=(1,-1), P1=(-1/3,1), P2=(-1/3,-1), P3=(1,1) on u in [0, 1], which is the exact polynomial curve B(u) = ((2u-1)^2, (2u-1)^3) with stationary cusp at u* = 1/2",
+      "parameterDomainAndInputs": {
+        "domain": "u in [0, 1]",
+        "u_star": "1/2",
+        "s_sign": -1,
+        "d_cm": 1.5
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "stationary_parameterization_status": "GENUINE_BASE_GEOMETRIC_SINGULARITY",
+        "adr009_sec6_correspondence": "ADR-009 §6 Family #6 (Genuine Base-Curve Geometric Cusp at Q(t*) = 0)"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "ACTUAL_ZERO_SPEED_CUSP",
+        "taylorOrdersMN": [2, 3],
+        "limitingTangentMinus": [-1.0, -0.0],
+        "limitingTangentPlus": [1.0, 0.0],
+        "tangentReversalRadians": 3.141592653589793
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Matches actual implementation (B(t)=(t^2, t^3), Category 2a).",
+        "reportB": "Matches actual implementation (B(t)=(t^2, t^3), Category 2a)."
+      },
+      "assertionsAndMetrics": "Verifies exact rational Taylor derivatives at u* = 1/2: d1 = (0,0), d2 = (8,0) [m=2 even], d3 = (0,48) [n=3], T_-(0.5) = (-1,0), T_+(0.5) = (1,0), tangent reversal = pi radians.",
+      "testExecutionStatus": "PASSED_GENUINE_EXACT_RATIONAL_JET_VERIFICATION",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::classify_zero_speed_point_exact & execute_17_adversarial_geometry_families (lines 162-282, 500-530)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 178-197)",
+      "auditFinding": "Genuinely implemented and mathematically verified in exact rational arithmetic (fractions.Fraction). Correctly identifies even lowest non-zero order m=2 at interior point u*=1/2 and 180-degree tangent reversal."
+    },
+    {
+      "familyId": "AG-10",
+      "canonicalName": "Endpoint Zero-Speed Degeneracy (P1 = P0 at t* = 0)",
+      "mathematicalGeometry": "Cubic Bezier P0=(0,0), P1=(0,0), P2=(5,0), P3=(10,0) on t in [0, 1] (collinear endpoint stationary point Q(0) = 0)",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 1]",
+        "t_star": 0,
+        "s_sign": -1,
+        "d_cm": 1.5
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_VALID (for collinear P2=(5,0), P3=(10,0) where B''(0) x B'''(0) = 0 and kappa_lim = 0) | CERTIFIED_INVALID (for non-collinear P2=(5,0), P3=(10,5) in ADR-009 §6 #6 where B''(0) x B'''(0) != 0 and |kappa(t)| -> inf)",
+        "failure_category": "NONE (collinear) | ACTUAL_ZERO_SPEED_CUSP (non-collinear)",
+        "stationary_parameterization_status": "REMOVABLE_PARAMETERIZATION_DEGENERACY (collinear) | GENUINE_BASE_GEOMETRIC_SINGULARITY (non-collinear)"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+        "taylorOrdersMN": [2, null]
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'G1-Discontinuous Collar Notch Corner (Delta theta = 75 deg), Category 2b, Miter ratio 1.6427'.",
+        "reportB": "Claimed 'Near-Zero Speed / Coincident Control Points: P0 = P1 = (0, 0) (Category 2c / Category 2a endpoint fallback)'."
+      },
+      "assertionsAndMetrics": "Verifies m=2, n=None (collinear), isGeometricCusp == False.",
+      "testExecutionStatus": "PASSED_COLLINEAR_SUBCASE_ONLY",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::classify_zero_speed_point_exact & execute_17_adversarial_geometry_families (lines 258-281, 532-554)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 198-208)",
+      "auditFinding": "classify_zero_speed_point_exact (lines 258-281) correctly implements BOTH the collinear endpoint branch (cross_mn == 0 -> kappa_lim = 0 -> REMOVABLE_PARAMETERIZATION_DEGENERACY) and the non-collinear singular curvature endpoint branch (cross_mn != 0 -> |kappa| -> inf -> ACTUAL_ZERO_SPEED_CUSP). However, execute_17_adversarial_geometry_families() only invokes it on the collinear endpoint P3=(10,0) and does not execute a test case for the non-collinear endpoint P3=(10,5) required by ADR-009 §6 #6."
+    },
+    {
+      "familyId": "AG-11",
+      "canonicalName": "Removable Parameterization Degeneracy Counterexample B(t) = (t^3, 0) at t* = 0 (u* = 0.5)",
+      "mathematicalGeometry": "Cubic Bezier P0=(-1,0), P1=(1,0), P2=(-1,0), P3=(1,0) on u in [0, 1], representing B(u) = ((2u-1)^3, 0) with Q(0.5) = 0",
+      "parameterDomainAndInputs": {
+        "domain": "u in [0, 1]",
+        "u_star": "1/2",
+        "s_sign": 1,
+        "d_cm": 1.5
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "stationary_parameterization_status": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+        "adr009_sec6_correspondence": "ADR-009 §4.3.1 & §6 Family #5"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+        "Q_at_star": 0.0,
+        "taylorOrderM": 3,
+        "isGeometricCusp": false,
+        "limitingTangentMinus": [1.0, 0.0],
+        "limitingTangentPlus": [1.0, 0.0],
+        "limitingCurvature": 0.0
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Matches actual implementation (B(t)=(t^3, 0), Category 2c).",
+        "reportB": "Matches actual implementation (B(t)=(t^3, 0), Category 2c)."
+      },
+      "assertionsAndMetrics": "Verifies Q(1/2) == 0, m == 3 (odd), isGeometricCusp is False, T_-(1/2) == T_+(1/2) == (1.0, 0.0), limitingCurvature == 0.0.",
+      "testExecutionStatus": "PASSED_GENUINE_EXACT_RATIONAL_JET_VERIFICATION",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::classify_zero_speed_point_exact & execute_17_adversarial_geometry_families (lines 241-256, 556-592); tests/test_m00_verification_suite.py::test_m00_4_removable_parameterization_degeneracy_counterexample_b_t3_0 (lines 57-74)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 209-228)",
+      "auditFinding": "Genuinely implemented and verified in exact rational arithmetic (fractions.Fraction). Only taxonomy reconciliation needed: in ADR-009 §5.3, REMOVABLE_PARAMETERIZATION_DEGENERACY is recorded in stationary_parameterization_status while verification_outcome = 'CERTIFIED_VALID' and failure_category = 'NONE'."
+    },
+    {
+      "familyId": "AG-12",
+      "canonicalName": "Coincident Interior Control Points (P1 = P2 with Non-Collinear Endpoints)",
+      "mathematicalGeometry": "Cubic Bezier P0=(0,0), P1=(5,4), P2=(5,4), P3=(10,0) on t in [0, 1]",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 1]",
+        "s_sign": 1,
+        "d_cm": 0.5
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "CERTIFIED_REGULAR",
+        "Q_at_0_5": 56.25,
+        "offsetSpeedFactorF_at_0_5": 1.213333
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'Acute Hem Corner (Delta theta = 150 deg, Miter Spike > 2.5|d|), Category 2b, Miter ratio 3.8637'.",
+        "reportB": "Claimed 'Nearly Collinear Cubic: 10^-9 cm transverse deviation without catastrophic cancellation (Category 1)'."
+      },
+      "assertionsAndMetrics": "Evaluates Q(0.5) = 56.25 > 0 and f(0.5) = 1.213333 > 0 at t = 0.5.",
+      "testExecutionStatus": "PASSED_POINT_CHECK_ONLY",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 594-614)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 229-237)",
+      "auditFinding": "Only evaluates Q(t) and f(t) at a single point t = 0.5 rather than bounding Q(t) and f(t) across all t in [0, 1] in the Bernstein basis."
+    },
+    {
+      "familyId": "AG-13",
+      "canonicalName": "Extreme Parametric Speed Ratio & Dual Stopping Criterion (Method B1/B2)",
+      "mathematicalGeometry": "High-speed scalar root refinement f(t) = t - 0.5 on [0.4, 0.6] with speed upper bound ||B'(t)|| = 6000.0 cm/unit",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0.4, 0.6]",
+        "maxSpeedCmPerUnit": 6000.0,
+        "tol_t": 1e-12,
+        "tol_pos_cm": 1e-7
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE",
+        "adr009_sec6_correspondence": "ADR-009 §2.3 & §6 Family #15 (Steep Parameterization Where Small Parameter Error Causes Large Geometric Point Error)"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "CERTIFIED_REGULAR",
+        "maxSpeedCmPerUnit": 6000.0,
+        "bracketDeltaT": 7.275957614183426e-13,
+        "bracketDeltaPosCm": 4.3655745685100555e-9,
+        "escalatedToC1Cert": true
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'Speed ratio 3001.0, delta_t <= 10^-12 & Delta_pos <= 10^-7 cm'.",
+        "reportB": "Claimed 'max ||B'|| / min ||B'|| > 10^4, verifying both delta_t <= 10^-12 AND Delta_pos <= 10^-7 cm'."
+      },
+      "assertionsAndMetrics": "Asserts bracketDeltaT <= 1e-12 and bracketDeltaPosCm <= 1e-7.",
+      "testExecutionStatus": "PASSED_SYNTHETIC_LAMBDA_TEST",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 616-640)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 238-248)",
+      "auditFinding": "Tests refine_root_bracket_dual_criterion with a constant lambda speed_ag13 = 6000.0 and linear function t - 0.5 rather than constructing an actual high-speed cubic Bezier curve, computing its Bernstein derivative bound M_B(I), and verifying rejection of an unrefined r_param = 1e-4 bracket (0.05 cm error > 1e-4 cm) as specified in ADR-009 §6 #15."
+    },
+    {
+      "familyId": "AG-14",
+      "canonicalName": "Acute Dart/Collar Corner (theta = 20 deg) Miter-Limit Bevel Clipping",
+      "mathematicalGeometry": "Corner interior angle theta = 20 deg -> miter spike ratio 1 / sin(theta/2) = 5.75877 > miterLimit 2.5",
+      "parameterDomainAndInputs": {
+        "cornerAngleDeg": 20.0,
+        "miterLimit": 2.5
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_VALID (after bevel clip)",
+        "failure_category": "NONE",
+        "taxonomyNote": "Miter-limit clipping is a corner-join construction policy (ADR-003 / M02f), not one of the 6 canonical ADR-009 smooth-segment offset classifications."
+      },
+      "actualImplementationClassification": {
+        "enumValue": "CERTIFIED_REGULAR",
+        "cornerAngleDeg": 20.0,
+        "unclippedMiterRatio": 5.75877,
+        "miterLimit": 2.5,
+        "bevelJoinApplied": true,
+        "selfIntersectionsAfterClip": 0
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'Micro-Segment Chain (L = 0.005 cm) Adjacent to Long Edge (50 cm), Sliver area < 1e-4 cm^2 detected & pruned'.",
+        "reportB": "Claimed 'Global Non-Local Self-Intersection: Non-adjacent offset segments intersecting across a narrow neck (Category 4)'."
+      },
+      "assertionsAndMetrics": "Computes miter_ratio = 1.0 / math.sin(math.radians(20.0) / 2.0) and asserts miter_ratio > 2.5.",
+      "testExecutionStatus": "PASSED_TRIVIAL_SCALAR_FORMULA",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 642-659)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 249-260)",
+      "auditFinding": "Only computes 1 / sin(10 deg) > 2.5 in float64; does not construct or validate 2D bevel corner join geometry."
+    },
+    {
+      "familyId": "AG-15",
+      "canonicalName": "Global Non-Local Concave Pocket Self-Intersection",
+      "mathematicalGeometry": "C-shaped concave pocket/keyhole of width 2.0 cm with opposite walls offset inward into the opening by d = 1.5 cm (overlap = 1.0 cm)",
+      "parameterDomainAndInputs": {
+        "openingWidthCm": 2.0,
+        "offsetDistanceCm": 1.5,
+        "globalOverlapCm": 1.0
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_INVALID (untrimmed)",
+        "failure_category": "GLOBAL_CONTOUR_SELF_INTERSECTION",
+        "adr009_sec6_correspondence": "ADR-009 §4.4.5 & §6 Family #13 (Global Non-Adjacent Offset Self-Intersection)"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "SELF_INTERSECTING_NON_LOCAL",
+        "locallyRegularEverywhere": true,
+        "globalOverlapCm": 1.0,
+        "trimmed": true
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'Nearly Collinear Control Polygon (det = 10^-13), Category 1, Exact rational orient2d > 0'.",
+        "reportB": "Claimed 'Acute Dart Tip Miter Limit: theta = 15 deg < 30 deg miter spike clipped at M_max = 3.0|d| (Category 5)'."
+      },
+      "assertionsAndMetrics": "None — c1_cert_oracle.py:664-674 appends a hardcoded dictionary with 'passed': True.",
+      "testExecutionStatus": "UNIMPLEMENTED_STUB_HARDCODED_TRUE",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 661-675)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 261-270)",
+      "auditFinding": "CRITICAL AUDIT FINDING (FINDING-ORACLE-01): Lines 661-675 of c1_cert_oracle.py perform zero geometric computation and simply append a literal dictionary with 'passed': True. No non-adjacent segment pair, AABB/STRtree broad-phase, or 2D interval Krawczyk intersection solver is executed."
+    },
+    {
+      "familyId": "AG-16",
+      "canonicalName": "Wilkinson-Style Near-Multiple Root Cluster (Delta t = 1e-7)",
+      "mathematicalGeometry": "f_wilk(t) = (t - 0.49999995)(t - 0.50000005) on [0.499, 0.501] separated at midpoint t = 0.50000000 in 113-bit mpmath",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0.499, 0.501]",
+        "r_left": "0.49999995",
+        "r_right": "0.50000005",
+        "rootSeparationDeltaT": 1e-7
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "TANGENT_REVERSAL",
+        "detected_failure_categories": ["ACTUAL_ZERO_SPEED_CUSP", "TANGENT_REVERSAL"],
+        "has_zero_speed_cusp_on_domain": true
+      },
+      "actualImplementationClassification": {
+        "enumValue": "ACTUAL_CURVATURE_CUSP",
+        "rootSeparationDeltaT": 1e-7,
+        "disjointBracketsVerified": true,
+        "isolatedRoots": [
+          {
+            "tLower": 0.4999999499991536,
+            "tUpper": 0.49999995000008496,
+            "deltaT": 9.313225746154785e-13,
+            "maxSpeedOnBracket": 20.0,
+            "deltaPosCm": 1.862645149230957e-11
+          },
+          {
+            "tLower": 0.5000000499999151,
+            "tUpper": 0.5000000500008464,
+            "deltaT": 9.313225746154785e-13,
+            "maxSpeedOnBracket": 20.0,
+            "deltaPosCm": 1.862645149230957e-11
+          }
+        ]
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'Delta t in {10^-7, 10^-9, 10^-12}, All 3 roots isolated in 113-bit precision, Category 4'.",
+        "reportB": "Claimed '(t - 1/3)(t - (1/3 + 10^-7))(t - 2/3) separated into 3 disjoint intervals (Category 2b)'."
+      },
+      "assertionsAndMetrics": "Asserts b_left.tUpper < b_right.tLower and both deltaT <= 1e-12.",
+      "testExecutionStatus": "PASSED_PRE_SPLIT_SCALAR_BISECTION",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 677-697)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 271-297)",
+      "auditFinding": "Isolates 2 roots around t = 0.5 (not 3 roots around 1/3 as claimed in Chat Report B) and passes pre-split initial brackets [0.499, 0.5] and [0.5, 0.501] manually rather than discovering the split point automatically via De Casteljau Bernstein subdivision on [0, 1]."
+    },
+    {
+      "familyId": "AG-17",
+      "canonicalName": "Full Bodice Front + Armscye + Waist Dart + Notches Integration",
+      "mathematicalGeometry": "Single cubic Bezier armscye segment P0=(23.5, 19.5), P1=(21.0, 19.5), P2=(19.2, 14.0), P3=(20.5, 4.2) with s = -1, d = 1.5 cm",
+      "parameterDomainAndInputs": {
+        "domain": "t in [0, 1]",
+        "s_sign": -1,
+        "d_cm": 1.5
+      },
+      "expectedCanonicalADR009Classification": {
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": "NONE"
+      },
+      "actualImplementationClassification": {
+        "enumValue": "CERTIFIED_REGULAR",
+        "minBaseSpeedSquaredQ": 256.32,
+        "minOffsetSpeedFactorF": 1.10369,
+        "gridErrorCm": 0.00142,
+        "certifiedIntervalErrorCm": 0.00318,
+        "maxJoinTangentDeltaDeg": 0.012,
+        "notchPlacementErrorCm": 1.4e-8,
+        "pairedCadSeamDeltaCm": 0.008,
+        "contourClosureErrorCm": 0.0
+      },
+      "submittedChatReportClaims": {
+        "reportA": "Claimed 'Deep V-Neckline Self-Intersecting Offset Loop (d=+1.5 cm), Category 2b, Global self-intersection at (0.0, 2.6713) trimmed'.",
+        "reportB": "Claimed 'Micro-Segment Collapse & Sliver Loop: 10^-5 cm edge collapse and sliver loop < 10^-4 cm^2 pruned (Category 6)'."
+      },
+      "assertionsAndMetrics": "Evaluates eval_kinematics_float at t = 0.5 (giving Q(0.5) = 256.32, f(0.5) = 1.10369) and asserts hardcoded report_ag17.gridErrorCm <= 0.005, certifiedIntervalErrorCm <= 0.010, maxJoinTangentDeltaDeg <= 0.05.",
+      "testExecutionStatus": "PASSED_POINT_EVAL_WITH_HARDCODED_METRICS",
+      "sourceFileAndFunction": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py::execute_17_adversarial_geometry_families (lines 699-739)",
+      "evidenceArtifactPath": "artifacts/m00/AdversarialGeometryVerificationReport.json (lines 298-322)",
+      "auditFinding": "Evaluates Q and f only at t = 0.5 (labelled as minBaseSpeedSquaredQ and minOffsetSpeedFactorF without minimizing over [0, 1]), and hardcodes gridErrorCm, certifiedIntervalErrorCm, maxJoinTangentDeltaDeg, notchPlacementErrorCm, and pairedCadSeamDeltaCm."
+    }
+  ],
+  "untestedADR009Section6Families": [
+    {
+      "adr009Sec6Row": 9,
+      "title": "Smooth Curve with 0 < min f(t) < epsilon_reg (Margin Violation Only)",
+      "expectedOutcome": "CERTIFIED_INVALID (failure_category: REGULARITY_MARGIN_VIOLATION)",
+      "statusInC1CertOraclePy": "NOT_IMPLEMENTED (REGULARITY_MARGIN_VIOLATION is missing from OffsetClassificationCategory enum)"
+    },
+    {
+      "adr009Sec6Row": 10,
+      "title": "Convex vs. Concave Curves with Identical |kappa| and Opposite Curvature Sign (max |kappa| = 1.2/d)",
+      "expectedOutcome": "B_convex -> CERTIFIED_VALID (NONE); B_concave -> CERTIFIED_INVALID (TANGENT_REVERSAL)",
+      "statusInC1CertOraclePy": "NOT_IMPLEMENTED (s*d*C(t) > 0 Bernstein sign gate not implemented)"
+    },
+    {
+      "adr009Sec6Row": 14,
+      "title": "Almost-Flat Cubic Segment (Method C1-Cert Non-Strict Inequality L_chord <= L_exact <= L_control_polygon)",
+      "expectedOutcome": "CERTIFIED_VALID (B_cert(L) <= 1e-4 cm, accepting equality L_chord == L_control_polygon on collinear segments)",
+      "statusInC1CertOraclePy": "NOT_IMPLEMENTED (Method C1-Cert De Casteljau chord/polygon interval arc-length enclosure not implemented in Python)"
+    },
+    {
+      "adr009Sec6Row": 16,
+      "title": "Subdivision-Limit / Straddling Interval Case (INCONCLUSIVE)",
+      "expectedOutcome": "INCONCLUSIVE (failure_category: INCONCLUSIVE_VERIFICATION, is_production_ready: false)",
+      "statusInC1CertOraclePy": "NOT_IMPLEMENTED (INCONCLUSIVE outcome and 4-step escalation ladder not implemented)"
+    },
+    {
+      "adr009Sec6Row": 17,
+      "title": "Non-Dyadic (t* = 1/3) & Interior t = 0.25 Singularities + Short-Span 2% Bypass (DEF-M00-02)",
+      "expectedOutcome": "CERTIFIED_INVALID (ACTUAL_ZERO_SPEED_CUSP / TANGENT_REVERSAL / PRIMARY_OFFSET_SPAN_INSUFFICIENT)",
+      "statusInC1CertOraclePy": "NOT_IMPLEMENTED"
+    }
+  ]
+}
