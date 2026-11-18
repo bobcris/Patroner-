@@ -6,3 +6,4 @@
 export * from './assembly-types';
 export * from './assembly-validator';
 export * from './bodice-sleeve-assembly';
+export * from './sha256';

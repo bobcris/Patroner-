@@ -58,6 +58,20 @@ export function smallestAngularDifferenceDeg(angle1Deg: number, angle2Deg: numbe
 }
 
 /**
+ * Normalizes an arbitrary finite angle in degrees into the canonical half-open interval (-180, 180].
+ */
+export function normalizeAngleDeg(angleDeg: number): number {
+  if (!Number.isFinite(angleDeg)) {
+    return NaN;
+  }
+  let normalized = ((angleDeg % 360) + 360) % 360;
+  if (normalized > 180) {
+    normalized -= 360;
+  }
+  return Object.is(normalized, -0) ? 0 : normalized;
+}
+
+/**
  * Validates whether two vectors are perpendicular (90 degrees).
  * Returns exact angle and absolute deviation in degrees.
  */

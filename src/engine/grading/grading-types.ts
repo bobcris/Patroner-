@@ -20,6 +20,7 @@ import {
   EaseCompatibilityMetrics,
   AssemblyValidationStatus
 } from '../assembly/assembly-types';
+import type { MeasurementApprovalStatus, MeasurementOrigin } from '../production/production-types';
 
 /**
  * Directional distribution of a measurement increment across anatomical axes.
@@ -84,6 +85,10 @@ export interface GradingOptions {
   bezierToleranceCm?: number;
   isCustomDataset?: boolean;
   gradingContext?: 'standard-chart' | 'custom-table' | 'individual-custom';
+  strictUncertaintyGate?: boolean;
+  measurementProvenance?: MeasurementOrigin;
+  measurementApprovalState?: MeasurementApprovalStatus;
+  requireApprovedGovernance?: boolean;
 }
 
 /**
@@ -168,6 +173,12 @@ export interface CrossSizeIntegrityReport {
   unassessedConditions: string[];
   gradingContext?: 'standard-chart' | 'custom-table' | 'individual-custom';
   isCustomDataset?: boolean;
+  governanceStatus?: {
+    measurementProvenance: MeasurementOrigin;
+    measurementApprovalState: MeasurementApprovalStatus;
+    requireApprovedGovernance: boolean;
+    isAllGovernanceApproved: boolean;
+  };
 }
 
 /**
@@ -186,4 +197,7 @@ export interface GradedPatternSet {
   gradeTable: MeasurementGradeTable;
   isAllValid: boolean;
   isProductionReady: false;
+  canonicalContentDigest?: string;
+  reportSha256Hex?: string;
+  canonicalJsonByteLength?: number;
 }

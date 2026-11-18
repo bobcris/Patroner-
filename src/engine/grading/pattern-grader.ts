@@ -11,8 +11,9 @@ import {
   SeamLine
 } from '../../types';
 import { STANDARD_SIZING_SYSTEM } from '../measurements/standards';
-import { assembleBodiceSleeve } from '../assembly/bodice-sleeve-assembly';
+import { assembleBodiceSleeve, buildCanonicalAssemblyReportPayload } from '../assembly/bodice-sleeve-assembly';
 import { AssemblyValidationStatus } from '../assembly/assembly-types';
+import { CanonicalDigestEnvelope, digestCanonicalPayload } from '../assembly/sha256';
 import { gradeBodice } from './bodice-grader';
 import { auditGradedDarts } from './dart-grader';
 import { gradeSleeve } from './sleeve-grader';
@@ -145,7 +146,14 @@ export function gradePattern(
         bodicePieces: bodiceResult.pieces,
         sleevePiece: sleeveResult.piece,
         measurements: targetMeasurements,
-        options: { strategy: options.sleeveEaseStrategy ?? 'classic' },
+        options: {
+          strategy: options.sleeveEaseStrategy ?? 'classic',
+          bezierToleranceCm: options.bezierToleranceCm,
+          strictUncertaintyGate: options.strictUncertaintyGate,
+          measurementProvenance: options.measurementProvenance,
+          measurementApprovalState: options.measurementApprovalState,
+          requireApprovedGovernance: options.requireApprovedGovernance
+        },
         designSpec
       });
 
@@ -200,7 +208,10 @@ export function gradePattern(
     integrityReport.isOverallGradingValid &&
     supportedSizes.every(sz => sizeResults[sz]?.isValid);
 
-  return {
+  const gradingCore: Omit<
+    GradedPatternSet,
+    'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'
+  > = {
     id,
     timestamp,
     garmentCategory: designSpec.garmentCategory,
@@ -214,4 +225,72 @@ export function gradePattern(
     isAllValid,
     isProductionReady: false
   };
+
+  const digestEnvelope = serializeDeterministicGradingReport(gradingCore);
+
+  return {
+    ...gradingCore,
+    canonicalContentDigest: digestEnvelope.sha256Hex,
+    reportSha256Hex: digestEnvelope.sha256Hex,
+    canonicalJsonByteLength: digestEnvelope.byteLength
+  };
+}
+
+/**
+ * Constructs a canonical, timestamp-free JSON payload from a GradedPatternSet
+ * for reproducible SHA-256 verification across runs.
+ */
+export function buildCanonicalGradingReportPayload(
+  gradedSet: Omit<GradedPatternSet, 'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'>
+): Record<string, unknown> {
+  const { timestamp: _intTs, ...deterministicIntegrity } = gradedSet.integrityReport;
+
+  const normalizedSizes: Record<string, unknown> = {};
+  for (const sz of gradedSet.supportedSizes) {
+    const sr = gradedSet.sizeResults[sz];
+    if (!sr) continue;
+    normalizedSizes[sz] = {
+      sizeId: sr.sizeId,
+      isBaseSize: sr.isBaseSize,
+      measurements: sr.measurements,
+      measurementDeltasFromBase: sr.measurementDeltasFromBase,
+      pieceMetrics: sr.pieceMetrics,
+      darts: sr.darts,
+      seams: sr.seams,
+      notches: sr.notches,
+      assemblyCanonicalDigest: sr.assemblyResult?.canonicalContentDigest ?? null,
+      assemblyPayload: sr.assemblyResult ? buildCanonicalAssemblyReportPayload(sr.assemblyResult) : null,
+      status: sr.status,
+      isValid: sr.isValid,
+      isProductionReady: false,
+      errors: sr.errors,
+      warnings: sr.warnings
+    };
+  }
+
+  return {
+    schemaVersion: 'm04.4-grading-report-v1',
+    garmentCategory: gradedSet.garmentCategory,
+    silhouette: gradedSet.silhouette,
+    baseSize: gradedSet.baseSize,
+    supportedSizes: gradedSet.supportedSizes,
+    designSpecId: gradedSet.designSpec.id,
+    designSpecVersion: gradedSet.designSpec.version,
+    gradeTableId: gradedSet.gradeTable.id,
+    isAllValid: gradedSet.isAllValid,
+    isProductionReady: false,
+    integrityReport: deterministicIntegrity,
+    sizeResults: normalizedSizes
+  };
+}
+
+/**
+ * Serializes and computes the FIPS 180-4 SHA-256 hex digest of a GradedPatternSet.
+ */
+export function serializeDeterministicGradingReport(
+  gradedSet: Omit<GradedPatternSet, 'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'>
+): CanonicalDigestEnvelope {
+  return digestCanonicalPayload(buildCanonicalGradingReportPayload(gradedSet), {
+    requireNonEmptyObject: true
+  });
 }

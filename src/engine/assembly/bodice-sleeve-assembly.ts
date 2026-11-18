@@ -5,17 +5,21 @@
 
 import {
   BoundingBox,
-  DesignSpecification,
   GrainLine,
   Notch,
+  OffsetResult,
   PatternPiece,
   Point,
   SeamLine,
   ValidationReport
 } from '../../types';
-import { computeBoundingBox, distance } from '../geometry/math';
+import { computeBoundingBox, distance, normalizeAngleDeg } from '../geometry/math';
 import { CubicBezierCurve, GeometricContour, LineSegment } from '../geometry/primitives';
 import {
+  AssemblyConfigValidationResult,
+  AssemblyContourIntegrityResult,
+  AssemblyExecutionMetadata,
+  AssemblyGovernanceResult,
   AssemblyInspectionLayout,
   AssemblyOptions,
   AssemblyTransformedPiece,
@@ -23,17 +27,31 @@ import {
   BodiceSleeveAssemblyInput,
   BodiceSleeveAssemblyResult,
   EaseCompatibilityMetrics,
-  SeamArcLengthMeasurement
+  RigidAlignmentVerification,
+  SeamArcLengthMeasurement,
+  SeamCompatibilityBreakdown,
+  UncertaintyGateResult
 } from './assembly-types';
 import {
   buildAssemblyValidationReport,
+  DEFAULT_MAX_TOTAL_EASE_CM,
+  evaluateAssemblyCurveContinuityAndGeometry,
+  evaluateAssemblyGovernance,
   evaluateAssemblyNotches,
   evaluateEaseCompatibility,
+  evaluateSeamCompatibilityBreakdown,
   evaluateSeamEndpointsAndOrientations,
+  evaluateUncertaintyGate,
   extractAssemblyCurves,
+  formatSignedCm,
+  MAX_SINGLE_SEAM_UNCERTAINTY_CM,
   measureCurveSeam,
+  resolveAndValidateAssemblyConfig,
   UNASSESSED_ASSEMBLY_CONDITIONS
 } from './assembly-validator';
+import { CanonicalDigestEnvelope, digestCanonicalPayload } from './sha256';
+
+let assemblyRunSequence = 0;
 
 /**
  * Applies a 2D rigid transformation (rotation around origin, then translation).
@@ -101,7 +119,6 @@ export function transformSvgPath(
       }
       parts.push(`${cmd} ${transformedCoords.join(' ')}`);
     } else {
-      // Fallback for relative commands: convert to uppercase or preserve
       parts.push(`${cmd} ${coordsStr}`);
     }
   }
@@ -121,7 +138,7 @@ export function createTransformedPiece(
   const transformedNotches: Notch[] = piece.notches.map(n => ({
     ...n,
     position: applyRigidTransformPoint(n.position, translation, rotationDeg),
-    normalAngleDeg: Number(((n.normalAngleDeg + rotationDeg) % 360).toFixed(1))
+    normalAngleDeg: Number(normalizeAngleDeg(n.normalAngleDeg + rotationDeg).toFixed(1))
   }));
 
   const transformedSeams: SeamLine[] = piece.seams.map(s => ({
@@ -139,7 +156,7 @@ export function createTransformedPiece(
   const transformedCutSvgPath = transformSvgPath(piece.cutPathData, translation, rotationDeg);
   const transformedSewSvgPath = transformSvgPath(piece.sewPathData, translation, rotationDeg);
 
-  // Compute transformed bounding box from corners of original bounding box
+  // Compute transformed bounding box from all 4 corners of original bounding box
   const origBox = piece.boundingBox;
   const corners: Point[] = [
     applyRigidTransformPoint({ x: origBox.minX, y: origBox.minY }, translation, rotationDeg),
@@ -155,12 +172,16 @@ export function createTransformedPiece(
     end: applyRigidTransformPoint(piece.grainline.end, translation, rotationDeg)
   } : undefined;
 
+  const transformedDrillHoles: Point[] | undefined = piece.drillHoles
+    ? piece.drillHoles.map(dh => applyRigidTransformPoint(dh, translation, rotationDeg))
+    : undefined;
+
   return {
     sourcePieceId: piece.id,
     pieceCode: piece.pieceCode,
     name: piece.name,
     role,
-    translation,
+    translation: { x: translation.x, y: translation.y },
     rotationDeg,
     isRigid: true,
     transformedCutSvgPath,
@@ -170,6 +191,7 @@ export function createTransformedPiece(
     transformedBoundingBox,
     seamAllowanceWidthCm: piece.seamAllowanceWidthCm,
     transformedGrainline,
+    transformedDrillHoles,
     material: piece.material,
     onFold: piece.onFold,
     cutCount: piece.cutCount
@@ -178,58 +200,141 @@ export function createTransformedPiece(
 
 /**
  * Generates the deterministic 2D inspection layout aligning sleeve underarm points
- * with bodice underarms in front and back views.
+ * with bodice underarms in front and back views at full binary64 translation precision.
  */
 export function buildAssemblyInspectionLayout(
   frontBodicePiece: PatternPiece,
   backBodicePiece: PatternPiece,
   sleevePiece: PatternPiece
 ): AssemblyInspectionLayout {
-  // Extract key anchor points
-  const fUnderarm = frontBodicePiece.seams.find(s => s.id === 'fb-armhole-seam' || s.name.includes('Armhole'))?.startPoint
-    ?? { x: 20, y: 22 };
-  const bUnderarm = backBodicePiece.seams.find(s => s.id === 'bb-armhole-seam' || s.name.includes('Armhole'))?.startPoint
-    ?? { x: 20, y: 22 };
+  // Extract exact curve/seam anchor points
+  const frontBodiceArmholeSeg = frontBodicePiece.stitchingContour?.segments.find(s => s.id === 'fb-armhole');
+  const backBodiceArmholeSeg = backBodicePiece.stitchingContour?.segments.find(s => s.id === 'bb-armhole');
+  const slvFrontCapSeg = sleevePiece.stitchingContour?.segments.find(s => s.id === 'sleeve-front-cap');
+  const slvBackCapSeg = sleevePiece.stitchingContour?.segments.find(s => s.id === 'sleeve-back-cap');
 
-  // Sleeve underarms
-  const slvFrontSeam = sleevePiece.seams.find(s => s.id === 'slv-front-cap-seam' || s.name.includes('Front Sleeve Cap'));
-  const slvBackSeam = sleevePiece.seams.find(s => s.id === 'slv-back-cap-seam' || s.name.includes('Back Sleeve Cap'));
-  const uFront = slvFrontSeam?.endPoint ?? { x: 18, y: 15 };
-  const uBack = slvBackSeam?.startPoint ?? { x: -18, y: 15 };
+  const fUnderarm =
+    frontBodiceArmholeSeg?.start ??
+    frontBodicePiece.seams.find(s => s.id === 'fb-armhole-seam' || s.name.includes('Armhole'))?.startPoint ??
+    { x: 20, y: 22 };
+  const bUnderarm =
+    backBodiceArmholeSeg?.start ??
+    backBodicePiece.seams.find(s => s.id === 'bb-armhole-seam' || s.name.includes('Armhole'))?.startPoint ??
+    { x: 20, y: 22 };
+
+  const uFront =
+    slvFrontCapSeg?.end ??
+    sleevePiece.seams.find(s => s.id === 'slv-front-cap-seam' || s.name.includes('Front Sleeve Cap'))?.endPoint ??
+    { x: 18, y: 15 };
+  const uBack =
+    slvBackCapSeg?.start ??
+    sleevePiece.seams.find(s => s.id === 'slv-back-cap-seam' || s.name.includes('Back Sleeve Cap'))?.startPoint ??
+    { x: -18, y: 15 };
 
   // Front Assembly:
   // Bodice Front placed at origin (0, 0)
   const frontBodiceTransformed = createTransformedPiece(frontBodicePiece, 'bodice-front', { x: 0, y: 0 }, 0);
-  // Sleeve translated so uFront touches fUnderarm
+  // Sleeve translated at full precision so uFront touches fUnderarm exactly
   const sleeveFrontTranslation: Point = {
-    x: Number((fUnderarm.x - uFront.x).toFixed(2)),
-    y: Number((fUnderarm.y - uFront.y).toFixed(2))
+    x: fUnderarm.x - uFront.x,
+    y: fUnderarm.y - uFront.y
   };
   const sleeveFrontTransformed = createTransformedPiece(sleevePiece, 'sleeve', sleeveFrontTranslation, 0);
 
   // Back Assembly:
-  // Placed with horizontal offset to right of front assembly
-  const backOffsetX = Number((frontBodicePiece.boundingBox.widthCm + 15).toFixed(2));
+  // Placed horizontally strictly to the right of the entire Front Assembly
+  const frontExtentMaxX = Math.max(
+    frontBodiceTransformed.transformedBoundingBox.maxX,
+    sleeveFrontTransformed.transformedBoundingBox.maxX
+  );
+  const preOffsetSleeveBackTranslationX = bUnderarm.x - uBack.x;
+  const backPreOffsetMinX = Math.min(
+    backBodicePiece.boundingBox.minX,
+    sleevePiece.boundingBox.minX + preOffsetSleeveBackTranslationX
+  );
+  const gapCm = 15;
+  const backOffsetX = Math.max(
+    frontBodicePiece.boundingBox.widthCm + gapCm,
+    frontExtentMaxX + gapCm - backPreOffsetMinX
+  );
+
   const backBodiceTransformed = createTransformedPiece(backBodicePiece, 'bodice-back', { x: backOffsetX, y: 0 }, 0);
-  // Sleeve translated so uBack touches bUnderarm (shifted by backOffsetX)
   const bUnderarmShifted: Point = {
-    x: Number((bUnderarm.x + backOffsetX).toFixed(2)),
+    x: bUnderarm.x + backOffsetX,
     y: bUnderarm.y
   };
   const sleeveBackTranslation: Point = {
-    x: Number((bUnderarmShifted.x - uBack.x).toFixed(2)),
-    y: Number((bUnderarmShifted.y - uBack.y).toFixed(2))
+    x: bUnderarmShifted.x - uBack.x,
+    y: bUnderarmShifted.y - uBack.y
   };
   const sleeveBackTransformed = createTransformedPiece(sleevePiece, 'sleeve', sleeveBackTranslation, 0);
 
-  // Overall layout bounding box
-  const allCorners: Point[] = [
-    { x: frontBodiceTransformed.transformedBoundingBox.minX, y: frontBodiceTransformed.transformedBoundingBox.minY },
-    { x: sleeveFrontTransformed.transformedBoundingBox.maxX, y: sleeveFrontTransformed.transformedBoundingBox.maxY },
-    { x: backBodiceTransformed.transformedBoundingBox.maxX, y: backBodiceTransformed.transformedBoundingBox.maxY },
-    { x: sleeveBackTransformed.transformedBoundingBox.maxX, y: sleeveBackTransformed.transformedBoundingBox.maxY }
+  // Overall layout bounding box enclosing ALL 4 pieces' bounding boxes (all corners)
+  const piecesTransformed = [
+    frontBodiceTransformed,
+    sleeveFrontTransformed,
+    backBodiceTransformed,
+    sleeveBackTransformed
   ];
-  const layoutBoundingBox = computeBoundingBox(allCorners);
+  const minX = Math.min(...piecesTransformed.map(p => p.transformedBoundingBox.minX));
+  const minY = Math.min(...piecesTransformed.map(p => p.transformedBoundingBox.minY));
+  const maxX = Math.max(...piecesTransformed.map(p => p.transformedBoundingBox.maxX));
+  const maxY = Math.max(...piecesTransformed.map(p => p.transformedBoundingBox.maxY));
+  const layoutBoundingBox: BoundingBox = {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    widthCm: maxX - minX,
+    heightCm: maxY - minY
+  };
+
+  // Rigid alignment verification
+  const fUnderarmAligned = applyRigidTransformPoint(fUnderarm, { x: 0, y: 0 }, 0);
+  const slvFrontUnderarmAligned = applyRigidTransformPoint(uFront, sleeveFrontTranslation, 0);
+  const frontJunctionDeltaCm = distance(fUnderarmAligned, slvFrontUnderarmAligned);
+
+  const bUnderarmAligned = applyRigidTransformPoint(bUnderarm, { x: backOffsetX, y: 0 }, 0);
+  const slvBackUnderarmAligned = applyRigidTransformPoint(uBack, sleeveBackTranslation, 0);
+  const backJunctionDeltaCm = distance(bUnderarmAligned, slvBackUnderarmAligned);
+
+  let maxSeamLengthDriftCm = 0;
+  for (const [src, trans] of [
+    [frontBodicePiece, frontBodiceTransformed],
+    [backBodicePiece, backBodiceTransformed],
+    [sleevePiece, sleeveFrontTransformed],
+    [sleevePiece, sleeveBackTransformed]
+  ] as const) {
+    for (let i = 0; i < src.seams.length; i++) {
+      const s0 = src.seams[i];
+      const s1 = trans.transformedSeams[i];
+      if (!s0 || !s1) continue;
+      const chord0 = distance(s0.startPoint, s0.endPoint);
+      const chord1 = distance(s1.startPoint, s1.endPoint);
+      const drift = Math.abs(chord1 - chord0);
+      if (drift > maxSeamLengthDriftCm) {
+        maxSeamLengthDriftCm = drift;
+      }
+    }
+  }
+
+  const backMinX = Math.min(
+    backBodiceTransformed.transformedBoundingBox.minX,
+    sleeveBackTransformed.transformedBoundingBox.minX
+  );
+  const assembliesNonOverlapping = frontExtentMaxX < backMinX;
+
+  const rigidVerification: RigidAlignmentVerification = {
+    isRigidVerified:
+      frontJunctionDeltaCm <= 1e-6 &&
+      backJunctionDeltaCm <= 1e-6 &&
+      maxSeamLengthDriftCm <= 1e-6 &&
+      assembliesNonOverlapping,
+    frontJunctionDeltaCm,
+    backJunctionDeltaCm,
+    maxSeamLengthDriftCm,
+    assembliesNonOverlapping
+  };
 
   return {
     layoutType: '2d-inspection-alignment',
@@ -243,57 +348,172 @@ export function buildAssemblyInspectionLayout(
       bodice: backBodiceTransformed,
       sleeve: sleeveBackTransformed
     },
-    layoutBoundingBox
+    layoutBoundingBox,
+    rigidVerification
   };
 }
 
 export function resurrectSegment(seg: any): CubicBezierCurve | LineSegment {
-  if (seg instanceof CubicBezierCurve || seg instanceof LineSegment) {
-    return seg;
-  }
-  if (seg.type === 'bezier' || (seg.p1 && seg.p2)) {
+  if (seg instanceof CubicBezierCurve) {
     return new CubicBezierCurve(
       seg.id,
       { x: seg.p0.x, y: seg.p0.y },
-      { x: seg.p1.x, y: seg.p1.y },
-      { x: seg.p2.x, y: seg.p2.y },
+      { x: seg.cp1.x, y: seg.cp1.y },
+      { x: seg.cp2.x, y: seg.cp2.y },
       { x: seg.p3.x, y: seg.p3.y },
-      seg.seamAllowanceCm ?? 1.0,
-      seg.isOnFold ?? false,
-      seg.seamId
+      seg.seamAllowanceCm,
+      seg.isFold,
+      seg.seamId,
+      seg.sourceSegmentId,
+      seg.role
     );
   }
+  if (seg instanceof LineSegment) {
+    return new LineSegment(
+      seg.id,
+      { x: seg.start.x, y: seg.start.y },
+      { x: seg.end.x, y: seg.end.y },
+      seg.seamAllowanceCm,
+      seg.isFold,
+      seg.seamId,
+      seg.sourceSegmentId,
+      seg.role
+    );
+  }
+  if (seg.type === 'bezier' || ((seg.cp1 || seg.p1) && (seg.cp2 || seg.p2))) {
+    const p0 = seg.p0 ?? seg.start ?? { x: 0, y: 0 };
+    const cp1 = seg.cp1 ?? seg.p1;
+    const cp2 = seg.cp2 ?? seg.p2;
+    const p3 = seg.p3 ?? seg.end ?? { x: 0, y: 0 };
+    return new CubicBezierCurve(
+      seg.id,
+      { x: p0.x, y: p0.y },
+      { x: cp1.x, y: cp1.y },
+      { x: cp2.x, y: cp2.y },
+      { x: p3.x, y: p3.y },
+      seg.seamAllowanceCm ?? 1.0,
+      seg.isFold ?? seg.isOnFold ?? false,
+      seg.seamId,
+      seg.sourceSegmentId,
+      seg.role
+    );
+  }
+  const start = seg.start ?? seg.p0 ?? { x: 0, y: 0 };
+  const end = seg.end ?? seg.p1 ?? { x: 0, y: 0 };
   return new LineSegment(
     seg.id,
-    { x: seg.p0.x, y: seg.p0.y },
-    { x: seg.p1.x, y: seg.p1.y },
+    { x: start.x, y: start.y },
+    { x: end.x, y: end.y },
     seg.seamAllowanceCm ?? 1.0,
-    seg.isOnFold ?? false,
-    seg.seamId
+    seg.isFold ?? seg.isOnFold ?? false,
+    seg.seamId,
+    seg.sourceSegmentId,
+    seg.role
+  );
+}
+
+function deepCloneContour(contour: GeometricContour | undefined): GeometricContour | undefined {
+  if (!contour?.segments) return undefined;
+  return new GeometricContour(
+    contour.id,
+    contour.segments.map(s => resurrectSegment(s)),
+    contour.isClosed
   );
 }
 
 /**
  * Deep-clones pattern pieces to guarantee that source drafts are never mutated,
- * while preserving full class instances for geometric calculation.
+ * while preserving full class instances for geometric calculation across all contours and metadata.
  */
 function deepClonePiece(piece: PatternPiece): PatternPiece {
-  const cloned: PatternPiece = {
+  const clonedOffset: OffsetResult | undefined = piece.offsetResult
+    ? {
+        ...piece.offsetResult,
+        cuttingContour: deepCloneContour(piece.offsetResult.cuttingContour) ?? piece.offsetResult.cuttingContour,
+        diagnostics: piece.offsetResult.diagnostics
+          ? piece.offsetResult.diagnostics.map(d => ({ ...d }))
+          : undefined,
+        warnings: [...(piece.offsetResult.warnings ?? [])],
+        errors: [...(piece.offsetResult.errors ?? [])]
+      }
+    : undefined;
+
+  return {
     ...piece,
     darts: piece.darts ? JSON.parse(JSON.stringify(piece.darts)) : [],
     notches: piece.notches ? JSON.parse(JSON.stringify(piece.notches)) : [],
     seams: piece.seams ? JSON.parse(JSON.stringify(piece.seams)) : [],
-    boundingBox: piece.boundingBox ? { ...piece.boundingBox } : { minX: 0, minY: 0, maxX: 0, maxY: 0, widthCm: 0, heightCm: 0 }
+    boundingBox: piece.boundingBox
+      ? { ...piece.boundingBox }
+      : { minX: 0, minY: 0, maxX: 0, maxY: 0, widthCm: 0, heightCm: 0 },
+    grainline: piece.grainline
+      ? {
+          ...piece.grainline,
+          start: { x: piece.grainline.start.x, y: piece.grainline.start.y },
+          end: { x: piece.grainline.end.x, y: piece.grainline.end.y }
+        }
+      : { start: { x: 0, y: 0 }, end: { x: 0, y: 0 }, direction: 'vertical' },
+    drillHoles: piece.drillHoles ? piece.drillHoles.map(dh => ({ x: dh.x, y: dh.y })) : undefined,
+    stitchingContour: deepCloneContour(piece.stitchingContour),
+    cuttingContour: deepCloneContour(piece.cuttingContour),
+    offsetResult: clonedOffset
   };
-  if (piece.stitchingContour?.segments) {
-    const resurrectedSegments = piece.stitchingContour.segments.map(s => resurrectSegment(s));
-    cloned.stitchingContour = new GeometricContour(
-      piece.stitchingContour.id,
-      resurrectedSegments,
-      piece.stitchingContour.isClosed
-    );
-  }
-  return cloned;
+}
+
+function createNextExecutionMetadata(): { id: string; executionMetadata: AssemblyExecutionMetadata } {
+  assemblyRunSequence += 1;
+  const nowMs = Date.now();
+  const generatedAtIso = new Date(nowMs).toISOString();
+  const id = `asm-${nowMs}-${assemblyRunSequence}`;
+  return {
+    id,
+    executionMetadata: {
+      runId: `run-${nowMs}-${assemblyRunSequence}`,
+      generatedAtIso,
+      engineVersion: '0.4.3'
+    }
+  };
+}
+
+/**
+ * Extracts a strictly deterministic, run-metadata-free canonical payload from an assembly result
+ * for cross-run invariant SHA-256 verification.
+ */
+export function buildCanonicalAssemblyReportPayload(
+  result: Omit<BodiceSleeveAssemblyResult, 'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'>
+): Record<string, unknown> {
+  const { timestamp: _reportTs, ...deterministicValidation } = result.validationReport;
+
+  return {
+    schemaVersion: 'm04.3-assembly-report-v1',
+    engineVersion: result.executionMetadata?.engineVersion ?? '0.4.3',
+    status: result.status,
+    isValid: result.isValid,
+    isProductionReady: false,
+    configValidation: result.configValidation,
+    measurements: result.measurements,
+    seamCompatibility: result.seamCompatibility,
+    uncertaintyGate: result.uncertaintyGate,
+    ease: result.ease,
+    endpoints: result.endpoints,
+    notches: result.notches,
+    contourIntegrity: result.contourIntegrity,
+    governance: result.governance,
+    validationReport: deterministicValidation,
+    inspectionLayout: result.inspectionLayout ?? null,
+    unresolvedRisks: result.unresolvedRisks,
+    productionNotes: result.productionNotes
+  };
+}
+
+/**
+ * Computes canonical JSON, UTF-8 byte length, and FIPS 180-4 SHA-256 hex digest for an assembly result.
+ */
+export function serializeDeterministicAssemblyReport(
+  result: Omit<BodiceSleeveAssemblyResult, 'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'>
+): CanonicalDigestEnvelope {
+  const payload = buildCanonicalAssemblyReportPayload(result);
+  return digestCanonicalPayload(payload, { requireNonEmptyObject: true });
 }
 
 /**
@@ -302,10 +522,16 @@ function deepClonePiece(piece: PatternPiece): PatternPiece {
 export function assembleBodiceSleeve(
   input: BodiceSleeveAssemblyInput
 ): BodiceSleeveAssemblyResult {
-  const timestamp = new Date().toISOString();
-  const id = `asm-${Date.now()}`;
+  const { id, executionMetadata } = createNextExecutionMetadata();
+  const timestamp = executionMetadata.generatedAtIso;
 
-  // 1. Immutable defensive copy
+  // 1. Validate runtime options (including customTargetEaseCm === 0)
+  const configValidation: AssemblyConfigValidationResult = resolveAndValidateAssemblyConfig(input.options);
+
+  // 2. Evaluate governance & measurement provenance
+  const governance: AssemblyGovernanceResult = evaluateAssemblyGovernance(input);
+
+  // 3. Immutable defensive copy
   const clonedBodicePieces = input.bodicePieces ? input.bodicePieces.map(p => deepClonePiece(p)) : [];
   const rawSleeve = input.sleevePiece as any;
   const actualSleevePiece: PatternPiece | undefined = rawSleeve?.piece ?? (rawSleeve?.id ? rawSleeve : undefined);
@@ -317,10 +543,10 @@ export function assembleBodiceSleeve(
     sleevePiece: clonedSleevePiece
   };
 
-  // 2. Curve Extraction
+  // 4. Curve Extraction
   const { extracted, errors, missingPieces } = extractAssemblyCurves(defensiveInput);
 
-  // Missing data handling: strictly 'unassessed-missing-data'
+  // Missing data handling: strictly 'unassessed-missing-data' with populated full report & SHA-256 digest
   if (!extracted || missingPieces.length > 0) {
     const defaultEase: EaseCompatibilityMetrics = {
       frontBodiceArmholeLengthCm: 0,
@@ -338,7 +564,7 @@ export function assembleBodiceSleeve(
       frontEaseRatio: null,
       isRatioDefined: false,
       frontEaseRatioUncertainty: null,
-      targetStrategy: input.options?.strategy ?? 'classic',
+      targetStrategy: configValidation.resolvedStrategy,
       targetTotalEaseCm: 0,
       targetFrontEaseCm: 0,
       targetBackEaseCm: 0,
@@ -351,12 +577,59 @@ export function assembleBodiceSleeve(
       isTotalEasePermitted: false,
       isDistributionBalanced: false,
       isTotalEaseTargetCompliant: false,
-      isTargetCompliant: false
+      isTargetCompliant: false,
+      strictUncertaintyGatePassed: false
+    };
+
+    const emptySeam = (side: 'front' | 'back' | 'total') => ({
+      side,
+      armholeLengthCm: 0,
+      sleeveCapLengthCm: 0,
+      easeCm: 0,
+      uncertaintyCm: 0,
+      lowerConfidenceCm: 0,
+      upperConfidenceCm: 0,
+      targetEaseCm: 0,
+      residualCm: 0,
+      isNonNegative: false,
+      isWithinTolerance: false,
+      isConfidenceIntervalSafe: false,
+      isValid: false,
+      blockingReasons: ['Missing required pattern pieces or curves.']
+    });
+
+    const seamCompatibility: SeamCompatibilityBreakdown = {
+      front: emptySeam('front'),
+      back: emptySeam('back'),
+      total: emptySeam('total'),
+      areAllSeamsIndividuallyValid: false
+    };
+
+    const uncertaintyGate: UncertaintyGateResult = {
+      passed: false,
+      maxAllowedSingleSeamUncertaintyCm: MAX_SINGLE_SEAM_UNCERTAINTY_CM,
+      maxObservedSingleSeamUncertaintyCm: 0,
+      totalEaseUncertaintyCm: 0,
+      intervalAmbiguities: [],
+      blockingReasons: ['Cannot evaluate seam uncertainty without extracted curves.']
+    };
+
+    const contourIntegrity: AssemblyContourIntegrityResult = {
+      isValid: false,
+      frontBodiceValid: false,
+      backBodiceValid: false,
+      sleeveValid: false,
+      windings: { frontBodice: 'unknown', backBodice: 'unknown', sleeve: 'unknown' },
+      grainlinesValid: false,
+      drillHolesValid: false,
+      errors: [...errors],
+      warnings: []
     };
 
     const totalMissingIssues = [
       ...missingPieces.map(p => `Missing required pattern piece: ${p}`),
-      ...errors
+      ...errors,
+      ...configValidation.errors
     ];
 
     const emptyValidation: ValidationReport = {
@@ -379,18 +652,25 @@ export function assembleBodiceSleeve(
       declaration: 'Assembly validation could not be completed due to missing pattern pieces or required seam curves.'
     };
 
-    return {
+    const partialResult: Omit<
+      BodiceSleeveAssemblyResult,
+      'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'
+    > = {
       id,
       timestamp,
+      executionMetadata,
       status: 'unassessed-missing-data',
       isValid: false,
       isProductionReady: false,
+      configValidation,
       measurements: {
         frontBodiceArmhole: null,
         backBodiceArmhole: null,
         frontSleeveCap: null,
         backSleeveCap: null
       },
+      seamCompatibility,
+      uncertaintyGate,
       ease: defaultEase,
       endpoints: {
         frontUnderarmMatch: { name: 'Front Scye', bodicePieceId: '', bodicePoint: { x: 0, y: 0 }, sleevePoint: { x: 0, y: 0 }, distanceCm: 0, isConnected: false, expectedDirection: '', actualDirection: '', isOrientationValid: false },
@@ -404,11 +684,16 @@ export function assembleBodiceSleeve(
         frontNotch: null,
         backNotches: null,
         crownNotch: null,
+        elbowFrontNotch: null,
+        elbowBackNotch: null,
+        elbowPairParity: null,
         status: 'unassessed-missing-data',
         isValid: false,
         errors,
         warnings: []
       },
+      contourIntegrity,
+      governance,
       validationReport: emptyValidation,
       pieces: {
         frontBodice: clonedBodicePieces.find(p => p.id === 'piece-bodice-front' || p.pieceCode?.startsWith('BOD-F')),
@@ -418,10 +703,18 @@ export function assembleBodiceSleeve(
       unresolvedRisks: ['Missing input pattern pieces prevent seam arc-length and ease computation.'],
       productionNotes: ['Draft missing pieces before initiating assembly validation.']
     };
+
+    const digest = serializeDeterministicAssemblyReport(partialResult);
+    return {
+      ...partialResult,
+      canonicalContentDigest: digest.sha256Hex,
+      reportSha256Hex: digest.sha256Hex,
+      canonicalJsonByteLength: digest.byteLength
+    };
   }
 
-  // 3. Adaptive Arc-Length Measurements with Propagated Uncertainties
-  const tol = input.options?.bezierToleranceCm ?? 0.005;
+  // 5. Adaptive Arc-Length Measurements with Propagated Uncertainties
+  const tol = configValidation.resolvedBezierToleranceCm;
   const frontBodiceMeas = measureCurveSeam(
     extracted.frontBodiceArmhole,
     extracted.frontBodicePiece.id,
@@ -451,7 +744,7 @@ export function assembleBodiceSleeve(
     tol
   );
 
-  // 4. Mathematical Ease Compatibility
+  // 6. Mathematical Ease Compatibility & Independent Front/Back Seam Breakdown
   const easeMetrics = evaluateEaseCompatibility(
     frontBodiceMeas,
     backBodiceMeas,
@@ -459,14 +752,27 @@ export function assembleBodiceSleeve(
     backSleeveMeas,
     input.options
   );
+  const maxTotalEaseCm = configValidation.resolvedMaxTotalEaseCm ?? DEFAULT_MAX_TOTAL_EASE_CM;
+  const seamCompatibility = evaluateSeamCompatibilityBreakdown(easeMetrics, maxTotalEaseCm);
 
-  // 5. Seam Endpoint Connectivity & Traversal Direction
+  // 7. Strict Numerical Uncertainty Gate
+  const uncertaintyGate = evaluateUncertaintyGate(
+    [frontBodiceMeas, backBodiceMeas, frontSleeveMeas, backSleeveMeas],
+    easeMetrics,
+    maxTotalEaseCm
+  );
+  easeMetrics.strictUncertaintyGatePassed = uncertaintyGate.passed;
+
+  // 8. Seam Endpoint Connectivity, Handedness, Shoulder Consistency & Traversal Direction
   const endpointResult = evaluateSeamEndpointsAndOrientations(extracted);
 
-  // 6. Notch Correspondence
+  // 9. Notch Correspondence (Crown, Front Scye, Back Double-Notch Pre-Sort Order, Elbow Inseam Pair)
   const notchResult = evaluateAssemblyNotches(extracted);
 
-  // 7. Comprehensive Validation Report
+  // 10. Contour Integrity, Non-Self-Intersection, Winding, Grainlines & Drill Holes
+  const contourIntegrity = evaluateAssemblyCurveContinuityAndGeometry(extracted);
+
+  // 11. Comprehensive Validation Report
   const validationReport = buildAssemblyValidationReport(
     easeMetrics,
     endpointResult,
@@ -474,48 +780,77 @@ export function assembleBodiceSleeve(
     frontBodiceMeas,
     backBodiceMeas,
     frontSleeveMeas,
-    backSleeveMeas
+    backSleeveMeas,
+    {
+      configValidation,
+      seamCompatibility,
+      uncertaintyGate,
+      contourIntegrity,
+      governance
+    }
   );
 
-  // 8. 2D Inspection Layout
+  // 12. 2D Inspection Layout (full precision + 16-corner bounding box + rigid verification)
   const inspectionLayout = buildAssemblyInspectionLayout(
     extracted.frontBodicePiece,
     extracted.backBodicePiece,
     extracted.sleevePiece
   );
 
-  // 9. Overall Status Determination
-  const isValid = validationReport.isValid;
+  // 13. Fail-Closed Overall Status Determination
+  const isValid =
+    configValidation.isValid &&
+    validationReport.isValid &&
+    seamCompatibility.front.isNonNegative &&
+    seamCompatibility.back.isNonNegative &&
+    seamCompatibility.total.isNonNegative &&
+    easeMetrics.isTotalEasePermitted &&
+    (!configValidation.strictUncertaintyGate || uncertaintyGate.passed) &&
+    endpointResult.isEndpointTopologyValid &&
+    notchResult.isValid &&
+    contourIntegrity.isValid &&
+    (!governance.requireApprovedGovernance || governance.isGovernanceApproved);
+
   const status: AssemblyValidationStatus = isValid ? 'verified-valid' : 'invalid';
 
   const unresolvedRisks: string[] = [
     'Static 2D pattern assembly only: dynamic arm raise reach tension unmodeled.',
     '3D physical cloth drape and wool/cotton iron steam moulding unsimulated.',
-    'Industrial grading nest continuity across multi-sizes unassessed.'
+    'Industrial grading nest continuity across multi-sizes unassessed within standalone assembly check.'
   ];
 
   const productionNotes: string[] = [
     `Target ease strategy: ${easeMetrics.targetStrategy} (${easeMetrics.targetTotalEaseCm} cm target).`,
-    `Measured total cap ease: +${easeMetrics.totalEaseCm.toFixed(2)} cm (front: +${easeMetrics.frontEaseCm.toFixed(2)} cm, back: +${easeMetrics.backEaseCm.toFixed(2)} cm).`,
-    `Propagated arc-length uncertainty: ±${easeMetrics.totalEaseUncertaintyCm.toFixed(4)} cm.`,
-    'Inseam parity delta: ' + endpointResult.underarmInseamMatch.parityDeltaCm.toFixed(3) + ' cm <= 0.05 cm.'
+    `Measured total cap ease: ${formatSignedCm(easeMetrics.totalEaseCm)} (front: ${formatSignedCm(easeMetrics.frontEaseCm)}, back: ${formatSignedCm(easeMetrics.backEaseCm)}).`,
+    `Propagated arc-length uncertainty: ±${easeMetrics.totalEaseUncertaintyCm.toFixed(4)} cm (gate: ${uncertaintyGate.passed ? 'PASS' : 'FAIL'}).`,
+    `Inseam parity delta: ${endpointResult.underarmInseamMatch.parityDeltaCm.toFixed(3)} cm <= 0.05 cm.`,
+    `Governance provenance: ${governance.measurementProvenance} (${governance.measurementApprovalState}).`
   ];
 
-  return {
+  const assembledCore: Omit<
+    BodiceSleeveAssemblyResult,
+    'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'
+  > = {
     id,
     timestamp,
+    executionMetadata,
     status,
     isValid,
     isProductionReady: false, // Strictly false: 2D geometry verified, 3D wearer fit unassessed
+    configValidation,
     measurements: {
       frontBodiceArmhole: frontBodiceMeas,
       backBodiceArmhole: backBodiceMeas,
       frontSleeveCap: frontSleeveMeas,
       backSleeveCap: backSleeveMeas
     },
+    seamCompatibility,
+    uncertaintyGate,
     ease: easeMetrics,
     endpoints: endpointResult,
     notches: notchResult,
+    contourIntegrity,
+    governance,
     validationReport,
     inspectionLayout,
     pieces: {
@@ -525,5 +860,15 @@ export function assembleBodiceSleeve(
     },
     unresolvedRisks,
     productionNotes
+  };
+
+  // 14. Deterministic Canonical JSON + SHA-256 Digest
+  const digest = serializeDeterministicAssemblyReport(assembledCore);
+
+  return {
+    ...assembledCore,
+    canonicalContentDigest: digest.sha256Hex,
+    reportSha256Hex: digest.sha256Hex,
+    canonicalJsonByteLength: digest.byteLength
   };
 }

@@ -16,6 +16,7 @@ import {
   SleeveEaseStrategy,
   ValidationReport
 } from '../../types';
+import type { MeasurementApprovalStatus, MeasurementOrigin } from '../production/production-types';
 
 export type AssemblyValidationStatus =
   | 'verified-valid'
@@ -28,6 +29,23 @@ export interface AssemblyOptions {
   bezierToleranceCm?: number;
   fabric?: FabricProperty;
   seamAllowanceCm?: number;
+  maxTotalEaseCm?: number;
+  strictUncertaintyGate?: boolean;
+  measurementProvenance?: MeasurementOrigin;
+  measurementApprovalState?: MeasurementApprovalStatus;
+  requireApprovedGovernance?: boolean;
+}
+
+export interface AssemblyConfigValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+  resolvedStrategy: SleeveEaseStrategy;
+  resolvedCustomTargetEaseCm?: number;
+  resolvedBezierToleranceCm: number;
+  resolvedSeamAllowanceCm?: number;
+  resolvedMaxTotalEaseCm: number;
+  strictUncertaintyGate: boolean;
 }
 
 export interface BodiceSleeveAssemblyInput {
@@ -49,6 +67,39 @@ export interface SeamArcLengthMeasurement {
   uncertaintyCm: number;
   toleranceAchieved: boolean;
   subdivisions: number;
+}
+
+export interface IndividualSeamCompatibility {
+  side: 'front' | 'back' | 'total';
+  armholeLengthCm: number;
+  sleeveCapLengthCm: number;
+  easeCm: number;
+  uncertaintyCm: number;
+  lowerConfidenceCm: number;
+  upperConfidenceCm: number;
+  targetEaseCm: number;
+  residualCm: number;
+  isNonNegative: boolean;
+  isWithinTolerance: boolean;
+  isConfidenceIntervalSafe: boolean;
+  isValid: boolean;
+  blockingReasons: string[];
+}
+
+export interface SeamCompatibilityBreakdown {
+  front: IndividualSeamCompatibility;
+  back: IndividualSeamCompatibility;
+  total: IndividualSeamCompatibility;
+  areAllSeamsIndividuallyValid: boolean;
+}
+
+export interface UncertaintyGateResult {
+  passed: boolean;
+  maxAllowedSingleSeamUncertaintyCm: number;
+  maxObservedSingleSeamUncertaintyCm: number;
+  totalEaseUncertaintyCm: number;
+  intervalAmbiguities: string[];
+  blockingReasons: string[];
 }
 
 export interface EaseCompatibilityMetrics {
@@ -76,12 +127,13 @@ export interface EaseCompatibilityMetrics {
   frontResidualCm: number;
   backResidualCm: number;
   totalResidualCm: number;
-  isFrontEasePermitted: boolean; // E_f >= 0
-  isBackEasePermitted: boolean;  // E_b >= 0
-  isTotalEasePermitted: boolean;  // 0 <= E_t <= 5.0 cm (tailoring crimp capacity envelope)
+  isFrontEasePermitted: boolean; // E_f >= -0.05 physical tolerance (use seamCompatibility.front.isNonNegative for strict E_f >= 0)
+  isBackEasePermitted: boolean;  // E_b >= -0.05 physical tolerance
+  isTotalEasePermitted: boolean; // 0 <= E_t <= maxTotalEaseCm (default 5.00 cm)
   isDistributionBalanced: boolean; // 35% <= frontRatio <= 55% (or |E_f - E_b| <= 0.20 cm when E_t < 0.20 cm)
   isTotalEaseTargetCompliant: boolean;
   isTargetCompliant: boolean;
+  strictUncertaintyGatePassed?: boolean;
 }
 
 export interface SeamEndpointMatch {
@@ -99,6 +151,23 @@ export interface SeamEndpointMatch {
   tangentDepartureDeg?: number;
 }
 
+export interface SleeveHandednessResult {
+  isValid: boolean;
+  crownApexX: number;
+  frontUnderarmX: number;
+  backUnderarmX: number;
+  reason?: string;
+}
+
+export interface ShoulderSeamConsistencyResult {
+  isValid: boolean;
+  frontShoulderLengthCm: number;
+  backShoulderLengthCm: number;
+  deltaCm: number;
+  toleranceCm: number;
+  reason?: string;
+}
+
 export interface SeamEndpointOrientationResult {
   frontUnderarmMatch: SeamEndpointMatch;
   backUnderarmMatch: SeamEndpointMatch;
@@ -109,6 +178,8 @@ export interface SeamEndpointOrientationResult {
     parityDeltaCm: number;
     hasParity: boolean;
   };
+  sleeveHandedness?: SleeveHandednessResult;
+  shoulderSeamConsistency?: ShoulderSeamConsistencyResult;
   isEndpointTopologyValid: boolean;
   reasons: string[];
 }
@@ -145,7 +216,9 @@ export interface BackNotchPairing {
   sleeveSpacingCm: number;
   bodiceSpacingCm: number;
   isSpacingValid: boolean; // 1.2 cm +/- 0.3 cm [0.90 - 1.50 cm]
-  isOrderingValid: boolean; // Notch 1 closer to underarm than notch 2
+  isOrderingValid: boolean; // Pre-sort & arc order: notch 1 closer to underarm than notch 2
+  preSortSleeveOrderValid?: boolean;
+  preSortBodiceOrderValid?: boolean;
   sleeveDisplacement1Cm: number;
   sleeveDisplacement2Cm: number;
   bodiceDisplacement1Cm: number;
@@ -165,14 +238,64 @@ export interface CrownNotchCheck {
   isOrientationValid: boolean; // -90 +/- 15 deg
 }
 
+export interface ElbowNotchCheck {
+  notchId: string;
+  side: 'front' | 'back';
+  position: Point;
+  inseamArcFromUnderarmCm: number;
+  displacementFromContourCm: number;
+  isAttachedToContour: boolean;
+  orientationAngleDeg: number;
+  isOrientationValid: boolean;
+}
+
+export interface ElbowPairParityCheck {
+  frontArcFromUnderarmCm: number;
+  backArcFromUnderarmCm: number;
+  parityDeltaCm: number;
+  toleranceCm: number;
+  isParityValid: boolean;
+}
+
 export interface AssemblyNotchCorrespondenceResult {
   frontNotch: FrontNotchPairing | null;
   backNotches: BackNotchPairing | null;
   crownNotch: CrownNotchCheck | null;
+  elbowFrontNotch?: ElbowNotchCheck | null;
+  elbowBackNotch?: ElbowNotchCheck | null;
+  elbowPairParity?: ElbowPairParityCheck | null;
   status: AssemblyValidationStatus;
   isValid: boolean;
   errors: string[];
   warnings: string[];
+}
+
+export interface AssemblyContourIntegrityResult {
+  isValid: boolean;
+  frontBodiceValid: boolean;
+  backBodiceValid: boolean;
+  sleeveValid: boolean;
+  windings: {
+    frontBodice: string;
+    backBodice: string;
+    sleeve: string;
+  };
+  grainlinesValid: boolean;
+  drillHolesValid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface AssemblyGovernanceResult {
+  measurementProvenance: MeasurementOrigin;
+  measurementApprovalState: MeasurementApprovalStatus;
+  isMeasurementOriginApprovable: boolean;
+  isMeasurementApproved: boolean;
+  designSpecApproved: boolean;
+  requireApprovedGovernance: boolean;
+  isGovernanceApproved: boolean;
+  isProductionReady: false;
+  blockingReasons: string[];
 }
 
 export interface AssemblyTransformedPiece {
@@ -190,9 +313,18 @@ export interface AssemblyTransformedPiece {
   transformedBoundingBox: BoundingBox;
   seamAllowanceWidthCm?: number;
   transformedGrainline?: GrainLine;
+  transformedDrillHoles?: Point[];
   material?: 'self' | 'lining' | 'interfacing';
   onFold?: boolean;
   cutCount?: number;
+}
+
+export interface RigidAlignmentVerification {
+  isRigidVerified: boolean;
+  frontJunctionDeltaCm: number;
+  backJunctionDeltaCm: number;
+  maxSeamLengthDriftCm: number;
+  assembliesNonOverlapping: boolean;
 }
 
 export interface AssemblyInspectionLayout {
@@ -208,23 +340,39 @@ export interface AssemblyInspectionLayout {
     sleeve: AssemblyTransformedPiece;
   };
   layoutBoundingBox: BoundingBox;
+  rigidVerification?: RigidAlignmentVerification;
+}
+
+export interface AssemblyExecutionMetadata {
+  runId: string;
+  generatedAtIso: string;
+  engineVersion: string;
 }
 
 export interface BodiceSleeveAssemblyResult {
   id: string;
   timestamp: string;
+  executionMetadata: AssemblyExecutionMetadata;
   status: AssemblyValidationStatus;
   isValid: boolean;
-  isProductionReady: boolean; // Strictly false: 2D prototype CAD geometry; 3D physical drape/wearer fit unassessed
+  isProductionReady: false; // Strictly false: 2D prototype CAD geometry; 3D physical drape/wearer fit unassessed
+  canonicalContentDigest: string;
+  reportSha256Hex: string;
+  canonicalJsonByteLength: number;
+  configValidation: AssemblyConfigValidationResult;
   measurements: {
     frontBodiceArmhole: SeamArcLengthMeasurement | null;
     backBodiceArmhole: SeamArcLengthMeasurement | null;
     frontSleeveCap: SeamArcLengthMeasurement | null;
     backSleeveCap: SeamArcLengthMeasurement | null;
   };
+  seamCompatibility: SeamCompatibilityBreakdown;
+  uncertaintyGate: UncertaintyGateResult;
   ease: EaseCompatibilityMetrics;
   endpoints: SeamEndpointOrientationResult;
   notches: AssemblyNotchCorrespondenceResult;
+  contourIntegrity: AssemblyContourIntegrityResult;
+  governance: AssemblyGovernanceResult;
   validationReport: ValidationReport;
   inspectionLayout?: AssemblyInspectionLayout;
   pieces: {

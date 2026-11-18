@@ -179,7 +179,7 @@ export function validateCrossSizeIntegrity(
     if (!res || !res.assemblyResult) continue;
 
     const ease = res.assemblyResult.ease;
-    if (ease.frontEaseCm < 0) {
+    if (ease.frontEaseCm < 0 || (res.assemblyResult.seamCompatibility && !res.assemblyResult.seamCompatibility.front.isNonNegative)) {
       checks.push({
         id: `check-ease-front-neg-${sz}`,
         name: `Front Cap Ease Negative (${sz})`,
@@ -191,7 +191,7 @@ export function validateCrossSizeIntegrity(
       });
     }
 
-    if (ease.backEaseCm < 0) {
+    if (ease.backEaseCm < 0 || (res.assemblyResult.seamCompatibility && !res.assemblyResult.seamCompatibility.back.isNonNegative)) {
       checks.push({
         id: `check-ease-back-neg-${sz}`,
         name: `Back Cap Ease Negative (${sz})`,
@@ -203,7 +203,7 @@ export function validateCrossSizeIntegrity(
       });
     }
 
-    if (ease.totalEaseCm > 5.0) {
+    if (ease.totalEaseCm > 5.0 || !ease.isTotalEasePermitted) {
       checks.push({
         id: `check-ease-total-excess-${sz}`,
         name: `Excessive Cap Ease (${sz})`,
@@ -214,9 +214,47 @@ export function validateCrossSizeIntegrity(
         expectedBehavior: 'Total cap ease must not exceed 5.0 cm.'
       });
     }
+
+    // M04.3 Uncertainty Gate & Contour Integrity per-size checks
+    const strictGate = options?.strictUncertaintyGate ?? true;
+    if (strictGate && res.assemblyResult.uncertaintyGate && !res.assemblyResult.uncertaintyGate.passed) {
+      checks.push({
+        id: `check-uncertainty-gate-${sz}`,
+        name: `Uncertainty Gate (${sz})`,
+        category: 'assembly',
+        status: 'fail',
+        affectedSizes: [sz],
+        message: `Size ${sz} failed strict numerical uncertainty gate: ${res.assemblyResult.uncertaintyGate.blockingReasons.join('; ')}`,
+        expectedBehavior: 'All seam arc-length uncertainties must be <= 0.05 cm with unambiguous confidence intervals.'
+      });
+    }
+
+    if (res.assemblyResult.contourIntegrity && !res.assemblyResult.contourIntegrity.isValid) {
+      checks.push({
+        id: `check-contour-integrity-${sz}`,
+        name: `Contour Integrity (${sz})`,
+        category: 'geometry',
+        status: 'fail',
+        affectedSizes: [sz],
+        message: `Size ${sz} contour integrity violation: ${res.assemblyResult.contourIntegrity.errors.join('; ')}`,
+        expectedBehavior: 'All contours must be closed, non-self-intersecting, non-collinear, with valid grainlines.'
+      });
+    }
+
+    if (options?.requireApprovedGovernance && res.assemblyResult.governance && !res.assemblyResult.governance.isGovernanceApproved) {
+      checks.push({
+        id: `check-governance-${sz}`,
+        name: `Governance & Provenance Approval (${sz})`,
+        category: 'assembly',
+        status: 'fail',
+        affectedSizes: [sz],
+        message: `Size ${sz} governance blocked: ${res.assemblyResult.governance.blockingReasons.join('; ')}`,
+        expectedBehavior: 'Approved design specification and approvable physically-verified measurements required.'
+      });
+    }
   }
 
-  // 5. Notch correspondence and displacement checks across sizes
+  // 5. Notch correspondence, pre-sort ordering, displacement, and elbow parity checks across sizes
   for (const sz of orderedSizes) {
     const res = sizeResults[sz];
     if (!res || !res.assemblyResult) continue;
@@ -250,6 +288,28 @@ export function validateCrossSizeIntegrity(
           expectedBehavior: 'Displacement along seam must be <= 0.30 cm.'
         });
       }
+      if (bn.preSortSleeveOrderValid === false || bn.preSortBodiceOrderValid === false) {
+        checks.push({
+          id: `check-back-notch-order-${sz}`,
+          name: `Back Double-Notch Pre-Sort Order (${sz})`,
+          category: 'notch',
+          status: 'fail',
+          affectedSizes: [sz],
+          message: `Size ${sz} back double-notch declared ordering (-1 before -2) is reversed prior to sorting.`,
+          expectedBehavior: 'Notch -1 must sit closer to underarm than notch -2 before sorting.'
+        });
+      }
+    }
+    if (notches.elbowPairParity && !notches.elbowPairParity.isParityValid) {
+      checks.push({
+        id: `check-elbow-parity-${sz}`,
+        name: `Elbow Inseam Pair Parity (${sz})`,
+        category: 'notch',
+        status: 'fail',
+        affectedSizes: [sz],
+        message: `Size ${sz} elbow notch arc parity (${notches.elbowPairParity.parityDeltaCm.toFixed(3)} cm) exceeds ${notches.elbowPairParity.toleranceCm} cm tolerance.`,
+        expectedBehavior: 'Front and back elbow inseam notch positions must align within 0.15 cm.'
+      });
     }
   }
 
@@ -278,6 +338,14 @@ export function validateCrossSizeIntegrity(
   const hasFailingChecks = checks.some(c => c.status === 'fail');
   const isOverallGradingValid = !hasFailingChecks && failedCount === 0 && validCount > 0;
 
+  const measurementProvenance = options?.measurementProvenance ?? 'unknown';
+  const measurementApprovalState = options?.measurementApprovalState ?? 'unverified';
+  const requireApprovedGovernance = Boolean(options?.requireApprovedGovernance);
+  const isAllGovernanceApproved = orderedSizes.every(sz => {
+    const res = sizeResults[sz];
+    return Boolean(res?.assemblyResult?.governance?.isGovernanceApproved);
+  });
+
   const summaryMessage = isOverallGradingValid
     ? `All ${validCount} generated sizes successfully graded with strict monotonic continuity, cap ease compatibility, and valid notch correspondence.`
     : `Cross-size grading integrity check flagged ${checks.filter(c => c.status === 'fail').length} issues across ${failedCount} failing sizes.`;
@@ -295,6 +363,12 @@ export function validateCrossSizeIntegrity(
     summaryMessage,
     unassessedConditions: UNASSESSED_GRADING_CONDITIONS,
     gradingContext: options?.gradingContext ?? (isCustom ? 'custom-table' : 'standard-chart'),
-    isCustomDataset: isCustom
+    isCustomDataset: isCustom,
+    governanceStatus: {
+      measurementProvenance,
+      measurementApprovalState,
+      requireApprovedGovernance,
+      isAllGovernanceApproved
+    }
   };
 }

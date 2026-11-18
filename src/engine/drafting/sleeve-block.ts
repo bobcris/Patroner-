@@ -453,14 +453,15 @@ export function draftSleeveBlock(
   const bNotch2Pos = findPointAtArcLength(backCapCurve, Math.min(backCapLength - 0.5, targetBackNotchDist + 0.5)).point;
 
   const elbowY = armLengthToElbow;
-  const elbowFrontT = Math.min(1.0, Math.max(0.0, (elbowY - capHeight) / (sleeveLength - capHeight)));
+  const elbowFrontT = Math.min(1.0, Math.max(0.0, (elbowY - capHeight) / Math.max(1e-6, wFront.y - capHeight)));
+  const elbowBackT = Math.min(1.0, Math.max(0.0, (elbowY - capHeight) / Math.max(1e-6, yWristBack - capHeight)));
   const elbowFrontPos: Point = {
     x: Number((uFront.x + (wFront.x - uFront.x) * elbowFrontT).toFixed(2)),
-    y: Number(elbowY.toFixed(2))
+    y: Number((uFront.y + (wFront.y - uFront.y) * elbowFrontT).toFixed(2))
   };
   const elbowBackPos: Point = {
-    x: Number((uBack.x + (wBack.x - uBack.x) * (1 - elbowFrontT)).toFixed(2)),
-    y: Number(elbowY.toFixed(2))
+    x: Number((uBack.x + (wBack.x - uBack.x) * elbowBackT).toFixed(2)),
+    y: Number((uBack.y + (wBack.y - uBack.y) * elbowBackT).toFixed(2))
   };
 
   const notches: Notch[] = [

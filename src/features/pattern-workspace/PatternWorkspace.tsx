@@ -8,10 +8,12 @@ import { BodiceDartStyle, BodyMeasurements, DesignSpecification, PatternDraft, P
 import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
 import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
 import { draftSleeveBlock, SleeveDiagnostics } from '../../engine/drafting/sleeve-block';
-import { assembleBodiceSleeve, BodiceSleeveAssemblyResult } from '../../engine/assembly';
+import { assembleBodiceSleeve, BodiceSleeveAssemblyResult, formatSignedCm } from '../../engine/assembly';
 import { gradePattern, GradedPatternSet, DEFAULT_SIZE_RANGE } from '../../engine/grading';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
-import { calculateGarmentDimensions, calculateBodiceGarmentDimensions, SLEEVE_EASE_TABLE } from '../../engine/measurements/standards';
+import { calculateGarmentDimensions, calculateBodiceGarmentDimensions, SLEEVE_EASE_TABLE, STANDARD_SIZING_SYSTEM } from '../../engine/measurements/standards';
+import type { MeasurementApprovalStatus, MeasurementOrigin } from '../../engine/production';
+import { AssemblyInspectionPanel, AssemblyScenarioMode } from './AssemblyInspectionPanel';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import {
@@ -52,6 +54,8 @@ interface PatternWorkspaceProps {
   currentSpec: DesignSpecification;
   measurements: BodyMeasurements;
   activeSize: string;
+  measurementProvenance?: MeasurementOrigin;
+  measurementApprovalState?: MeasurementApprovalStatus;
   onNavigateToProduction: () => void;
   onNavigateToMeasurements: () => void;
 }
@@ -60,6 +64,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   currentSpec,
   measurements,
   activeSize,
+  measurementProvenance = 'standard-chart',
+  measurementApprovalState = 'unverified',
   onNavigateToProduction,
   onNavigateToMeasurements
 }) => {
@@ -82,9 +88,12 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const [showDimensions, setShowDimensions] = useState(true);
   
   // Canvas zoom & pan state
-  const [zoom, setZoom] = useState(1.4);
-  const [pan, setPan] = useState({ x: 40, y: 30 });
+  const [zoom, setZoom] = useState(1.0);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit'>('pieces');
+  const [assemblyScenario, setAssemblyScenario] = useState<AssemblyScenarioMode>('active-draft');
+  const [requireApprovedGovernance, setRequireApprovedGovernance] = useState(false);
+  const [strictUncertaintyGate, setStrictUncertaintyGate] = useState(true);
   const [selectedPrototypeId, setSelectedPrototypeId] = useState<string>('PROTO-BOD-2026-M-01');
   const [enabledGradingSizes, setEnabledGradingSizes] = useState<Record<string, boolean>>({
     XS: true,
@@ -145,9 +154,21 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const gradedPatternSet: GradedPatternSet = React.useMemo(() => {
     return gradePattern(currentSpec, {
       bodiceDartStyle,
-      sleeveEaseStrategy
+      sleeveEaseStrategy,
+      strictUncertaintyGate,
+      measurementProvenance,
+      measurementApprovalState,
+      requireApprovedGovernance
     });
-  }, [currentSpec, bodiceDartStyle, sleeveEaseStrategy]);
+  }, [
+    currentSpec,
+    bodiceDartStyle,
+    sleeveEaseStrategy,
+    strictUncertaintyGate,
+    measurementProvenance,
+    measurementApprovalState,
+    requireApprovedGovernance
+  ]);
 
   // Deterministic draft generation (Bodice includes front, back, and set-in sleeve)
   let pieces: PatternPiece[] = [];
@@ -172,17 +193,29 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
   // Milestone 04.3: Integrated Bodice-Sleeve Assembly computation
   let assemblyResult: BodiceSleeveAssemblyResult | undefined = undefined;
-  if (currentSpec.garmentCategory === 'bodice' && pieces.length >= 3) {
+  let assemblyError: string | undefined = undefined;
+  if (currentSpec.garmentCategory === 'bodice' && pieces.length >= 2) {
     try {
+      const targetSleeveForAssembly =
+        assemblyScenario === 'incompatible-xs-flat'
+          ? draftSleeveBlock(STANDARD_SIZING_SYSTEM.sizes.XS, currentSpec, { strategy: 'flat' }).piece
+          : pieces[2];
+
       assemblyResult = assembleBodiceSleeve({
         bodicePieces: pieces.slice(0, 2),
-        sleevePiece: pieces[2],
+        sleevePiece: targetSleeveForAssembly,
         designSpec: currentSpec,
         measurements,
-        options: { strategy: sleeveEaseStrategy }
+        options: {
+          strategy: sleeveEaseStrategy,
+          strictUncertaintyGate,
+          measurementProvenance,
+          measurementApprovalState,
+          requireApprovedGovernance
+        }
       });
-    } catch {
-      // Fallback
+    } catch (err) {
+      assemblyError = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -204,8 +237,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   };
 
   const handleResetView = () => {
-    setZoom(1.4);
-    setPan({ x: 40, y: 30 });
+    setZoom(1.0);
+    setPan({ x: 0, y: 0 });
   };
 
   return (
@@ -570,27 +603,27 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                 <div className="bg-white/80 p-2 rounded border border-blue-100">
                   <span className="text-neutral-500 block text-[10px]">TOTAL EASE (E_t)</span>
-                  <span className="font-bold text-neutral-900">
-                    +{assemblyResult.ease.totalEaseCm.toFixed(2)} cm
+                  <span className="font-bold text-neutral-900" data-testid="hud-total-ease">
+                    {formatSignedCm(assemblyResult.ease.totalEaseCm)}
                     <span className="text-neutral-400 font-normal"> (±{assemblyResult.ease.totalEaseUncertaintyCm.toFixed(4)})</span>
                   </span>
                 </div>
                 <div className="bg-white/80 p-2 rounded border border-blue-100">
                   <span className="text-neutral-500 block text-[10px]">FRONT EASE (E_f)</span>
-                  <span className="font-bold text-neutral-900">
-                    +{assemblyResult.ease.frontEaseCm.toFixed(2)} cm {assemblyResult.ease.frontEaseRatio !== null ? `(${(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)` : '(N/A)'}
+                  <span className="font-bold text-neutral-900" data-testid="hud-front-ease">
+                    {formatSignedCm(assemblyResult.ease.frontEaseCm)} {assemblyResult.ease.frontEaseRatio !== null ? `(${(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)` : '(N/A)'}
                   </span>
                 </div>
                 <div className="bg-white/80 p-2 rounded border border-blue-100">
                   <span className="text-neutral-500 block text-[10px]">BACK EASE (E_b)</span>
-                  <span className="font-bold text-neutral-900">
-                    +{assemblyResult.ease.backEaseCm.toFixed(2)} cm {assemblyResult.ease.frontEaseRatio !== null ? `(${((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)` : '(N/A)'}
+                  <span className="font-bold text-neutral-900" data-testid="hud-back-ease">
+                    {formatSignedCm(assemblyResult.ease.backEaseCm)} {assemblyResult.ease.frontEaseRatio !== null ? `(${((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)` : '(N/A)'}
                   </span>
                 </div>
                 <div className="bg-white/80 p-2 rounded border border-blue-100">
                   <span className="text-neutral-500 block text-[10px]">TARGET STRATEGY</span>
                   <span className="font-bold text-neutral-900 uppercase">
-                    {assemblyResult.ease.targetStrategy} (+{assemblyResult.ease.targetTotalEaseCm}cm)
+                    {assemblyResult.ease.targetStrategy} ({formatSignedCm(assemblyResult.ease.targetTotalEaseCm)})
                   </span>
                 </div>
               </div>
@@ -771,7 +804,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                       [FRONT ASSEMBLY: SCYE MATCH]
                     </text>
                     <text x="5" y="-2" fontSize="1.6" fontFamily="monospace" fill="#52525b">
-                      Ease: +{assemblyResult.ease.frontEaseCm.toFixed(2)} cm {assemblyResult.ease.frontEaseRatio !== null ? `(${(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)` : ''}
+                      Ease: {formatSignedCm(assemblyResult.ease.frontEaseCm)} {assemblyResult.ease.frontEaseRatio !== null ? `(${(assemblyResult.ease.frontEaseRatio * 100).toFixed(0)}%)` : '(N/A)'}
                     </text>
                   </g>
 
@@ -833,11 +866,11 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     ))}
 
                     {/* Assembly Junction Annotation */}
-                    <text x="65" y="-5" fontSize="2.2" fontFamily="monospace" fontWeight="bold" fill="#1e3a8a">
+                    <text x={Math.round(assemblyResult.inspectionLayout.backAssembly.bodice.translation.x + 5)} y="-5" fontSize="2.2" fontFamily="monospace" fontWeight="bold" fill="#1e3a8a">
                       [BACK ASSEMBLY: SCYE MATCH]
                     </text>
-                    <text x="65" y="-2" fontSize="1.6" fontFamily="monospace" fill="#52525b">
-                      Ease: +{assemblyResult.ease.backEaseCm.toFixed(2)} cm {assemblyResult.ease.frontEaseRatio !== null ? `(${((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)` : ''}
+                    <text x={Math.round(assemblyResult.inspectionLayout.backAssembly.bodice.translation.x + 5)} y="-2" fontSize="1.6" fontFamily="monospace" fill="#52525b">
+                      Ease: {formatSignedCm(assemblyResult.ease.backEaseCm)} {assemblyResult.ease.frontEaseRatio !== null ? `(${((1 - assemblyResult.ease.frontEaseRatio) * 100).toFixed(0)}%)` : '(N/A)'}
                     </text>
                   </g>
                 </g>
@@ -845,11 +878,11 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 /* Milestone 04.4: Multi-Size Nested Grading Overlay */
                 <g>
                   {/* Legend / Title Header in Canvas */}
-                  <text x="30" y="10" fontSize="11" fontFamily="monospace" fontWeight="bold" fill="#581c87">
+                  <text x="30" y="6" fontSize="11" fontFamily="monospace" fontWeight="bold" fill="#581c87">
                     NESTED PATTERN GRADING OVERLAY — 6 CONCURRENT SIZES (XS–XXL)
                   </text>
-                  <text x="30" y="24" fontSize="8" fontFamily="monospace" fill="#71717a">
-                    FRONT BODICE (X: 30) | BACK BODICE (X: 230) | SLEEVE BLOCK (X: 430) | BASE SIZE: {gradedPatternSet.baseSize}
+                  <text x="30" y="20" fontSize="8" fontFamily="monospace" fill="#71717a">
+                    FRONT BODICE (X: 30) | BACK BODICE (X: 215) | SLEEVE BLOCK (X: 465) | BASE SIZE: {gradedPatternSet.baseSize}
                   </text>
 
                   {/* Render nested layers for each enabled size in order */}
@@ -867,7 +900,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                       <g key={sz} id={`nest-layer-${sz}`}>
                         {/* Front Bodice Nested Layer */}
                         {fPiece && (
-                          <g transform="translate(30, 40) scale(4.5)">
+                          <g transform="translate(30, 38) scale(4.2)">
                             <path
                               d={fPiece.cutPathData}
                               fill={isBase ? '#FAF8F5' : 'none'}
@@ -924,7 +957,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
                         {/* Back Bodice Nested Layer */}
                         {bPiece && (
-                          <g transform="translate(230, 40) scale(4.5)">
+                          <g transform="translate(215, 38) scale(4.2)">
                             <path
                               d={bPiece.cutPathData}
                               fill={isBase ? '#FAF8F5' : 'none'}
@@ -958,7 +991,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
                         {/* Sleeve Block Nested Layer */}
                         {sPiece && (
-                          <g transform="translate(430, 40) scale(4.5)">
+                          <g transform="translate(465, 38) scale(4.2)">
                             <path
                               d={sPiece.cutPathData}
                               fill={isBase ? '#FAF8F5' : 'none'}
@@ -1345,7 +1378,19 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
         {/* Right Column: Piece Geometry Inspector & Deterministic Validation HUD */}
         <div className="lg:col-span-4 space-y-6">
-          {cadViewMode === 'grading' ? (
+          {cadViewMode === 'assembly' ? (
+            <AssemblyInspectionPanel
+              assemblyResult={assemblyResult}
+              assemblyError={assemblyError}
+              scenario={assemblyScenario}
+              onChangeScenario={setAssemblyScenario}
+              requireApprovedGovernance={requireApprovedGovernance}
+              onToggleRequireApprovedGovernance={setRequireApprovedGovernance}
+              strictUncertaintyGate={strictUncertaintyGate}
+              onToggleStrictUncertaintyGate={setStrictUncertaintyGate}
+              onNavigateToMeasurements={onNavigateToMeasurements}
+            />
+          ) : cadViewMode === 'grading' ? (
             /* Milestone 04.4: Cross-Size Grading Inspector & Integrity Card */
             <div className="space-y-6">
               {/* Grading Suite Summary Card */}
@@ -1410,7 +1455,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                             )}
                           </div>
                           <span className="text-[10px] text-neutral-500 block">
-                            Bust: {szRes?.measurements.bust}cm | Ease: +{totalEase ? totalEase.toFixed(2) : '0.00'}cm
+                            Bust: {szRes?.measurements.bust}cm | Ease: {totalEase !== undefined ? formatSignedCm(totalEase) : '0.00 cm'}
                           </span>
                         </div>
                         <Badge
@@ -1486,9 +1531,23 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                       </li>
                     ))}
                   </ul>
-                  <div className="pt-2 border-t border-stone-200 text-amber-800 font-mono font-bold text-[10px] uppercase">
-                    Safety Invariant: isProductionReady = false
+                  <div className="pt-2 border-t border-stone-200 text-amber-800 font-mono font-bold text-[10px] uppercase flex items-center justify-between">
+                    <span>Safety Invariant: isProductionReady = false</span>
+                    <span>{gradedPatternSet.canonicalJsonByteLength ?? 0} B</span>
                   </div>
+                  {gradedPatternSet.canonicalContentDigest && (
+                    <div className="pt-2 border-t border-stone-200 space-y-1">
+                      <span className="text-[9px] font-mono uppercase text-neutral-500 block">
+                        Grading Report SHA-256 Digest:
+                      </span>
+                      <code
+                        data-testid="grading-canonical-digest"
+                        className="block break-all text-[10px] font-mono text-purple-900 bg-purple-50 border border-purple-200 rounded p-1.5"
+                      >
+                        {gradedPatternSet.canonicalContentDigest}
+                      </code>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

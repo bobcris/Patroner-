@@ -149,6 +149,8 @@ export default function App() {
             currentSpec={currentSpec}
             measurements={measurements}
             activeSize={activeSize}
+            measurementProvenance={measurementProvenance}
+            measurementApprovalState={measurementApprovalState}
             onNavigateToProduction={() => setActiveTab('production')}
             onNavigateToMeasurements={() => setActiveTab('measurements')}
           />
