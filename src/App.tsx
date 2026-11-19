@@ -154,6 +154,7 @@ export default function App() {
             measurementProvenanceEvidence={measurementProvenanceEvidence}
             onNavigateToProduction={() => setActiveTab('production')}
             onNavigateToMeasurements={() => setActiveTab('measurements')}
+            onUpdateSpec={setCurrentSpec}
           />
         )}
 

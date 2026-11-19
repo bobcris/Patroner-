@@ -19,6 +19,7 @@ import type {
 } from '../../engine/production';
 import { buildM05ProductionPackage } from '../../engine/production';
 import { ProductionPackagePanel, ProductionBomControlState } from '../production/ProductionPackagePanel';
+import { SimulationFitPanel } from '../simulation/SimulationFitPanel';
 import { AssemblyInspectionPanel, AssemblyScenarioMode } from './AssemblyInspectionPanel';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -65,6 +66,7 @@ interface PatternWorkspaceProps {
   measurementProvenanceEvidence?: MeasurementProvenanceEvidence;
   onNavigateToProduction: () => void;
   onNavigateToMeasurements: () => void;
+  onUpdateSpec?: (nextSpec: DesignSpecification) => void;
 }
 
 export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
@@ -75,7 +77,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   measurementApprovalState = 'unverified',
   measurementProvenanceEvidence,
   onNavigateToProduction,
-  onNavigateToMeasurements
+  onNavigateToMeasurements,
+  onUpdateSpec
 }) => {
   // Dart style configuration for bodice
   const [bodiceDartStyle, setBodiceDartStyle] = useState<BodiceDartStyle>(
@@ -98,7 +101,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   // Canvas zoom & pan state
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit' | 'production'>('pieces');
+  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation' | 'production'>('pieces');
   const [bomControls, setBomControls] = useState<ProductionBomControlState>({
     fabricRollWidthCm: 140,
     markerWasteFactor: 0.18,
@@ -247,9 +250,10 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) || pieces[0];
 
-  const effectiveViewMode: 'pieces' | 'assembly' | 'grading' | 'fit' | 'production' =
+  const effectiveViewMode: 'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation' | 'production' =
     currentSpec.garmentCategory !== 'bodice' &&
     cadViewMode !== 'pieces' &&
+    cadViewMode !== 'simulation' &&
     cadViewMode !== 'production'
       ? 'pieces'
       : cadViewMode;
@@ -521,6 +525,18 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               </>
             )}
             <button
+              onClick={() => setCadViewMode('simulation')}
+              data-testid="cad-view-mode-simulation"
+              className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                effectiveViewMode === 'simulation'
+                  ? 'bg-neutral-900 text-white shadow-2xs'
+                  : 'text-neutral-700 hover:text-neutral-900'
+              }`}
+            >
+              <span>3D Fit &amp; Optimization (M 06)</span>
+              <Badge variant="neutral" size="sm">AC-08</Badge>
+            </button>
+            <button
               onClick={() => setCadViewMode('production')}
               data-testid="cad-view-mode-production"
               className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
@@ -541,7 +557,9 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
         </div>
 
         <div className="text-[11px] font-mono text-neutral-500">
-          {effectiveViewMode === 'production' ? (
+          {effectiveViewMode === 'simulation' ? (
+            <span className="text-neutral-900 font-bold">M06 3D EQUILIBRIUM DRAPE, FIT &amp; BOUNDED OPTIMIZATION</span>
+          ) : effectiveViewMode === 'production' ? (
             <span className="text-emerald-900 font-bold">M05 BOM, DOCS, DXF-AAMA &amp; 10-GATE VALIDATION</span>
           ) : effectiveViewMode === 'assembly' ? (
             <span className="text-blue-900 font-bold">2D RIGID ALIGNMENT AT SCYE JUNCTIONS</span>
@@ -555,7 +573,21 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
         </div>
       </div>
 
-      {effectiveViewMode === 'production' ? (
+      {effectiveViewMode === 'simulation' ? (
+        <SimulationFitPanel
+          currentSpec={currentSpec}
+          measurements={measurements}
+          pieces={pieces}
+          bodiceDartStyle={bodiceDartStyle}
+          sleeveEaseStrategy={sleeveEaseStrategy}
+          onApplyOptimizationProposal={proposal => {
+            if (proposal.proposedDesignSpec.sleeveEaseStrategy) {
+              setSleeveEaseStrategy(proposal.proposedDesignSpec.sleeveEaseStrategy);
+            }
+            onUpdateSpec?.(proposal.proposedDesignSpec);
+          }}
+        />
+      ) : effectiveViewMode === 'production' ? (
         <ProductionPackagePanel
           bundle={m05Package}
           bomControls={bomControls}
