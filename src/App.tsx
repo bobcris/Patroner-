@@ -22,9 +22,10 @@ import { PatternWorkspace } from './features/pattern-workspace/PatternWorkspace'
 import { ProductionOverview } from './features/production/ProductionOverview';
 
 import {
-  AuthoritativeProductionWorkspaceBundle,
   buildAuthoritativeProductionWorkspaceBundle,
   DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
+  executeGuardedBaselineCommit,
+  extractRevisionBaselineFromBundle,
   MeasurementApprovalStatus,
   MeasurementOrigin,
   MeasurementProvenanceEvidence,
@@ -33,22 +34,6 @@ import {
   ProductionWorkspaceBomControls,
   transitionMeasurementProvenance
 } from './engine/production';
-
-function extractRevisionBaseline(
-  bundle: AuthoritativeProductionWorkspaceBundle
-): PreviousPackageRevisionInput | undefined {
-  if (!bundle.isCadSupported || !bundle.m05Package) return undefined;
-  const tracking = bundle.m05Package.upstreamRevisionTracking;
-  return {
-    sourceSpecificationFingerprint: tracking.sourceSpecificationFingerprint,
-    sourceMeasurementFingerprint: tracking.sourceMeasurementFingerprint,
-    basePatternFingerprint: tracking.basePatternFingerprint ?? undefined,
-    patternRevisionId: tracking.patternRevisionId,
-    gradingControlsFingerprint: tracking.gradingControlsFingerprint,
-    gradingReportSha256Hex: tracking.gradingReportSha256Hex,
-    bomFingerprint: tracking.bomFingerprint
-  };
-}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('studio');
@@ -139,10 +124,10 @@ export default function App() {
     ]
   );
 
-  // Capture initial committed baseline for a newly visited garment (never overwrites once committed until explicit re-sync)
+  // Capture initial session baseline for a newly visited garment (never overwrites once set until guarded commit/sync)
   useEffect(() => {
     if (committedBaselinesByGarment[currentSpec.id]) return;
-    const baseline = extractRevisionBaseline(workspaceBundle);
+    const baseline = extractRevisionBaselineFromBundle(workspaceBundle);
     if (!baseline) return;
     setCommittedBaselinesByGarment(prev => {
       if (prev[currentSpec.id]) return prev;
@@ -153,13 +138,33 @@ export default function App() {
     });
   }, [currentSpec.id, committedBaselinesByGarment, workspaceBundle]);
 
-  const handleResyncPackageBaseline = () => {
-    const baseline = extractRevisionBaseline(workspaceBundle);
-    if (!baseline) return;
-    setCommittedBaselinesByGarment(prev => ({
-      ...prev,
-      [currentSpec.id]: baseline
-    }));
+  // N-04: Guarded production baseline commit — strictly refuses failing or unapproved packages
+  const handleCommitProductionBaseline = () => {
+    executeGuardedBaselineCommit({
+      workspaceBundle,
+      mode: 'production-baseline',
+      onCommit: baseline => {
+        setCommittedBaselinesByGarment(prev => ({
+          ...prev,
+          [currentSpec.id]: baseline
+        }));
+      }
+    });
+  };
+
+  // N-04: Guarded working-draft snapshot sync — strictly refuses any non-staleness validation failures
+  // and never clears or bypasses approval/export prerequisites
+  const handleSyncWorkingDraftSnapshot = () => {
+    executeGuardedBaselineCommit({
+      workspaceBundle,
+      mode: 'working-draft-diagnostic',
+      onCommit: baseline => {
+        setCommittedBaselinesByGarment(prev => ({
+          ...prev,
+          [currentSpec.id]: baseline
+        }));
+      }
+    });
   };
 
   const { isCadSupported, approvalVerification, draftValidation, pipelineReport } = workspaceBundle;
@@ -281,7 +286,8 @@ export default function App() {
               onToggleStrictUncertaintyGate={setStrictUncertaintyGate}
               requireApprovedGovernance={requireApprovedGovernance}
               onToggleRequireApprovedGovernance={setRequireApprovedGovernance}
-              onResyncPackageBaseline={handleResyncPackageBaseline}
+              onCommitProductionBaseline={handleCommitProductionBaseline}
+              onSyncWorkingDraftSnapshot={handleSyncWorkingDraftSnapshot}
               onNavigateToProduction={() => setActiveTab('production')}
               onNavigateToMeasurements={() => setActiveTab('measurements')}
               onUpdateSpec={handleUpdateSpec}
@@ -299,7 +305,8 @@ export default function App() {
               workspaceBundle={workspaceBundle}
               bomControls={bomControls}
               onChangeBomControls={setBomControls}
-              onResyncPackageBaseline={handleResyncPackageBaseline}
+              onCommitProductionBaseline={handleCommitProductionBaseline}
+              onSyncWorkingDraftSnapshot={handleSyncWorkingDraftSnapshot}
               onNavigateToCAD={() => setActiveTab('pattern-cad')}
             />
           )}

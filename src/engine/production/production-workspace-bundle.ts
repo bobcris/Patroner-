@@ -57,7 +57,11 @@ import {
 import {
   validateProductionExportPrerequisites
 } from './dependency-invalidation';
-import { buildM05ProductionPackage } from './production-engineering';
+import {
+  buildCanonicalProductionPackagePayload,
+  buildM05ProductionPackage,
+  serializeDeterministicProductionBundle
+} from './production-engineering';
 import { M05ProductionPackageBundle } from './production-engineering-types';
 import {
   AuthoritativeGradingArtifact,
@@ -177,6 +181,449 @@ export function resolveCategoryGradingPolicy(
   };
 }
 
+/**
+ * N-05: Category-isolated circumference ease girth rows for Module 05 Ease Allocation Matrix.
+ * Bodice garments evaluate Bust, Waist, and Low Hip; Skirt garments strictly evaluate Waist
+ * and Low Hip only (never leaking upper-body Bust Circumference rows into Skirt views).
+ */
+export type ApplicableEaseGirthKey = 'bust' | 'waist' | 'lowHip';
+
+export function getApplicableEaseGirthsForCategory(
+  garmentCategory: GarmentCategory
+): readonly ApplicableEaseGirthKey[] {
+  if (garmentCategory === 'bodice') {
+    return ['bust', 'waist', 'lowHip'];
+  }
+  return ['waist', 'lowHip'];
+}
+
+export interface ProductionPackageExportGateResult {
+  readonly canExportDxfRelease: boolean;
+  readonly canExportCanonicalReleaseJson: boolean;
+  readonly canExportDiagnosticSnapshot: boolean;
+  readonly dxfBlockingReasons: readonly string[];
+  readonly canonicalJsonBlockingReasons: readonly string[];
+  readonly rejectionCode: string | null;
+  readonly summaryReason: string | null;
+}
+
+export interface GuardedExportExecutionResult {
+  readonly permitted: boolean;
+  readonly filename?: string;
+  readonly payloadText?: string;
+  readonly rejectionCode: string | null;
+  readonly blockingReasons: readonly string[];
+}
+
+export interface DiagnosticNonReleaseJsonArtifact {
+  readonly filename: string;
+  readonly payloadText: string;
+  readonly artifactClass: 'DIAGNOSTIC_NON_RELEASE_SNAPSHOT';
+  readonly isApprovedProductionArtifact: false;
+  readonly releaseExportPermitted: boolean;
+}
+
+export interface BaselineCommitEligibilityResult {
+  readonly canCommitProductionBaseline: boolean;
+  readonly canSyncWorkingDraftSnapshot: boolean;
+  readonly hasNonStalenessValidationFailures: boolean;
+  readonly productionBaselineBlockingReasons: readonly string[];
+  readonly workingDraftBlockingReasons: readonly string[];
+}
+
+export type BaselineCommitMode = 'production-baseline' | 'working-draft-diagnostic';
+
+export interface GuardedBaselineCommitResult {
+  readonly committed: boolean;
+  readonly mode: BaselineCommitMode;
+  readonly baseline?: PreviousPackageRevisionInput;
+  readonly rejectionCode: string | null;
+  readonly blockingReasons: readonly string[];
+}
+
+/**
+ * N-04: Authoritative fail-closed production release export gate evaluator.
+ * Enforces staleness, 10-gate M05 validation, grading artifact integrity,
+ * pipeline/revision export validation, and DXF round-trip & revision binding.
+ */
+export function evaluateProductionPackageExportGate(params: {
+  readonly bundle: M05ProductionPackageBundle | null;
+  readonly exportValidation: ProductionExportValidationResult | null | undefined;
+}): ProductionPackageExportGateResult {
+  const { bundle, exportValidation } = params;
+  if (!bundle) {
+    const reason = 'Production package bundle is unavailable for this garment category.';
+    return {
+      canExportDxfRelease: false,
+      canExportCanonicalReleaseJson: false,
+      canExportDiagnosticSnapshot: false,
+      dxfBlockingReasons: [reason],
+      canonicalJsonBlockingReasons: [reason],
+      rejectionCode: 'PACKAGE_UNAVAILABLE',
+      summaryReason: reason
+    };
+  }
+
+  const sharedBlockingReasons: string[] = [];
+  let firstCode: string | null = null;
+  const addShared = (code: string, reason: string) => {
+    if (!firstCode) firstCode = code;
+    sharedBlockingReasons.push(reason);
+  };
+
+  if (bundle.upstreamRevisionTracking.isStaleAgainstPrevious) {
+    addShared(
+      'UPSTREAM_STAGE_STALE',
+      bundle.upstreamRevisionTracking.staleReasons[0] ??
+        'Production package is stale relative to upstream baseline.'
+    );
+  }
+
+  if (!bundle.validation.isValid || bundle.validation.failedCount > 0) {
+    const failingSummary =
+      bundle.validation.blockingErrors.length > 0
+        ? bundle.validation.blockingErrors.join(' | ')
+        : `${bundle.validation.failedCount} blocking validation gate(s) failed.`;
+    addShared('M05_VALIDATION_FAILED', `M05 validation failed: ${failingSummary}`);
+  }
+
+  if (bundle.gradingArtifactError !== null) {
+    addShared(
+      'GRADING_VALIDATION_FAILED',
+      `Authoritative grading artifact failed: ${bundle.gradingArtifactError}`
+    );
+  }
+
+  if (!exportValidation) {
+    addShared(
+      'EXPORT_VALIDATION_MISSING',
+      'Authoritative pipeline export validation context is missing (fail-closed).'
+    );
+  } else if (!exportValidation.isExportPermitted) {
+    addShared(
+      exportValidation.rejectionCode ?? 'EXPORT_NOT_PERMITTED',
+      `[${exportValidation.rejectionCode ?? 'EXPORT_NOT_PERMITTED'}] ${exportValidation.rejectionReason}`
+    );
+  }
+
+  const dxfBlockingReasons = [...sharedBlockingReasons];
+  let dxfCode: string | null = firstCode;
+  const addDxf = (code: string, reason: string) => {
+    if (!dxfCode) dxfCode = code;
+    dxfBlockingReasons.push(reason);
+  };
+
+  if (!bundle.dxfExport) {
+    addDxf('DXF_ARTIFACT_MISSING', 'DXF-AAMA export artifact is unavailable.');
+  } else {
+    if (!bundle.dxfExport.roundTrip.allPassed) {
+      addDxf(
+        'DXF_ROUND_TRIP_FAILED',
+        'DXF-AAMA synthetic round-trip verification failed.'
+      );
+    }
+    if (!bundle.patternRevision) {
+      addDxf(
+        'DXF_REVISION_MISSING',
+        'Authoritative pattern revision is missing for DXF lineage verification.'
+      );
+    } else {
+      if (bundle.dxfExport.artifact.sourceRevisionId !== bundle.patternRevision.revisionId) {
+        addDxf(
+          'DXF_REVISION_MISMATCH',
+          `DXF source revision '${bundle.dxfExport.artifact.sourceRevisionId}' does not match active pattern revision '${bundle.patternRevision.revisionId}'.`
+        );
+      }
+      if (
+        bundle.dxfExport.artifact.sourceContentFingerprint &&
+        bundle.dxfExport.artifact.sourceContentFingerprint !==
+          bundle.patternRevision.basePatternFingerprint
+      ) {
+        addDxf(
+          'DXF_FINGERPRINT_MISMATCH',
+          'DXF source content fingerprint does not match active base pattern geometry fingerprint.'
+        );
+      }
+    }
+  }
+
+  const canExportCanonicalReleaseJson = sharedBlockingReasons.length === 0;
+  const canExportDxfRelease = dxfBlockingReasons.length === 0;
+  const rejectionCode = canExportDxfRelease ? null : (dxfCode ?? firstCode ?? 'EXPORT_BLOCKED');
+  const summaryReason =
+    dxfBlockingReasons[0] ?? sharedBlockingReasons[0] ?? null;
+
+  return {
+    canExportDxfRelease,
+    canExportCanonicalReleaseJson,
+    canExportDiagnosticSnapshot: true,
+    dxfBlockingReasons,
+    canonicalJsonBlockingReasons: sharedBlockingReasons,
+    rejectionCode,
+    summaryReason
+  };
+}
+
+/**
+ * N-04: Direct-handler enforced DXF-AAMA release export executor.
+ * Never relies solely on UI disabled state; blocks emission directly whenever any gate fails.
+ */
+export function executeGuardedDxfReleaseExport(params: {
+  readonly bundle: M05ProductionPackageBundle | null;
+  readonly exportValidation: ProductionExportValidationResult | null | undefined;
+  readonly onEmit?: (payloadText: string, filename: string) => void;
+}): GuardedExportExecutionResult {
+  const gate = evaluateProductionPackageExportGate({
+    bundle: params.bundle,
+    exportValidation: params.exportValidation
+  });
+  if (!gate.canExportDxfRelease || !params.bundle?.dxfExport) {
+    return {
+      permitted: false,
+      rejectionCode: gate.rejectionCode ?? 'EXPORT_BLOCKED',
+      blockingReasons: gate.dxfBlockingReasons
+    };
+  }
+  const filename = `${params.bundle.dxfExport.artifact.exportId}.dxf`;
+  const payloadText = params.bundle.dxfExport.artifact.dxfText;
+  params.onEmit?.(payloadText, filename);
+  return {
+    permitted: true,
+    filename,
+    payloadText,
+    rejectionCode: null,
+    blockingReasons: []
+  };
+}
+
+/**
+ * N-04: Direct-handler enforced Canonical Production Release JSON export executor.
+ * Refuses emission whenever staleness, validation, grading, or export prerequisites block release.
+ */
+export function executeGuardedCanonicalReleaseJsonExport(params: {
+  readonly bundle: M05ProductionPackageBundle | null;
+  readonly exportValidation: ProductionExportValidationResult | null | undefined;
+  readonly onEmit?: (payloadText: string, filename: string) => void;
+}): GuardedExportExecutionResult {
+  const gate = evaluateProductionPackageExportGate({
+    bundle: params.bundle,
+    exportValidation: params.exportValidation
+  });
+  if (!gate.canExportCanonicalReleaseJson || !params.bundle) {
+    return {
+      permitted: false,
+      rejectionCode: gate.rejectionCode ?? 'EXPORT_BLOCKED',
+      blockingReasons: gate.canonicalJsonBlockingReasons
+    };
+  }
+  const filename = `${params.bundle.packageId}-${params.bundle.activeSize}.canonical.json`;
+  const payloadText = serializeDeterministicProductionBundle(params.bundle);
+  params.onEmit?.(payloadText, filename);
+  return {
+    permitted: true,
+    filename,
+    payloadText,
+    rejectionCode: null,
+    blockingReasons: []
+  };
+}
+
+/**
+ * N-04: Builds a clearly labeled Non-Release Diagnostic Snapshot JSON for debugging/auditing
+ * blocked or unapproved packages without misrepresenting them as production release artifacts.
+ */
+export function buildDiagnosticProductionPackageJson(
+  bundle: M05ProductionPackageBundle,
+  exportValidation: ProductionExportValidationResult | null | undefined
+): DiagnosticNonReleaseJsonArtifact {
+  const gate = evaluateProductionPackageExportGate({ bundle, exportValidation });
+  const diagnosticEnvelope = {
+    artifactClass: 'DIAGNOSTIC_NON_RELEASE_SNAPSHOT' as const,
+    isApprovedProductionArtifact: false as const,
+    isProductionReady: false as const,
+    releaseExportPermitted: gate.canExportCanonicalReleaseJson,
+    releaseRejectionCode: gate.rejectionCode,
+    releaseBlockingReasons: gate.canonicalJsonBlockingReasons,
+    canonicalContentDigest: bundle.canonicalContentDigest,
+    engineeringContentDigest: bundle.engineeringContentDigest,
+    packagePayload: buildCanonicalProductionPackagePayload(bundle)
+  };
+  return {
+    filename: `${bundle.packageId}-${bundle.activeSize}.diagnostic-non-release.json`,
+    payloadText: JSON.stringify(diagnosticEnvelope, null, 2),
+    artifactClass: 'DIAGNOSTIC_NON_RELEASE_SNAPSHOT',
+    isApprovedProductionArtifact: false,
+    releaseExportPermitted: gate.canExportCanonicalReleaseJson
+  };
+}
+
+/**
+ * N-04: Evaluates whether a workspace bundle is eligible to commit as an approved production
+ * baseline vs synchronized only as a non-approved local working-draft snapshot.
+ *
+ * Critical safety guarantees:
+ * - A package with ANY non-staleness validation failure (e.g., Gate 6 XXL failure, invalid
+ *   geometry, invalid grading, invalid BOM, missing/invalidated revision) can NEVER commit a
+ *   production baseline AND can NEVER sync a working-draft snapshot.
+ * - An unapproved package (`PATTERN_REVISION_NOT_APPROVED`, unapproved measurements, etc.)
+ *   can NEVER commit a production baseline (`canCommitProductionBaseline: false`).
+ * - Syncing a working-draft snapshot NEVER satisfies approval gates and can NEVER turn a
+ *   blocked package into an exportable release artifact.
+ */
+export function evaluateBaselineCommitEligibility(params: {
+  readonly isCadSupported: boolean;
+  readonly draftValidation: ValidationReport;
+  readonly m05Package: M05ProductionPackageBundle | null;
+  readonly rawExportValidation: ProductionExportValidationResult;
+}): BaselineCommitEligibilityResult {
+  const { isCadSupported, draftValidation, m05Package, rawExportValidation } = params;
+  const workingDraftBlockingReasons: string[] = [];
+
+  if (!isCadSupported || !m05Package) {
+    workingDraftBlockingReasons.push(
+      'Garment category is unsupported or M05 production package is unavailable.'
+    );
+  } else {
+    if (!draftValidation.isValid || draftValidation.failureCount > 0) {
+      workingDraftBlockingReasons.push(
+        `Draft pattern geometry validation failed (${draftValidation.failureCount} failure(s)).`
+      );
+    }
+
+    if (m05Package.gradingArtifactError !== null) {
+      workingDraftBlockingReasons.push(
+        `Authoritative grading artifact failed: ${m05Package.gradingArtifactError}`
+      );
+    }
+
+    if (!m05Package.bom || m05Package.bom.lineItems.length === 0) {
+      workingDraftBlockingReasons.push('Bill of Materials (BOM) is empty or invalid.');
+    }
+
+    if (
+      !m05Package.patternRevision ||
+      !m05Package.patternRevision.revisionId.trim() ||
+      m05Package.patternRevision.currentLifecycleState === 'invalidated' ||
+      m05Package.patternRevision.currentLifecycleState === 'superseded'
+    ) {
+      workingDraftBlockingReasons.push(
+        'Authoritative pattern revision is missing, invalidated, or superseded.'
+      );
+    }
+
+    if (!m05Package.sheetSet || !m05Package.sheetSet.validation.isValid) {
+      workingDraftBlockingReasons.push(
+        'Authoritative piece production sheet set is missing or invalid.'
+      );
+    }
+
+    for (const diag of m05Package.validation.diagnostics) {
+      if (diag.status !== 'fail') continue;
+      if (diag.checkId === 'invalid-or-stale-revision') {
+        // Gate 10 failure NOT caused purely by staleness against previous baseline (e.g., gradingBoundaryErrors)
+        if (!m05Package.upstreamRevisionTracking.isStaleAgainstPrevious) {
+          workingDraftBlockingReasons.push(`[${diag.checkId}] ${diag.message}`);
+        }
+        continue;
+      }
+      workingDraftBlockingReasons.push(`[${diag.checkId}] ${diag.message}`);
+    }
+  }
+
+  const hasNonStalenessValidationFailures = workingDraftBlockingReasons.length > 0;
+  const productionBaselineBlockingReasons = [...workingDraftBlockingReasons];
+
+  if (!rawExportValidation.isExportPermitted) {
+    productionBaselineBlockingReasons.push(
+      `[${rawExportValidation.rejectionCode ?? 'EXPORT_NOT_PERMITTED'}] ${rawExportValidation.rejectionReason}`
+    );
+  }
+
+  return {
+    canCommitProductionBaseline:
+      productionBaselineBlockingReasons.length === 0 && rawExportValidation.isExportPermitted,
+    canSyncWorkingDraftSnapshot: !hasNonStalenessValidationFailures,
+    hasNonStalenessValidationFailures,
+    productionBaselineBlockingReasons,
+    workingDraftBlockingReasons
+  };
+}
+
+/**
+ * Extracts deterministic upstream revision fingerprints for baseline synchronization.
+ */
+export function extractRevisionBaselineFromBundle(
+  bundle: AuthoritativeProductionWorkspaceBundle
+): PreviousPackageRevisionInput | undefined {
+  if (!bundle.isCadSupported || !bundle.m05Package) return undefined;
+  const tracking = bundle.m05Package.upstreamRevisionTracking;
+  return {
+    sourceSpecificationFingerprint: tracking.sourceSpecificationFingerprint,
+    sourceMeasurementFingerprint: tracking.sourceMeasurementFingerprint,
+    basePatternFingerprint: tracking.basePatternFingerprint ?? undefined,
+    patternRevisionId: tracking.patternRevisionId,
+    gradingControlsFingerprint: tracking.gradingControlsFingerprint,
+    gradingReportSha256Hex: tracking.gradingReportSha256Hex,
+    bomFingerprint: tracking.bomFingerprint
+  };
+}
+
+/**
+ * N-04: Direct-handler enforced baseline commit / working-draft snapshot executor.
+ * Re-evaluates eligibility fail-closed before committing state so direct handler invocation
+ * cannot bypass UI disabled states or commit failing/unapproved packages as production baselines.
+ */
+export function executeGuardedBaselineCommit(params: {
+  readonly workspaceBundle: AuthoritativeProductionWorkspaceBundle;
+  readonly mode: BaselineCommitMode;
+  readonly onCommit?: (baseline: PreviousPackageRevisionInput) => void;
+}): GuardedBaselineCommitResult {
+  const { workspaceBundle, mode, onCommit } = params;
+  const eligibility = evaluateBaselineCommitEligibility({
+    isCadSupported: workspaceBundle.isCadSupported,
+    draftValidation: workspaceBundle.draftValidation,
+    m05Package: workspaceBundle.m05Package,
+    rawExportValidation: workspaceBundle.rawExportValidation
+  });
+
+  if (mode === 'production-baseline' && !eligibility.canCommitProductionBaseline) {
+    return {
+      committed: false,
+      mode,
+      rejectionCode: 'BASELINE_COMMIT_BLOCKED',
+      blockingReasons: eligibility.productionBaselineBlockingReasons
+    };
+  }
+
+  if (mode === 'working-draft-diagnostic' && !eligibility.canSyncWorkingDraftSnapshot) {
+    return {
+      committed: false,
+      mode,
+      rejectionCode: 'WORKING_DRAFT_SYNC_BLOCKED',
+      blockingReasons: eligibility.workingDraftBlockingReasons
+    };
+  }
+
+  const baseline = extractRevisionBaselineFromBundle(workspaceBundle);
+  if (!baseline) {
+    return {
+      committed: false,
+      mode,
+      rejectionCode: 'BASELINE_UNAVAILABLE',
+      blockingReasons: ['Authoritative package baseline cannot be extracted.']
+    };
+  }
+
+  onCommit?.(baseline);
+  return {
+    committed: true,
+    mode,
+    baseline,
+    rejectionCode: null,
+    blockingReasons: []
+  };
+}
+
 export interface PreviousPackageRevisionInput {
   readonly sourceSpecificationFingerprint?: string;
   readonly sourceMeasurementFingerprint?: string;
@@ -234,7 +681,11 @@ export interface AuthoritativeProductionWorkspaceBundle {
   readonly safePipeline: SafeWorkspacePipelineResult;
   readonly approvalVerification: SafeSpecificationApprovalResult;
   readonly pipelineReport: PipelineIntegrityReport;
+  /** Export validation BEFORE staleness overlay — used to verify whether baseline commit is eligible. */
+  readonly rawExportValidation: ProductionExportValidationResult;
   readonly exportValidation: ProductionExportValidationResult;
+  readonly exportGate: ProductionPackageExportGateResult;
+  readonly baselineEligibility: BaselineCommitEligibilityResult;
   readonly upstreamStaleness: WorkspaceUpstreamStalenessSummary;
   readonly isProductionReady: false;
   readonly externalCadInteroperabilityVerified: false;
@@ -353,6 +804,17 @@ export function buildAuthoritativeProductionWorkspaceBundle(
       rejectionReason: unsupportedReason
     };
 
+    const exportGate = evaluateProductionPackageExportGate({
+      bundle: null,
+      exportValidation
+    });
+    const baselineEligibility = evaluateBaselineCommitEligibility({
+      isCadSupported: false,
+      draftValidation: safePipeline.validation,
+      m05Package: null,
+      rawExportValidation: exportValidation
+    });
+
     return {
       inputSignature,
       projectId,
@@ -376,7 +838,10 @@ export function buildAuthoritativeProductionWorkspaceBundle(
       safePipeline,
       approvalVerification: safePipeline.approvalVerification,
       pipelineReport: safePipeline.pipelineReport,
+      rawExportValidation: exportValidation,
       exportValidation,
+      exportGate,
+      baselineEligibility,
       upstreamStaleness: {
         isStaleAgainstPrevious: false,
         staleReasons: [],
@@ -551,6 +1016,18 @@ export function buildAuthoritativeProductionWorkspaceBundle(
         }
       : rawExportValidation;
 
+  const exportGate = evaluateProductionPackageExportGate({
+    bundle: m05Package,
+    exportValidation
+  });
+
+  const baselineEligibility = evaluateBaselineCommitEligibility({
+    isCadSupported: true,
+    draftValidation,
+    m05Package,
+    rawExportValidation
+  });
+
   return {
     inputSignature,
     projectId,
@@ -573,7 +1050,10 @@ export function buildAuthoritativeProductionWorkspaceBundle(
     safePipeline,
     approvalVerification: safePipeline.approvalVerification,
     pipelineReport: safePipeline.pipelineReport,
+    rawExportValidation,
     exportValidation,
+    exportGate,
+    baselineEligibility,
     upstreamStaleness: {
       isStaleAgainstPrevious: m05Package.upstreamRevisionTracking.isStaleAgainstPrevious,
       staleReasons: m05Package.upstreamRevisionTracking.staleReasons,

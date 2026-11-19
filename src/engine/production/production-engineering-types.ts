@@ -337,7 +337,19 @@ export interface M05ProductionPackageBundle {
     readonly fabricName: string;
     readonly fabricProvenance: string;
   };
+  /**
+   * Provenance- and validation-inclusive FIPS 180-4 SHA-256 digest of the complete production package.
+   * Intentionally includes `validation` diagnostics and `upstreamRevisionTracking` (including staleness state),
+   * so identical engineering inputs evaluated under different upstream revision/staleness histories produce
+   * distinct `canonicalContentDigest` values.
+   */
   readonly canonicalContentDigest: string;
+  /**
+   * Pure deterministic engineering-content FIPS 180-4 SHA-256 digest excluding session-relative staleness
+   * flags (`isStaleAgainstPrevious`, `staleReasons`) and validation-state wrappers. Identical engineering
+   * inputs produce bit-identical `engineeringContentDigest` values regardless of upstream baseline history.
+   */
+  readonly engineeringContentDigest: string;
   readonly reportSha256Hex: string;
   readonly canonicalJsonByteLength: number;
   readonly isProductionReady: false;

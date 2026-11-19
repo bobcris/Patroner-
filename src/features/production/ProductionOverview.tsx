@@ -31,6 +31,7 @@ import {
   AuthoritativeProductionWorkspaceBundle,
   buildAuthoritativeProductionWorkspaceBundle,
   DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
+  getApplicableEaseGirthsForCategory,
   getUnsupportedCategoryMessage,
   MeasurementApprovalStatus,
   MeasurementOrigin,
@@ -49,7 +50,8 @@ interface ProductionOverviewProps {
   workspaceBundle?: AuthoritativeProductionWorkspaceBundle;
   bomControls?: ProductionWorkspaceBomControls;
   onChangeBomControls?: (next: ProductionBomControlState) => void;
-  onResyncPackageBaseline?: () => void;
+  onCommitProductionBaseline?: () => void;
+  onSyncWorkingDraftSnapshot?: () => void;
   onNavigateToCAD: () => void;
 }
 
@@ -63,7 +65,8 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   workspaceBundle: externalBundle,
   bomControls: externalBomControls,
   onChangeBomControls: externalOnChangeBomControls,
-  onResyncPackageBaseline,
+  onCommitProductionBaseline,
+  onSyncWorkingDraftSnapshot,
   onNavigateToCAD
 }) => {
   const [exportWarning, setExportWarning] = React.useState<string | null>(null);
@@ -193,9 +196,9 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   }, [m05Package]);
 
   const handlePrint = () => {
-    if (!liveExportValidation.isExportPermitted) {
+    if (!workspaceBundle.exportGate.canExportCanonicalReleaseJson) {
       setExportWarning(
-        `[${liveExportValidation.rejectionCode ?? 'EXPORT_BLOCKED'}] ${liveExportValidation.rejectionReason}`
+        `[${workspaceBundle.exportGate.rejectionCode ?? 'EXPORT_BLOCKED'}] ${workspaceBundle.exportGate.summaryReason ?? liveExportValidation.rejectionReason}`
       );
       return;
     }
@@ -593,9 +596,12 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       {/* Milestone 05: Authoritative Production Package Panel */}
       <ProductionPackagePanel
         bundle={m05Package}
+        exportValidation={liveExportValidation}
+        baselineEligibility={workspaceBundle.baselineEligibility}
         bomControls={bomControls}
         onChangeBomControls={setBomControls}
-        onResyncPackageBaseline={onResyncPackageBaseline}
+        onCommitProductionBaseline={onCommitProductionBaseline}
+        onSyncWorkingDraftSnapshot={onSyncWorkingDraftSnapshot}
         titleContext="Module 05 Authoritative Production Package"
       />
 
@@ -1206,7 +1212,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
             </span>
           </div>
           <div className="overflow-x-auto border border-neutral-200">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs" data-testid="m05-ease-table">
               <thead className="bg-neutral-900 text-white uppercase text-[10px]">
                 <tr>
                   <th className="py-2 px-3">Girth Measurement</th>
@@ -1221,11 +1227,15 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 text-neutral-800">
-                {(['bust', 'waist', 'lowHip'] as const).map(girth => {
+                {getApplicableEaseGirthsForCategory(currentSpec.garmentCategory).map(girth => {
                   const b = fabricEaseBreakdown[girth];
                   const girthLabel = girth === 'bust' ? 'Bust Circumference' : girth === 'waist' ? 'Waist Circumference' : 'Low Hip Circumference';
                   return (
-                    <tr key={girth} className="hover:bg-neutral-50 transition-colors">
+                    <tr
+                      key={girth}
+                      data-testid={`m05-ease-row-${girth}`}
+                      className="hover:bg-neutral-50 transition-colors"
+                    >
                       <td className="py-2.5 px-3 font-bold text-neutral-900">
                         <div>{girthLabel}</div>
                         {b.isCalculationAvailable && b.isProvisionalCalculation && (

@@ -472,6 +472,7 @@ export interface Ac09ProcessRecord {
   cuttingGrainlineVerified: boolean;
   sewingOperator: string;
   sewnDate: string | null;
+  /** Physical cutting/sewing seam allowance in cm; must be a finite number strictly > 0 before review/approval. */
   seamAllowanceCm: number | null;
   stitchType: string;
   pressingMethod: string;
@@ -481,8 +482,14 @@ export interface Ac09ReviewerDecision {
   decision: 'PENDING' | 'APPROVED_PASS' | 'REJECTED_FAIL';
   reviewerName: string;
   reviewerRole: string;
+  /** Parseable ISO-8601 date (YYYY-MM-DD) or ISO-8601 timestamp string. */
   decidedAt: string | null;
   rationale: string;
+  /**
+   * Client-side unkeyed SHA-256 tamper-evident integrity seal over the canonical review payload.
+   * Detects accidental or partial post-decision mutation; does NOT provide cryptographic reviewer
+   * identity authentication or defense against a local actor recomputing the unkeyed digest.
+   */
   signatureDigest: string | null;
 }
 
@@ -502,6 +509,10 @@ export interface Ac09PhysicalToileRecord {
   workflowState?: Ac09WorkflowState;
   isLocked?: boolean;
   lockedAt?: string | null;
+  /**
+   * Client-side unkeyed SHA-256 tamper-evident snapshot seal over the locked record state.
+   * Detects accidental/partial post-lock tampering; does NOT authenticate reviewer identity.
+   */
   lockedSnapshotDigest?: string | null;
   revisionHistory?: Ac09RevisionSnapshot[];
   toileBlockKey: Ac09ToileBlockKey;
@@ -523,6 +534,10 @@ export interface Ac09PhysicalToileRecord {
   reviewerDecision?: Ac09ReviewerDecision;
   pomCheckpoints: Ac09PomCheckpoint[];
   regionalAgreementChecks: Ac09RegionalIssueCheck[];
+  /**
+   * Non-negative unsigned physical floor-to-hem level differential magnitude in cm.
+   * Required finite value in [0, policy.hemLevelToleranceCm] (default [0, 0.80] cm) for READY_FOR_REVIEW and PASSED.
+   */
   hemLevelPhysicalDeviationCm: number | null;
   seamAlignmentVerified: boolean | null;
   evidenceChecklist: Ac09EvidenceItem[];

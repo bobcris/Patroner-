@@ -98,9 +98,189 @@ export function isValidAc09AttachmentUri(uri: string | undefined | null): boolea
   return true;
 }
 
+const ISO_DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_DATETIME_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|[+-]\d{2}:\d{2})$/;
+
 /**
- * Recomputes arithmetic mean, spread, and combined Type-B + repeat uncertainty
- * strictly from raw independent physical readings.
+ * Validates that an AC-09 date/timestamp value is a parseable, calendar-valid ISO-8601
+ * date (`YYYY-MM-DD`) or ISO-8601 timestamp string.
+ * Rejects empty strings, malformed strings, non-calendar dates (e.g. `2026-02-30`),
+ * Date objects, numbers, and non-finite runtime values.
+ * Note: No artificial timezone or historical chronology bounds are imposed beyond
+ * strict ISO-8601 calendar validity.
+ */
+export function isValidAc09IsoDateOrTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+
+  const dateOnlyMatch = ISO_DATE_ONLY_PATTERN.exec(trimmed);
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]);
+    const day = Number(dateOnlyMatch[3]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+    const dt = new Date(Date.UTC(year, month - 1, day));
+    return (
+      Number.isFinite(dt.getTime()) &&
+      dt.getUTCFullYear() === year &&
+      dt.getUTCMonth() === month - 1 &&
+      dt.getUTCDate() === day
+    );
+  }
+
+  const dtMatch = ISO_DATETIME_PATTERN.exec(trimmed);
+  if (dtMatch) {
+    const year = Number(dtMatch[1]);
+    const month = Number(dtMatch[2]);
+    const day = Number(dtMatch[3]);
+    const hour = Number(dtMatch[4]);
+    const minute = Number(dtMatch[5]);
+    const second = dtMatch[6] !== undefined ? Number(dtMatch[6]) : 0;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+    if (hour > 23 || minute > 59 || second > 59) return false;
+    const calCheck = new Date(Date.UTC(year, month - 1, day));
+    if (
+      calCheck.getUTCFullYear() !== year ||
+      calCheck.getUTCMonth() !== month - 1 ||
+      calCheck.getUTCDate() !== day
+    ) {
+      return false;
+    }
+    const parsedMs = Date.parse(trimmed);
+    return Number.isFinite(parsedMs);
+  }
+
+  return false;
+}
+
+export type Ac09NumericFieldValidation =
+  | { readonly status: 'valid'; readonly value: number }
+  | { readonly status: 'missing'; readonly code: string; readonly message: string }
+  | { readonly status: 'invalid'; readonly code: string; readonly message: string }
+  | { readonly status: 'exceeds_tolerance'; readonly code: string; readonly message: string };
+
+/**
+ * Validates `hemLevelPhysicalDeviationCm` as an unsigned physical deviation magnitude (cm).
+ * Semantics:
+ * - Must be a finite numeric value >= 0 and <= toleranceCm (default 0.80 cm).
+ * - `null` / `undefined` are classified as `missing` (`AC09_MISSING_HEM_DEVIATION`) and block
+ *   both READY_FOR_REVIEW and PASSED across all execution modes.
+ * - Negative values, `NaN`, `Infinity`, `-Infinity`, or non-numbers are classified as `invalid`
+ *   (`AC09_INVALID_HEM_DEVIATION`) and trigger fail-closed FAILED status.
+ * - Finite values > toleranceCm are classified as `exceeds_tolerance`
+ *   (`AC09_HEM_DEVIATION_EXCEEDS_TOLERANCE`) and trigger fail-closed FAILED status.
+ */
+export function validateAc09HemLevelDeviation(
+  value: unknown,
+  toleranceCm: number = AC09_HEM_LEVEL_TOLERANCE_CM
+): Ac09NumericFieldValidation {
+  if (value === null || value === undefined) {
+    return {
+      status: 'missing',
+      code: 'AC09_MISSING_HEM_DEVIATION',
+      message:
+        'AC09_MISSING_HEM_DEVIATION: Physical hem-level deviation magnitude (cm, non-negative) is required before review or approval.'
+    };
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return {
+      status: 'invalid',
+      code: 'AC09_INVALID_HEM_DEVIATION',
+      message: `AC09_INVALID_HEM_DEVIATION: Physical hem-level deviation (${String(value)}) must be a finite non-negative unsigned magnitude in cm (>= 0).`
+    };
+  }
+  if (value > toleranceCm) {
+    return {
+      status: 'exceeds_tolerance',
+      code: 'AC09_HEM_DEVIATION_EXCEEDS_TOLERANCE',
+      message: `AC09_HEM_DEVIATION_EXCEEDS_TOLERANCE: Physical hem level deviation ${value.toFixed(2)} cm exceeds ${toleranceCm.toFixed(2)} cm threshold.`
+    };
+  }
+  return { status: 'valid', value };
+}
+
+/**
+ * Validates `processRecord.seamAllowanceCm`.
+ * Semantics:
+ * - Must be a finite numeric value strictly > 0 cm (no artificial upper cap beyond finite positive).
+ * - `null` / `undefined` are classified as `missing` (`AC09_MISSING_SEAM_ALLOWANCE`).
+ * - Zero, negative values, `NaN`, `Infinity`, `-Infinity`, or non-numbers are classified as `invalid`
+ *   (`AC09_INVALID_SEAM_ALLOWANCE`) and trigger fail-closed FAILED status.
+ */
+export function validateAc09SeamAllowanceCm(value: unknown): Ac09NumericFieldValidation {
+  if (value === null || value === undefined) {
+    return {
+      status: 'missing',
+      code: 'AC09_MISSING_SEAM_ALLOWANCE',
+      message:
+        'AC09_MISSING_SEAM_ALLOWANCE: Cutting/sewing processRecord.seamAllowanceCm (> 0 cm) is required.'
+    };
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return {
+      status: 'invalid',
+      code: 'AC09_INVALID_SEAM_ALLOWANCE',
+      message: `AC09_INVALID_SEAM_ALLOWANCE: processRecord.seamAllowanceCm (${String(value)}) must be a finite numeric value strictly greater than 0 cm.`
+    };
+  }
+  return { status: 'valid', value };
+}
+
+/**
+ * Validates `traceability.recordedFabricWeightGsm`, distinguishing missing (`null`/`undefined`)
+ * from malformed supplied numeric values (`NaN`, `Infinity`, `<= 0`, non-number).
+ */
+export function validateAc09FabricWeightGsm(value: unknown): Ac09NumericFieldValidation {
+  if (value === null || value === undefined) {
+    return {
+      status: 'missing',
+      code: 'AC09_MISSING_FABRIC_WEIGHT',
+      message: 'Missing fabric gsm weight in sample traceability record.'
+    };
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return {
+      status: 'invalid',
+      code: 'AC09_INVALID_FABRIC_WEIGHT',
+      message: `AC09_INVALID_FABRIC_WEIGHT: recordedFabricWeightGsm (${String(value)}) must be a finite numeric value strictly > 0 gsm.`
+    };
+  }
+  return { status: 'valid', value };
+}
+
+/**
+ * Validates `traceability.recordedFabricStretchPct`, distinguishing missing (`null`/`undefined`)
+ * from malformed supplied numeric values (`NaN`, `Infinity`, `< 0`, `> 100`, non-number).
+ */
+export function validateAc09FabricStretchPct(value: unknown): Ac09NumericFieldValidation {
+  if (value === null || value === undefined) {
+    return {
+      status: 'missing',
+      code: 'AC09_MISSING_FABRIC_STRETCH',
+      message: 'Missing recorded fabric stretch percentage in sample traceability.'
+    };
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
+    return {
+      status: 'invalid',
+      code: 'AC09_INVALID_FABRIC_STRETCH',
+      message: `AC09_INVALID_FABRIC_STRETCH: recordedFabricStretchPct (${String(value)}) must be a finite numeric value in [0, 100]%.`
+    };
+  }
+  return { status: 'valid', value };
+}
+
+/**
+ * Recomputes arithmetic mean, spread, and the implemented conservative deterministic
+ * uncertainty bound strictly from raw independent physical readings:
+ *   `combinedUncertaintyCm = sqrt((resolutionCm / 2)^2 + (spread / 2)^2)`
+ *
+ * Documentation note: This combines half-resolution (`resolution/2`) and repeat half-range
+ * (`spread/2`) in quadrature as a deterministic conservative engineering bound. It is NOT
+ * claimed to be an ISO GUM (JCGM 100:2008) Type A (`s/sqrt(n)`) + Type B (`resolution/(2*sqrt(3))`)
+ * statistical uncertainty evaluation.
  */
 export function recomputeAc09PomMetrics(
   readingsCm: readonly number[],
@@ -132,9 +312,15 @@ export function recomputeAc09PomMetrics(
 }
 
 /**
- * Canonical security-relevant payload signed by an authorized human AC-09 reviewer.
- * Covers identity, traceability, cutting/sewing process records, POM checkpoints,
- * regional observations, photographic evidence checklist, structural checks, and decision metadata.
+ * Computes a client-side, unkeyed SHA-256 tamper-evident integrity seal (digest) over the
+ * canonical AC-09 review payload (identity, traceability, cutting/sewing process records,
+ * POM checkpoints, regional observations, evidence checklist, structural checks, and decision metadata).
+ *
+ * Security boundary notice:
+ * - Provides deterministic data integrity checking against accidental or partial post-decision mutation.
+ * - Because this helper is unkeyed and exported in client-side code, it does NOT provide
+ *   cryptographic reviewer identity authentication and cannot defend against an actor with
+ *   client-side code/storage access recomputing the digest after tampering.
  */
 export function computeAc09ReviewerSignatureDigest(
   record: Ac09PhysicalToileRecord,
@@ -201,8 +387,10 @@ export function computeAc09ReviewerSignatureDigest(
 }
 
 /**
- * Computes the deterministic locked snapshot digest binding the complete finalized AC-09 record
- * including workflow state, lock metadata, process record, evidence checklist, and reviewer signature.
+ * Computes a client-side, unkeyed SHA-256 tamper-evident locked snapshot seal binding the
+ * finalized AC-09 record state (workflow state, lock metadata, process record, evidence checklist,
+ * and reviewer decision integrity seal). Detects partial/accidental post-lock mutation; does NOT
+ * authenticate reviewer identity.
  */
 export function computeAc09LockedSnapshotDigest(record: Ac09PhysicalToileRecord): string {
   const instrument = record.measurementInstrument ?? 'calibrated-fiberglass-tape';
@@ -739,6 +927,42 @@ export function registerAc09PhysicalSample(
     throw new Error(`AC09_INVALID_INSTRUMENT_RESOLUTION: ${resolutionCm} cm must be in (0, 0.5] cm.`);
   }
 
+  if (input.evaluatedAt !== undefined && input.evaluatedAt !== null && !isValidAc09IsoDateOrTimestamp(input.evaluatedAt)) {
+    throw new Error(
+      `AC09_INVALID_DATE: evaluatedAt '${String(input.evaluatedAt)}' must be a valid ISO-8601 date or timestamp.`
+    );
+  }
+  if (input.recordedFabricWeightGsm !== undefined && input.recordedFabricWeightGsm !== null) {
+    const wCheck = validateAc09FabricWeightGsm(input.recordedFabricWeightGsm);
+    if (wCheck.status === 'invalid') {
+      throw new Error(wCheck.message);
+    }
+  }
+  if (input.recordedFabricStretchPct !== undefined && input.recordedFabricStretchPct !== null) {
+    const sCheck = validateAc09FabricStretchPct(input.recordedFabricStretchPct);
+    if (sCheck.status === 'invalid') {
+      throw new Error(sCheck.message);
+    }
+  }
+  if (input.processRecord) {
+    if (input.processRecord.seamAllowanceCm !== undefined && input.processRecord.seamAllowanceCm !== null) {
+      const saCheck = validateAc09SeamAllowanceCm(input.processRecord.seamAllowanceCm);
+      if (saCheck.status === 'invalid') {
+        throw new Error(saCheck.message);
+      }
+    }
+    if (input.processRecord.cutDate !== undefined && input.processRecord.cutDate !== null && !isValidAc09IsoDateOrTimestamp(input.processRecord.cutDate)) {
+      throw new Error(
+        `AC09_INVALID_DATE: processRecord.cutDate '${String(input.processRecord.cutDate)}' must be a valid ISO-8601 date or timestamp.`
+      );
+    }
+    if (input.processRecord.sewnDate !== undefined && input.processRecord.sewnDate !== null && !isValidAc09IsoDateOrTimestamp(input.processRecord.sewnDate)) {
+      throw new Error(
+        `AC09_INVALID_DATE: processRecord.sewnDate '${String(input.processRecord.sewnDate)}' must be a valid ISO-8601 date or timestamp.`
+      );
+    }
+  }
+
   const prevTrace = record.traceability;
   const nextTraceability: Ac09SampleTraceability | undefined = prevTrace
     ? {
@@ -851,7 +1075,7 @@ export function recordAc09RepeatMeasurements(
       cleanedReadings.length > 1
         ? Number((Math.max(...cleanedReadings) - Math.min(...cleanedReadings)).toFixed(4))
         : 0;
-    // Type-B instrument half-resolution combined in quadrature with repeat half-range
+    // Conservative deterministic quadrature bound: half-resolution combined with repeat half-range (not ISO GUM)
     const combinedUncertaintyCm = Number(
       Math.sqrt(Math.pow(resolutionCm / 2, 2) + Math.pow(spread / 2, 2)).toFixed(4)
     );
@@ -948,6 +1172,11 @@ export function transitionAc09WorkflowState(
         `AC09_INVALID_STATE_TRANSITION: Traceability mismatches present (${evalResult.traceabilityMismatches[0]}).`
       );
     }
+    if (evalResult.status === 'FAILED') {
+      throw new Error(
+        `AC09_INVALID_STATE_TRANSITION: Validation failures present (${evalResult.blockingReasons[0] ?? 'failed acceptance check'}); cannot enter READY_FOR_REVIEW.`
+      );
+    }
     if (evalResult.missingEvidenceDiagnostics.length > 0) {
       throw new Error(
         `AC09_INVALID_STATE_TRANSITION: Evidence incomplete (${evalResult.missingEvidenceDiagnostics[0]}).`
@@ -957,6 +1186,15 @@ export function transitionAc09WorkflowState(
       throw new Error(
         'AC09_INVALID_STATE_TRANSITION: POM concordance or regional agreement criteria do not pass; transition to FAILED or resolve defects.'
       );
+    }
+    const policy = validateAc09TolerancePolicy(record.tolerancePolicy ?? DEFAULT_AC09_TOLERANCE_POLICY);
+    const hemCheck = validateAc09HemLevelDeviation(record.hemLevelPhysicalDeviationCm, policy.hemLevelToleranceCm);
+    if (hemCheck.status !== 'valid') {
+      throw new Error(`AC09_INVALID_STATE_TRANSITION: ${hemCheck.message}`);
+    }
+    const seamAllowanceCheck = validateAc09SeamAllowanceCm(record.processRecord?.seamAllowanceCm);
+    if (seamAllowanceCheck.status !== 'valid') {
+      throw new Error(`AC09_INVALID_STATE_TRANSITION: ${seamAllowanceCheck.message}`);
     }
   }
 
@@ -1026,6 +1264,13 @@ export function recordAc09ReviewerDecision(
     );
   }
 
+  const decidedAt = input.decidedAt !== undefined ? input.decidedAt : new Date().toISOString().slice(0, 10);
+  if (!isValidAc09IsoDateOrTimestamp(decidedAt)) {
+    throw new Error(
+      `AC09_INVALID_DECISION_DATE: Reviewer decision date '${String(decidedAt)}' must be a valid parseable ISO-8601 date or timestamp.`
+    );
+  }
+
   const workflowRecord: Ac09PhysicalToileRecord = {
     ...record,
     executionMode: 'workflow'
@@ -1033,7 +1278,12 @@ export function recordAc09ReviewerDecision(
   const preEval = evaluateAc09ToileRecord(workflowRecord);
 
   if (input.decision === 'APPROVED_PASS') {
+    const policy = validateAc09TolerancePolicy(record.tolerancePolicy ?? DEFAULT_AC09_TOLERANCE_POLICY);
+    const hemCheck = validateAc09HemLevelDeviation(record.hemLevelPhysicalDeviationCm, policy.hemLevelToleranceCm);
+    const seamAllowanceCheck = validateAc09SeamAllowanceCm(record.processRecord?.seamAllowanceCm);
+
     const canApprove =
+      preEval.status !== 'FAILED' &&
       !preEval.syntheticEvidenceDetected &&
       preEval.traceabilityVerified &&
       preEval.allEvidenceRecorded &&
@@ -1043,23 +1293,28 @@ export function recordAc09ReviewerDecision(
       record.grainlineVerified &&
       Boolean(record.processRecord?.cuttingGrainlineVerified) &&
       record.seamAlignmentVerified === true &&
-      (record.hemLevelPhysicalDeviationCm === null ||
-        record.hemLevelPhysicalDeviationCm <= (record.tolerancePolicy?.hemLevelToleranceCm ?? AC09_HEM_LEVEL_TOLERANCE_CM));
+      hemCheck.status === 'valid' &&
+      seamAllowanceCheck.status === 'valid';
 
     if (!canApprove) {
+      const specificReason =
+        hemCheck.status !== 'valid'
+          ? hemCheck.message
+          : seamAllowanceCheck.status !== 'valid'
+          ? seamAllowanceCheck.message
+          : preEval.blockingReasons[0] ?? 'unmet acceptance gate';
       throw new Error(
-        `AC09_CANNOT_APPROVE_FAILING_OR_INCOMPLETE: Sample cannot be approved as PASSED while blockers remain (${preEval.blockingReasons[0] ?? 'unmet acceptance gate'}).`
+        `AC09_CANNOT_APPROVE_FAILING_OR_INCOMPLETE: Sample cannot be approved as PASSED while blockers remain (${specificReason}).`
       );
     }
   }
 
-  const decidedAt = input.decidedAt ?? new Date().toISOString().slice(0, 10);
   const decisionMeta = {
     reviewerName: input.reviewerName.trim(),
     reviewerRole: input.reviewerRole,
     decision: input.decision,
     rationale: input.rationale.trim(),
-    decidedAt
+    decidedAt: decidedAt.trim()
   };
   const signatureDigest = computeAc09ReviewerSignatureDigest(workflowRecord, decisionMeta);
 
@@ -1072,7 +1327,7 @@ export function recordAc09ReviewerDecision(
       signatureDigest
     },
     isLocked: true,
-    lockedAt: decidedAt
+    lockedAt: decidedAt.trim()
   };
 
   const snapshotDigest = computeAc09LockedSnapshotDigest(nextRecord);
@@ -1085,7 +1340,7 @@ export function recordAc09ReviewerDecision(
 
 /**
  * Forks an immutable locked sample record into a new editable revision while preserving
- * cryptographic audit history of prior revisions.
+ * deterministic SHA-256 integrity-sealed revision history of prior revisions.
  */
 export function createNewAc09SampleRevision(
   record: Ac09PhysicalToileRecord,
@@ -1193,18 +1448,24 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
         `Fabric composition mismatch: '${tr.recordedFabricComposition}' differs from expected '${tr.expectedFabricComposition}'.`
       );
     }
-    if (tr.recordedFabricWeightGsm !== null) {
+    const weightValidation = validateAc09FabricWeightGsm(tr.recordedFabricWeightGsm);
+    if (weightValidation.status === 'invalid') {
+      traceabilityMismatches.push(weightValidation.message);
+    } else if (weightValidation.status === 'valid') {
       const allowedWeightDelta = Math.max(15, tr.expectedFabricWeightGsm * 0.08);
-      if (Math.abs(tr.recordedFabricWeightGsm - tr.expectedFabricWeightGsm) > allowedWeightDelta) {
+      if (Math.abs(weightValidation.value - tr.expectedFabricWeightGsm) > allowedWeightDelta) {
         traceabilityMismatches.push(
-          `Fabric weight mismatch: ${tr.recordedFabricWeightGsm} gsm differs from expected ${tr.expectedFabricWeightGsm} gsm (±${allowedWeightDelta.toFixed(0)} gsm tolerance).`
+          `Fabric weight mismatch: ${weightValidation.value} gsm differs from expected ${tr.expectedFabricWeightGsm} gsm (±${allowedWeightDelta.toFixed(0)} gsm tolerance).`
         );
       }
     }
-    if (tr.recordedFabricStretchPct !== null) {
-      if (Math.abs(tr.recordedFabricStretchPct - tr.expectedFabricStretchPct) > 2.5) {
+    const stretchValidation = validateAc09FabricStretchPct(tr.recordedFabricStretchPct);
+    if (stretchValidation.status === 'invalid') {
+      traceabilityMismatches.push(stretchValidation.message);
+    } else if (stretchValidation.status === 'valid') {
+      if (Math.abs(stretchValidation.value - tr.expectedFabricStretchPct) > 2.5) {
         traceabilityMismatches.push(
-          `Fabric stretch mismatch: ${tr.recordedFabricStretchPct}% differs from expected ${tr.expectedFabricStretchPct}% (±2.5% tolerance).`
+          `Fabric stretch mismatch: ${stretchValidation.value}% differs from expected ${tr.expectedFabricStretchPct}% (±2.5% tolerance).`
         );
       }
     }
@@ -1404,21 +1665,54 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
     allMandatoryPhotosValid &&
     evidenceCompletedCount === record.evidenceChecklist.length;
 
+  const hemValidation = validateAc09HemLevelDeviation(
+    record.hemLevelPhysicalDeviationCm,
+    policy.hemLevelToleranceCm
+  );
+  const seamAllowanceValidation = validateAc09SeamAllowanceCm(record.processRecord?.seamAllowanceCm);
+  const fabricWeightValidation = validateAc09FabricWeightGsm(tr?.recordedFabricWeightGsm);
+  const fabricStretchValidation = validateAc09FabricStretchPct(tr?.recordedFabricStretchPct);
+
+  const hasMalformedEvaluatedDate =
+    record.evaluatedAt !== null &&
+    record.evaluatedAt !== undefined &&
+    !isValidAc09IsoDateOrTimestamp(record.evaluatedAt);
+  const hasMalformedCutDate =
+    record.processRecord?.cutDate !== null &&
+    record.processRecord?.cutDate !== undefined &&
+    !isValidAc09IsoDateOrTimestamp(record.processRecord.cutDate);
+  const hasMalformedSewnDate =
+    record.processRecord?.sewnDate !== null &&
+    record.processRecord?.sewnDate !== undefined &&
+    !isValidAc09IsoDateOrTimestamp(record.processRecord.sewnDate);
+
+  const hasInvalidStructuralOrProcessInput =
+    hemValidation.status === 'invalid' ||
+    hemValidation.status === 'exceeds_tolerance' ||
+    seamAllowanceValidation.status === 'invalid' ||
+    fabricWeightValidation.status === 'invalid' ||
+    fabricStretchValidation.status === 'invalid' ||
+    hasMalformedEvaluatedDate ||
+    hasMalformedCutDate ||
+    hasMalformedSewnDate;
+
   const hasAnyPhysicalData =
     anyPomReadingRecorded ||
     evaluatedZonesCount > 0 ||
     record.evidenceChecklist.some(item => item.recorded || Boolean(item.attachmentUri?.trim())) ||
-    record.hemLevelPhysicalDeviationCm !== null ||
+    (record.hemLevelPhysicalDeviationCm !== null && record.hemLevelPhysicalDeviationCm !== undefined) ||
     record.seamAlignmentVerified !== null ||
     record.grainlineVerified ||
     Boolean(record.sampleId && record.sampleId.trim().length > 0) ||
     Boolean(record.processRecord?.cuttingGrainlineVerified) ||
+    (record.processRecord?.seamAllowanceCm !== null && record.processRecord?.seamAllowanceCm !== undefined) ||
     Boolean(record.processRecord?.cuttingOperator && record.processRecord.cuttingOperator.trim().length > 0) ||
     Boolean(record.processRecord?.sewingOperator && record.processRecord.sewingOperator.trim().length > 0) ||
     Boolean(record.processRecord?.stitchType && record.processRecord.stitchType.trim().length > 0) ||
     Boolean(record.processRecord?.pressingMethod && record.processRecord.pressingMethod.trim().length > 0) ||
     Boolean(record.reviewerDecision && record.reviewerDecision.decision !== 'PENDING') ||
-    Boolean(record.isLocked);
+    Boolean(record.isLocked) ||
+    hasInvalidStructuralOrProcessInput;
 
   if (
     !hasAnyPhysicalData &&
@@ -1467,10 +1761,15 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
   const hasMetadata =
     record.evaluatorName.trim().length >= 2 &&
     record.bodyOrDressFormId.trim().length >= 2 &&
-    Boolean(record.evaluatedAt);
+    isValidAc09IsoDateOrTimestamp(record.evaluatedAt);
 
+  if (hasMalformedEvaluatedDate) {
+    blockingReasons.push(
+      `AC09_INVALID_DATE: evaluatedAt '${String(record.evaluatedAt)}' is not a valid parseable ISO-8601 date or timestamp.`
+    );
+  }
   if (!hasMetadata) {
-    missingEvidenceDiagnostics.push('Missing evaluator identity, dress form/body ID, or physical trial date.');
+    missingEvidenceDiagnostics.push('Missing evaluator identity, dress form/body ID, or valid physical trial date.');
   }
 
   // Mandatory sample registration, complete fabric traceability, and cutting/sewing process verification
@@ -1483,10 +1782,15 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
   if (!tr || tr.recordedFabricId.trim().length === 0) {
     missingEvidenceDiagnostics.push('Missing recorded fabric ID in sample traceability.');
   }
-  if (!tr || tr.recordedFabricComposition.trim().length === 0 || tr.recordedFabricWeightGsm === null || !Number.isFinite(tr.recordedFabricWeightGsm) || tr.recordedFabricWeightGsm <= 0 || tr.recordedFabricLot.trim().length === 0) {
+  if (
+    !tr ||
+    tr.recordedFabricComposition.trim().length === 0 ||
+    fabricWeightValidation.status === 'missing' ||
+    tr.recordedFabricLot.trim().length === 0
+  ) {
     missingEvidenceDiagnostics.push('Missing fabric composition, gsm weight, or lot traceability record.');
   }
-  if (!tr || tr.recordedFabricStretchPct === null || !Number.isFinite(tr.recordedFabricStretchPct) || tr.recordedFabricStretchPct < 0) {
+  if (!tr || fabricStretchValidation.status === 'missing') {
     missingEvidenceDiagnostics.push('Missing recorded fabric stretch percentage in sample traceability.');
   }
   if (!tr || tr.recordedFabricDirection.trim().length === 0) {
@@ -1499,14 +1803,29 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
   if (!pr || !pr.cuttingGrainlineVerified) {
     missingEvidenceDiagnostics.push('Cutting grainline verification not explicitly confirmed in process record.');
   }
+  if (hasMalformedCutDate) {
+    blockingReasons.push(
+      `AC09_INVALID_DATE: processRecord.cutDate '${String(pr?.cutDate)}' is not a valid parseable ISO-8601 date or timestamp.`
+    );
+  }
+  if (hasMalformedSewnDate) {
+    blockingReasons.push(
+      `AC09_INVALID_DATE: processRecord.sewnDate '${String(pr?.sewnDate)}' is not a valid parseable ISO-8601 date or timestamp.`
+    );
+  }
+  if (seamAllowanceValidation.status === 'invalid') {
+    blockingReasons.push(seamAllowanceValidation.message);
+  } else if (seamAllowanceValidation.status === 'missing') {
+    missingEvidenceDiagnostics.push(seamAllowanceValidation.message);
+  }
   if (
     !pr ||
     pr.cuttingOperator.trim().length < 2 ||
-    !pr.cutDate ||
+    !isValidAc09IsoDateOrTimestamp(pr.cutDate) ||
     !pr.cuttingGrainlineVerified ||
     pr.sewingOperator.trim().length < 2 ||
-    !pr.sewnDate ||
-    pr.seamAllowanceCm === null ||
+    !isValidAc09IsoDateOrTimestamp(pr.sewnDate) ||
+    seamAllowanceValidation.status !== 'valid' ||
     pr.stitchType.trim().length < 2 ||
     pr.pressingMethod.trim().length < 2
   ) {
@@ -1518,6 +1837,9 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
   }
   if (record.seamAlignmentVerified === null) {
     missingEvidenceDiagnostics.push('Physical seam alignment inspection unrecorded.');
+  }
+  if (hemValidation.status === 'missing') {
+    missingEvidenceDiagnostics.push(hemValidation.message);
   }
 
   // Merge missing-evidence diagnostics into blockingReasons cleanly
@@ -1532,7 +1854,7 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
     );
   }
   if (!hasMetadata) {
-    blockingReasons.push('Missing evaluator identity, dress form/body ID, or physical trial date.');
+    blockingReasons.push('Missing evaluator identity, dress form/body ID, or valid physical trial date.');
   }
   if (!allEvidenceRecorded) {
     blockingReasons.push(
@@ -1551,13 +1873,8 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
   } else if (record.seamAlignmentVerified === false) {
     blockingReasons.push('Physical seam alignment inspection failed.');
   }
-  if (
-    record.hemLevelPhysicalDeviationCm !== null &&
-    record.hemLevelPhysicalDeviationCm > policy.hemLevelToleranceCm
-  ) {
-    blockingReasons.push(
-      `Physical hem level deviation ${record.hemLevelPhysicalDeviationCm.toFixed(2)} cm exceeds ${policy.hemLevelToleranceCm.toFixed(2)} cm threshold.`
-    );
+  if (hemValidation.status !== 'valid') {
+    blockingReasons.push(hemValidation.message);
   }
 
   const pomConcordancePassed =
@@ -1587,29 +1904,29 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
     tr!.recordedPatternRevisionId.trim().length > 0 &&
     tr!.recordedFabricId.trim().length > 0 &&
     tr!.recordedFabricComposition.trim().length > 0 &&
-    tr!.recordedFabricWeightGsm !== null &&
-    Number.isFinite(tr!.recordedFabricWeightGsm) &&
-    tr!.recordedFabricWeightGsm > 0 &&
-    tr!.recordedFabricStretchPct !== null &&
-    Number.isFinite(tr!.recordedFabricStretchPct) &&
-    tr!.recordedFabricStretchPct >= 0 &&
+    fabricWeightValidation.status === 'valid' &&
+    fabricStretchValidation.status === 'valid' &&
     tr!.recordedFabricDirection.trim().length > 0 &&
     tr!.recordedFabricLot.trim().length > 0 &&
     tr!.constructionDocRef.trim().length > 0 &&
     tr!.simulationCaseRef.trim().length > 0;
 
-  // Cryptographic Reviewer Signature & Locked Snapshot Verification
+  // Client-Side Tamper-Evident Reviewer Integrity Seal & Locked Snapshot Verification
+  // (Unkeyed SHA-256 — detects partial/accidental mutation; does NOT authenticate reviewer identity)
   const reviewerDecision = record.reviewerDecision;
   const signOffRecorded = Boolean(reviewerDecision && reviewerDecision.decision !== 'PENDING');
   let signatureIntegrityFailed = false;
   let lockIntegrityFailed = false;
 
+  const decisionDateValid = Boolean(
+    reviewerDecision && isValidAc09IsoDateOrTimestamp(reviewerDecision.decidedAt)
+  );
   const hasValidReviewerMetadata = Boolean(
     reviewerDecision &&
       AUTHORIZED_AC09_REVIEWER_ROLES.includes(reviewerDecision.reviewerRole as Ac09AuthorizedReviewerRole) &&
       reviewerDecision.reviewerName.trim().length >= 3 &&
       reviewerDecision.rationale.trim().length >= 5 &&
-      Boolean(reviewerDecision.decidedAt) &&
+      decisionDateValid &&
       Boolean(reviewerDecision.signatureDigest)
   );
 
@@ -1617,27 +1934,33 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
   let lockSnapshotValid = false;
 
   if (signOffRecorded && reviewerDecision) {
+    if (!decisionDateValid) {
+      signatureIntegrityFailed = true;
+      blockingReasons.push(
+        `AC09_INVALID_DECISION_DATE: Reviewer decision date '${String(reviewerDecision.decidedAt)}' is missing or not a valid parseable ISO-8601 date/timestamp.`
+      );
+    }
     if (hasValidReviewerMetadata) {
       const expectedSig = computeAc09ReviewerSignatureDigest(record, reviewerDecision);
       signatureDigestMatches = reviewerDecision.signatureDigest === expectedSig;
       if (!signatureDigestMatches) {
         signatureIntegrityFailed = true;
         blockingReasons.push(
-          'AC09_SIGNATURE_TAMPER_DETECTED: Reviewer signatureDigest does not match canonical signed payload (forged signature or post-signature modification detected).'
+          'AC09_SIGNATURE_TAMPER_DETECTED: Reviewer integrity seal (signatureDigest) does not match canonical payload (partial or post-decision mutation detected).'
         );
       }
     } else {
       signatureIntegrityFailed = true;
       blockingReasons.push(
-        `AC09_INVALID_SIGN_OFF: Reviewer sign-off is unauthorized or missing required name, role, rationale (>= 5 chars), date, or signature (role='${reviewerDecision.reviewerRole || 'NONE'}').`
+        `AC09_INVALID_SIGN_OFF: Reviewer sign-off is unauthorized or missing required name, role, rationale (>= 5 chars), valid date, or integrity seal (role='${reviewerDecision.reviewerRole || 'NONE'}').`
       );
     }
 
     if (reviewerDecision.decision === 'APPROVED_PASS') {
-      if (record.isLocked !== true || !record.lockedAt || !record.lockedSnapshotDigest) {
+      if (record.isLocked !== true || !isValidAc09IsoDateOrTimestamp(record.lockedAt) || !record.lockedSnapshotDigest) {
         lockIntegrityFailed = true;
         blockingReasons.push(
-          'AC09_LOCK_REQUIRED: Approved AC-09 record must be immutably locked (isLocked === true with lockedAt and lockedSnapshotDigest).'
+          'AC09_LOCK_REQUIRED: Approved AC-09 record must be immutably locked (isLocked === true with valid ISO-8601 lockedAt and lockedSnapshotDigest).'
         );
       } else {
         const expectedLockedDigest = computeAc09LockedSnapshotDigest(record);
@@ -1651,13 +1974,20 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
       }
     } else if (reviewerDecision.decision === 'REJECTED_FAIL') {
       if (record.isLocked === true && record.lockedSnapshotDigest) {
-        const expectedLockedDigest = computeAc09LockedSnapshotDigest(record);
-        lockSnapshotValid = record.lockedSnapshotDigest === expectedLockedDigest;
-        if (!lockSnapshotValid) {
+        if (!isValidAc09IsoDateOrTimestamp(record.lockedAt)) {
           lockIntegrityFailed = true;
           blockingReasons.push(
-            'AC09_LOCKED_SNAPSHOT_TAMPER_DETECTED: lockedSnapshotDigest does not match the rejected record contents.'
+            `AC09_INVALID_LOCK_DATE: Locked record has invalid lockedAt date '${String(record.lockedAt)}'.`
           );
+        } else {
+          const expectedLockedDigest = computeAc09LockedSnapshotDigest(record);
+          lockSnapshotValid = record.lockedSnapshotDigest === expectedLockedDigest;
+          if (!lockSnapshotValid) {
+            lockIntegrityFailed = true;
+            blockingReasons.push(
+              'AC09_LOCKED_SNAPSHOT_TAMPER_DETECTED: lockedSnapshotDigest does not match the rejected record contents.'
+            );
+          }
         }
       }
     }
@@ -1673,16 +2003,20 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
     blockingReasons.push(`Reviewer rejected sample: ${reviewerDecision.rationale || 'Rejected FAIL'}.`);
   }
 
+  const hasApprovalWithMissingStructuralOrProcessGates =
+    reviewerDecision?.decision === 'APPROVED_PASS' &&
+    (hemValidation.status !== 'valid' || seamAllowanceValidation.status !== 'valid');
+
   const hasFailureCondition =
     syntheticEvidenceDetected ||
     traceabilityMismatches.length > 0 ||
     derivedUncertaintyIntegrityFailed ||
     invalidAttachmentUriDetected ||
+    hasInvalidStructuralOrProcessInput ||
+    hasApprovalWithMissingStructuralOrProcessGates ||
     (anyPomReadingRecorded && (!pomAllWithinTolerance || !uncertaintyAllWithinLimit)) ||
     (allZonesEvaluated && !regionalAgreementPassed) ||
     record.seamAlignmentVerified === false ||
-    (record.hemLevelPhysicalDeviationCm !== null &&
-      record.hemLevelPhysicalDeviationCm > policy.hemLevelToleranceCm) ||
     reviewerDecision?.decision === 'REJECTED_FAIL' ||
     signatureIntegrityFailed ||
     lockIntegrityFailed ||
@@ -1698,7 +2032,9 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
       d.includes('fabric cut direction') ||
       d.includes('construction documentation') ||
       d.includes('Cutting grainline verification') ||
-      d.includes('cutting or sewing')
+      d.includes('cutting or sewing') ||
+      d.includes('AC09_MISSING_SEAM_ALLOWANCE') ||
+      d.includes('AC09_MISSING_HEM_DEVIATION')
   );
 
   if (missingProcessOrRefs) {
@@ -1712,7 +2048,8 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
         d.includes('fabric cut direction') ||
         d.includes('construction documentation') ||
         d.includes('Cutting grainline verification') ||
-        d.includes('cutting or sewing')
+        d.includes('cutting or sewing') ||
+        d.includes('AC09_MISSING_SEAM_ALLOWANCE')
     );
     blockingReasons.push(...processRefIssues);
   }
@@ -1725,6 +2062,8 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
     record.grainlineVerified &&
     Boolean(record.processRecord?.cuttingGrainlineVerified) &&
     record.seamAlignmentVerified === true &&
+    hemValidation.status === 'valid' &&
+    seamAllowanceValidation.status === 'valid' &&
     traceabilityVerified &&
     !missingProcessOrRefs;
 

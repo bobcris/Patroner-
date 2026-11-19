@@ -24,8 +24,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { INITIAL_CONCEPTS } from '../../domain/design/curated-concepts';
 import { STANDARD_SIZING_SYSTEM } from '../measurements/standards';
+import { ProductionOverview } from '../../features/production/ProductionOverview';
 import {
   DEFAULT_SIZE_RANGE,
   gradePattern,
@@ -34,8 +37,17 @@ import {
 } from '../grading';
 import {
   buildAuthoritativeProductionWorkspaceBundle,
+  buildDiagnosticProductionPackageJson,
   buildM05ProductionPackage,
   DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
+  evaluateBaselineCommitEligibility,
+  evaluateProductionPackageExportGate,
+  executeGuardedBaselineCommit,
+  executeGuardedCanonicalReleaseJsonExport,
+  executeGuardedDxfReleaseExport,
+  extractRevisionBaselineFromBundle,
+  getApplicableEaseGirthsForCategory,
+  ProductionExportValidationResult,
   resolveCategoryGradingPolicy
 } from './index';
 
@@ -547,4 +559,458 @@ test('P1-2-REM-04 (§6): ProductionOverview consumes authoritative governance sl
   assert.ok(appSrc.includes("setBodiceDartStyle(nextSpec.dartStyle ?? 'waist')"));
   assert.ok(appSrc.includes("setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy ?? 'classic')"));
 });
+
+// ============================================================================
+// P1-2 CHECKPOINT 8 REVISION 3 REMEDIATION — N-04, N-05, N-06.4 TESTS
+// ============================================================================
+
+const PERMITTED_EXPORT_VALIDATION: ProductionExportValidationResult = {
+  isExportPermitted: true,
+  blockingArtifacts: [],
+  rejectionReason: 'All export prerequisites verified in controlled test fixture.'
+};
+
+test('P1-2-REV3-N04-01: Release export gates & direct handlers fail closed for stale, Gate 6 failing, unapproved, invalid grading, invalid BOM, and DXF revision mismatch', () => {
+  // 1. Fresh valid package with default PATTERN_REVISION_NOT_APPROVED -> BOTH DXF & Canonical JSON blocked
+  const unapprovedSkirt = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+  assert.equal(unapprovedSkirt.exportValidation.isExportPermitted, false);
+  assert.equal(unapprovedSkirt.exportValidation.rejectionCode, 'PATTERN_REVISION_NOT_APPROVED');
+  assert.equal(unapprovedSkirt.exportGate.canExportDxfRelease, false);
+  assert.equal(unapprovedSkirt.exportGate.canExportCanonicalReleaseJson, false);
+
+  let emittedCount = 0;
+  const dxfUnapproved = executeGuardedDxfReleaseExport({
+    bundle: unapprovedSkirt.m05Package,
+    exportValidation: unapprovedSkirt.exportValidation,
+    onEmit: () => {
+      emittedCount += 1;
+    }
+  });
+  const jsonUnapproved = executeGuardedCanonicalReleaseJsonExport({
+    bundle: unapprovedSkirt.m05Package,
+    exportValidation: unapprovedSkirt.exportValidation,
+    onEmit: () => {
+      emittedCount += 1;
+    }
+  });
+  assert.equal(dxfUnapproved.permitted, false);
+  assert.equal(dxfUnapproved.rejectionCode, 'PATTERN_REVISION_NOT_APPROVED');
+  assert.equal(jsonUnapproved.permitted, false);
+  assert.equal(jsonUnapproved.rejectionCode, 'PATTERN_REVISION_NOT_APPROVED');
+  assert.equal(emittedCount, 0, 'Blocked direct handler must NEVER emit payloads');
+
+  // 2. Fresh invalid package: Bodice Flat Shirt (Gate 6 XXL failure) -> blocked even if exportValidation were permitted
+  const flatShirtSpec = {
+    ...BODICE_SPEC,
+    id: 'spec-bodice-flat-shirt-test',
+    sleeveEaseStrategy: 'flat' as const
+  };
+  const flatShirtBundle = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: flatShirtSpec,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    governance: { sleeveEaseStrategy: 'flat' }
+  });
+  assert.equal(flatShirtBundle.m05Package!.validation.isValid, false);
+  assert.ok(
+    flatShirtBundle.m05Package!.validation.diagnostics.some(
+      d => d.checkId === 'invalid-size-coverage' && d.status === 'fail'
+    )
+  );
+  const flatDxf = executeGuardedDxfReleaseExport({
+    bundle: flatShirtBundle.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onEmit: () => {
+      emittedCount += 1;
+    }
+  });
+  const flatJson = executeGuardedCanonicalReleaseJsonExport({
+    bundle: flatShirtBundle.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onEmit: () => {
+      emittedCount += 1;
+    }
+  });
+  assert.equal(flatDxf.permitted, false);
+  assert.equal(flatDxf.rejectionCode, 'M05_VALIDATION_FAILED');
+  assert.equal(flatJson.permitted, false);
+  assert.equal(flatJson.rejectionCode, 'M05_VALIDATION_FAILED');
+  assert.equal(emittedCount, 0);
+
+  // 3. Stale package -> blocked even if exportValidation were permitted
+  const baseline = extractRevisionBaselineFromBundle(unapprovedSkirt)!;
+  const staleSkirt = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { fabricRollWidthCm: 150 },
+    previousPackageRevision: baseline
+  });
+  assert.equal(staleSkirt.upstreamStaleness.isStaleAgainstPrevious, true);
+  const staleDxf = executeGuardedDxfReleaseExport({
+    bundle: staleSkirt.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onEmit: () => {
+      emittedCount += 1;
+    }
+  });
+  const staleJson = executeGuardedCanonicalReleaseJsonExport({
+    bundle: staleSkirt.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onEmit: () => {
+      emittedCount += 1;
+    }
+  });
+  assert.equal(staleDxf.permitted, false);
+  assert.equal(staleDxf.rejectionCode, 'UPSTREAM_STAGE_STALE');
+  assert.equal(staleJson.permitted, false);
+  assert.equal(staleJson.rejectionCode, 'UPSTREAM_STAGE_STALE');
+  assert.equal(emittedCount, 0);
+
+  // 4. Invalid grading (gradingArtifactError !== null) -> blocked
+  const invalidGradingPkg = {
+    ...unapprovedSkirt.m05Package!,
+    gradingArtifactError: 'Simulated authoritative grading failure'
+  };
+  assert.equal(
+    executeGuardedDxfReleaseExport({
+      bundle: invalidGradingPkg,
+      exportValidation: PERMITTED_EXPORT_VALIDATION,
+      onEmit: () => {
+        emittedCount += 1;
+      }
+    }).permitted,
+    false
+  );
+  assert.equal(
+    executeGuardedCanonicalReleaseJsonExport({
+      bundle: invalidGradingPkg,
+      exportValidation: PERMITTED_EXPORT_VALIDATION,
+      onEmit: () => {
+        emittedCount += 1;
+      }
+    }).permitted,
+    false
+  );
+
+  // 5. DXF revision mismatch -> DXF blocked fail-closed
+  const mismatchedDxfPkg = {
+    ...unapprovedSkirt.m05Package!,
+    dxfExport: {
+      ...unapprovedSkirt.m05Package!.dxfExport!,
+      artifact: {
+        ...unapprovedSkirt.m05Package!.dxfExport!.artifact,
+        sourceRevisionId: 'rev-tampered-mismatch'
+      }
+    }
+  };
+  const dxfMismatch = executeGuardedDxfReleaseExport({
+    bundle: mismatchedDxfPkg,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onEmit: () => {
+      emittedCount += 1;
+    }
+  });
+  assert.equal(dxfMismatch.permitted, false);
+  assert.equal(dxfMismatch.rejectionCode, 'DXF_REVISION_MISMATCH');
+
+  // 6. Missing exportValidation context -> fails closed
+  assert.equal(
+    evaluateProductionPackageExportGate({
+      bundle: unapprovedSkirt.m05Package,
+      exportValidation: undefined
+    }).canExportDxfRelease,
+    false
+  );
+  assert.equal(emittedCount, 0);
+
+  // 7. Valid approved fresh package -> BOTH DXF & Canonical Release JSON succeed
+  let dxfEmitted = '';
+  let jsonEmitted = '';
+  const approvedDxf = executeGuardedDxfReleaseExport({
+    bundle: unapprovedSkirt.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onEmit: (text, filename) => {
+      assert.ok(filename.endsWith('.dxf'));
+      dxfEmitted = text;
+    }
+  });
+  const approvedJson = executeGuardedCanonicalReleaseJsonExport({
+    bundle: unapprovedSkirt.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onEmit: (text, filename) => {
+      assert.ok(filename.endsWith('.canonical.json'));
+      jsonEmitted = text;
+    }
+  });
+  assert.equal(approvedDxf.permitted, true);
+  assert.ok(dxfEmitted.includes('SECTION'));
+  assert.equal(approvedJson.permitted, true);
+  assert.ok(jsonEmitted.includes(unapprovedSkirt.m05Package!.packageId));
+
+  // 8. Diagnostic JSON is explicitly tagged non-release and never pretends to be an approved release artifact
+  const diag = buildDiagnosticProductionPackageJson(
+    unapprovedSkirt.m05Package!,
+    unapprovedSkirt.exportValidation
+  );
+  assert.equal(diag.artifactClass, 'DIAGNOSTIC_NON_RELEASE_SNAPSHOT');
+  assert.equal(diag.isApprovedProductionArtifact, false);
+  assert.equal(diag.releaseExportPermitted, false);
+  assert.ok(diag.filename.endsWith('.diagnostic-non-release.json'));
+  const parsedDiag = JSON.parse(diag.payloadText) as Record<string, unknown>;
+  assert.equal(parsedDiag.artifactClass, 'DIAGNOSTIC_NON_RELEASE_SNAPSHOT');
+  assert.equal(parsedDiag.isApprovedProductionArtifact, false);
+  assert.equal(parsedDiag.isProductionReady, false);
+  assert.equal(parsedDiag.releaseExportPermitted, false);
+});
+
+test('P1-2-REV3-N04-02: Guarded baseline commit rejects failing/unapproved packages, never turns blocked packages exportable, and handles stale->fresh & idempotent re-sync', () => {
+  // 1. Fresh/stale valid package with PATTERN_REVISION_NOT_APPROVED:
+  //    production-baseline commit MUST fail; working-draft sync succeeds ONLY for drift inspection and NEVER unlocks export
+  const baseSkirt = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+  const initialBaseline = extractRevisionBaselineFromBundle(baseSkirt)!;
+  const staleUnapproved = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { fabricRollWidthCm: 152 },
+    previousPackageRevision: initialBaseline
+  });
+
+  assert.equal(staleUnapproved.upstreamStaleness.isStaleAgainstPrevious, true);
+  assert.equal(staleUnapproved.baselineEligibility.canCommitProductionBaseline, false);
+  assert.equal(staleUnapproved.baselineEligibility.canSyncWorkingDraftSnapshot, true);
+
+  let prodCommitCalled = 0;
+  const rejectedProdCommit = executeGuardedBaselineCommit({
+    workspaceBundle: staleUnapproved,
+    mode: 'production-baseline',
+    onCommit: () => {
+      prodCommitCalled += 1;
+    }
+  });
+  assert.equal(rejectedProdCommit.committed, false);
+  assert.equal(rejectedProdCommit.rejectionCode, 'BASELINE_COMMIT_BLOCKED');
+  assert.equal(prodCommitCalled, 0);
+
+  let syncedBaseline: ReturnType<typeof extractRevisionBaselineFromBundle>;
+  const workingDraftSync = executeGuardedBaselineCommit({
+    workspaceBundle: staleUnapproved,
+    mode: 'working-draft-diagnostic',
+    onCommit: b => {
+      syncedBaseline = b;
+    }
+  });
+  assert.equal(workingDraftSync.committed, true);
+  assert.ok(syncedBaseline);
+
+  // Re-evaluate after syncing working draft snapshot -> staleness cleared, YET release exports remain STRICTLY BLOCKED!
+  const afterDraftSync = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { fabricRollWidthCm: 152 },
+    previousPackageRevision: syncedBaseline
+  });
+  assert.equal(afterDraftSync.upstreamStaleness.isStaleAgainstPrevious, false);
+  assert.equal(afterDraftSync.exportValidation.isExportPermitted, false);
+  assert.equal(afterDraftSync.exportValidation.rejectionCode, 'PATTERN_REVISION_NOT_APPROVED');
+  assert.equal(afterDraftSync.exportGate.canExportDxfRelease, false);
+  assert.equal(afterDraftSync.exportGate.canExportCanonicalReleaseJson, false);
+
+  // 2. Failing Gate 6 XXL package (Bodice Flat Shirt) -> BOTH production-baseline AND working-draft-diagnostic MUST FAIL
+  const flatShirtSpec = {
+    ...BODICE_SPEC,
+    id: 'spec-bodice-flat-shirt-test',
+    sleeveEaseStrategy: 'flat' as const
+  };
+  const flatShirtInitial = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: flatShirtSpec,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    governance: { sleeveEaseStrategy: 'flat' }
+  });
+  const flatShirtStale = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: flatShirtSpec,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { fabricRollWidthCm: 156 },
+    governance: { sleeveEaseStrategy: 'flat' },
+    previousPackageRevision: extractRevisionBaselineFromBundle(flatShirtInitial)
+  });
+
+  assert.equal(flatShirtStale.baselineEligibility.hasNonStalenessValidationFailures, true);
+  assert.equal(flatShirtStale.baselineEligibility.canCommitProductionBaseline, false);
+  assert.equal(flatShirtStale.baselineEligibility.canSyncWorkingDraftSnapshot, false);
+
+  let failingCommitCalls = 0;
+  for (const mode of ['production-baseline', 'working-draft-diagnostic'] as const) {
+    const res = executeGuardedBaselineCommit({
+      workspaceBundle: flatShirtStale,
+      mode,
+      onCommit: () => {
+        failingCommitCalls += 1;
+      }
+    });
+    assert.equal(res.committed, false, `Gate 6 failing package must block ${mode}`);
+  }
+  assert.equal(failingCommitCalls, 0);
+
+  // 3. Invalid grading & empty BOM fail BOTH baseline commit modes
+  const invalidGradingEligibility = evaluateBaselineCommitEligibility({
+    isCadSupported: true,
+    draftValidation: baseSkirt.draftValidation,
+    m05Package: {
+      ...baseSkirt.m05Package!,
+      gradingArtifactError: 'Grading failure'
+    },
+    rawExportValidation: PERMITTED_EXPORT_VALIDATION
+  });
+  assert.equal(invalidGradingEligibility.canCommitProductionBaseline, false);
+  assert.equal(invalidGradingEligibility.canSyncWorkingDraftSnapshot, false);
+
+  const emptyBomEligibility = evaluateBaselineCommitEligibility({
+    isCadSupported: true,
+    draftValidation: baseSkirt.draftValidation,
+    m05Package: {
+      ...baseSkirt.m05Package!,
+      bom: { ...baseSkirt.m05Package!.bom, lineItems: [] }
+    },
+    rawExportValidation: PERMITTED_EXPORT_VALIDATION
+  });
+  assert.equal(emptyBomEligibility.canCommitProductionBaseline, false);
+  assert.equal(emptyBomEligibility.canSyncWorkingDraftSnapshot, false);
+
+  // 4. Valid approved stale package -> production-baseline commit SUCCEEDS, stale->fresh, and repeated sync is idempotent
+  const approvedStaleBundle = {
+    ...staleUnapproved,
+    rawExportValidation: PERMITTED_EXPORT_VALIDATION
+  };
+  let committedApprovedBaseline: ReturnType<typeof extractRevisionBaselineFromBundle>;
+  const firstCommit = executeGuardedBaselineCommit({
+    workspaceBundle: approvedStaleBundle,
+    mode: 'production-baseline',
+    onCommit: b => {
+      committedApprovedBaseline = b;
+    }
+  });
+  assert.equal(firstCommit.committed, true);
+  assert.ok(committedApprovedBaseline);
+
+  const freshApprovedBundle = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { fabricRollWidthCm: 152 },
+    previousPackageRevision: committedApprovedBaseline
+  });
+  assert.equal(freshApprovedBundle.upstreamStaleness.isStaleAgainstPrevious, false);
+
+  // Repeated re-sync idempotency
+  const secondCommit = executeGuardedBaselineCommit({
+    workspaceBundle: {
+      ...freshApprovedBundle,
+      rawExportValidation: PERMITTED_EXPORT_VALIDATION
+    },
+    mode: 'production-baseline'
+  });
+  assert.equal(secondCommit.committed, true);
+  assert.deepEqual(secondCommit.baseline, firstCommit.baseline);
+});
+
+test('P1-2-REV3-N05: Module 05 Circumference Ease Allocation isolates Skirt (Waist & Low Hip only) from Bodice (Bust, Waist & Low Hip) across repeated category switches', () => {
+  // Pure helper verification
+  assert.deepEqual(getApplicableEaseGirthsForCategory('skirt'), ['waist', 'lowHip']);
+  assert.deepEqual(getApplicableEaseGirthsForCategory('bodice'), ['bust', 'waist', 'lowHip']);
+
+  const renderOverviewForSpec = (spec: typeof SKIRT_SPEC) => {
+    const bundle = buildAuthoritativeProductionWorkspaceBundle({
+      designSpec: spec,
+      measurements: M_SIZES,
+      activeSize: 'M'
+    });
+    return renderToStaticMarkup(
+      React.createElement(ProductionOverview, {
+        currentSpec: spec,
+        measurements: M_SIZES,
+        activeSize: 'M',
+        workspaceBundle: bundle,
+        bomControls: DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
+        onNavigateToCAD: () => {}
+      })
+    );
+  };
+
+  // Cycle 1: Skirt -> must NOT contain Bust Circumference row
+  const skirtHtml1 = renderOverviewForSpec(SKIRT_SPEC);
+  assert.ok(skirtHtml1.includes('data-testid="m05-ease-table"'));
+  assert.ok(skirtHtml1.includes('data-testid="m05-ease-row-waist"'));
+  assert.ok(skirtHtml1.includes('data-testid="m05-ease-row-lowHip"'));
+  assert.ok(!skirtHtml1.includes('data-testid="m05-ease-row-bust"'), 'Skirt ease table must NEVER render bust row');
+  assert.ok(!skirtHtml1.includes('Bust Circumference'), 'Skirt ease table must NEVER display Bust Circumference');
+
+  // Cycle 2: Bodice -> must contain Bust, Waist, and Low Hip rows
+  const bodiceHtml = renderOverviewForSpec(BODICE_SPEC);
+  assert.ok(bodiceHtml.includes('data-testid="m05-ease-row-bust"'));
+  assert.ok(bodiceHtml.includes('Bust Circumference'));
+  assert.ok(bodiceHtml.includes('data-testid="m05-ease-row-waist"'));
+  assert.ok(bodiceHtml.includes('data-testid="m05-ease-row-lowHip"'));
+
+  // Cycle 3: Switch back to Skirt -> remains strictly isolated
+  const skirtHtml2 = renderOverviewForSpec(SKIRT_SPEC);
+  assert.ok(!skirtHtml2.includes('data-testid="m05-ease-row-bust"'));
+  assert.ok(!skirtHtml2.includes('Bust Circumference'));
+  assert.ok(skirtHtml2.includes('data-testid="m05-ease-row-waist"'));
+  assert.ok(skirtHtml2.includes('data-testid="m05-ease-row-lowHip"'));
+});
+
+test('P1-2-REV3-N06-04: Identical engineering inputs under fresh vs stale upstream history share identical engineeringContentDigest while preserving distinct provenance-inclusive canonicalContentDigest', () => {
+  const fresh = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { fabricRollWidthCm: 140 },
+    createdAt: FIXED_TIMESTAMP
+  });
+
+  // Same engineering inputs, but compared against a different prior BOM fingerprint -> stale history
+  const staleSameInputs = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { fabricRollWidthCm: 140 },
+    createdAt: FIXED_TIMESTAMP,
+    previousPackageRevision: {
+      ...extractRevisionBaselineFromBundle(fresh)!,
+      bomFingerprint: '0'.repeat(64)
+    }
+  });
+
+  assert.equal(fresh.upstreamStaleness.isStaleAgainstPrevious, false);
+  assert.equal(staleSameInputs.upstreamStaleness.isStaleAgainstPrevious, true);
+
+  // Provenance- and validation-inclusive canonicalContentDigest MUST differ because staleness & Gate 10 status differ
+  assert.notEqual(
+    fresh.m05Package!.canonicalContentDigest,
+    staleSameInputs.m05Package!.canonicalContentDigest,
+    'Provenance-inclusive canonicalContentDigest must reflect staleness & validation history'
+  );
+
+  // Pure deterministic engineeringContentDigest MUST be bit-identical for identical engineering inputs
+  assert.equal(
+    fresh.m05Package!.engineeringContentDigest,
+    staleSameInputs.m05Package!.engineeringContentDigest,
+    'Pure engineeringContentDigest must be identical regardless of prior baseline comparison history'
+  );
+  assert.match(fresh.m05Package!.engineeringContentDigest, /^[a-f0-9]{64}$/);
+});
+
 

@@ -20,7 +20,13 @@ import {
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import {
+  BaselineCommitEligibilityResult,
+  buildDiagnosticProductionPackageJson,
+  evaluateProductionPackageExportGate,
+  executeGuardedCanonicalReleaseJsonExport,
+  executeGuardedDxfReleaseExport,
   M05ProductionPackageBundle,
+  ProductionExportValidationResult,
   serializeDeterministicProductionBundle
 } from '../../engine/production';
 
@@ -34,24 +40,64 @@ export interface ProductionBomControlState {
 
 interface ProductionPackagePanelProps {
   bundle: M05ProductionPackageBundle;
+  exportValidation?: ProductionExportValidationResult;
+  baselineEligibility?: BaselineCommitEligibilityResult;
   bomControls: ProductionBomControlState;
   onChangeBomControls: (next: ProductionBomControlState) => void;
-  onResyncPackageBaseline?: () => void;
+  onCommitProductionBaseline?: () => void;
+  onSyncWorkingDraftSnapshot?: () => void;
   titleContext?: string;
 }
 
 type PackageSubTab = 'validation' | 'bom' | 'docs' | 'dxf-digest';
 
+function triggerBrowserDownload(payloadText: string, filename: string, mimeType: string): void {
+  const blob = new Blob([payloadText], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
   bundle,
+  exportValidation,
+  baselineEligibility,
   bomControls,
   onChangeBomControls,
-  onResyncPackageBaseline,
+  onCommitProductionBaseline,
+  onSyncWorkingDraftSnapshot,
   titleContext = 'Deterministic Production Engineering (M05)'
 }) => {
   const isStale = bundle.upstreamRevisionTracking.isStaleAgainstPrevious;
   const [subTab, setSubTab] = useState<PackageSubTab>('validation');
   const [showCanonicalJson, setShowCanonicalJson] = useState(false);
+  const [exportRejectionNotice, setExportRejectionNotice] = useState<string | null>(null);
+
+  const exportGate = React.useMemo(
+    () =>
+      evaluateProductionPackageExportGate({
+        bundle,
+        exportValidation
+      }),
+    [bundle, exportValidation]
+  );
+
+  const effectiveBaselineEligibility: BaselineCommitEligibilityResult = baselineEligibility ?? {
+    canCommitProductionBaseline: false,
+    canSyncWorkingDraftSnapshot: false,
+    hasNonStalenessValidationFailures: true,
+    productionBaselineBlockingReasons: [
+      'Authoritative baseline commit eligibility context is unavailable (fail-closed).'
+    ],
+    workingDraftBlockingReasons: [
+      'Authoritative baseline commit eligibility context is unavailable (fail-closed).'
+    ]
+  };
 
   const canonicalJsonText = React.useMemo(() => {
     if (!showCanonicalJson) return '';
@@ -59,29 +105,40 @@ export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
   }, [bundle, showCanonicalJson]);
 
   const handleDownloadDxf = () => {
-    if (!bundle.dxfExport) return;
-    const blob = new Blob([bundle.dxfExport.artifact.dxfText], { type: 'application/dxf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${bundle.dxfExport.artifact.exportId}.dxf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const result = executeGuardedDxfReleaseExport({
+      bundle,
+      exportValidation,
+      onEmit: (payloadText, filename) =>
+        triggerBrowserDownload(payloadText, filename, 'application/dxf')
+    });
+    if (!result.permitted) {
+      setExportRejectionNotice(
+        `[${result.rejectionCode ?? 'EXPORT_BLOCKED'}] DXF release export blocked: ${result.blockingReasons[0] ?? 'Export prerequisites unsatisfied.'}`
+      );
+      return;
+    }
+    setExportRejectionNotice(null);
   };
 
   const handleDownloadPackageJson = () => {
-    const json = serializeDeterministicProductionBundle(bundle);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${bundle.packageId}-${bundle.activeSize}.canonical.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const result = executeGuardedCanonicalReleaseJsonExport({
+      bundle,
+      exportValidation,
+      onEmit: (payloadText, filename) =>
+        triggerBrowserDownload(payloadText, filename, 'application/json')
+    });
+    if (!result.permitted) {
+      setExportRejectionNotice(
+        `[${result.rejectionCode ?? 'EXPORT_BLOCKED'}] Canonical release JSON export blocked: ${result.blockingReasons[0] ?? 'Export prerequisites unsatisfied.'}`
+      );
+      return;
+    }
+    setExportRejectionNotice(null);
+  };
+
+  const handleDownloadDiagnosticJson = () => {
+    const diagnostic = buildDiagnosticProductionPackageJson(bundle, exportValidation);
+    triggerBrowserDownload(diagnostic.payloadText, diagnostic.filename, 'application/json');
   };
 
   return (
@@ -128,30 +185,64 @@ export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
       {/* Upstream Staleness Invalidation Banner */}
       {isStale && (
         <div
-          className="px-4 py-3 bg-red-50 border-b border-red-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono text-red-900"
+          className="px-4 py-3 bg-red-50 border-b border-red-200 flex flex-col gap-3 text-xs font-mono text-red-900"
           data-testid="m05-upstream-staleness-banner"
         >
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 font-bold uppercase text-red-950">
-              <AlertTriangle className="w-4 h-4 text-red-700 shrink-0" />
-              <span>Upstream Change Detected — Committed Package Baseline Invalidated</span>
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 font-bold uppercase text-red-950">
+                <AlertTriangle className="w-4 h-4 text-red-700 shrink-0" />
+                <span>Upstream Change Detected — Committed Package Baseline Invalidated</span>
+              </div>
+              <ul className="list-disc pl-5 text-[11px] space-y-0.5 text-red-900">
+                {bundle.upstreamRevisionTracking.staleReasons.map((reason, idx) => (
+                  <li key={idx}>{reason}</li>
+                ))}
+              </ul>
             </div>
-            <ul className="list-disc pl-5 text-[11px] space-y-0.5 text-red-900">
-              {bundle.upstreamRevisionTracking.staleReasons.map((reason, idx) => (
-                <li key={idx}>{reason}</li>
-              ))}
-            </ul>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {onCommitProductionBaseline && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!effectiveBaselineEligibility.canCommitProductionBaseline}
+                  onClick={onCommitProductionBaseline}
+                  data-testid="m05-commit-baseline-btn"
+                  className="shrink-0 bg-emerald-900 hover:bg-emerald-800 text-white disabled:opacity-50"
+                >
+                  Commit Production Baseline
+                </Button>
+              )}
+              {onSyncWorkingDraftSnapshot && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!effectiveBaselineEligibility.canSyncWorkingDraftSnapshot}
+                  onClick={onSyncWorkingDraftSnapshot}
+                  data-testid="m05-sync-working-draft-btn"
+                  className="shrink-0 border-red-400 text-red-950 hover:bg-red-100 disabled:opacity-50"
+                >
+                  Sync Working Draft Snapshot (Non-Approved)
+                </Button>
+              )}
+            </div>
           </div>
-          {onResyncPackageBaseline && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={onResyncPackageBaseline}
-              data-testid="m05-resync-baseline-btn"
-              className="shrink-0 bg-red-900 hover:bg-red-800 text-white"
+
+          {!effectiveBaselineEligibility.canCommitProductionBaseline && (
+            <div
+              className="px-2.5 py-1.5 bg-red-100/80 border border-red-300 rounded-xs text-[11px] text-red-950"
+              data-testid="m05-baseline-blocked-reason"
             >
-              Re-Sync Package Baseline
-            </Button>
+              <strong>Production Baseline Commit Blocked:</strong>{' '}
+              {effectiveBaselineEligibility.productionBaselineBlockingReasons[0] ??
+                'All validation and approval prerequisites must pass before committing a production baseline.'}
+              {effectiveBaselineEligibility.canSyncWorkingDraftSnapshot && (
+                <span>
+                  {' '}
+                  Syncing a non-approved working draft snapshot clears local drift inspection only and never unlocks release export.
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -214,28 +305,78 @@ export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
           ))}
         </div>
 
-        <div className="pb-2 flex items-center gap-2 shrink-0">
+        <div className="pb-2 flex flex-wrap items-center gap-2 shrink-0">
           <Button
             variant="outline"
             size="sm"
-            onClick={handleDownloadPackageJson}
+            onClick={handleDownloadDiagnosticJson}
+            data-testid="m05-export-diagnostic-json-btn"
             icon={<Download className="w-3.5 h-3.5" />}
           >
-            Canonical JSON
+            Diagnostic JSON (Non-Release)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!exportGate.canExportCanonicalReleaseJson}
+            onClick={handleDownloadPackageJson}
+            data-testid="m05-export-canonical-json-btn"
+            icon={<Download className="w-3.5 h-3.5" />}
+          >
+            {exportGate.canExportCanonicalReleaseJson
+              ? 'Release Canonical JSON'
+              : `Canonical JSON Blocked (${exportGate.rejectionCode ?? 'GATED'})`}
           </Button>
           {bundle.dxfExport && (
             <Button
               variant="primary"
               size="sm"
-              disabled={isStale}
+              disabled={!exportGate.canExportDxfRelease}
               onClick={handleDownloadDxf}
+              data-testid="m05-export-dxf-btn"
               icon={<Download className="w-3.5 h-3.5" />}
             >
-              {isStale ? 'DXF Blocked (Stale)' : 'Export DXF-AAMA'}
+              {exportGate.canExportDxfRelease
+                ? 'Export DXF-AAMA'
+                : isStale
+                ? 'DXF Blocked (Stale)'
+                : `DXF Blocked (${exportGate.rejectionCode ?? 'GATED'})`}
             </Button>
           )}
         </div>
       </div>
+
+      {/* Fail-Closed Release Export Gate Status Notice */}
+      {(!exportGate.canExportDxfRelease || !exportGate.canExportCanonicalReleaseJson) && (
+        <div
+          className="px-4 py-2 bg-amber-50/80 border-b border-amber-200 text-[11px] font-mono text-amber-950 flex flex-wrap items-center justify-between gap-2"
+          data-testid="m05-export-gate-status"
+        >
+          <span>
+            <strong>RELEASE EXPORTS GATED [{exportGate.rejectionCode ?? 'BLOCKED'}]:</strong>{' '}
+            {exportGate.summaryReason ?? 'Production release prerequisites are not satisfied.'}
+          </span>
+          <span className="text-amber-800">
+            Diagnostic JSON remains available strictly for non-release inspection.
+          </span>
+        </div>
+      )}
+
+      {exportRejectionNotice && (
+        <div
+          className="px-4 py-2 bg-red-50 border-b border-red-300 text-[11px] font-mono text-red-900 flex items-center justify-between gap-2"
+          data-testid="m05-export-rejection-alert"
+        >
+          <span>{exportRejectionNotice}</span>
+          <button
+            type="button"
+            onClick={() => setExportRejectionNotice(null)}
+            className="font-bold text-red-800 hover:text-red-950"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Tab Content */}
       <div className="p-4 space-y-5">
@@ -647,25 +788,45 @@ export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
               </div>
             )}
 
-            {/* Canonical JSON + SHA-256 Digest Card */}
-            <div className="border border-neutral-200 rounded-xs p-4 space-y-2 bg-white font-mono text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <span className="text-[10px] text-neutral-500 uppercase block">
-                    CANONICAL UTF-8 PRODUCTION PACKAGE DIGEST (FIPS 180-4 SHA-256)
-                  </span>
-                  <code className="text-neutral-900 font-bold break-all">
-                    {bundle.canonicalContentDigest}
-                  </code>
-                  <span className="text-[11px] text-neutral-500 block mt-0.5">
-                    Canonical byte length: {bundle.canonicalJsonByteLength.toLocaleString()} bytes
-                  </span>
+            {/* Canonical JSON + Dual SHA-256 Digest Card */}
+            <div className="border border-neutral-200 rounded-xs p-4 space-y-3 bg-white font-mono text-xs">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <div>
+                    <span className="text-[10px] text-neutral-500 uppercase block">
+                      PACKAGE &amp; PROVENANCE DIGEST — canonicalContentDigest (FIPS 180-4 SHA-256)
+                    </span>
+                    <code
+                      className="text-neutral-900 font-bold break-all"
+                      data-testid="m05-canonical-digest-detail"
+                    >
+                      {bundle.canonicalContentDigest}
+                    </code>
+                    <span className="text-[10px] text-neutral-500 block mt-0.5">
+                      Includes validation diagnostics &amp; upstream staleness provenance ({bundle.canonicalJsonByteLength.toLocaleString()} bytes). Changes when staleness or validation state changes.
+                    </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-neutral-100">
+                    <span className="text-[10px] text-neutral-500 uppercase block">
+                      ENGINEERING CONTENT DIGEST — engineeringContentDigest (PURE DETERMINISTIC CONTENT)
+                    </span>
+                    <code
+                      className="text-neutral-800 font-semibold break-all"
+                      data-testid="m05-engineering-digest-detail"
+                    >
+                      {bundle.engineeringContentDigest}
+                    </code>
+                    <span className="text-[10px] text-neutral-500 block mt-0.5">
+                      Excludes session-relative staleness flags &amp; validation wrappers so identical engineering inputs hash identically across baseline histories.
+                    </span>
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setShowCanonicalJson(v => !v)}
-                  className="px-2.5 py-1.5 border border-neutral-300 rounded-xs text-xs hover:bg-neutral-50 cursor-pointer flex items-center gap-1"
+                  className="px-2.5 py-1.5 border border-neutral-300 rounded-xs text-xs hover:bg-neutral-50 cursor-pointer flex items-center gap-1 shrink-0"
                 >
                   {showCanonicalJson ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   <span>{showCanonicalJson ? 'Hide Canonical JSON' : 'Inspect Canonical JSON'}</span>

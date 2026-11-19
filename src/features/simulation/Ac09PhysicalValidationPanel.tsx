@@ -278,10 +278,10 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
           </strong>
         </div>
         <div className="border border-neutral-200 bg-neutral-50 p-2.5 rounded-xs">
-          <span className="text-[10px] text-neutral-500 block uppercase">Traceability &amp; Sign-Off</span>
+          <span className="text-[10px] text-neutral-500 block uppercase">Traceability &amp; Integrity Seal</span>
           <strong>
             {evaluation.traceabilityVerified ? 'Specs Verified' : 'Trace Pending/Mismatch'} •{' '}
-            {evaluation.signOffAuthorized ? 'Signed' : 'Unsigned'}
+            {evaluation.signOffAuthorized ? 'Sealed (Role Checked)' : 'Unsealed'}
           </strong>
         </div>
       </div>
@@ -600,7 +600,9 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
                 <input
                   type="number"
                   step="0.1"
+                  min="0.1"
                   disabled={isLocked}
+                  data-testid="m06-ac09-seam-allowance-input"
                   value={proc?.seamAllowanceCm ?? ''}
                   onChange={e => {
                     const val = e.target.value.trim() === '' ? null : Number(e.target.value);
@@ -610,7 +612,7 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
                       processRecord: { ...(r.processRecord ?? proc!), seamAllowanceCm: val }
                     }));
                   }}
-                  placeholder="1.5"
+                  placeholder="1.5 (>0)"
                   className="w-full mt-0.5 font-mono text-xs border-b border-neutral-200 focus:outline-none"
                 />
               </label>
@@ -980,19 +982,20 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
                 Seams Aligned
               </label>
               <label className="flex items-center gap-1 text-neutral-700">
-                <span>Hem Δ (cm):</span>
+                <span>Hem Δ (cm, 0–0.8):</span>
                 <input
                   type="number"
                   step="0.1"
                   min="0"
                   disabled={isLocked}
+                  data-testid="m06-ac09-hem-deviation-input"
                   value={record.hemLevelPhysicalDeviationCm ?? ''}
                   onChange={e => {
                     const val = e.target.value.trim() === '' ? null : Number(e.target.value);
                     handleSafeUpdate(r => ({ ...r, hemLevelPhysicalDeviationCm: val }));
                   }}
-                  placeholder="≤0.8"
-                  className="w-14 px-1 py-0.5 border border-neutral-300 rounded-xs bg-white"
+                  placeholder="0–0.8"
+                  className="w-16 px-1 py-0.5 border border-neutral-300 rounded-xs bg-white"
                 />
               </label>
             </div>
@@ -1052,7 +1055,7 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-[11px] font-mono font-bold text-neutral-900 uppercase flex items-center gap-1.5">
             <Lock className="w-3.5 h-3.5" />
-            5. Authorized Human Reviewer Sign-Off &amp; Revision Lock
+            5. Authorized Human Reviewer Sign-Off &amp; Revision Lock (Client-Side Integrity Seal)
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!isLocked && record.workflowState !== 'READY_FOR_REVIEW' && (
@@ -1068,12 +1071,21 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
               </Button>
             )}
             {record.reviewerDecision?.signatureDigest && (
-              <span className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs">
-                SIGNED: {record.reviewerDecision.signatureDigest.slice(0, 16)}…
+              <span
+                className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs"
+                data-testid="m06-ac09-integrity-seal-badge"
+              >
+                INTEGRITY SEAL: {record.reviewerDecision.signatureDigest.slice(0, 16)}…
               </span>
             )}
           </div>
         </div>
+        <p
+          className="text-[10px] font-mono text-neutral-600 bg-white/80 border border-neutral-200 rounded-xs px-2.5 py-1.5"
+          data-testid="m06-ac09-seal-disclosure"
+        >
+          <strong>Client-Side Integrity Seal Notice:</strong> Reviewer decision and lock digests use an unkeyed client-side SHA-256 hash to detect partial or accidental mutation after locking. Role authorization checks the allowlist (<code>LEAD_PATTERNMAKER</code>, <code>QA_LEAD</code>, <code>ATELIER_TECH_DIRECTOR</code>), but does <strong>not</strong> perform cryptographic reviewer identity authentication or defend against local digest recomputation.
+        </p>
 
         {!isLocked ? (
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-xs">

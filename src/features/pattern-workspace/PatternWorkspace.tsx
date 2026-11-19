@@ -79,7 +79,8 @@ interface PatternWorkspaceProps {
   onToggleStrictUncertaintyGate?: (next: boolean) => void;
   requireApprovedGovernance?: boolean;
   onToggleRequireApprovedGovernance?: (next: boolean) => void;
-  onResyncPackageBaseline?: () => void;
+  onCommitProductionBaseline?: () => void;
+  onSyncWorkingDraftSnapshot?: () => void;
   onNavigateToProduction: () => void;
   onNavigateToMeasurements: () => void;
   onUpdateSpec?: (nextSpec: DesignSpecification) => void;
@@ -103,7 +104,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   onToggleStrictUncertaintyGate: externalOnToggleStrictUncertaintyGate,
   requireApprovedGovernance: externalRequireApprovedGovernance,
   onToggleRequireApprovedGovernance: externalOnToggleRequireApprovedGovernance,
-  onResyncPackageBaseline,
+  onCommitProductionBaseline,
+  onSyncWorkingDraftSnapshot,
   onNavigateToProduction,
   onNavigateToMeasurements,
   onUpdateSpec
@@ -691,9 +693,12 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           </div>
           <ProductionPackagePanel
             bundle={m05Package}
+            exportValidation={exportValidation}
+            baselineEligibility={workspaceBundle.baselineEligibility}
             bomControls={bomControls}
             onChangeBomControls={setBomControls}
-            onResyncPackageBaseline={onResyncPackageBaseline}
+            onCommitProductionBaseline={onCommitProductionBaseline}
+            onSyncWorkingDraftSnapshot={onSyncWorkingDraftSnapshot}
             titleContext="Module 04 Shared Production Readiness (Synchronized with Module 05)"
           />
         </div>

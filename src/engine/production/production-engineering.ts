@@ -151,11 +151,16 @@ function getEffectivePhysicalPanelCount(
 
 /**
  * Extracts deterministic canonical payload for M05 Production Package SHA-256 verification.
- * Excludes mutable display wrappers while preserving all engineering specs, BOM, docs,
- * validation diagnostics, per-size summaries, DXF digest, and upstream fingerprints.
+ * Excludes wall-clock `generatedAt` while preserving all engineering specs, BOM, docs,
+ * validation diagnostics, per-size summaries, DXF digest, and full upstream revision tracking
+ * (including staleness status). Identical engineering inputs evaluated under different
+ * staleness histories intentionally produce distinct `canonicalContentDigest` values.
  */
 export function buildCanonicalProductionPackagePayload(
-  bundle: Omit<M05ProductionPackageBundle, 'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'>
+  bundle: Omit<
+    M05ProductionPackageBundle,
+    'canonicalContentDigest' | 'engineeringContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'
+  >
 ): Record<string, unknown> {
   return {
     schemaVersion: bundle.schemaVersion,
@@ -221,10 +226,93 @@ export function buildCanonicalProductionPackagePayload(
 }
 
 /**
+ * Extracts pure deterministic engineering content payload for `engineeringContentDigest`.
+ * Excludes session-relative staleness comparison flags (`isStaleAgainstPrevious`, `staleReasons`)
+ * and `validation` diagnostic statuses so identical engineering inputs always hash identically
+ * regardless of prior baseline history.
+ */
+export function buildCanonicalEngineeringContentPayload(
+  bundle: Omit<
+    M05ProductionPackageBundle,
+    'canonicalContentDigest' | 'engineeringContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'
+  >
+): Record<string, unknown> {
+  return {
+    schemaVersion: bundle.schemaVersion,
+    packageId: bundle.packageId,
+    packageRevisionId: bundle.packageRevisionId,
+    projectId: bundle.projectId,
+    tenantId: bundle.tenantId,
+    garmentId: bundle.garmentId,
+    garmentName: bundle.garmentName,
+    garmentCategory: bundle.garmentCategory,
+    activeSize: bundle.activeSize,
+    includedSizes: [...bundle.includedSizes],
+    baseSize: bundle.baseSize,
+    patternRevisionSummary: bundle.patternRevision
+      ? {
+          revisionId: bundle.patternRevision.revisionId,
+          basePatternFingerprint: bundle.patternRevision.basePatternFingerprint,
+          geometryFingerprint: bundle.patternRevision.geometryFingerprint,
+          currentLifecycleState: bundle.patternRevision.currentLifecycleState
+        }
+      : null,
+    gradingArtifactSummary: bundle.gradingArtifact
+      ? {
+          gradingArtifactId: bundle.gradingArtifact.gradingArtifactId,
+          gradingRevisionId: bundle.gradingArtifact.gradingRevisionId,
+          baseSize: bundle.gradingArtifact.baseSize,
+          sizeRange: [...bundle.gradingArtifact.sizeRange],
+          gradingRuleSetId: bundle.gradingArtifact.gradingRuleSetId,
+          gradingRuleSetRevision: bundle.gradingArtifact.gradingRuleSetRevision,
+          gradingRuleSetFingerprint: bundle.gradingArtifact.gradingRuleSetFingerprint,
+          sourceBasePatternFingerprint: bundle.gradingArtifact.sourceBasePatternFingerprint ?? null,
+          sourceSpecificationFingerprint: bundle.gradingArtifact.sourceSpecificationFingerprint,
+          sourceMeasurementSetFingerprint: bundle.gradingArtifact.sourceMeasurementSetFingerprint,
+          isOverallGradingValid: bundle.gradingArtifact.crossSizeIntegrityReport.isOverallGradingValid,
+          validSizeCount: bundle.gradingArtifact.crossSizeIntegrityReport.validSizeCount,
+          failedSizeCount: bundle.gradingArtifact.crossSizeIntegrityReport.failedSizeCount,
+          lifecycleState: bundle.gradingArtifact.lifecycleState
+        }
+      : null,
+    gradingArtifactError: bundle.gradingArtifactError,
+    perSizeSummaries: bundle.perSizeSummaries,
+    bom: bundle.bom,
+    manufacturingDocs: bundle.manufacturingDocs,
+    dxfExportSummary: bundle.dxfExport
+      ? {
+          exportId: bundle.dxfExport.artifact.exportId,
+          dxfVersion: bundle.dxfExport.artifact.dxfVersion,
+          pieceCodes: bundle.dxfExport.artifact.pieceCodes,
+          dxfSha256Digest: bundle.dxfExport.artifact.sha256Digest,
+          roundTripAllPassed: bundle.dxfExport.roundTrip.allPassed,
+          maxVertexRoundTripErrorCm: bundle.dxfExport.roundTrip.maxVertexRoundTripErrorCm,
+          maxFeatureRoundTripErrorCm: bundle.dxfExport.roundTrip.maxFeatureRoundTripErrorCm,
+          externalCadInteroperabilityVerified: bundle.dxfExport.externalCadInteroperabilityVerified
+        }
+      : null,
+    upstreamEngineeringFingerprints: {
+      sourceSpecificationFingerprint: bundle.upstreamRevisionTracking.sourceSpecificationFingerprint,
+      sourceMeasurementFingerprint: bundle.upstreamRevisionTracking.sourceMeasurementFingerprint,
+      basePatternFingerprint: bundle.upstreamRevisionTracking.basePatternFingerprint,
+      patternRevisionId: bundle.upstreamRevisionTracking.patternRevisionId,
+      gradingControlsFingerprint: bundle.upstreamRevisionTracking.gradingControlsFingerprint,
+      gradingReportSha256Hex: bundle.upstreamRevisionTracking.gradingReportSha256Hex,
+      bomFingerprint: bundle.upstreamRevisionTracking.bomFingerprint
+    },
+    provenanceSummary: bundle.provenanceSummary,
+    isProductionReady: bundle.isProductionReady
+  };
+}
+
+/**
  * Serializes the M05 Production Package canonical payload to deterministic UTF-8 JSON.
  */
 export function serializeDeterministicProductionBundle(
-  bundle: Omit<M05ProductionPackageBundle, 'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'>
+  bundle: Omit<
+    M05ProductionPackageBundle,
+    'canonicalContentDigest' | 'engineeringContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'
+  >
 ): string {
   const payload = buildCanonicalProductionPackagePayload(bundle);
   return digestCanonicalPayload(payload, { requireNonEmptyObject: true }).canonicalJson;
@@ -673,7 +761,7 @@ export function buildM05ProductionPackage(
 
   const partialBundle: Omit<
     M05ProductionPackageBundle,
-    'canonicalContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'
+    'canonicalContentDigest' | 'engineeringContentDigest' | 'reportSha256Hex' | 'canonicalJsonByteLength'
   > = {
     schemaVersion: M05_PRODUCTION_PACKAGE_SCHEMA_VERSION,
     packageId,
@@ -720,13 +808,20 @@ export function buildM05ProductionPackage(
     isProductionReady: false
   };
 
-  // 12. Canonical JSON & Non-Empty SHA-256 Digest
+  // 12. Canonical JSON & Non-Empty SHA-256 Digests
+  // - canonicalContentDigest: provenance- and validation-inclusive package digest
+  // - engineeringContentDigest: pure deterministic engineering content digest independent of staleness history
   const canonicalPayload = buildCanonicalProductionPackagePayload(partialBundle);
   const digestEnvelope = digestCanonicalPayload(canonicalPayload, { requireNonEmptyObject: true });
+  const engineeringPayload = buildCanonicalEngineeringContentPayload(partialBundle);
+  const engineeringDigestEnvelope = digestCanonicalPayload(engineeringPayload, {
+    requireNonEmptyObject: true
+  });
 
   return {
     ...partialBundle,
     canonicalContentDigest: digestEnvelope.sha256Hex,
+    engineeringContentDigest: engineeringDigestEnvelope.sha256Hex,
     reportSha256Hex: digestEnvelope.sha256Hex,
     canonicalJsonByteLength: digestEnvelope.byteLength,
     isProductionReady: false

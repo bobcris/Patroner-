@@ -10,6 +10,8 @@ import { STANDARD_SIZING_SYSTEM } from '../measurements/standards';
 import { draftBodiceBlock } from '../drafting/bodice-block';
 import { draftSleeveBlock } from '../drafting/sleeve-block';
 import { assembleBodiceSleeve } from '../assembly/bodice-sleeve-assembly';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   AC09_MIN_REPEAT_READINGS,
   Ac09PhysicalToileRecord,
@@ -20,12 +22,17 @@ import {
   createPendingAc09ToileRecord,
   DEFAULT_AC09_TOLERANCE_POLICY,
   evaluateAc09ToileRecord,
+  isValidAc09IsoDateOrTimestamp,
   recordAc09RepeatMeasurements,
   recordAc09ReviewerDecision,
   registerAc09PhysicalSample,
   serializeAc09ValidationReport,
   transitionAc09WorkflowState,
   updateAc09PomMeasurement,
+  validateAc09FabricStretchPct,
+  validateAc09FabricWeightGsm,
+  validateAc09HemLevelDeviation,
+  validateAc09SeamAllowanceCm,
   validateAc09TolerancePolicy
 } from './index';
 
@@ -891,5 +898,385 @@ test('AC09-SEC-16 (Armscye POM Baseline): pom-scye-circ nominal CAD equals stitc
   assert.equal(record.traceability?.approvedPatternRevisionId, 'rev-spec-bodice-block-v1-M');
   assert.ok(scyePom!.checkpointDefinition?.includes('L_bf + L_bb'));
 });
+
+// ============================================================================
+// P1-2 CHECKPOINT 8 REVISION 3 REMEDIATION — ADVERSARIAL & SECURITY SUITE
+// ============================================================================
+
+test('AC09-REV3-N01: hemLevelPhysicalDeviationCm enforces unsigned [0, 0.80] cm tolerance across readiness, sign-off, workflow, and legacy modes', () => {
+  // Unit validator boundary coverage
+  assert.equal(validateAc09HemLevelDeviation(0).status, 'valid');
+  assert.equal(validateAc09HemLevelDeviation(0.25).status, 'valid');
+  assert.equal(validateAc09HemLevelDeviation(0.8).status, 'valid');
+  assert.equal(validateAc09HemLevelDeviation(0.8001).status, 'exceeds_tolerance');
+  assert.equal(validateAc09HemLevelDeviation(0.81).status, 'exceeds_tolerance');
+  assert.equal(validateAc09HemLevelDeviation(1.5).status, 'exceeds_tolerance');
+  assert.equal(validateAc09HemLevelDeviation(null).status, 'missing');
+  assert.equal(validateAc09HemLevelDeviation(undefined).status, 'missing');
+  for (const invalidVal of [-5.0, -0.01, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '0.2' as unknown as number]) {
+    assert.equal(
+      validateAc09HemLevelDeviation(invalidVal).status,
+      'invalid',
+      `Expected hemLevelPhysicalDeviationCm=${String(invalidVal)} to be classified invalid`
+    );
+  }
+
+  // 1. Missing (null / undefined) blocks READY_FOR_REVIEW and cannot pass in workflow or legacy
+  const base = buildWorkflowPassingFixture('skirt-block-v1');
+  for (const missingHem of [null, undefined]) {
+    const rec: Ac09PhysicalToileRecord = {
+      ...base,
+      hemLevelPhysicalDeviationCm: missingHem as unknown as number | null
+    };
+    const evalWorkflow = evaluateAc09ToileRecord(rec);
+    assert.equal(evalWorkflow.status, 'INCOMPLETE');
+    assert.equal(evalWorkflow.workflowState, 'EVIDENCE_INCOMPLETE');
+    assert.ok(evalWorkflow.missingEvidenceDiagnostics.some(d => d.includes('AC09_MISSING_HEM_DEVIATION')));
+
+    assert.throws(
+      () => transitionAc09WorkflowState(rec, 'READY_FOR_REVIEW'),
+      /AC09_MISSING_HEM_DEVIATION/
+    );
+
+    // Even in legacy mode, missing hem deviation must not return PASSED
+    const evalLegacy = evaluateAc09ToileRecord({ ...rec, executionMode: 'legacy' });
+    assert.notEqual(evalLegacy.status, 'PASSED');
+    assert.ok(evalLegacy.blockingReasons.some(r => r.includes('AC09_MISSING_HEM_DEVIATION')));
+  }
+
+  // 2. Negative, NaN, Infinity, -Infinity, malformed string -> explicit FAILED (never PENDING/PASSED)
+  for (const malformedHem of [-5.0, -0.01, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '0.2' as unknown as number]) {
+    const rec: Ac09PhysicalToileRecord = {
+      ...base,
+      hemLevelPhysicalDeviationCm: malformedHem
+    };
+    const evalWorkflow = evaluateAc09ToileRecord(rec);
+    assert.equal(evalWorkflow.status, 'FAILED', `Malformed hem ${String(malformedHem)} must return FAILED`);
+    assert.notEqual(evalWorkflow.status, 'PENDING');
+    assert.notEqual(evalWorkflow.status, 'PASSED');
+    assert.ok(evalWorkflow.blockingReasons.some(r => r.includes('AC09_INVALID_HEM_DEVIATION')));
+
+    assert.throws(
+      () => transitionAc09WorkflowState(rec, 'READY_FOR_REVIEW'),
+      /AC09_INVALID_HEM_DEVIATION/
+    );
+
+    const evalLegacy = evaluateAc09ToileRecord({ ...rec, executionMode: 'legacy' });
+    assert.equal(evalLegacy.status, 'FAILED');
+    assert.ok(evalLegacy.blockingReasons.some(r => r.includes('AC09_INVALID_HEM_DEVIATION')));
+  }
+
+  // 3. Exceeds tolerance (0.8001, 0.81, 1.5) -> explicit FAILED across workflow, sign-off, and legacy
+  for (const overTol of [0.8001, 0.81, 1.5]) {
+    const rec: Ac09PhysicalToileRecord = {
+      ...base,
+      hemLevelPhysicalDeviationCm: overTol
+    };
+    const evalWorkflow = evaluateAc09ToileRecord(rec);
+    assert.equal(evalWorkflow.status, 'FAILED', `Hem deviation ${overTol} > 0.80 must FAIL`);
+    assert.ok(evalWorkflow.blockingReasons.some(r => r.includes('AC09_HEM_DEVIATION_EXCEEDS_TOLERANCE')));
+
+    assert.throws(
+      () => transitionAc09WorkflowState(rec, 'READY_FOR_REVIEW'),
+      /AC09_HEM_DEVIATION_EXCEEDS_TOLERANCE/
+    );
+
+    const evalLegacy = evaluateAc09ToileRecord({ ...rec, executionMode: 'legacy' });
+    assert.equal(evalLegacy.status, 'FAILED');
+  }
+
+  // 4. Forged READY_FOR_REVIEW with exceeding/negative/null hem cannot receive APPROVED_PASS
+  for (const badHem of [null, -5.0, 0.81, Number.NaN]) {
+    const forgedReady: Ac09PhysicalToileRecord = {
+      ...base,
+      workflowState: 'READY_FOR_REVIEW',
+      hemLevelPhysicalDeviationCm: badHem
+    };
+    assert.throws(
+      () =>
+        recordAc09ReviewerDecision(forgedReady, {
+          reviewerName: 'Elena Rostova',
+          reviewerRole: 'LEAD_PATTERNMAKER',
+          decision: 'APPROVED_PASS',
+          rationale: 'Attempting to approve record with invalid or missing hem level deviation.',
+          decidedAt: '2026-11-19'
+        }),
+      /AC09_CANNOT_APPROVE_FAILING_OR_INCOMPLETE/
+    );
+  }
+
+  // 5. Boundary exact tolerance (0.0 and 0.80 cm) and in-tolerance (0.25 cm) pass end-to-end
+  for (const validHem of [0, 0.25, 0.8]) {
+    const rec = { ...base, hemLevelPhysicalDeviationCm: validHem };
+    const ready = transitionAc09WorkflowState(rec, 'READY_FOR_REVIEW');
+    const approved = recordAc09ReviewerDecision(ready, {
+      reviewerName: 'Elena Rostova',
+      reviewerRole: 'LEAD_PATTERNMAKER',
+      decision: 'APPROVED_PASS',
+      rationale: `Hem level deviation ${validHem} cm verified within [0, 0.80] cm.`,
+      decidedAt: '2026-11-19'
+    });
+    const evalRes = evaluateAc09ToileRecord(approved);
+    assert.equal(evalRes.status, 'PASSED', `Valid hem ${validHem} cm should PASS`);
+    assert.equal(evalRes.signOffAuthorized, true);
+  }
+});
+
+test('AC09-REV3-N02: processRecord.seamAllowanceCm requires finite positive > 0 cm across registration, readiness, sign-off, and legacy modes', () => {
+  // Unit validator coverage
+  assert.equal(validateAc09SeamAllowanceCm(1.5).status, 'valid');
+  assert.equal(validateAc09SeamAllowanceCm(0.5).status, 'valid');
+  assert.equal(validateAc09SeamAllowanceCm(null).status, 'missing');
+  assert.equal(validateAc09SeamAllowanceCm(undefined).status, 'missing');
+  for (const badSa of [0, -0.1, -2.0, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '1.5' as unknown as number]) {
+    assert.equal(
+      validateAc09SeamAllowanceCm(badSa).status,
+      'invalid',
+      `Expected seamAllowanceCm=${String(badSa)} to be invalid`
+    );
+  }
+
+  const base = buildWorkflowPassingFixture('bodice-sleeve-v1');
+
+  // 1. Registration rejects invalid seamAllowanceCm (<= 0, NaN, Infinity, malformed)
+  for (const badSa of [0, -0.1, -2.0, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '1.5' as unknown as number]) {
+    assert.throws(
+      () =>
+        registerAc09PhysicalSample(base, {
+          sampleId: base.sampleId!,
+          processRecord: {
+            seamAllowanceCm: badSa
+          }
+        }),
+      /AC09_INVALID_SEAM_ALLOWANCE/
+    );
+  }
+
+  // 2. Missing (null / undefined) blocks READY_FOR_REVIEW and sign-off, and cannot pass in legacy mode
+  for (const missingSa of [null, undefined]) {
+    const rec: Ac09PhysicalToileRecord = {
+      ...base,
+      processRecord: {
+        ...base.processRecord!,
+        seamAllowanceCm: missingSa as unknown as number | null
+      }
+    };
+    const evalWorkflow = evaluateAc09ToileRecord(rec);
+    assert.equal(evalWorkflow.status, 'INCOMPLETE');
+    assert.ok(evalWorkflow.missingEvidenceDiagnostics.some(d => d.includes('AC09_MISSING_SEAM_ALLOWANCE')));
+    assert.throws(
+      () => transitionAc09WorkflowState(rec, 'READY_FOR_REVIEW'),
+      /AC09_MISSING_SEAM_ALLOWANCE/
+    );
+    const evalLegacy = evaluateAc09ToileRecord({ ...rec, executionMode: 'legacy' });
+    assert.notEqual(evalLegacy.status, 'PASSED');
+    assert.ok(evalLegacy.blockingReasons.some(r => r.includes('AC09_MISSING_SEAM_ALLOWANCE')));
+  }
+
+  // 3. Direct malformed object mutation (0, negative, NaN, Infinity, string) fails closed with FAILED
+  for (const badSa of [0, -2.0, -0.1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '1.5' as unknown as number]) {
+    const rec: Ac09PhysicalToileRecord = {
+      ...base,
+      processRecord: {
+        ...base.processRecord!,
+        seamAllowanceCm: badSa
+      }
+    };
+    const evalWorkflow = evaluateAc09ToileRecord(rec);
+    assert.equal(evalWorkflow.status, 'FAILED', `Malformed seamAllowanceCm=${String(badSa)} must FAIL`);
+    assert.ok(evalWorkflow.blockingReasons.some(r => r.includes('AC09_INVALID_SEAM_ALLOWANCE')));
+    assert.throws(
+      () => transitionAc09WorkflowState(rec, 'READY_FOR_REVIEW'),
+      /AC09_INVALID_SEAM_ALLOWANCE/
+    );
+
+    const forgedReady: Ac09PhysicalToileRecord = { ...rec, workflowState: 'READY_FOR_REVIEW' };
+    assert.throws(
+      () =>
+        recordAc09ReviewerDecision(forgedReady, {
+          reviewerName: 'Marcus Vance',
+          reviewerRole: 'QA_LEAD',
+          decision: 'APPROVED_PASS',
+          rationale: 'Attempting approval with invalid seam allowance.',
+          decidedAt: '2026-11-19'
+        }),
+      /AC09_CANNOT_APPROVE_FAILING_OR_INCOMPLETE/
+    );
+
+    const evalLegacy = evaluateAc09ToileRecord({ ...rec, executionMode: 'legacy' });
+    assert.equal(evalLegacy.status, 'FAILED');
+  }
+
+  // 4. Valid positive seam allowances (0.5, 1.5) pass end-to-end
+  for (const validSa of [0.5, 1.5]) {
+    const updated = registerAc09PhysicalSample(base, {
+      sampleId: base.sampleId!,
+      processRecord: { seamAllowanceCm: validSa }
+    });
+    const ready = transitionAc09WorkflowState(updated, 'READY_FOR_REVIEW');
+    const approved = recordAc09ReviewerDecision(ready, {
+      reviewerName: 'Marcus Vance',
+      reviewerRole: 'QA_LEAD',
+      decision: 'APPROVED_PASS',
+      rationale: `Seam allowance ${validSa} cm verified.`,
+      decidedAt: '2026-11-19'
+    });
+    assert.equal(evaluateAc09ToileRecord(approved).status, 'PASSED');
+  }
+});
+
+test('AC09-REV3-N03: Client-side SHA-256 tamper-evident integrity seal catches post-lock mutation and UI discloses non-authentication semantics', () => {
+  const signed = buildSignedPassingRecord('bodice-sleeve-v1');
+  // Post-lock mutation of hemLevelPhysicalDeviationCm or seamAllowanceCm invalidates both integrity seal digests
+  const mutatedHem: Ac09PhysicalToileRecord = {
+    ...signed,
+    hemLevelPhysicalDeviationCm: 0.45
+  };
+  const evalHem = evaluateAc09ToileRecord(mutatedHem);
+  assert.equal(evalHem.status, 'FAILED');
+  assert.ok(evalHem.blockingReasons.some(r => r.includes('AC09_SIGNATURE_TAMPER_DETECTED')));
+  assert.ok(evalHem.blockingReasons.some(r => r.includes('AC09_LOCKED_SNAPSHOT_TAMPER_DETECTED')));
+
+  const mutatedSa: Ac09PhysicalToileRecord = {
+    ...signed,
+    processRecord: {
+      ...signed.processRecord!,
+      seamAllowanceCm: 1.2
+    }
+  };
+  const evalSa = evaluateAc09ToileRecord(mutatedSa);
+  assert.equal(evalSa.status, 'FAILED');
+  assert.ok(evalSa.blockingReasons.some(r => r.includes('AC09_SIGNATURE_TAMPER_DETECTED')));
+  assert.ok(evalSa.blockingReasons.some(r => r.includes('AC09_LOCKED_SNAPSHOT_TAMPER_DETECTED')));
+
+  // UI accurately classifies digest as unkeyed client-side tamper-evident integrity seal (NOT cryptographic reviewer identity auth)
+  const panelSrc = fs.readFileSync(
+    path.resolve('src/features/simulation/Ac09PhysicalValidationPanel.tsx'),
+    'utf8'
+  );
+  assert.ok(panelSrc.includes('m06-ac09-integrity-seal-badge'));
+  assert.ok(panelSrc.includes('m06-ac09-seal-disclosure'));
+  assert.ok(panelSrc.includes('perform cryptographic reviewer identity authentication'));
+  assert.ok(panelSrc.includes('unkeyed client-side SHA-256 hash'));
+  assert.ok(!panelSrc.includes('Signature Verified'));
+});
+
+test('AC09-REV3-N06: Date validation (decidedAt, evaluatedAt, cutDate, sewnDate, lockedAt) and fabric numeric hygiene fail closed with FAILED', () => {
+  // Date helper unit checks
+  assert.equal(isValidAc09IsoDateOrTimestamp('2026-11-19'), true);
+  assert.equal(isValidAc09IsoDateOrTimestamp('2026-11-19T09:15:00.000Z'), true);
+  assert.equal(isValidAc09IsoDateOrTimestamp('2024-02-29'), true);
+  for (const badDate of ['not-a-valid-date', '', '   ', '2026-02-30', '2026-13-01', '2025-02-29', new Date('invalid'), Number.NaN, null, undefined]) {
+    assert.equal(
+      isValidAc09IsoDateOrTimestamp(badDate),
+      false,
+      `Expected bad date '${String(badDate)}' to be rejected`
+    );
+  }
+
+  // 1. recordAc09ReviewerDecision rejects invalid decidedAt values
+  const ready = transitionAc09WorkflowState(buildWorkflowPassingFixture('skirt-block-v1'), 'READY_FOR_REVIEW');
+  for (const badDecidedAt of ['not-a-valid-date', '', '   ', '2026-02-30', new Date('invalid') as unknown as string, Number.NaN as unknown as string]) {
+    assert.throws(
+      () =>
+        recordAc09ReviewerDecision(ready, {
+          reviewerName: 'Elena Rostova',
+          reviewerRole: 'LEAD_PATTERNMAKER',
+          decision: 'APPROVED_PASS',
+          rationale: 'Testing malformed decidedAt rejection.',
+          decidedAt: badDecidedAt
+        }),
+      /AC09_INVALID_DECISION_DATE/
+    );
+  }
+
+  // 2. Tampered decidedAt / lockedAt / evaluatedAt / cutDate / sewnDate on record fails closed
+  const signed = buildSignedPassingRecord('skirt-block-v1');
+  const badSignedDate = evaluateAc09ToileRecord({
+    ...signed,
+    reviewerDecision: {
+      ...signed.reviewerDecision!,
+      decidedAt: 'not-a-valid-date'
+    }
+  });
+  assert.equal(badSignedDate.status, 'FAILED');
+  assert.ok(badSignedDate.blockingReasons.some(r => r.includes('AC09_INVALID_DECISION_DATE')));
+
+  const badLockedAt = evaluateAc09ToileRecord({
+    ...signed,
+    lockedAt: '2026-02-30'
+  });
+  assert.equal(badLockedAt.status, 'FAILED');
+  assert.ok(
+    badLockedAt.blockingReasons.some(
+      r => r.includes('AC09_INVALID_LOCK_DATE') || r.includes('AC09_LOCK_REQUIRED')
+    )
+  );
+
+  const base = buildWorkflowPassingFixture('skirt-block-v1');
+  assert.throws(
+    () =>
+      registerAc09PhysicalSample(base, {
+        sampleId: base.sampleId!,
+        evaluatedAt: 'not-a-valid-date'
+      }),
+    /AC09_INVALID_DATE/
+  );
+  assert.throws(
+    () =>
+      registerAc09PhysicalSample(base, {
+        sampleId: base.sampleId!,
+        processRecord: { cutDate: '2026-02-30' }
+      }),
+    /AC09_INVALID_DATE/
+  );
+  assert.throws(
+    () =>
+      registerAc09PhysicalSample(base, {
+        sampleId: base.sampleId!,
+        processRecord: { sewnDate: 'invalid-date' }
+      }),
+    /AC09_INVALID_DATE/
+  );
+
+  // 3. Fabric numeric input hygiene: NaN / Infinity / out-of-bounds classified as FAILED (distinct from null -> INCOMPLETE)
+  assert.equal(validateAc09FabricWeightGsm(null).status, 'missing');
+  assert.equal(validateAc09FabricStretchPct(null).status, 'missing');
+  for (const badWeight of [0, -10, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '180' as unknown as number]) {
+    assert.equal(validateAc09FabricWeightGsm(badWeight).status, 'invalid');
+    const evalWeight = evaluateAc09ToileRecord({
+      ...base,
+      traceability: {
+        ...base.traceability!,
+        recordedFabricWeightGsm: badWeight
+      }
+    });
+    assert.equal(evalWeight.status, 'FAILED', `Malformed fabric weight ${String(badWeight)} must FAIL`);
+    assert.ok(evalWeight.blockingReasons.some(r => r.includes('AC09_INVALID_FABRIC_WEIGHT')));
+  }
+  for (const badStretch of [-1, 105, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '2' as unknown as number]) {
+    assert.equal(validateAc09FabricStretchPct(badStretch).status, 'invalid');
+    const evalStretch = evaluateAc09ToileRecord({
+      ...base,
+      traceability: {
+        ...base.traceability!,
+        recordedFabricStretchPct: badStretch
+      }
+    });
+    assert.equal(evalStretch.status, 'FAILED', `Malformed fabric stretch ${String(badStretch)} must FAIL`);
+    assert.ok(evalStretch.blockingReasons.some(r => r.includes('AC09_INVALID_FABRIC_STRETCH')));
+  }
+
+  // Contrast: missing (null) fabric weight remains INCOMPLETE (not misclassified as malformed)
+  const missingWeight = evaluateAc09ToileRecord({
+    ...base,
+    traceability: {
+      ...base.traceability!,
+      recordedFabricWeightGsm: null
+    }
+  });
+  assert.equal(missingWeight.status, 'INCOMPLETE');
+});
+
 
 
