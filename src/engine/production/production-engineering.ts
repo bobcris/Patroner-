@@ -259,10 +259,24 @@ export function buildM05ProductionPackage(
     opts.requiredSizes ??
     (designSpec.garmentCategory === 'bodice' ? [...DEFAULT_SIZE_RANGE] : [activeSize]);
 
-  let gradedPatternSet: GradedPatternSet | null =
-    input.gradedPatternSetOverride !== undefined ? input.gradedPatternSetOverride : null;
+  let gradedPatternSet: GradedPatternSet | null = null;
+  const gradingBoundaryErrors: string[] = [];
 
-  if (input.gradedPatternSetOverride === undefined && designSpec.garmentCategory === 'bodice') {
+  if (input.gradedPatternSetOverride !== undefined) {
+    if (input.gradedPatternSetOverride === null) {
+      gradedPatternSet = null;
+    } else if (
+      designSpec.garmentCategory !== 'bodice' ||
+      input.gradedPatternSetOverride.garmentCategory !== designSpec.garmentCategory
+    ) {
+      gradedPatternSet = null;
+      gradingBoundaryErrors.push(
+        `Rejected mismatched gradedPatternSetOverride ('${input.gradedPatternSetOverride.garmentCategory}') for garment category '${designSpec.garmentCategory}'.`
+      );
+    } else {
+      gradedPatternSet = input.gradedPatternSetOverride;
+    }
+  } else if (designSpec.garmentCategory === 'bodice') {
     const validTargetSizes = requiredSizes.filter(s =>
       (DEFAULT_SIZE_RANGE as readonly string[]).includes(s)
     );
@@ -563,7 +577,8 @@ export function buildM05ProductionPackage(
     measurementProvenance,
     measurementApprovalState,
     measurementProvenanceEvidence: measurementEvidence,
-    upstreamStaleReasons: staleReasons
+    upstreamStaleReasons: [...staleReasons, ...gradingBoundaryErrors],
+    requireApprovedGovernance: opts.requireApprovedGovernance
   });
 
   const packageRevisionId =

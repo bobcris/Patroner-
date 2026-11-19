@@ -19,6 +19,8 @@ import {
   evaluateQuantitativeFit,
   generateParametricAvatar,
   RECIPE_BOUNDS,
+  recordAc09ReviewerDecision,
+  registerAc09PhysicalSample,
   runAnalyticalCredibilityBenchmarks,
   runBoundedPatternOptimization,
   runGarmentDrapeSimulation,
@@ -300,40 +302,109 @@ test('M06 §18 AC-09: Physical Toile Validation Protocol starts strictly PENDING
   bodiceToile = updateAc09PomMeasurement(bodiceToile, bodiceToile.pomCheckpoints[1].pointId, bodiceToile.pomCheckpoints[1].nominalCadCm + 0.85);
   assert.equal(evaluateAc09ToileRecord(bodiceToile).status, 'FAILED');
 
-  // 4. Complete genuine physical entry within <= 0.50 cm and >= 85% agreement returns PASSED with isProductionReady=false
-  let passingSkirt = createPendingAc09ToileRecord({
+  // 4. Legacy executionMode MUST NOT bypass mandatory traceability, process log, attachment URIs, or reviewer sign-off (P1-2C)
+  let legacyAttempt = createPendingAc09ToileRecord({
     toileBlockKey: 'skirt-block-v1',
     designSpec: skirtSpec,
-    measurements: mSizes
+    measurements: mSizes,
+    executionMode: 'legacy'
   });
-  for (const pt of passingSkirt.pomCheckpoints) {
-    passingSkirt = updateAc09PomMeasurement(passingSkirt, pt.pointId, Number((pt.nominalCadCm + 0.2).toFixed(2)));
+  for (const pt of legacyAttempt.pomCheckpoints) {
+    legacyAttempt = updateAc09PomMeasurement(legacyAttempt, pt.pointId, Number((pt.nominalCadCm + 0.2).toFixed(2)));
   }
-  passingSkirt = {
-    ...passingSkirt,
+  legacyAttempt = {
+    ...legacyAttempt,
     evaluatorName: 'Elena Rostova (Lead Patternmaker)',
     bodyOrDressFormId: 'Wolf-M-Form-01',
     evaluatedAt: '2026-11-19',
     grainlineVerified: true,
     seamAlignmentVerified: true,
     hemLevelPhysicalDeviationCm: 0.3,
-    regionalAgreementChecks: passingSkirt.regionalAgreementChecks.map(z => ({
+    regionalAgreementChecks: legacyAttempt.regionalAgreementChecks.map(z => ({
       ...z,
       agreesWithDigitalPrediction: true,
       physicalObservationSummary: 'Physical drape aligns with digital zone eases.'
     })),
-    evidenceChecklist: passingSkirt.evidenceChecklist.map(ev => ({ ...ev, recorded: true }))
+    evidenceChecklist: legacyAttempt.evidenceChecklist.map(ev => ({ ...ev, recorded: true }))
   };
-  const passEval = evaluateAc09ToileRecord(passingSkirt);
+  const legacyBlockedEval = evaluateAc09ToileRecord(legacyAttempt);
+  assert.notEqual(legacyBlockedEval.status, 'PASSED');
+  assert.equal(legacyBlockedEval.status, 'INCOMPLETE');
+  assert.equal(legacyBlockedEval.isProductionReady, false);
+
+  // 5. Complete physical evidence + traceability + cuttingGrainlineVerified + attachment URIs reaches READY_FOR_REVIEW,
+  // and ONLY transitions to PASSED after authorized human reviewer sign-off (still isProductionReady=false)
+  let registeredSkirt = createPendingAc09ToileRecord({
+    toileBlockKey: 'skirt-block-v1',
+    designSpec: skirtSpec,
+    measurements: mSizes,
+    executionMode: 'workflow'
+  });
+  registeredSkirt = registerAc09PhysicalSample(registeredSkirt, {
+    sampleId: 'TOILE-SKT-M06-TEST-01',
+    recordedPatternRevisionId: registeredSkirt.traceability!.approvedPatternRevisionId,
+    recordedFabricId: registeredSkirt.fabricId,
+    recordedFabricComposition: registeredSkirt.traceability!.expectedFabricComposition,
+    recordedFabricWeightGsm: registeredSkirt.traceability!.expectedFabricWeightGsm,
+    recordedFabricStretchPct: registeredSkirt.traceability!.expectedFabricStretchPct,
+    recordedFabricDirection: registeredSkirt.traceability!.expectedFabricDirection,
+    recordedFabricLot: 'LOT-TEST-01',
+    bodyOrDressFormId: 'Wolf-M-Form-01',
+    evaluatorName: 'Elena Rostova (Lead Patternmaker)',
+    evaluatedAt: '2026-11-19',
+    processRecord: {
+      cuttingOperator: 'Elena Rostova',
+      cutDate: '2026-11-18',
+      cuttingGrainlineVerified: true,
+      sewingOperator: 'Marco Bellini',
+      sewnDate: '2026-11-18',
+      seamAllowanceCm: 1.5,
+      stitchType: 'ISO-301 lockstitch',
+      pressingMethod: 'Steam pressed open'
+    }
+  });
+  for (const pt of registeredSkirt.pomCheckpoints) {
+    registeredSkirt = updateAc09PomMeasurement(registeredSkirt, pt.pointId, Number((pt.nominalCadCm + 0.2).toFixed(2)));
+  }
+  registeredSkirt = {
+    ...registeredSkirt,
+    grainlineVerified: true,
+    seamAlignmentVerified: true,
+    hemLevelPhysicalDeviationCm: 0.3,
+    regionalAgreementChecks: registeredSkirt.regionalAgreementChecks.map(z => ({
+      ...z,
+      agreesWithDigitalPrediction: true,
+      physicalObservationSummary: 'Physical drape aligns with digital zone eases.'
+    })),
+    evidenceChecklist: registeredSkirt.evidenceChecklist.map(ev => ({
+      ...ev,
+      recorded: true,
+      attachmentUri: `photo://atelier/skirt-block-v1/${ev.itemId}.jpg`
+    }))
+  };
+
+  // Before authorized sign-off, status must stay INCOMPLETE / READY_FOR_REVIEW
+  const readyEval = evaluateAc09ToileRecord(registeredSkirt);
+  assert.equal(readyEval.status, 'INCOMPLETE');
+  assert.equal(readyEval.workflowState, 'READY_FOR_REVIEW');
+
+  const signedSkirt = recordAc09ReviewerDecision(registeredSkirt, {
+    reviewerName: 'Elena Rostova',
+    reviewerRole: 'LEAD_PATTERNMAKER',
+    decision: 'APPROVED_PASS',
+    rationale: 'Test fixture verifying fail-closed authorized sign-off.',
+    decidedAt: '2026-11-19'
+  });
+  const passEval = evaluateAc09ToileRecord(signedSkirt);
   assert.equal(passEval.status, 'PASSED');
   assert.ok((passEval.maxPomConcordanceErrorCm ?? 1) <= 0.5);
   assert.equal(passEval.regionalAgreementPct, 100);
   assert.equal(passEval.isProductionReady, false);
 
-  // 5. Regional agreement < 85% fails AC-09 even when POMs pass
+  // 6. Regional agreement < 85% fails AC-09 even when POMs pass
   const disagreeSkirt = {
-    ...passingSkirt,
-    regionalAgreementChecks: passingSkirt.regionalAgreementChecks.map((z, idx) => ({
+    ...registeredSkirt,
+    regionalAgreementChecks: registeredSkirt.regionalAgreementChecks.map((z, idx) => ({
       ...z,
       agreesWithDigitalPrediction: idx < 2
     }))

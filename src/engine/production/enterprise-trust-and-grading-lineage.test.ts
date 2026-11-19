@@ -1384,7 +1384,7 @@ describe('Milestone 04.6.2.3.2: Enterprise Trust Provider Integration & Complete
       });
       const designSpec = convertToDesignSpecification(spec);
       const pieces = draftSkirtBlock(sizeM, designSpec);
-      const rawGraded = gradePattern(designSpec);
+      const rawGraded = gradePattern({ ...designSpec, garmentCategory: 'bodice' });
       const graded = {
         ...rawGraded,
         sizeResults: Object.fromEntries(

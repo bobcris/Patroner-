@@ -48,6 +48,7 @@ export interface EvaluateProductionReadinessInput {
   readonly measurementApprovalState: MeasurementApprovalStatus;
   readonly measurementProvenanceEvidence?: MeasurementProvenanceEvidence;
   readonly upstreamStaleReasons?: readonly string[];
+  readonly requireApprovedGovernance?: boolean;
 }
 
 function makeDiag(
@@ -317,8 +318,8 @@ export function evaluateProductionReadiness(
       makeDiag(
         'unresolved-measurement-approvals',
         'Measurement & Specification Governance Approvals',
-        'warning',
-        'advisory',
+        input.requireApprovedGovernance ? 'fail' : 'warning',
+        input.requireApprovedGovernance ? 'blocking' : 'advisory',
         `Production release blocked by governance gates: ${reasons.join('; ')}.`,
         [input.designSpec.id]
       )

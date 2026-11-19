@@ -508,7 +508,7 @@ describe('Milestone 04.6.2.3.6 — Residual Security Findings Remediation', () =
 
       const pieces = draftSkirtBlock(measurements, designSpec);
       const validation = validatePatternDraft(pieces);
-      const rawGradedPatternSet = gradePattern(designSpec);
+      const rawGradedPatternSet = gradePattern({ ...designSpec, garmentCategory: 'bodice' });
       const gradedPatternSet = {
         ...rawGradedPatternSet,
         sizeResults: Object.fromEntries(

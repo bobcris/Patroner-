@@ -440,3 +440,128 @@ test('AC09-10: Deterministic report serialization produces stable SHA-256 canoni
   assert.ok(serA.report.simulationBaseline.regionalPredictions.length > 0);
   assert.ok(serA.report.physicalEvidence.pomMeasurements.length > 0);
 });
+
+test('AC09-11 (P1-2C): Legacy execution mode cannot bypass mandatory evidence, traceability, cuttingGrainlineVerified, attachment URIs, or authorized reviewer sign-off', () => {
+  const readyWorkflow = buildWorkflowPassingFixture('bodice-sleeve-v1');
+
+  // Even when ALL evidence, traceability, process log, and attachment URIs are populated,
+  // setting executionMode: "legacy" WITHOUT authorized human reviewer sign-off must NEVER return PASSED.
+  const legacyWithoutSignOff = {
+    ...readyWorkflow,
+    executionMode: 'legacy' as const,
+    reviewerDecision: {
+      decision: 'PENDING' as const,
+      reviewerName: '',
+      reviewerRole: '' as const,
+      decidedAt: null,
+      rationale: '',
+      signatureDigest: null
+    }
+  };
+  const evalNoSignOff = evaluateAc09ToileRecord(legacyWithoutSignOff);
+  assert.notEqual(evalNoSignOff.status, 'PASSED');
+  assert.equal(evalNoSignOff.status, 'INCOMPLETE');
+  assert.equal(evalNoSignOff.workflowState, 'READY_FOR_REVIEW');
+  assert.equal(evalNoSignOff.isProductionReady, false);
+
+  // Legacy mode with missing attachment URIs must stay EVIDENCE_INCOMPLETE
+  const legacyNoAttachments = {
+    ...legacyWithoutSignOff,
+    evidenceChecklist: legacyWithoutSignOff.evidenceChecklist.map(ev => ({
+      ...ev,
+      attachmentUri: ''
+    }))
+  };
+  const evalNoAttachments = evaluateAc09ToileRecord(legacyNoAttachments);
+  assert.equal(evalNoAttachments.status, 'INCOMPLETE');
+  assert.equal(evalNoAttachments.workflowState, 'EVIDENCE_INCOMPLETE');
+  assert.equal(evalNoAttachments.allEvidenceRecorded, false);
+
+  // Legacy mode with missing sampleId/traceability must stay EVIDENCE_INCOMPLETE
+  const legacyNoSampleId = {
+    ...legacyWithoutSignOff,
+    sampleId: ''
+  };
+  const evalNoSample = evaluateAc09ToileRecord(legacyNoSampleId);
+  assert.equal(evalNoSample.status, 'INCOMPLETE');
+  assert.equal(evalNoSample.workflowState, 'EVIDENCE_INCOMPLETE');
+});
+
+test('AC09-12 (P1-2D): cuttingGrainlineVerified is explicitly required, serialized canonically, and never auto-set by Stitch Type entry in UI', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  const ready = buildWorkflowPassingFixture('skirt-block-v1');
+  assert.equal(evaluateAc09ToileRecord(ready).workflowState, 'READY_FOR_REVIEW');
+
+  // Turning off cuttingGrainlineVerified must block READY_FOR_REVIEW and PASSED
+  const unverifiedGrainline = {
+    ...ready,
+    processRecord: {
+      ...ready.processRecord!,
+      cuttingGrainlineVerified: false
+    }
+  };
+  const grainEval = evaluateAc09ToileRecord(unverifiedGrainline);
+  assert.equal(grainEval.status, 'INCOMPLETE');
+  assert.equal(grainEval.workflowState, 'EVIDENCE_INCOMPLETE');
+  assert.ok(
+    grainEval.missingEvidenceDiagnostics.some(d => d.includes('Cutting grainline verification'))
+  );
+
+  // Canonical serialization records explicit false/true state cleanly
+  const serFalse = serializeAc09ValidationReport(unverifiedGrainline);
+  const serTrue = serializeAc09ValidationReport(ready);
+  assert.equal(serFalse.report.physicalEvidence.process.cuttingGrainlineVerified, false);
+  assert.equal(serTrue.report.physicalEvidence.process.cuttingGrainlineVerified, true);
+  assert.notEqual(serFalse.report.canonicalDigest, serTrue.report.canonicalDigest);
+
+  // Verify Ac09PhysicalValidationPanel UI source separates Stitch Type, Pressing Method,
+  // explicit Cutting Grainline Verified checkbox, and displays in-session persistence disclosure
+  const panelPath = path.resolve('src/features/simulation/Ac09PhysicalValidationPanel.tsx');
+  const panelSource = fs.readFileSync(panelPath, 'utf8');
+  assert.ok(panelSource.includes('data-testid="m06-ac09-cutting-grainline-checkbox"'));
+  assert.ok(panelSource.includes('data-testid="m06-ac09-stitch-type-input"'));
+  assert.ok(panelSource.includes('data-testid="m06-ac09-pressing-method-input"'));
+  assert.ok(panelSource.includes('data-testid="m06-ac09-persistence-notice"'));
+  assert.ok(!panelSource.includes('cuttingGrainlineVerified: true'));
+});
+
+test('AC09-13 (P1-2E): Bounded optimization child revision remains unapproved draft and UI button wording never implies approval', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { runBoundedPatternOptimization } = await import('./bounded-optimizer');
+
+  const approvedBodice = {
+    ...INITIAL_CONCEPTS.find(c => c.garmentCategory === 'bodice')!,
+    isApproved: true,
+    approvalState: 'approved' as const
+  };
+  const optResult = runBoundedPatternOptimization({
+    currentSpec: approvedBodice,
+    measurements: STANDARD_SIZING_SYSTEM.sizes.M,
+    poseId: 'CANONICAL_A_POSE',
+    bodiceDartStyle: 'waist',
+    sleeveEaseStrategy: 'classic'
+  });
+
+  assert.ok(optResult.proposals.length > 0);
+  assert.equal(optResult.requiresHumanApproval, true);
+  for (const proposal of optResult.proposals) {
+    assert.equal(proposal.proposedDesignSpec.isApproved, false);
+    assert.equal(proposal.proposedDesignSpec.approvalState, 'draft');
+    assert.ok(proposal.proposedDesignSpec.version > approvedBodice.version);
+    assert.notEqual(
+      proposal.proposedDesignSpec.specificationRevisionId,
+      approvedBodice.specificationRevisionId
+    );
+    assert.equal(proposal.proposedDesignSpec.approvedBy, undefined);
+    assert.equal(approvedBodice.isApproved, true);
+  }
+
+  const simPanelPath = path.resolve('src/features/simulation/SimulationFitPanel.tsx');
+  const simPanelSource = fs.readFileSync(simPanelPath, 'utf8');
+  assert.ok(simPanelSource.includes('Branch Unapproved Child Revision'));
+  assert.ok(!simPanelSource.includes('Approve & Branch Child'));
+});
+

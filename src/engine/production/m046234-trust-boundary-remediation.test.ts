@@ -828,7 +828,7 @@ describe('Milestone 04.6.2.3.4 — Critical Trust Boundary Remediation & Export 
 
       const designSpec = convertToDesignSpecification(spec);
       const pieces = draftSkirtBlock(sizeM, designSpec);
-      const rawGraded = gradePattern(designSpec);
+      const rawGraded = gradePattern({ ...designSpec, garmentCategory: 'bodice' });
       const graded = {
         ...rawGraded,
         sizeResults: Object.fromEntries(

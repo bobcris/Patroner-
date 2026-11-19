@@ -3,8 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { BodyMeasurements, DesignSpecification, StandardSize } from './types';
+import React, { useMemo, useState } from 'react';
+import {
+  BodiceDartStyle,
+  BodyMeasurements,
+  DesignSpecification,
+  SleeveEaseStrategy,
+  StandardSize
+} from './types';
 import { INITIAL_CONCEPTS } from './domain/design/curated-concepts';
 import { STANDARD_SIZING_SYSTEM } from './engine/measurements/standards';
 import { Header, WorkspaceTab } from './components/layout/Header';
@@ -16,11 +22,13 @@ import { PatternWorkspace } from './features/pattern-workspace/PatternWorkspace'
 import { ProductionOverview } from './features/production/ProductionOverview';
 
 import {
-  evaluateSpecPipelineSafely,
+  buildAuthoritativeProductionWorkspaceBundle,
+  DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
   MeasurementApprovalStatus,
   MeasurementOrigin,
   MeasurementProvenanceEvidence,
   NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS,
+  ProductionWorkspaceBomControls,
   transitionMeasurementProvenance
 } from './engine/production';
 
@@ -37,16 +45,65 @@ export default function App() {
   const [measurementProvenanceEvidence, setMeasurementProvenanceEvidence] = useState<MeasurementProvenanceEvidence | undefined>(undefined);
   const [measurementRevisionCount, setMeasurementRevisionCount] = useState<number>(1);
 
-  // Evaluate live pipeline, approval verification, and category support safely without uncaught throws
-  const safePipeline = evaluateSpecPipelineSafely({
-    specification: currentSpec,
-    measurements,
-    measurementApprovalState,
-    measurementProvenance,
-    activeSize: String(activeSize),
-    fabric: currentSpec.fabric
-  });
-  const { isCadSupported, approvalVerification, validation, pipelineReport } = safePipeline;
+  // Single authoritative state owner for shared BOM controls & governance options (P1-2A)
+  const [bomControls, setBomControls] = useState<ProductionWorkspaceBomControls>(
+    DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS
+  );
+  const [bodiceDartStyle, setBodiceDartStyle] = useState<BodiceDartStyle>(
+    INITIAL_CONCEPTS[0].dartStyle ?? 'waist'
+  );
+  const [sleeveEaseStrategy, setSleeveEaseStrategy] = useState<SleeveEaseStrategy>(
+    INITIAL_CONCEPTS[0].sleeveEaseStrategy ?? 'classic'
+  );
+  const [strictUncertaintyGate, setStrictUncertaintyGate] = useState<boolean>(true);
+  const [requireApprovedGovernance, setRequireApprovedGovernance] = useState<boolean>(false);
+
+  const handleUpdateSpec = (nextSpec: DesignSpecification) => {
+    setCurrentSpec(nextSpec);
+    if (nextSpec.dartStyle) {
+      setBodiceDartStyle(nextSpec.dartStyle);
+    }
+    if (nextSpec.sleeveEaseStrategy) {
+      setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy);
+    }
+  };
+
+  // Single authoritative production workspace bundle consumed by Header, Module 04, and Module 05
+  const workspaceBundle = useMemo(
+    () =>
+      buildAuthoritativeProductionWorkspaceBundle({
+        projectId: 'project-patroner-default',
+        tenantId: 'tenant-studio-local',
+        designSpec: currentSpec,
+        measurements,
+        activeSize: String(activeSize),
+        bomControls,
+        governance: {
+          bodiceDartStyle,
+          sleeveEaseStrategy,
+          strictUncertaintyGate,
+          requireApprovedGovernance,
+          measurementProvenance,
+          measurementApprovalState,
+          measurementProvenanceEvidence
+        }
+      }),
+    [
+      currentSpec,
+      measurements,
+      activeSize,
+      bomControls,
+      bodiceDartStyle,
+      sleeveEaseStrategy,
+      strictUncertaintyGate,
+      requireApprovedGovernance,
+      measurementProvenance,
+      measurementApprovalState,
+      measurementProvenanceEvidence
+    ]
+  );
+
+  const { isCadSupported, approvalVerification, draftValidation, pipelineReport } = workspaceBundle;
 
   const handleUpdateMeasurements = (
     m: BodyMeasurements,
@@ -97,7 +154,7 @@ export default function App() {
         isApproved={approvalVerification.isValid}
         approvalState={approvalVerification.state}
         isCadSupported={isCadSupported}
-        isDraftValid={isCadSupported && validation.isValid}
+        isDraftValid={isCadSupported && draftValidation.isValid}
         activeDesignName={currentSpec.name}
         specificationRevisionId={currentSpec.specificationRevisionId ?? `spec-${currentSpec.id}-v${currentSpec.version}`}
         isSynchronized={pipelineReport.isPipelineSynchronized}
@@ -107,14 +164,14 @@ export default function App() {
       <main className="flex-1">
         <WorkspaceErrorBoundary
           onResetWorkspace={() => {
-            setCurrentSpec(INITIAL_CONCEPTS[0]);
+            handleUpdateSpec(INITIAL_CONCEPTS[0]);
             setActiveTab('studio');
           }}
         >
           {activeTab === 'studio' && (
             <FashionStudio
               currentSpec={currentSpec}
-              onUpdateSpec={setCurrentSpec}
+              onUpdateSpec={handleUpdateSpec}
               onNavigateToSpec={() => setActiveTab('specification')}
             />
           )}
@@ -122,7 +179,7 @@ export default function App() {
           {activeTab === 'specification' && (
             <DesignSpecificationView
               spec={currentSpec}
-              onUpdateSpec={setCurrentSpec}
+              onUpdateSpec={handleUpdateSpec}
               onNavigateToMeasurements={() => setActiveTab('measurements')}
               onNavigateToCAD={() => setActiveTab('pattern-cad')}
             />
@@ -152,9 +209,20 @@ export default function App() {
               measurementProvenance={measurementProvenance}
               measurementApprovalState={measurementApprovalState}
               measurementProvenanceEvidence={measurementProvenanceEvidence}
+              workspaceBundle={workspaceBundle}
+              bomControls={bomControls}
+              onChangeBomControls={setBomControls}
+              bodiceDartStyle={bodiceDartStyle}
+              onChangeBodiceDartStyle={setBodiceDartStyle}
+              sleeveEaseStrategy={sleeveEaseStrategy}
+              onChangeSleeveEaseStrategy={setSleeveEaseStrategy}
+              strictUncertaintyGate={strictUncertaintyGate}
+              onToggleStrictUncertaintyGate={setStrictUncertaintyGate}
+              requireApprovedGovernance={requireApprovedGovernance}
+              onToggleRequireApprovedGovernance={setRequireApprovedGovernance}
               onNavigateToProduction={() => setActiveTab('production')}
               onNavigateToMeasurements={() => setActiveTab('measurements')}
-              onUpdateSpec={setCurrentSpec}
+              onUpdateSpec={handleUpdateSpec}
             />
           )}
 
@@ -166,6 +234,9 @@ export default function App() {
               measurementProvenance={measurementProvenance}
               measurementApprovalState={measurementApprovalState}
               measurementProvenanceEvidence={measurementProvenanceEvidence}
+              workspaceBundle={workspaceBundle}
+              bomControls={bomControls}
+              onChangeBomControls={setBomControls}
               onNavigateToCAD={() => setActiveTab('pattern-cad')}
             />
           )}

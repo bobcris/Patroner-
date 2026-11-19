@@ -185,6 +185,22 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
         </div>
       </div>
 
+      {/* In-Session Persistence Disclosure Notice (P1-2D) */}
+      <div
+        className="border border-amber-300 bg-amber-50/70 rounded-xs px-3 py-2 text-[11px] font-mono text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+        data-testid="m06-ac09-persistence-notice"
+      >
+        <div className="flex items-start sm:items-center gap-2">
+          <ShieldAlert className="w-3.5 h-3.5 text-amber-800 shrink-0 mt-0.5 sm:mt-0" />
+          <span>
+            <strong>IN-SESSION BROWSER STATE ONLY:</strong> AC-09 physical validation entries are held in temporary in-session browser memory and are not durably persisted across tabs, page reloads, or sessions. Use <strong>Export Report</strong> to archive canonical JSON evidence.
+          </span>
+        </div>
+        <Badge variant="warning" size="sm" className="shrink-0">
+          NON-DURABLE SESSION STORE
+        </Badge>
+      </div>
+
       {/* Explicit Validation State Machine Stepper */}
       <div
         className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-[10px] font-mono"
@@ -574,54 +590,105 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
             </div>
           </label>
 
-          <div className="bg-white border border-neutral-200 p-2 rounded-xs grid grid-cols-2 gap-1.5">
-            <label>
-              <span className="text-[10px] font-mono text-neutral-500 block uppercase">Seam Allow (cm)</span>
-              <input
-                type="number"
-                step="0.1"
-                disabled={isLocked}
-                value={proc?.seamAllowanceCm ?? ''}
-                onChange={e => {
-                  const val = e.target.value.trim() === '' ? null : Number(e.target.value);
-                  handleSafeUpdate(r => ({
-                    ...r,
-                    executionMode: 'workflow',
-                    processRecord: { ...(r.processRecord ?? proc!), seamAllowanceCm: val }
-                  }));
-                }}
-                placeholder="1.5"
-                className="w-full mt-0.5 font-mono text-xs border-b border-neutral-200"
-              />
-            </label>
-            <label>
-              <span className="text-[10px] font-mono text-neutral-500 block uppercase">Stitch / Press</span>
+          <div className="bg-white border border-neutral-200 p-2 rounded-xs space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-[96px_1fr] gap-2">
+              <label>
+                <span className="text-[10px] font-mono text-neutral-500 block uppercase">Seam Allow (cm)</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  disabled={isLocked}
+                  value={proc?.seamAllowanceCm ?? ''}
+                  onChange={e => {
+                    const val = e.target.value.trim() === '' ? null : Number(e.target.value);
+                    handleSafeUpdate(r => ({
+                      ...r,
+                      executionMode: 'workflow',
+                      processRecord: { ...(r.processRecord ?? proc!), seamAllowanceCm: val }
+                    }));
+                  }}
+                  placeholder="1.5"
+                  className="w-full mt-0.5 font-mono text-xs border-b border-neutral-200 focus:outline-none"
+                />
+              </label>
+              <label>
+                <span className="text-[10px] font-mono text-neutral-500 block uppercase">Stitch Type</span>
+                <input
+                  type="text"
+                  disabled={isLocked}
+                  data-testid="m06-ac09-stitch-type-input"
+                  value={proc?.stitchType ?? ''}
+                  onChange={e =>
+                    handleSafeUpdate(r => ({
+                      ...r,
+                      executionMode: 'workflow',
+                      processRecord: {
+                        ...(r.processRecord ?? proc!),
+                        stitchType: e.target.value
+                      }
+                    }))
+                  }
+                  placeholder="ISO-301 lockstitch"
+                  className="w-full mt-0.5 text-[11px] border-b border-neutral-200 focus:outline-none"
+                />
+              </label>
+            </div>
+            <label className="block">
+              <span className="text-[10px] font-mono text-neutral-500 block uppercase">Pressing Method</span>
               <input
                 type="text"
                 disabled={isLocked}
-                value={proc?.stitchType ?? ''}
+                data-testid="m06-ac09-pressing-method-input"
+                value={proc?.pressingMethod ?? ''}
                 onChange={e =>
                   handleSafeUpdate(r => ({
                     ...r,
                     executionMode: 'workflow',
                     processRecord: {
                       ...(r.processRecord ?? proc!),
-                      stitchType: e.target.value,
-                      pressingMethod: proc?.pressingMethod || 'Steam pressed open',
-                      cuttingGrainlineVerified: true
+                      pressingMethod: e.target.value
                     }
                   }))
                 }
-                placeholder="ISO-301 lockstitch"
-                className="w-full mt-0.5 text-[11px] border-b border-neutral-200"
+                placeholder="Steam pressed open"
+                className="w-full mt-0.5 text-[11px] border-b border-neutral-200 focus:outline-none"
               />
             </label>
           </div>
 
-          <div className="bg-white border border-neutral-200 p-2 rounded-xs text-[10px] font-mono space-y-0.5 text-neutral-600">
-            <div>M05 Doc: <strong className="text-neutral-900">{trace?.constructionDocRef}</strong></div>
-            <div>M06 Sim: <strong className="text-neutral-900">{trace?.simulationCaseRef}</strong></div>
-            <div>Body Set: <strong className="text-neutral-900">{trace?.bodyMeasurementSetRef}</strong></div>
+          <div className="bg-white border border-neutral-200 p-2 rounded-xs flex flex-col justify-between gap-2">
+            <label className="flex items-start gap-2 cursor-pointer text-[11px] font-mono text-neutral-800">
+              <input
+                type="checkbox"
+                disabled={isLocked}
+                checked={Boolean(proc?.cuttingGrainlineVerified)}
+                data-testid="m06-ac09-cutting-grainline-checkbox"
+                onChange={e =>
+                  handleSafeUpdate(r => ({
+                    ...r,
+                    executionMode: 'workflow',
+                    processRecord: {
+                      ...(r.processRecord ?? proc!),
+                      cuttingGrainlineVerified: e.target.checked
+                    }
+                  }))
+                }
+                className="mt-0.5 accent-neutral-900"
+              />
+              <span>
+                <strong className="uppercase text-[10px] block text-neutral-900">
+                  Cutting Grainline Verified
+                </strong>
+                <span className="text-[10px] text-neutral-500">
+                  Explicit operator confirmation before cutting (never auto-set by stitch entry).
+                </span>
+              </span>
+            </label>
+            <div className="border-t border-neutral-100 pt-1 text-[10px] font-mono space-y-0.5 text-neutral-600">
+              <div>M05 Doc: <strong className="text-neutral-900">{trace?.constructionDocRef}</strong></div>
+              <div>M06 Sim: <strong className="text-neutral-900">{trace?.simulationCaseRef}</strong></div>
+              <div>Body Set: <strong className="text-neutral-900">{trace?.bodyMeasurementSetRef}</strong></div>
+            </div>
           </div>
         </div>
 

@@ -852,7 +852,6 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
   const missingEvidenceDiagnostics: string[] = [];
 
   const policy = validateAc09TolerancePolicy(record.tolerancePolicy ?? DEFAULT_AC09_TOLERANCE_POLICY);
-  const isWorkflow = record.executionMode === 'workflow';
 
   // Synthetic source guard (prohibits simulated/generated evidence in physical store)
   const syntheticChecklistItems = record.evidenceChecklist.filter(
@@ -969,11 +968,11 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
   const regionalAgreementPct =
     evaluatedZonesCount > 0 ? Number(((agreedZonesCount / evaluatedZonesCount) * 100).toFixed(1)) : null;
 
-  // Evidence Checklist (attachmentUri required in workflow mode)
+  // Evidence Checklist (attachmentUri is strictly mandatory across all execution modes)
   let evidenceCompletedCount = 0;
   const requiredEvidenceCount = record.evidenceChecklist.length;
   for (const ev of record.evidenceChecklist) {
-    const hasUri = !isWorkflow || (ev.attachmentUri !== undefined && ev.attachmentUri.trim().length >= 5);
+    const hasUri = ev.attachmentUri !== undefined && ev.attachmentUri.trim().length >= 5;
     if (ev.recorded && hasUri) {
       evidenceCompletedCount++;
     } else if (!ev.recorded) {
@@ -991,9 +990,19 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
     record.hemLevelPhysicalDeviationCm !== null ||
     record.seamAlignmentVerified !== null ||
     record.grainlineVerified ||
-    Boolean(record.sampleId && record.sampleId.trim().length > 0);
+    Boolean(record.sampleId && record.sampleId.trim().length > 0) ||
+    Boolean(record.processRecord?.cuttingGrainlineVerified) ||
+    Boolean(record.processRecord?.cuttingOperator && record.processRecord.cuttingOperator.trim().length > 0) ||
+    Boolean(record.processRecord?.sewingOperator && record.processRecord.sewingOperator.trim().length > 0) ||
+    Boolean(record.processRecord?.stitchType && record.processRecord.stitchType.trim().length > 0) ||
+    Boolean(record.processRecord?.pressingMethod && record.processRecord.pressingMethod.trim().length > 0);
 
-  if (!hasAnyPhysicalData && !isWorkflow && !syntheticEvidenceDetected && traceabilityMismatches.length === 0) {
+  if (
+    !hasAnyPhysicalData &&
+    record.workflowState !== 'DRAFT' &&
+    !syntheticEvidenceDetected &&
+    traceabilityMismatches.length === 0
+  ) {
     return {
       toileBlockKey: record.toileBlockKey,
       status: 'PENDING',
@@ -1038,33 +1047,35 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
     missingEvidenceDiagnostics.push('Missing evaluator identity, dress form/body ID, or physical trial date.');
   }
 
-  if (isWorkflow) {
-    if (!record.sampleId || record.sampleId.trim().length < 3) {
-      missingEvidenceDiagnostics.push('Missing registered physical sampleId.');
-    }
-    if (!tr || tr.recordedPatternRevisionId.trim().length === 0) {
-      missingEvidenceDiagnostics.push('Missing confirmed cut pattern revision ID.');
-    }
-    if (!tr || tr.recordedFabricComposition.trim().length === 0 || tr.recordedFabricWeightGsm === null || tr.recordedFabricLot.trim().length === 0) {
-      missingEvidenceDiagnostics.push('Missing fabric composition, gsm weight, or lot traceability record.');
-    }
-    if (!tr || tr.constructionDocRef.trim().length === 0 || tr.simulationCaseRef.trim().length === 0) {
-      missingEvidenceDiagnostics.push('Missing M05 construction documentation or M06 simulation baseline reference.');
-    }
-    const pr = record.processRecord;
-    if (
-      !pr ||
-      pr.cuttingOperator.trim().length < 2 ||
-      !pr.cutDate ||
-      !pr.cuttingGrainlineVerified ||
-      pr.sewingOperator.trim().length < 2 ||
-      !pr.sewnDate ||
-      pr.seamAllowanceCm === null ||
-      pr.stitchType.trim().length < 2 ||
-      pr.pressingMethod.trim().length < 2
-    ) {
-      missingEvidenceDiagnostics.push('Missing cutting or sewing process execution log fields.');
-    }
+  // Mandatory sample registration, traceability, and cutting/sewing process verification (fail-closed across all execution modes)
+  if (!record.sampleId || record.sampleId.trim().length < 3) {
+    missingEvidenceDiagnostics.push('Missing registered physical sampleId.');
+  }
+  if (!tr || tr.recordedPatternRevisionId.trim().length === 0) {
+    missingEvidenceDiagnostics.push('Missing confirmed cut pattern revision ID.');
+  }
+  if (!tr || tr.recordedFabricComposition.trim().length === 0 || tr.recordedFabricWeightGsm === null || tr.recordedFabricLot.trim().length === 0) {
+    missingEvidenceDiagnostics.push('Missing fabric composition, gsm weight, or lot traceability record.');
+  }
+  if (!tr || tr.constructionDocRef.trim().length === 0 || tr.simulationCaseRef.trim().length === 0) {
+    missingEvidenceDiagnostics.push('Missing M05 construction documentation or M06 simulation baseline reference.');
+  }
+  const pr = record.processRecord;
+  if (!pr || !pr.cuttingGrainlineVerified) {
+    missingEvidenceDiagnostics.push('Cutting grainline verification not explicitly confirmed in process record.');
+  }
+  if (
+    !pr ||
+    pr.cuttingOperator.trim().length < 2 ||
+    !pr.cutDate ||
+    !pr.cuttingGrainlineVerified ||
+    pr.sewingOperator.trim().length < 2 ||
+    !pr.sewnDate ||
+    pr.seamAllowanceCm === null ||
+    pr.stitchType.trim().length < 2 ||
+    pr.pressingMethod.trim().length < 2
+  ) {
+    missingEvidenceDiagnostics.push('Missing cutting or sewing process execution log fields.');
   }
 
   if (!record.grainlineVerified) {
@@ -1127,14 +1138,13 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
 
   const traceabilityVerified =
     traceabilityMismatches.length === 0 &&
-    (!isWorkflow ||
-      (Boolean(tr) &&
-        tr!.recordedPatternRevisionId.trim().length > 0 &&
-        tr!.recordedFabricComposition.trim().length > 0 &&
-        tr!.recordedFabricWeightGsm !== null &&
-        tr!.recordedFabricLot.trim().length > 0 &&
-        tr!.constructionDocRef.trim().length > 0 &&
-        tr!.simulationCaseRef.trim().length > 0));
+    Boolean(tr) &&
+    tr!.recordedPatternRevisionId.trim().length > 0 &&
+    tr!.recordedFabricComposition.trim().length > 0 &&
+    tr!.recordedFabricWeightGsm !== null &&
+    tr!.recordedFabricLot.trim().length > 0 &&
+    tr!.constructionDocRef.trim().length > 0 &&
+    tr!.simulationCaseRef.trim().length > 0;
 
   const reviewerDecision = record.reviewerDecision;
   const signOffRecorded = Boolean(reviewerDecision && reviewerDecision.decision !== 'PENDING');
@@ -1166,16 +1176,28 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
     reviewerDecision?.decision === 'REJECTED_FAIL' ||
     (signOffRecorded && !signOffAuthorized);
 
-  const missingWorkflowProcessOrRefs =
-    isWorkflow &&
-    missingEvidenceDiagnostics.some(
+  const missingProcessOrRefs = missingEvidenceDiagnostics.some(
+    d =>
+      d.includes('registered physical sampleId') ||
+      d.includes('cut pattern revision ID') ||
+      d.includes('fabric composition') ||
+      d.includes('construction documentation') ||
+      d.includes('Cutting grainline verification') ||
+      d.includes('cutting or sewing')
+  );
+
+  if (missingProcessOrRefs) {
+    const processRefIssues = missingEvidenceDiagnostics.filter(
       d =>
         d.includes('registered physical sampleId') ||
         d.includes('cut pattern revision ID') ||
         d.includes('fabric composition') ||
         d.includes('construction documentation') ||
+        d.includes('Cutting grainline verification') ||
         d.includes('cutting or sewing')
     );
+    blockingReasons.push(...processRefIssues);
+  }
 
   const isComplete =
     allPomsComplete &&
@@ -1183,51 +1205,43 @@ export function evaluateAc09ToileRecord(record: Ac09PhysicalToileRecord): Ac09Ph
     hasMetadata &&
     allEvidenceRecorded &&
     record.grainlineVerified &&
+    Boolean(record.processRecord?.cuttingGrainlineVerified) &&
     record.seamAlignmentVerified === true &&
     traceabilityVerified &&
-    !missingWorkflowProcessOrRefs;
+    !missingProcessOrRefs;
 
   let status: Ac09ValidationStatus;
   let workflowState: Ac09WorkflowState;
 
+  // Fail-closed across ALL execution modes: no execution mode (including legacy) may bypass
+  // mandatory physical evidence, traceability, process records, or authorized reviewer sign-off.
   if (hasFailureCondition) {
     status = 'FAILED';
     workflowState = 'FAILED';
-  } else if (isWorkflow) {
-    if (isComplete && pomConcordancePassed && regionalAgreementPassed) {
-      if (reviewerDecision?.decision === 'APPROVED_PASS' && signOffAuthorized) {
-        status = 'PASSED';
-        workflowState = 'PASSED';
-      } else {
-        status = 'INCOMPLETE';
-        workflowState = 'READY_FOR_REVIEW';
-        blockingReasons.push('READY_FOR_REVIEW: Awaiting authorized human reviewer sign-off to finalize PASSED.');
-      }
-    } else if (!hasAnyPhysicalData && (!record.sampleId || record.sampleId.trim().length === 0)) {
-      workflowState = record.workflowState === 'DRAFT' ? 'DRAFT' : 'PENDING';
-      status = workflowState === 'PENDING' ? 'PENDING' : 'INCOMPLETE';
-    } else if (
-      completedPomCount === 0 &&
-      evaluatedZonesCount === 0 &&
-      !record.evidenceChecklist.some(item => item.recorded) &&
-      record.sampleId &&
-      record.sampleId.trim().length >= 3
-    ) {
-      workflowState = 'SAMPLE_REGISTERED';
-      status = 'INCOMPLETE';
-    } else {
-      workflowState = 'EVIDENCE_INCOMPLETE';
-      status = 'INCOMPLETE';
-    }
-  } else {
-    // Legacy compatibility mode for direct record checks
-    if (isComplete && pomConcordancePassed && regionalAgreementPassed) {
+  } else if (isComplete && pomConcordancePassed && regionalAgreementPassed) {
+    if (reviewerDecision?.decision === 'APPROVED_PASS' && signOffAuthorized) {
       status = 'PASSED';
       workflowState = 'PASSED';
     } else {
       status = 'INCOMPLETE';
-      workflowState = 'EVIDENCE_INCOMPLETE';
+      workflowState = 'READY_FOR_REVIEW';
+      blockingReasons.push('READY_FOR_REVIEW: Awaiting authorized human reviewer sign-off to finalize PASSED.');
     }
+  } else if (!hasAnyPhysicalData && (!record.sampleId || record.sampleId.trim().length === 0)) {
+    workflowState = record.workflowState === 'DRAFT' ? 'DRAFT' : 'PENDING';
+    status = workflowState === 'PENDING' ? 'PENDING' : 'INCOMPLETE';
+  } else if (
+    completedPomCount === 0 &&
+    evaluatedZonesCount === 0 &&
+    !record.evidenceChecklist.some(item => item.recorded) &&
+    record.sampleId &&
+    record.sampleId.trim().length >= 3
+  ) {
+    workflowState = 'SAMPLE_REGISTERED';
+    status = 'INCOMPLETE';
+  } else {
+    workflowState = 'EVIDENCE_INCOMPLETE';
+    status = 'INCOMPLETE';
   }
 
   const summary =

@@ -473,7 +473,6 @@ describe('Milestone 04.6.2.1: Independent Engineering Audit & Data Lineage Integ
     it('1. export guard validates actual current state and blocks unapproved specification', () => {
       const spec = INITIAL_CONCEPTS[0];
       const pieces = draftSkirtBlock(sizeM, spec);
-      const graded = gradePattern(spec);
 
       const snapshot = createProductionPatternRevision({
         projectId: 'project-patroner-default',
@@ -514,7 +513,6 @@ describe('Milestone 04.6.2.1: Independent Engineering Audit & Data Lineage Integ
     it('2. export guard blocks export when approval was revoked', () => {
       const spec = INITIAL_CONCEPTS[0];
       const pieces = draftSkirtBlock(sizeM, spec);
-      const graded = gradePattern(spec);
 
       const snapshot = createProductionPatternRevision({
         projectId: 'project-patroner-default',
@@ -573,7 +571,6 @@ describe('Milestone 04.6.2.1: Independent Engineering Audit & Data Lineage Integ
     it('4. strictly preserves isProductionReady: false invariant', () => {
       const spec = INITIAL_CONCEPTS[0];
       const pieces = draftSkirtBlock(sizeM, spec);
-      const graded = gradePattern(spec);
 
       const snapshot = createProductionPatternRevision({
         projectId: 'project-patroner-default',

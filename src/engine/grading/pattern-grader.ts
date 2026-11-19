@@ -32,6 +32,32 @@ import {
   validateMeasurementRecord
 } from './measurement-grade-rules';
 
+export const GRADING_SUPPORTED_GARMENT_CATEGORIES = ['bodice'] as const;
+
+export function isMultiSizeGradingSupportedCategory(category: string): boolean {
+  return (GRADING_SUPPORTED_GARMENT_CATEGORIES as readonly string[]).includes(category);
+}
+
+export class UnsupportedGradingCategoryError extends Error {
+  readonly code = 'UNSUPPORTED_GRADING_CATEGORY' as const;
+  readonly garmentCategory: string;
+  readonly supportedCategories: readonly string[];
+
+  constructor(garmentCategory: string) {
+    const supported = [...GRADING_SUPPORTED_GARMENT_CATEGORIES];
+    const scopeNote =
+      garmentCategory === 'skirt'
+        ? 'Skirt multi-size grading is not implemented yet (deferred to P1-3); use single-size-ungraded policy.'
+        : `No deterministic multi-size grader is implemented for garment category '${garmentCategory}'.`;
+    super(
+      `UNSUPPORTED_GRADING_CATEGORY: Multi-size grading is only supported for [${supported.join(', ')}], received '${garmentCategory}'. ${scopeNote}`
+    );
+    this.name = 'UnsupportedGradingCategoryError';
+    this.garmentCategory = garmentCategory;
+    this.supportedCategories = supported;
+  }
+}
+
 /**
  * Deterministic Pattern Grading Engine.
  * Generates an inspectable, validated range of garment sizes using target measurement
@@ -40,12 +66,20 @@ import {
  * Never applies global coordinate scaling around an arbitrary origin.
  * Every size is drafted from explicit target measurements and validated individually.
  * 
+ * Category boundary: Strictly fails closed for unsupported garment categories (e.g., skirt,
+ * trouser, dress) so a non-bodice specification can never invoke gradeBodice or receive
+ * fabricated bodice geometry.
+ * 
  * Safety constraint: isProductionReady is strictly false across all generated structures.
  */
 export function gradePattern(
   designSpec: DesignSpecification,
   options: GradingOptions = {}
 ): GradedPatternSet {
+  if (!isMultiSizeGradingSupportedCategory(designSpec.garmentCategory)) {
+    throw new UnsupportedGradingCategoryError(designSpec.garmentCategory);
+  }
+
   const timestamp = new Date().toISOString();
   const id = `graded-set-${Date.now()}`;
 

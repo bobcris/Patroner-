@@ -198,7 +198,7 @@ function buildBaseFixture() {
   const designSpec: DesignSpecification = convertToDesignSpecification(approvedSpec);
   const pieces = draftSkirtBlock(SIZE_M, designSpec);
   const validationReport = validatePatternDraft(pieces);
-  const rawGradedSet = gradePattern(designSpec);
+  const rawGradedSet = gradePattern({ ...designSpec, garmentCategory: 'bodice' });
   const gradedSet = {
     ...rawGradedSet,
     sizeResults: Object.fromEntries(

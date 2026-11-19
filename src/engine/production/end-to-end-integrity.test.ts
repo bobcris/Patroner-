@@ -656,7 +656,7 @@ describe('Milestone 04.6.2: End-to-End Garment Specification & Production Integr
   // ==========================================================================
   describe('Scenario L: Multi-Size Grading Regression', () => {
     it('preserves authoritative design specification without global affine distortion across XS through XXL', () => {
-      const spec = INITIAL_CONCEPTS[1]; // Structured Wool Tailored Bodice
+      const spec = INITIAL_CONCEPTS.find(c => c.garmentCategory === 'bodice')!; // Structured Wool Tailored Bodice
       const gradedSet = gradePattern(spec);
 
       assert.ok(gradedSet.supportedSizes.includes('XS'));

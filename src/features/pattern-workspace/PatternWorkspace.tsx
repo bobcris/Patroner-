@@ -4,24 +4,23 @@
  */
 
 import React, { useState } from 'react';
-import { BodiceDartStyle, BodyMeasurements, DesignSpecification, PatternDraft, PatternPiece, SleeveEaseStrategy } from '../../types';
-import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
-import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
-import { draftSleeveBlock, SleeveDiagnostics } from '../../engine/drafting/sleeve-block';
+import { BodiceDartStyle, BodyMeasurements, DesignSpecification, PatternPiece, SleeveEaseStrategy } from '../../types';
+import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
 import { assembleBodiceSleeve, BodiceSleeveAssemblyResult, formatSignedCm } from '../../engine/assembly';
-import { gradePattern, GradedPatternSet, DEFAULT_SIZE_RANGE } from '../../engine/grading';
-import { validatePatternDraft } from '../../engine/validation/seam-validator';
+import { DEFAULT_SIZE_RANGE } from '../../engine/grading';
 import { calculateGarmentDimensions, calculateBodiceGarmentDimensions, SLEEVE_EASE_TABLE, STANDARD_SIZING_SYSTEM } from '../../engine/measurements/standards';
 import type {
+  AuthoritativeProductionWorkspaceBundle,
   MeasurementApprovalStatus,
   MeasurementOrigin,
-  MeasurementProvenanceEvidence
+  MeasurementProvenanceEvidence,
+  ProductionWorkspaceBomControls
 } from '../../engine/production';
 import { INITIAL_CONCEPTS } from '../../domain/design/curated-concepts';
 import {
-  buildM05ProductionPackage,
-  getUnsupportedCategoryMessage,
-  isCadDraftingSupportedCategory
+  buildAuthoritativeProductionWorkspaceBundle,
+  DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
+  getUnsupportedCategoryMessage
 } from '../../engine/production';
 import { ProductionPackagePanel, ProductionBomControlState } from '../production/ProductionPackagePanel';
 import { SimulationFitPanel } from '../simulation/SimulationFitPanel';
@@ -69,6 +68,17 @@ interface PatternWorkspaceProps {
   measurementProvenance?: MeasurementOrigin;
   measurementApprovalState?: MeasurementApprovalStatus;
   measurementProvenanceEvidence?: MeasurementProvenanceEvidence;
+  workspaceBundle?: AuthoritativeProductionWorkspaceBundle;
+  bomControls?: ProductionWorkspaceBomControls;
+  onChangeBomControls?: (next: ProductionBomControlState) => void;
+  bodiceDartStyle?: BodiceDartStyle;
+  onChangeBodiceDartStyle?: (next: BodiceDartStyle) => void;
+  sleeveEaseStrategy?: SleeveEaseStrategy;
+  onChangeSleeveEaseStrategy?: (next: SleeveEaseStrategy) => void;
+  strictUncertaintyGate?: boolean;
+  onToggleStrictUncertaintyGate?: (next: boolean) => void;
+  requireApprovedGovernance?: boolean;
+  onToggleRequireApprovedGovernance?: (next: boolean) => void;
   onNavigateToProduction: () => void;
   onNavigateToMeasurements: () => void;
   onUpdateSpec?: (nextSpec: DesignSpecification) => void;
@@ -81,19 +91,48 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   measurementProvenance = 'standard-chart',
   measurementApprovalState = 'unverified',
   measurementProvenanceEvidence,
+  workspaceBundle: externalBundle,
+  bomControls: externalBomControls,
+  onChangeBomControls: externalOnChangeBomControls,
+  bodiceDartStyle: externalBodiceDartStyle,
+  onChangeBodiceDartStyle: externalOnChangeBodiceDartStyle,
+  sleeveEaseStrategy: externalSleeveEaseStrategy,
+  onChangeSleeveEaseStrategy: externalOnChangeSleeveEaseStrategy,
+  strictUncertaintyGate: externalStrictUncertaintyGate,
+  onToggleStrictUncertaintyGate: externalOnToggleStrictUncertaintyGate,
+  requireApprovedGovernance: externalRequireApprovedGovernance,
+  onToggleRequireApprovedGovernance: externalOnToggleRequireApprovedGovernance,
   onNavigateToProduction,
   onNavigateToMeasurements,
   onUpdateSpec
 }) => {
-  // Dart style configuration for bodice
-  const [bodiceDartStyle, setBodiceDartStyle] = useState<BodiceDartStyle>(
+  // Standalone fallbacks when rendered outside App.tsx (App.tsx is the authoritative owner)
+  const [localBodiceDartStyle, setLocalBodiceDartStyle] = useState<BodiceDartStyle>(
     currentSpec.dartStyle ?? 'waist'
   );
-
-  // Sleeve ease strategy configuration for tailored sleeve (Milestone 04.2)
-  const [sleeveEaseStrategy, setSleeveEaseStrategy] = useState<SleeveEaseStrategy>(
+  const [localSleeveEaseStrategy, setLocalSleeveEaseStrategy] = useState<SleeveEaseStrategy>(
     currentSpec.sleeveEaseStrategy ?? 'classic'
   );
+  const [localBomControls, setLocalBomControls] = useState<ProductionBomControlState>({
+    ...DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS
+  });
+  const [localRequireApprovedGovernance, setLocalRequireApprovedGovernance] = useState(false);
+  const [localStrictUncertaintyGate, setLocalStrictUncertaintyGate] = useState(true);
+
+  const bodiceDartStyle = externalBodiceDartStyle ?? localBodiceDartStyle;
+  const setBodiceDartStyle = externalOnChangeBodiceDartStyle ?? setLocalBodiceDartStyle;
+  const sleeveEaseStrategy = externalSleeveEaseStrategy ?? localSleeveEaseStrategy;
+  const setSleeveEaseStrategy = externalOnChangeSleeveEaseStrategy ?? setLocalSleeveEaseStrategy;
+  const bomControls: ProductionBomControlState = externalBomControls
+    ? { ...externalBomControls }
+    : localBomControls;
+  const setBomControls = externalOnChangeBomControls ?? setLocalBomControls;
+  const requireApprovedGovernance = externalRequireApprovedGovernance ?? localRequireApprovedGovernance;
+  const setRequireApprovedGovernance =
+    externalOnToggleRequireApprovedGovernance ?? setLocalRequireApprovedGovernance;
+  const strictUncertaintyGate = externalStrictUncertaintyGate ?? localStrictUncertaintyGate;
+  const setStrictUncertaintyGate =
+    externalOnToggleStrictUncertaintyGate ?? setLocalStrictUncertaintyGate;
 
   // Layer visibility toggles
   const [showSeamAllowance, setShowSeamAllowance] = useState(true);
@@ -107,16 +146,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation' | 'production'>('pieces');
-  const [bomControls, setBomControls] = useState<ProductionBomControlState>({
-    fabricRollWidthCm: 140,
-    markerWasteFactor: 0.18,
-    orderQuantityPerSize: 1,
-    includeLining: false,
-    includeLabelsAndPackaging: false
-  });
   const [assemblyScenario, setAssemblyScenario] = useState<AssemblyScenarioMode>('active-draft');
-  const [requireApprovedGovernance, setRequireApprovedGovernance] = useState(false);
-  const [strictUncertaintyGate, setStrictUncertaintyGate] = useState(true);
   const [selectedPrototypeId, setSelectedPrototypeId] = useState<string>('PROTO-BOD-2026-M-01');
   const [enabledGradingSizes, setEnabledGradingSizes] = useState<Record<string, boolean>>({
     XS: true,
@@ -173,60 +203,70 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     );
   }, [sleeveEaseStrategy, workspaceFabric]);
 
-  const isCadSupported = isCadDraftingSupportedCategory(currentSpec.garmentCategory);
-
-  // Milestone 04.4: Graded Pattern Set generation (only for CAD-supported blocks)
-  const gradedPatternSet: GradedPatternSet | null = React.useMemo(() => {
-    if (!isCadSupported) return null;
-    return gradePattern(currentSpec, {
-      bodiceDartStyle,
-      sleeveEaseStrategy,
-      strictUncertaintyGate,
-      measurementProvenance,
-      measurementApprovalState,
-      requireApprovedGovernance
+  // Single authoritative production workspace bundle (shared with Module 05)
+  const fallbackBundle = React.useMemo(() => {
+    if (externalBundle) return null;
+    return buildAuthoritativeProductionWorkspaceBundle({
+      projectId: 'project-patroner-default',
+      tenantId: 'tenant-studio-local',
+      designSpec: currentSpec,
+      measurements,
+      activeSize,
+      bomControls,
+      governance: {
+        bodiceDartStyle,
+        sleeveEaseStrategy,
+        strictUncertaintyGate,
+        requireApprovedGovernance,
+        measurementProvenance,
+        measurementApprovalState,
+        measurementProvenanceEvidence
+      }
     });
   }, [
-    isCadSupported,
+    externalBundle,
     currentSpec,
+    measurements,
+    activeSize,
+    bomControls,
     bodiceDartStyle,
     sleeveEaseStrategy,
     strictUncertaintyGate,
+    requireApprovedGovernance,
     measurementProvenance,
     measurementApprovalState,
-    requireApprovedGovernance
+    measurementProvenanceEvidence
   ]);
 
-  // Deterministic draft generation (Bodice includes front, back, and set-in sleeve; Skirt drafts 2 panels)
-  let pieces: PatternPiece[] = [];
-  let sleeveDiag: SleeveDiagnostics | undefined = undefined;
+  const workspaceBundle = externalBundle ?? fallbackBundle!;
+  const {
+    isCadSupported,
+    categoryPolicy,
+    pieces: bundlePieces,
+    sleeveDiagnostics: sleeveDiag,
+    assemblyResult: authoritativeAssemblyResult,
+    draftValidation: validationReport,
+    gradedPatternSet,
+    m05Package,
+    exportValidation
+  } = workspaceBundle;
 
-  if (currentSpec.garmentCategory === 'bodice') {
-    const bodicePieces = draftBodiceBlock(measurements, currentSpec, { dartStyle: bodiceDartStyle });
-    try {
-      const sleeveResult = draftSleeveBlock(measurements, currentSpec, {
-        strategy: sleeveEaseStrategy,
-        bodicePieces
-      });
-      pieces = [...bodicePieces, sleeveResult.piece];
-      sleeveDiag = sleeveResult.diagnostics;
-    } catch {
-      // In case sleeve measurements are missing, fallback gracefully to bodice panels
-      pieces = bodicePieces;
-    }
-  } else if (currentSpec.garmentCategory === 'skirt') {
-    pieces = draftSkirtBlock(measurements, currentSpec);
-  }
+  const pieces: PatternPiece[] = [...bundlePieces];
 
-  // Milestone 04.3: Integrated Bodice-Sleeve Assembly computation
-  let assemblyResult: BodiceSleeveAssemblyResult | undefined = undefined;
+  // Interactive assembly diagnostic preview (only diverges locally for the explicit incompatible-xs-flat test toggle)
+  let assemblyResult: BodiceSleeveAssemblyResult | undefined = authoritativeAssemblyResult;
   let assemblyError: string | undefined = undefined;
-  if (currentSpec.garmentCategory === 'bodice' && pieces.length >= 2) {
+  if (
+    currentSpec.garmentCategory === 'bodice' &&
+    pieces.length >= 2 &&
+    assemblyScenario === 'incompatible-xs-flat'
+  ) {
     try {
-      const targetSleeveForAssembly =
-        assemblyScenario === 'incompatible-xs-flat'
-          ? draftSleeveBlock(STANDARD_SIZING_SYSTEM.sizes.XS, currentSpec, { strategy: 'flat' }).piece
-          : pieces[2];
+      const targetSleeveForAssembly = draftSleeveBlock(
+        STANDARD_SIZING_SYSTEM.sizes.XS,
+        currentSpec,
+        { strategy: 'flat' }
+      ).piece;
 
       assemblyResult = assembleBodiceSleeve({
         bodicePieces: pieces.slice(0, 2),
@@ -242,11 +282,11 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
         }
       });
     } catch (err) {
+      assemblyResult = undefined;
       assemblyError = err instanceof Error ? err.message : String(err);
     }
   }
 
-  const validationReport = validatePatternDraft(pieces);
   const garmentDims = currentSpec.garmentCategory === 'bodice'
     ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric, {
         explicitEaseCm: currentSpec.explicitEaseCm,
@@ -260,66 +300,12 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) || pieces[0];
 
   const effectiveViewMode: 'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation' | 'production' =
-    currentSpec.garmentCategory !== 'bodice' &&
+    (currentSpec.garmentCategory !== 'bodice' || (cadViewMode === 'grading' && !gradedPatternSet)) &&
     cadViewMode !== 'pieces' &&
     cadViewMode !== 'simulation' &&
     cadViewMode !== 'production'
       ? 'pieces'
       : cadViewMode;
-
-  // Milestone 05: Live Authoritative Production Package Bundle
-  const m05Package = React.useMemo(() => {
-    if (!isCadSupported) return null;
-    const qty = Math.max(1, Math.round(bomControls.orderQuantityPerSize || 1));
-    const targetSizes = currentSpec.garmentCategory === 'bodice'
-      ? DEFAULT_SIZE_RANGE
-      : [activeSize];
-    const orderQuantitiesBySize: Record<string, number> = {};
-    for (const sz of targetSizes) {
-      orderQuantitiesBySize[sz] = qty;
-    }
-    return buildM05ProductionPackage({
-      designSpec: currentSpec,
-      measurements,
-      options: {
-        activeSize,
-        bodiceDartStyle,
-        sleeveEaseStrategy,
-        strictUncertaintyGate,
-        measurementProvenance,
-        measurementApprovalState,
-        measurementProvenanceEvidence,
-        requireApprovedGovernance,
-        bomOptions: {
-          fabricRollWidthCm: bomControls.fabricRollWidthCm,
-          markerWasteFactor: bomControls.markerWasteFactor,
-          includeLining: bomControls.includeLining,
-          includeLabelsAndPackaging: bomControls.includeLabelsAndPackaging,
-          orderQuantitiesBySize
-        }
-      },
-      piecesOverride: currentSpec.garmentCategory !== 'bodice' ? pieces : undefined,
-      gradedPatternSetOverride: currentSpec.garmentCategory === 'bodice' ? gradedPatternSet : null,
-      assemblyResultOverride: assemblyScenario === 'active-draft' ? assemblyResult : undefined
-    });
-  }, [
-    isCadSupported,
-    currentSpec,
-    measurements,
-    activeSize,
-    bodiceDartStyle,
-    sleeveEaseStrategy,
-    strictUncertaintyGate,
-    measurementProvenance,
-    measurementApprovalState,
-    measurementProvenanceEvidence,
-    requireApprovedGovernance,
-    bomControls,
-    pieces,
-    gradedPatternSet,
-    assemblyScenario,
-    assemblyResult
-  ]);
 
   const handleZoom = (delta: number) => {
     setZoom(prev => Math.min(3.5, Math.max(0.6, Number((prev + delta).toFixed(1)))));
@@ -330,7 +316,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     setPan({ x: 0, y: 0 });
   };
 
-  if (!isCadSupported || !m05Package || !gradedPatternSet) {
+  if (!isCadSupported || !m05Package) {
     return (
       <div className="max-w-5xl mx-auto px-4 lg:px-8 py-10 space-y-6">
         <div className="border-b border-neutral-200 pb-6">
@@ -559,22 +545,24 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     {assemblyResult?.status === 'verified-valid' ? 'VERIFIED' : 'INVALID'}
                   </Badge>
                 </button>
-                <button
-                  onClick={() => setCadViewMode('grading')}
-                  className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
-                    effectiveViewMode === 'grading'
-                      ? 'bg-purple-900 text-white shadow-2xs'
-                      : 'text-neutral-700 hover:text-neutral-900'
-                  }`}
-                >
-                  <span>Grading Nest Overlay (M 04.4)</span>
-                  <Badge
-                    variant={gradedPatternSet.isAllValid ? 'success' : 'danger'}
-                    size="sm"
+                {gradedPatternSet && (
+                  <button
+                    onClick={() => setCadViewMode('grading')}
+                    className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      effectiveViewMode === 'grading'
+                        ? 'bg-purple-900 text-white shadow-2xs'
+                        : 'text-neutral-700 hover:text-neutral-900'
+                    }`}
                   >
-                    {gradedPatternSet.isAllValid ? 'ALL VALID (6/6)' : 'FLAGGED'}
-                  </Badge>
-                </button>
+                    <span>Grading Nest Overlay (M 04.4)</span>
+                    <Badge
+                      variant={gradedPatternSet.isAllValid ? 'success' : 'danger'}
+                      size="sm"
+                    >
+                      {gradedPatternSet.isAllValid ? 'ALL VALID (6/6)' : 'FLAGGED'}
+                    </Badge>
+                  </button>
+                )}
                 <button
                   onClick={() => setCadViewMode('fit')}
                   className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
@@ -658,17 +646,46 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           }}
         />
       ) : effectiveViewMode === 'production' ? (
-        <ProductionPackagePanel
-          bundle={m05Package}
-          bomControls={bomControls}
-          onChangeBomControls={setBomControls}
-        />
+        <div className="space-y-4" data-testid="m04-production-readiness-summary">
+          <div className="bg-white border border-neutral-200 rounded-sm p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+                <span className="font-bold text-neutral-900 uppercase">Authoritative Shared Production Readiness</span>
+                <Badge variant={categoryPolicy.supportsMultiSizeGrading ? 'accent' : 'neutral'} size="sm">
+                  {categoryPolicy.policyMode}
+                </Badge>
+                <Badge variant={exportValidation.isExportPermitted ? 'success' : 'warning'} size="sm">
+                  EXPORT: {exportValidation.isExportPermitted ? 'VERIFIED' : (exportValidation.rejectionCode ?? 'BLOCKED')}
+                </Badge>
+                <Badge variant="neutral" size="sm">isProductionReady: false</Badge>
+              </div>
+              <p className="text-xs text-neutral-600 font-mono">
+                {categoryPolicy.policyLabel} • Digest: {m05Package.canonicalContentDigest.slice(0, 16)}… • Shared identically with Module 05 Production Overview.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onNavigateToProduction}
+              icon={<ArrowRight className="w-3.5 h-3.5" />}
+              className="font-mono text-xs uppercase shrink-0"
+            >
+              Open Full Module 05 Overview
+            </Button>
+          </div>
+          <ProductionPackagePanel
+            bundle={m05Package}
+            bomControls={bomControls}
+            onChangeBomControls={setBomControls}
+            titleContext="Module 04 Shared Production Readiness (Synchronized with Module 05)"
+          />
+        </div>
       ) : (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Interactive CAD Canvas */}
         <div className="lg:col-span-8 flex flex-col space-y-3">
           {/* Milestone 04.4: Grading Mode HUD Bar */}
-          {effectiveViewMode === 'grading' && (
+          {effectiveViewMode === 'grading' && gradedPatternSet && (
             <div className="bg-purple-50/90 border border-purple-200 rounded-sm p-3.5 space-y-3 text-xs font-mono">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-purple-200/80 pb-2 gap-2">
                 <div className="flex items-center gap-2">
@@ -1077,7 +1094,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     </text>
                   </g>
                 </g>
-              ) : effectiveViewMode === 'grading' ? (
+              ) : effectiveViewMode === 'grading' && gradedPatternSet ? (
                 /* Milestone 04.4: Multi-Size Nested Grading Overlay */
                 <g>
                   {/* Legend / Title Header in Canvas */}
@@ -1593,7 +1610,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               onToggleStrictUncertaintyGate={setStrictUncertaintyGate}
               onNavigateToMeasurements={onNavigateToMeasurements}
             />
-          ) : effectiveViewMode === 'grading' ? (
+          ) : effectiveViewMode === 'grading' && gradedPatternSet ? (
             /* Milestone 04.4: Cross-Size Grading Inspector & Integrity Card */
             <div className="space-y-6">
               {/* Grading Suite Summary Card */}

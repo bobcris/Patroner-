@@ -312,7 +312,7 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
       assert.notEqual(revWithoutGrading.draftingConfigFingerprint, revWithoutGrading.basePatternFingerprint);
 
       // Downstream grading artifact binds upstream to basePatternFingerprint
-      const gradedSet = toGradedSkirtSet(gradePattern(designSpecForDrafting), designSpecForDrafting);
+      const gradedSet = toGradedSkirtSet(gradePattern({ ...designSpecForDrafting, garmentCategory: 'bodice' }), designSpecForDrafting);
       const gradingArtifact = createAuthoritativeGradingArtifact({
         projectId: PROJECT_ID,
         tenantId: PROJECT_ID,
@@ -582,7 +582,7 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
         fabricSource: 'verified-preset'
       });
 
-      const gradedSet = toGradedSkirtSet(gradePattern(designSpecForDrafting), designSpecForDrafting);
+      const gradedSet = toGradedSkirtSet(gradePattern({ ...designSpecForDrafting, garmentCategory: 'bodice' }), designSpecForDrafting);
       const ga = createAuthoritativeGradingArtifact({
         projectId: PROJECT_ID,
         tenantId: PROJECT_ID,
@@ -864,7 +864,7 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
         cryptographicSignature: sig
       });
 
-      const gradedSet = toGradedSkirtSet(gradePattern(designSpecForDrafting), designSpecForDrafting);
+      const gradedSet = toGradedSkirtSet(gradePattern({ ...designSpecForDrafting, garmentCategory: 'bodice' }), designSpecForDrafting);
       const gradingArtifact = createAuthoritativeGradingArtifact({
         projectId: PROJECT_ID,
         tenantId: PROJECT_ID,
@@ -1174,7 +1174,7 @@ describe('Milestone 05.1 — Authoritative Pattern Lifecycle & Production Packag
         cryptographicSignature: sig
       });
 
-      const gradedSet = toGradedSkirtSet(gradePattern(designSpecForDrafting), designSpecForDrafting);
+      const gradedSet = toGradedSkirtSet(gradePattern({ ...designSpecForDrafting, garmentCategory: 'bodice' }), designSpecForDrafting);
       const gradingArtifact = createAuthoritativeGradingArtifact({
         projectId: PROJECT_ID,
         tenantId: PROJECT_ID,

@@ -364,7 +364,7 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
     setAppliedProposalId(null);
   };
 
-  const handleApproveProposal = (proposal: BoundedOptimizationProposal) => {
+  const handleBranchProposal = (proposal: BoundedOptimizationProposal) => {
     setAppliedProposalId(proposal.proposalId);
     onApplyOptimizationProposal?.(proposal);
   };
@@ -867,11 +867,11 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
                       <Button
                         variant={isApplied ? 'outline' : 'primary'}
                         size="sm"
-                        onClick={() => handleApproveProposal(prop)}
+                        onClick={() => handleBranchProposal(prop)}
                         icon={<GitBranch className="w-3.5 h-3.5" />}
                         data-testid="m06-approve-proposal-btn"
                       >
-                        {isApplied ? 'Child Revision Applied' : 'Approve & Branch Child'}
+                        {isApplied ? 'Unapproved Child Draft Branched' : 'Branch Unapproved Child Revision'}
                       </Button>
                     </div>
                   </div>

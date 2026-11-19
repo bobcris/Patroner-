@@ -203,7 +203,7 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       cryptographicSignature: patSig
     });
 
-    const rawGraded = gradePattern(designSpec);
+    const rawGraded = gradePattern({ ...designSpec, garmentCategory: 'bodice' });
     const graded = {
       ...rawGraded,
       sizeResults: Object.fromEntries(
@@ -1058,7 +1058,7 @@ describe('Milestone 04.6.2.3: Production Integrity Boundary v2 — 30 Adversaria
       cryptographicVerifier: cryptoVerifier,
       cryptographicSignature: patSig
     });
-    const rawGraded = gradePattern(designSpec);
+    const rawGraded = gradePattern({ ...designSpec, garmentCategory: 'bodice' });
     const graded = {
       ...rawGraded,
       sizeResults: Object.fromEntries(

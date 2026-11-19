@@ -5,12 +5,7 @@
 
 import React from 'react';
 import { BodyMeasurements, DesignSpecification, PatternPiece } from '../../types';
-import { draftSkirtBlock } from '../../engine/drafting/skirt-block';
-import { draftBodiceBlock } from '../../engine/drafting/bodice-block';
-import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
-import { assembleBodiceSleeve, BodiceSleeveAssemblyResult } from '../../engine/assembly';
-import { gradePattern, DEFAULT_SIZE_RANGE, GradedPatternSet } from '../../engine/grading';
-import { validatePatternDraft } from '../../engine/validation/seam-validator';
+import { DEFAULT_SIZE_RANGE } from '../../engine/grading';
 import { calculateGarmentDimensions, calculateBodiceGarmentDimensions } from '../../engine/measurements/standards';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -33,21 +28,14 @@ import { calculateCompleteGarmentEase, calculateFabricAdaptedSleeveCapEase } fro
 import { validatePhysicalFit } from '../../engine/prototype/fit-validator';
 import { MOCK_CONFORMING_PROTOTYPE_BODICE_M } from '../../engine/prototype/prototype-fixtures';
 import {
-  buildM05ProductionPackage,
-  computeArtifactInputFingerprint,
-  computeSpecificationFingerprint,
-  createAuthoritativeGradingArtifact,
-  createProductionPatternRevision,
-  evaluateSpecPipelineSafely,
+  AuthoritativeProductionWorkspaceBundle,
+  buildAuthoritativeProductionWorkspaceBundle,
+  DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
   getUnsupportedCategoryMessage,
-  isCadDraftingSupportedCategory,
   MeasurementApprovalStatus,
   MeasurementOrigin,
   MeasurementProvenanceEvidence,
-  NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS,
-  validateMeasurementProvenanceEvidence,
-  validatePatternRevision,
-  validateProductionExportPrerequisites
+  ProductionWorkspaceBomControls
 } from '../../engine/production';
 import { ProductionPackagePanel, ProductionBomControlState } from './ProductionPackagePanel';
 
@@ -58,6 +46,9 @@ interface ProductionOverviewProps {
   measurementProvenance?: MeasurementOrigin;
   measurementApprovalState?: MeasurementApprovalStatus;
   measurementProvenanceEvidence?: MeasurementProvenanceEvidence;
+  workspaceBundle?: AuthoritativeProductionWorkspaceBundle;
+  bomControls?: ProductionWorkspaceBomControls;
+  onChangeBomControls?: (next: ProductionBomControlState) => void;
   onNavigateToCAD: () => void;
 }
 
@@ -68,41 +59,67 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   measurementProvenance = 'standard-chart',
   measurementApprovalState = 'unverified',
   measurementProvenanceEvidence,
+  workspaceBundle: externalBundle,
+  bomControls: externalBomControls,
+  onChangeBomControls: externalOnChangeBomControls,
   onNavigateToCAD
 }) => {
-  const isCadSupported = isCadDraftingSupportedCategory(currentSpec.garmentCategory);
+  const [exportWarning, setExportWarning] = React.useState<string | null>(null);
+  const [localBomControls, setLocalBomControls] = React.useState<ProductionBomControlState>({
+    ...DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS
+  });
 
-  let pieces: PatternPiece[] = [];
-  if (currentSpec.garmentCategory === 'bodice') {
-    const bodicePieces = draftBodiceBlock(measurements, currentSpec);
-    try {
-      const sleeveResult = draftSleeveBlock(measurements, currentSpec, {
-        strategy: currentSpec.sleeveEaseStrategy ?? 'classic',
-        bodicePieces
-      });
-      pieces = [...bodicePieces, sleeveResult.piece];
-    } catch {
-      pieces = bodicePieces;
-    }
-  } else if (currentSpec.garmentCategory === 'skirt') {
-    pieces = draftSkirtBlock(measurements, currentSpec);
-  }
+  const bomControls: ProductionBomControlState = externalBomControls
+    ? { ...externalBomControls }
+    : localBomControls;
+  const setBomControls = externalOnChangeBomControls ?? setLocalBomControls;
 
-  const validation = validatePatternDraft(pieces);
-  let assemblyResult: BodiceSleeveAssemblyResult | undefined = undefined;
-  if (currentSpec.garmentCategory === 'bodice' && pieces.length >= 3) {
-    try {
-      assemblyResult = assembleBodiceSleeve({
-        bodicePieces: pieces.slice(0, 2),
-        sleevePiece: pieces[2],
-        designSpec: currentSpec,
-        measurements,
-        options: { strategy: currentSpec.sleeveEaseStrategy ?? 'classic' }
-      });
-    } catch {
-      // Fallback
-    }
-  }
+  // Single authoritative production workspace bundle (shared with Module 04)
+  const fallbackBundle = React.useMemo(() => {
+    if (externalBundle) return null;
+    return buildAuthoritativeProductionWorkspaceBundle({
+      projectId: 'project-patroner-default',
+      tenantId: 'tenant-studio-local',
+      designSpec: currentSpec,
+      measurements,
+      activeSize,
+      bomControls,
+      governance: {
+        bodiceDartStyle: currentSpec.dartStyle ?? 'waist',
+        sleeveEaseStrategy: currentSpec.sleeveEaseStrategy ?? 'classic',
+        measurementProvenance,
+        measurementApprovalState,
+        measurementProvenanceEvidence
+      }
+    });
+  }, [
+    externalBundle,
+    currentSpec,
+    measurements,
+    activeSize,
+    bomControls,
+    measurementProvenance,
+    measurementApprovalState,
+    measurementProvenanceEvidence
+  ]);
+
+  const workspaceBundle = externalBundle ?? fallbackBundle!;
+  const {
+    isCadSupported,
+    categoryPolicy,
+    pieces: bundlePieces,
+    draftValidation: validation,
+    assemblyResult,
+    gradedPatternSet,
+    m05Package,
+    liveSnapshot,
+    liveGradingArtifact,
+    approvalVerification,
+    pipelineReport,
+    exportValidation: liveExportValidation
+  } = workspaceBundle;
+
+  const pieces: PatternPiece[] = [...bundlePieces];
 
   const dims = currentSpec.garmentCategory === 'bodice'
     ? calculateBodiceGarmentDimensions(measurements, currentSpec.easeProfile, currentSpec.fabric, {
@@ -113,12 +130,6 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         explicitEaseCm: currentSpec.explicitEaseCm,
         targetLengthCm: currentSpec.lengthCm
       });
-
-  // Milestone 04.4: Graded Pattern Set Generation
-  const gradedPatternSet = React.useMemo(() => {
-    if (!isCadSupported) return null;
-    return gradePattern(currentSpec);
-  }, [isCadSupported, currentSpec]);
 
   // Milestone 04.5 / 04.5.1: Fabric-Aware Ease & Physical Prototype Validation
   const enhancedFabricLookup = React.useMemo(() => {
@@ -157,62 +168,6 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     return validatePhysicalFit(MOCK_CONFORMING_PROTOTYPE_BODICE_M);
   }, []);
 
-  const [exportWarning, setExportWarning] = React.useState<string | null>(null);
-  const [bomControls, setBomControls] = React.useState<ProductionBomControlState>({
-    fabricRollWidthCm: 140,
-    markerWasteFactor: 0.18,
-    orderQuantityPerSize: 1,
-    includeLining: false,
-    includeLabelsAndPackaging: false
-  });
-
-  // Milestone 05: Live Authoritative Production Package
-  const m05Package = React.useMemo(() => {
-    if (!isCadSupported) return null;
-    const qty = Math.max(1, Math.round(bomControls.orderQuantityPerSize || 1));
-    const targetSizes = currentSpec.garmentCategory === 'bodice'
-      ? DEFAULT_SIZE_RANGE
-      : [activeSize];
-    const orderQuantitiesBySize: Record<string, number> = {};
-    for (const sz of targetSizes) {
-      orderQuantitiesBySize[sz] = qty;
-    }
-    return buildM05ProductionPackage({
-      designSpec: currentSpec,
-      measurements,
-      options: {
-        activeSize,
-        bodiceDartStyle: currentSpec.dartStyle ?? 'waist',
-        sleeveEaseStrategy: currentSpec.sleeveEaseStrategy ?? 'classic',
-        measurementProvenance,
-        measurementApprovalState,
-        measurementProvenanceEvidence,
-        bomOptions: {
-          fabricRollWidthCm: bomControls.fabricRollWidthCm,
-          markerWasteFactor: bomControls.markerWasteFactor,
-          includeLining: bomControls.includeLining,
-          includeLabelsAndPackaging: bomControls.includeLabelsAndPackaging,
-          orderQuantitiesBySize
-        }
-      },
-      piecesOverride: currentSpec.garmentCategory !== 'bodice' ? pieces : undefined,
-      gradedPatternSetOverride: currentSpec.garmentCategory === 'bodice' ? gradedPatternSet : null,
-      assemblyResultOverride: assemblyResult
-    });
-  }, [
-    isCadSupported,
-    currentSpec,
-    measurements,
-    activeSize,
-    measurementProvenance,
-    measurementApprovalState,
-    measurementProvenanceEvidence,
-    bomControls,
-    pieces,
-    gradedPatternSet,
-    assemblyResult
-  ]);
-
   const uniqueSeamAllowanceRoles = React.useMemo(() => {
     if (!m05Package) return [];
     const seen = new Map<string, number>();
@@ -230,168 +185,6 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     return Array.from(seen.entries()).slice(0, 6);
   }, [m05Package]);
 
-  const liveSnapshot = React.useMemo(() => {
-    if (!isCadSupported) return null;
-    try {
-      const evidenceCheck = validateMeasurementProvenanceEvidence(
-        measurementProvenance,
-        measurementProvenanceEvidence
-      );
-      const isApprovableProvenance =
-        !NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(measurementProvenance) &&
-        evidenceCheck.isValid;
-
-      const effectiveApprovalState: MeasurementApprovalStatus =
-        measurementApprovalState === 'approved' && isApprovableProvenance
-          ? 'approved'
-          : 'unverified';
-
-      const operatorIdentity = measurementProvenanceEvidence?.operatorName?.trim();
-      const measurementApproverLabel =
-        effectiveApprovalState !== 'approved'
-          ? undefined
-          : operatorIdentity
-            ? `${operatorIdentity} (${measurementProvenance})`
-            : measurementProvenance === 'user-entered'
-              ? 'User-Entered Measurement Record'
-              : measurementProvenance === 'imported'
-                ? 'Imported Measurement Profile'
-                : undefined;
-
-      const draftRev = createProductionPatternRevision({
-        projectId: 'project-patroner-default',
-        revisionId: `rev-${currentSpec.id}-v${currentSpec.version}-${activeSize}`,
-        targetSize: activeSize,
-        designSpecification: currentSpec,
-        measurements: {
-          values: ({ ...measurements } as unknown) as Record<string, number>,
-          defaultOrigin: measurementProvenance,
-          approval: {
-            state: effectiveApprovalState,
-            approvedBy: measurementApproverLabel,
-            approvedAt:
-              effectiveApprovalState === 'approved'
-                ? measurementProvenanceEvidence?.recordedAt ?? '2026-11-09T08:00:00.000Z'
-                : undefined
-          }
-        },
-        fabric: enhancedFabric,
-        patternPieces: pieces,
-        validation,
-        physicalValidationStatus: 'not-assessed'
-      });
-
-      if (validation.isValid && validation.failureCount === 0) {
-        return validatePatternRevision(draftRev, {
-          actorId: 'pattern-validation-engine',
-          actorRole: 'validation-engine',
-          validatedAt: draftRev.createdAt
-        });
-      }
-      return draftRev;
-    } catch {
-      return null;
-    }
-  }, [isCadSupported, currentSpec, measurements, activeSize, measurementProvenance, measurementApprovalState, measurementProvenanceEvidence, enhancedFabric, pieces, validation]);
-
-  const liveGradingArtifact = React.useMemo(() => {
-    if (!isCadSupported || !liveSnapshot || !gradedPatternSet) return undefined;
-    try {
-      const specRevId = currentSpec.specificationRevisionId ?? `spec-${currentSpec.id}-v${currentSpec.version || 1}`;
-      const specFp = computeSpecificationFingerprint(currentSpec);
-      const measFp = computeArtifactInputFingerprint({
-        unit: measurements.unit,
-        waist: measurements.waist,
-        lowHip: measurements.lowHip,
-        highHip: measurements.highHip,
-        skirtLength: measurements.skirtLength,
-        bust: measurements.bust,
-        waistToHip: measurements.waistToHip,
-        backWaistLength: measurements.backWaistLength,
-        frontWaistLength: measurements.frontWaistLength,
-        acrossBack: measurements.acrossBack,
-        shoulderLength: measurements.shoulderLength,
-        neckCircumference: measurements.neckCircumference,
-        bustSpan: measurements.bustSpan,
-        bustHeight: measurements.bustHeight,
-        armholeDepth: measurements.armholeDepth,
-        bicepsCircumference: measurements.bicepsCircumference,
-        elbowCircumference: measurements.elbowCircumference,
-        wristCircumference: measurements.wristCircumference,
-        sleeveLength: measurements.sleeveLength,
-        armLengthToElbow: measurements.armLengthToElbow,
-        activeSize
-      });
-      const gradingRulesFp = computeArtifactInputFingerprint({
-        system: 'standard-iso-8559',
-        baseSize: 'M',
-        version: 'iso8559-standard',
-        sizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
-      });
-
-      return createAuthoritativeGradingArtifact({
-        projectId: 'project-patroner-default',
-        tenantId: 'project-patroner-default',
-        sourceSpecificationId: currentSpec.id,
-        sourceSpecificationRevisionId: specRevId,
-        sourceSpecificationFingerprint: specFp,
-        sourcePatternRevisionId: liveSnapshot.revisionId,
-        sourcePatternSnapshotFingerprint: liveSnapshot.canonicalFingerprint,
-        sourceBasePatternFingerprint: liveSnapshot.basePatternFingerprint,
-        sourceMeasurementSetFingerprint: measFp,
-        gradingRuleSetRevision: 'rules-grading-iso8559-standard',
-        gradingRuleSetFingerprint: gradingRulesFp,
-        baseSize: activeSize,
-        sizeRange: [...DEFAULT_SIZE_RANGE],
-        gradedPatternSet,
-        basePatternPieces: pieces
-      });
-    } catch {
-      return undefined;
-    }
-  }, [currentSpec, measurements, activeSize, liveSnapshot, gradedPatternSet, pieces]);
-
-  const safeEval = React.useMemo(() => {
-    return evaluateSpecPipelineSafely({
-      specification: currentSpec,
-      measurements,
-      measurementApprovalState,
-      measurementProvenance,
-      activeSize,
-      fabric: enhancedFabric,
-      productionSnapshot: liveSnapshot ?? undefined,
-      gradingArtifact: liveGradingArtifact
-    });
-  }, [currentSpec, measurements, measurementApprovalState, measurementProvenance, activeSize, enhancedFabric, liveSnapshot, liveGradingArtifact]);
-
-  const approvalVerification = safeEval.approvalVerification;
-  const pipelineReport = safeEval.pipelineReport;
-
-  const liveExportValidation = React.useMemo(() => {
-    if (!isCadSupported) {
-      return {
-        isExportPermitted: false,
-        blockingArtifacts: ['art-specification'],
-        rejectionCode: 'SPECIFICATION_INVALID' as const,
-        rejectionReason: getUnsupportedCategoryMessage(currentSpec.garmentCategory)
-      };
-    }
-    return validateProductionExportPrerequisites(pipelineReport, liveSnapshot ?? undefined, {
-      specification: currentSpec,
-      measurements,
-      measurementApprovalState,
-      measurementProvenance,
-      fabric: enhancedFabric,
-      patternPieces: pieces,
-      validationReport: validation,
-      gradingArtifact: liveGradingArtifact,
-      exportGradingPolicy: {
-        mode: 'graded-multi-size',
-        requiredSizes: [...DEFAULT_SIZE_RANGE]
-      }
-    });
-  }, [isCadSupported, pipelineReport, liveSnapshot, currentSpec, measurements, measurementApprovalState, measurementProvenance, enhancedFabric, pieces, validation, liveGradingArtifact]);
-
   const handlePrint = () => {
     if (!liveExportValidation.isExportPermitted) {
       setExportWarning(
@@ -403,7 +196,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     window.print();
   };
 
-  if (!isCadSupported || !m05Package || !gradedPatternSet) {
+  if (!isCadSupported || !m05Package) {
     return (
       <div className="max-w-5xl mx-auto px-4 lg:px-8 py-10 space-y-6">
         <div className="border-b border-neutral-200 pb-6">
@@ -483,23 +276,38 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       )}
 
       {/* Independent Export Gate Status Banner */}
-      <div className={`p-3 rounded border text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
-        liveExportValidation.isExportPermitted
-          ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-          : 'bg-amber-50 border-amber-300 text-amber-950'
-      }`}>
+      <div
+        data-testid="m05-export-gate-banner"
+        className={`p-3 rounded border text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+          liveExportValidation.isExportPermitted
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+            : 'bg-amber-50 border-amber-300 text-amber-950'
+        }`}
+      >
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-bold">
-            EXPORT GATE: {liveExportValidation.isExportPermitted ? 'Graded Multi-Size Export Verified' : `BLOCKED [${liveExportValidation.rejectionCode ?? 'PENDING'}]`}
+            EXPORT GATE:{' '}
+            {liveExportValidation.isExportPermitted
+              ? categoryPolicy.supportsMultiSizeGrading
+                ? 'Graded Multi-Size Export Verified'
+                : 'Single-Size Ungraded Export Verified'
+              : `BLOCKED [${liveExportValidation.rejectionCode ?? 'PENDING'}]`}
           </span>
           <span>•</span>
           <span>
             {liveExportValidation.isExportPermitted
-              ? `All 13 pipeline stages synchronized • Snapshot: ${liveSnapshot?.canonicalFingerprint.slice(0, 12)}… • Grading Artifact: ${liveGradingArtifact?.canonicalFingerprint.slice(0, 12)}…`
+              ? categoryPolicy.supportsMultiSizeGrading
+                ? `All 13 pipeline stages synchronized • Snapshot: ${liveSnapshot?.canonicalFingerprint.slice(0, 12)}… • Grading Artifact: ${liveGradingArtifact?.canonicalFingerprint.slice(0, 12)}…`
+                : `Single-size ungraded policy (${activeSize}) synchronized • Snapshot: ${liveSnapshot?.canonicalFingerprint.slice(0, 12)}… • Grading Artifact: N/A (deferred to P1-3)`
               : liveExportValidation.rejectionReason}
           </span>
         </div>
-        <Badge variant="neutral" size="sm">isProductionReady: false</Badge>
+        <div className="flex items-center gap-2 shrink-0">
+          <Badge variant={categoryPolicy.supportsMultiSizeGrading ? 'accent' : 'neutral'} size="sm">
+            {categoryPolicy.policyMode}
+          </Badge>
+          <Badge variant="neutral" size="sm">isProductionReady: false</Badge>
+        </div>
       </div>
 
       {/* Milestone 05.1: Authoritative Pattern Revision Lifecycle & Acyclic Fingerprint Hierarchy */}
@@ -1006,150 +814,205 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         </div>
       </div>
 
-      {/* Milestone 04.4: Graded Pattern Specifications & Cross-Size Grade Rule Table */}
-      <div className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-neutral-100 pb-4 gap-2">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] uppercase font-mono tracking-wider bg-purple-950 text-purple-200 px-2 py-0.5 rounded font-bold">
-                MILESTONE 04.4
-              </span>
-              <span className="text-xs font-mono text-neutral-500">
-                ANTHROPOMETRIC &amp; PATTERN GRADING SPECIFICATION
+      {/* Milestone 04.4: Graded Pattern Specifications (Bodice) OR Explicit Single-Size Ungraded Scope (Skirt) */}
+      {gradedPatternSet ? (
+        <div className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-6" data-testid="m05-graded-matrix-section">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-neutral-100 pb-4 gap-2">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] uppercase font-mono tracking-wider bg-purple-950 text-purple-200 px-2 py-0.5 rounded font-bold">
+                  MILESTONE 04.4
+                </span>
+                <span className="text-xs font-mono text-neutral-500">
+                  ANTHROPOMETRIC &amp; PATTERN GRADING SPECIFICATION
+                </span>
+              </div>
+              <h3 className="text-base font-semibold text-neutral-900 font-mono">
+                Cross-Size Graded Garment Matrix (XS–XXL)
+              </h3>
+              <p className="text-xs text-neutral-600 mt-0.5">
+                Derived directly from deterministic target measurement regeneration. Zero global coordinate scaling.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className="text-neutral-500">Grading System:</span>
+              <span className="font-bold text-neutral-900 bg-neutral-100 px-2.5 py-1 rounded border border-neutral-200">
+                {gradedPatternSet.gradeTable.name} (Base: {gradedPatternSet.baseSize})
               </span>
             </div>
-            <h3 className="text-base font-semibold text-neutral-900 font-mono">
-              Cross-Size Graded Garment Matrix (XS–XXL)
-            </h3>
-            <p className="text-xs text-neutral-600 mt-0.5">
-              Derived directly from deterministic target measurement regeneration. Zero global coordinate scaling.
-            </p>
           </div>
 
-          <div className="flex items-center gap-2 font-mono text-xs">
-            <span className="text-neutral-500">Grading System:</span>
-            <span className="font-bold text-neutral-900 bg-neutral-100 px-2.5 py-1 rounded border border-neutral-200">
-              {gradedPatternSet.gradeTable.name} (Base: {gradedPatternSet.baseSize})
-            </span>
-          </div>
-        </div>
+          {/* Specifications Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs border border-neutral-200">
+              <thead className="bg-neutral-900 text-white uppercase text-[10px] tracking-wider">
+                <tr>
+                  <th className="py-2.5 px-3">Size</th>
+                  <th className="py-2.5 px-3">Bust (cm)</th>
+                  <th className="py-2.5 px-3">Waist (cm)</th>
+                  <th className="py-2.5 px-3">Low Hip (cm)</th>
+                  <th className="py-2.5 px-3">Front Bodice (W)</th>
+                  <th className="py-2.5 px-3">Back Bodice (W)</th>
+                  <th className="py-2.5 px-3">Sleeve Biceps (W)</th>
+                  <th className="py-2.5 px-3">Total Scye Arc</th>
+                  <th className="py-2.5 px-3">Cap Ease (E_t)</th>
+                  <th className="py-2.5 px-3">Assembly Status</th>
+                  <th className="py-2.5 px-3 text-right">Production Ready</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-200 text-neutral-800">
+                {DEFAULT_SIZE_RANGE.map(sz => {
+                  const res = gradedPatternSet.sizeResults[sz];
+                  if (!res) return null;
+                  const isBase = sz === gradedPatternSet.baseSize;
+                  const fPiece = res.bodicePieces.find(p => p.pieceCode.includes('BOD-F'));
+                  const bPiece = res.bodicePieces.find(p => p.pieceCode.includes('BOD-B'));
+                  const sPiece = res.sleevePiece;
+                  const totalEase = res.assemblyResult?.ease.totalEaseCm;
+                  const totalScye = res.assemblyResult?.ease.totalBodiceArmholeLengthCm;
 
-        {/* Specifications Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left font-mono text-xs border border-neutral-200">
-            <thead className="bg-neutral-900 text-white uppercase text-[10px] tracking-wider">
-              <tr>
-                <th className="py-2.5 px-3">Size</th>
-                <th className="py-2.5 px-3">Bust (cm)</th>
-                <th className="py-2.5 px-3">Waist (cm)</th>
-                <th className="py-2.5 px-3">Low Hip (cm)</th>
-                <th className="py-2.5 px-3">Front Bodice (W)</th>
-                <th className="py-2.5 px-3">Back Bodice (W)</th>
-                <th className="py-2.5 px-3">Sleeve Biceps (W)</th>
-                <th className="py-2.5 px-3">Total Scye Arc</th>
-                <th className="py-2.5 px-3">Cap Ease (E_t)</th>
-                <th className="py-2.5 px-3">Assembly Status</th>
-                <th className="py-2.5 px-3 text-right">Production Ready</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-200 text-neutral-800">
-              {DEFAULT_SIZE_RANGE.map(sz => {
-                const res = gradedPatternSet.sizeResults[sz];
-                if (!res) return null;
-                const isBase = sz === gradedPatternSet.baseSize;
-                const fPiece = res.bodicePieces.find(p => p.pieceCode.includes('BOD-F'));
-                const bPiece = res.bodicePieces.find(p => p.pieceCode.includes('BOD-B'));
-                const sPiece = res.sleevePiece;
-                const totalEase = res.assemblyResult?.ease.totalEaseCm;
-                const totalScye = res.assemblyResult?.ease.totalBodiceArmholeLengthCm;
-
-                return (
-                  <tr
-                    key={sz}
-                    className={`hover:bg-neutral-50 transition-colors ${
-                      isBase ? 'bg-purple-50/40 font-semibold' : ''
-                    }`}
-                  >
-                    <td className="py-2.5 px-3 font-bold text-neutral-900 flex items-center gap-1.5">
-                      <span>{sz}</span>
-                      {isBase && (
-                        <span className="text-[9px] bg-neutral-900 text-white px-1.5 py-0.2 rounded font-mono font-normal">
-                          BASE
+                  return (
+                    <tr
+                      key={sz}
+                      className={`hover:bg-neutral-50 transition-colors ${
+                        isBase ? 'bg-purple-50/40 font-semibold' : ''
+                      }`}
+                    >
+                      <td className="py-2.5 px-3 font-bold text-neutral-900 flex items-center gap-1.5">
+                        <span>{sz}</span>
+                        {isBase && (
+                          <span className="text-[9px] bg-neutral-900 text-white px-1.5 py-0.2 rounded font-mono font-normal">
+                            BASE
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3">{res.measurements.bust ?? '-'}</td>
+                      <td className="py-2.5 px-3">{res.measurements.waist ?? '-'}</td>
+                      <td className="py-2.5 px-3">{res.measurements.lowHip ?? '-'}</td>
+                      <td className="py-2.5 px-3">{fPiece?.boundingBox.widthCm ?? '-'} cm</td>
+                      <td className="py-2.5 px-3">{bPiece?.boundingBox.widthCm ?? '-'} cm</td>
+                      <td className="py-2.5 px-3">{sPiece?.boundingBox.widthCm ?? '-'} cm</td>
+                      <td className="py-2.5 px-3">{totalScye ? `${totalScye.toFixed(2)} cm` : '-'}</td>
+                      <td className="py-2.5 px-3 text-emerald-700 font-bold">
+                        {totalEase !== undefined ? `+${totalEase.toFixed(2)} cm` : '-'}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <Badge
+                          variant={res.isValid ? 'success' : 'danger'}
+                          size="sm"
+                        >
+                          {res.isValid ? 'VERIFIED' : 'INVALID'}
+                        </Badge>
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <span className="text-[10px] text-amber-800 font-bold bg-amber-100 px-1.5 py-0.5 rounded">
+                          FALSE
                         </span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3">{res.measurements.bust ?? '-'}</td>
-                    <td className="py-2.5 px-3">{res.measurements.waist ?? '-'}</td>
-                    <td className="py-2.5 px-3">{res.measurements.lowHip ?? '-'}</td>
-                    <td className="py-2.5 px-3">{fPiece?.boundingBox.widthCm ?? '-'} cm</td>
-                    <td className="py-2.5 px-3">{bPiece?.boundingBox.widthCm ?? '-'} cm</td>
-                    <td className="py-2.5 px-3">{sPiece?.boundingBox.widthCm ?? '-'} cm</td>
-                    <td className="py-2.5 px-3">{totalScye ? `${totalScye.toFixed(2)} cm` : '-'}</td>
-                    <td className="py-2.5 px-3 text-emerald-700 font-bold">
-                      {totalEase !== undefined ? `+${totalEase.toFixed(2)} cm` : '-'}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <Badge
-                        variant={res.isValid ? 'success' : 'danger'}
-                        size="sm"
-                      >
-                        {res.isValid ? 'VERIFIED' : 'INVALID'}
-                      </Badge>
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      <span className="text-[10px] text-amber-800 font-bold bg-amber-100 px-1.5 py-0.5 rounded">
-                        FALSE
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Monotonicity and Integrity Matrix */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs font-mono">
+            <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+                CROSS-SIZE MONOTONIC CONTINUITY REPORT
+              </span>
+              <div className="space-y-1 text-[11px]">
+                {gradedPatternSet.integrityReport.comparisonTable.slice(0, 6).map(row => (
+                  <div key={row.metricId} className="flex justify-between items-center py-0.5 border-b border-neutral-200/60">
+                    <span className="text-neutral-600">{row.label}:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-neutral-900 font-semibold">
+                        {row.valuesPerSize.XS} → {row.valuesPerSize.XXL} {row.unit}
                       </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Monotonicity and Integrity Matrix */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs font-mono">
-          <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
-              CROSS-SIZE MONOTONIC CONTINUITY REPORT
-            </span>
-            <div className="space-y-1 text-[11px]">
-              {gradedPatternSet.integrityReport.comparisonTable.slice(0, 6).map(row => (
-                <div key={row.metricId} className="flex justify-between items-center py-0.5 border-b border-neutral-200/60">
-                  <span className="text-neutral-600">{row.label}:</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-neutral-900 font-semibold">
-                      {row.valuesPerSize.XS} → {row.valuesPerSize.XXL} {row.unit}
-                    </span>
-                    <span className={`text-[9px] px-1 rounded font-bold ${row.isMonotonic ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                      {row.isMonotonic ? 'MONOTONIC PASS' : 'FAIL'}
-                    </span>
+                      <span className={`text-[9px] px-1 rounded font-bold ${row.isMonotonic ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                        {row.isMonotonic ? 'MONOTONIC PASS' : 'FAIL'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
-              CROSS-SIZE UNASSESSED INDUSTRIAL CONSTRAINTS
-            </span>
-            <p className="text-[11px] text-neutral-600 leading-relaxed">
-              Full garment production cutting across sizes requires physical drape verification. The following items remain strictly unassessed:
-            </p>
-            <ul className="space-y-1 text-[10px] text-neutral-600 list-disc list-inside">
-              {gradedPatternSet.integrityReport.unassessedConditions.map((cond, i) => (
-                <li key={i}>{cond}</li>
-              ))}
-            </ul>
-            <div className="pt-2 border-t border-neutral-200 flex items-center justify-between text-amber-900 text-[10px] font-bold uppercase">
-              <span>Prototype Stage CAD</span>
-              <span>isProductionReady: false</span>
+            <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+                CROSS-SIZE UNASSESSED INDUSTRIAL CONSTRAINTS
+              </span>
+              <p className="text-[11px] text-neutral-600 leading-relaxed">
+                Full garment production cutting across sizes requires physical drape verification. The following items remain strictly unassessed:
+              </p>
+              <ul className="space-y-1 text-[10px] text-neutral-600 list-disc list-inside">
+                {gradedPatternSet.integrityReport.unassessedConditions.map((cond, i) => (
+                  <li key={i}>{cond}</li>
+                ))}
+              </ul>
+              <div className="pt-2 border-t border-neutral-200 flex items-center justify-between text-amber-900 text-[10px] font-bold uppercase">
+                <span>Prototype Stage CAD</span>
+                <span>isProductionReady: false</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div
+          className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-4"
+          data-testid="m05-skirt-single-size-scope"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-neutral-100 pb-4 gap-2">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] uppercase font-mono tracking-wider bg-neutral-900 text-neutral-100 px-2 py-0.5 rounded font-bold">
+                  SINGLE-SIZE UNGRADED SCOPE
+                </span>
+                <span className="text-xs font-mono text-neutral-500">
+                  MULTI-SIZE SKIRT GRADING DEFERRED TO P1-3
+                </span>
+              </div>
+              <h3 className="text-base font-semibold text-neutral-900 font-mono">
+                {categoryPolicy.policyLabel}
+              </h3>
+              <p className="text-xs text-neutral-600 mt-0.5">
+                {categoryPolicy.nonGradingReason}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <Badge variant="neutral" size="sm">ACTIVE SIZE: {activeSize}</Badge>
+              <Badge variant="neutral" size="sm">GRADING ARTIFACT: NONE</Badge>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+            <div className="p-3.5 border border-neutral-200 rounded-sm bg-neutral-50/60 space-y-1">
+              <span className="text-[10px] uppercase font-bold text-neutral-500 block">Export Grading Policy</span>
+              <span className="font-bold text-neutral-900 block">{categoryPolicy.policyMode}</span>
+              <span className="text-[11px] text-neutral-600 block">
+                Included Sizes: [{m05Package.includedSizes.join(', ')}]
+              </span>
+            </div>
+            <div className="p-3.5 border border-neutral-200 rounded-sm bg-neutral-50/60 space-y-1">
+              <span className="text-[10px] uppercase font-bold text-neutral-500 block">Drafted Skirt Panels</span>
+              <span className="font-bold text-neutral-900 block">{pieces.length} Deterministic Panels</span>
+              <span className="text-[11px] text-neutral-600 block">
+                {pieces.map(p => `${p.pieceCode} (${p.boundingBox.widthCm}×${p.boundingBox.heightCm} cm)`).join(' • ')}
+              </span>
+            </div>
+            <div className="p-3.5 border border-amber-200 rounded-sm bg-amber-50/50 space-y-1">
+              <span className="text-[10px] uppercase font-bold text-amber-900 block">Category Boundary Guard</span>
+              <span className="font-bold text-amber-950 block">Bodice Grader Never Invoked</span>
+              <span className="text-[11px] text-amber-900 block">
+                isProductionReady: false • Multi-size skirt grading scheduled for P1-3.
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Milestone 04.5: Fabric-Aware Pattern Engineering & Physical Fit Validation Foundation */}
       <div className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-6">
