@@ -55,11 +55,8 @@ import {
   PipelineIntegrityReport
 } from './dependency-types';
 import {
-  computeArtifactInputFingerprint,
   validateProductionExportPrerequisites
 } from './dependency-invalidation';
-import { computeSpecificationFingerprint } from './garment-specification';
-import { createAuthoritativeGradingArtifact } from './pattern-revision-snapshot';
 import { buildM05ProductionPackage } from './production-engineering';
 import { M05ProductionPackageBundle } from './production-engineering-types';
 import {
@@ -184,7 +181,10 @@ export interface PreviousPackageRevisionInput {
   readonly sourceSpecificationFingerprint?: string;
   readonly sourceMeasurementFingerprint?: string;
   readonly basePatternFingerprint?: string;
-  readonly gradingReportSha256Hex?: string;
+  readonly patternRevisionId?: string | null;
+  readonly gradingControlsFingerprint?: string;
+  readonly gradingReportSha256Hex?: string | null;
+  readonly bomFingerprint?: string;
 }
 
 export interface BuildAuthoritativeProductionWorkspaceInput {
@@ -205,7 +205,10 @@ export interface WorkspaceUpstreamStalenessSummary {
   readonly sourceSpecificationFingerprint: string | null;
   readonly sourceMeasurementFingerprint: string | null;
   readonly basePatternFingerprint: string | null;
+  readonly patternRevisionId: string | null;
+  readonly gradingControlsFingerprint: string | null;
   readonly gradingReportSha256Hex: string | null;
+  readonly bomFingerprint: string | null;
 }
 
 export interface AuthoritativeProductionWorkspaceBundle {
@@ -227,6 +230,7 @@ export interface AuthoritativeProductionWorkspaceBundle {
   readonly m05Package: M05ProductionPackageBundle | null;
   readonly liveSnapshot: AuthoritativePatternRevision | null;
   readonly liveGradingArtifact: AuthoritativeGradingArtifact | undefined;
+  readonly gradingArtifactError: string | null;
   readonly safePipeline: SafeWorkspacePipelineResult;
   readonly approvalVerification: SafeSpecificationApprovalResult;
   readonly pipelineReport: PipelineIntegrityReport;
@@ -368,6 +372,7 @@ export function buildAuthoritativeProductionWorkspaceBundle(
       m05Package: null,
       liveSnapshot: null,
       liveGradingArtifact: undefined,
+      gradingArtifactError: null,
       safePipeline,
       approvalVerification: safePipeline.approvalVerification,
       pipelineReport: safePipeline.pipelineReport,
@@ -378,7 +383,10 @@ export function buildAuthoritativeProductionWorkspaceBundle(
         sourceSpecificationFingerprint: null,
         sourceMeasurementFingerprint: null,
         basePatternFingerprint: null,
-        gradingReportSha256Hex: null
+        patternRevisionId: null,
+        gradingControlsFingerprint: null,
+        gradingReportSha256Hex: null,
+        bomFingerprint: null
       },
       isProductionReady: false,
       externalCadInteroperabilityVerified: false
@@ -479,64 +487,15 @@ export function buildAuthoritativeProductionWorkspaceBundle(
 
   const liveSnapshot: AuthoritativePatternRevision | null = m05Package.patternRevision;
 
-  // 4. Authoritative Grading Artifact (bodice only; strictly undefined for skirt)
-  let liveGradingArtifact: AuthoritativeGradingArtifact | undefined = undefined;
-  if (categoryPolicy.supportsMultiSizeGrading && liveSnapshot && gradedPatternSet) {
-    try {
-      const specRevId =
-        designSpec.specificationRevisionId ?? `spec-${designSpec.id}-v${designSpec.version || 1}`;
-      const specFp = computeSpecificationFingerprint(designSpec);
-      const measFp = computeArtifactInputFingerprint({
-        unit: measurements.unit,
-        waist: measurements.waist,
-        lowHip: measurements.lowHip,
-        highHip: measurements.highHip,
-        skirtLength: measurements.skirtLength,
-        bust: measurements.bust,
-        waistToHip: measurements.waistToHip,
-        backWaistLength: measurements.backWaistLength,
-        frontWaistLength: measurements.frontWaistLength,
-        acrossBack: measurements.acrossBack,
-        shoulderLength: measurements.shoulderLength,
-        neckCircumference: measurements.neckCircumference,
-        bustSpan: measurements.bustSpan,
-        bustHeight: measurements.bustHeight,
-        armholeDepth: measurements.armholeDepth,
-        bicepsCircumference: measurements.bicepsCircumference,
-        elbowCircumference: measurements.elbowCircumference,
-        wristCircumference: measurements.wristCircumference,
-        sleeveLength: measurements.sleeveLength,
-        armLengthToElbow: measurements.armLengthToElbow,
-        activeSize
-      });
-      const gradingRulesFp = computeArtifactInputFingerprint({
-        system: 'standard-iso-8559',
-        baseSize: 'M',
-        version: 'iso8559-standard',
-        sizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL']
-      });
-
-      liveGradingArtifact = createAuthoritativeGradingArtifact({
-        projectId,
-        tenantId,
-        sourceSpecificationId: designSpec.id,
-        sourceSpecificationRevisionId: specRevId,
-        sourceSpecificationFingerprint: specFp,
-        sourcePatternRevisionId: liveSnapshot.revisionId,
-        sourcePatternSnapshotFingerprint: liveSnapshot.canonicalFingerprint,
-        sourceBasePatternFingerprint: liveSnapshot.basePatternFingerprint,
-        sourceMeasurementSetFingerprint: measFp,
-        gradingRuleSetRevision: 'rules-grading-iso8559-standard',
-        gradingRuleSetFingerprint: gradingRulesFp,
-        baseSize: activeSize,
-        sizeRange: [...DEFAULT_SIZE_RANGE],
-        gradedPatternSet,
-        basePatternPieces: pieces
-      });
-    } catch {
-      liveGradingArtifact = undefined;
-    }
-  }
+  // 4. Single Authoritative Grading Artifact owned exclusively by buildM05ProductionPackage
+  // Strictly undefined for skirt / single-size categories; fail-closed error preserved transparently.
+  const liveGradingArtifact: AuthoritativeGradingArtifact | undefined =
+    categoryPolicy.supportsMultiSizeGrading && m05Package.gradingArtifact
+      ? m05Package.gradingArtifact
+      : undefined;
+  const gradingArtifactError: string | null = categoryPolicy.supportsMultiSizeGrading
+    ? m05Package.gradingArtifactError
+    : null;
 
   // 5. Dependency Pipeline Evaluation (aligned with authoritative exportGradingPolicy)
   const safePipeline = evaluateSpecPipelineSafely({
@@ -551,8 +510,9 @@ export function buildAuthoritativeProductionWorkspaceBundle(
     exportGradingPolicy: categoryPolicy.exportGradingPolicy ?? undefined
   });
 
-  // 6. Export Prerequisite Validation (matches M05 package & category grading policy identically)
-  const exportValidation = validateProductionExportPrerequisites(
+  // 6. Export Prerequisite Validation (matches M05 package & category grading policy identically;
+  // also blocks export whenever upstream changes have invalidated the committed package baseline)
+  const rawExportValidation = validateProductionExportPrerequisites(
     safePipeline.pipelineReport,
     liveSnapshot ?? undefined,
     {
@@ -567,6 +527,29 @@ export function buildAuthoritativeProductionWorkspaceBundle(
       exportGradingPolicy: categoryPolicy.exportGradingPolicy ?? undefined
     }
   );
+
+  const exportValidation: ProductionExportValidationResult =
+    m05Package.upstreamRevisionTracking.isStaleAgainstPrevious
+      ? {
+          isExportPermitted: false,
+          blockingArtifacts: Array.from(
+            new Set([...rawExportValidation.blockingArtifacts, 'art-production-export'])
+          ),
+          rejectionCode: 'UPSTREAM_STAGE_STALE',
+          rejectionReason:
+            m05Package.upstreamRevisionTracking.staleReasons[0] ??
+            'Production package is stale relative to committed upstream baseline and must be re-synchronized before export.'
+        }
+      : gradingArtifactError
+      ? {
+          isExportPermitted: false,
+          blockingArtifacts: Array.from(
+            new Set([...rawExportValidation.blockingArtifacts, 'art-grading'])
+          ),
+          rejectionCode: 'GRADING_VALIDATION_FAILED',
+          rejectionReason: `Authoritative grading artifact creation failed: ${gradingArtifactError}`
+        }
+      : rawExportValidation;
 
   return {
     inputSignature,
@@ -586,6 +569,7 @@ export function buildAuthoritativeProductionWorkspaceBundle(
     m05Package,
     liveSnapshot,
     liveGradingArtifact,
+    gradingArtifactError,
     safePipeline,
     approvalVerification: safePipeline.approvalVerification,
     pipelineReport: safePipeline.pipelineReport,
@@ -598,7 +582,11 @@ export function buildAuthoritativeProductionWorkspaceBundle(
       sourceMeasurementFingerprint:
         m05Package.upstreamRevisionTracking.sourceMeasurementFingerprint,
       basePatternFingerprint: m05Package.upstreamRevisionTracking.basePatternFingerprint,
-      gradingReportSha256Hex: m05Package.upstreamRevisionTracking.gradingReportSha256Hex
+      patternRevisionId: m05Package.upstreamRevisionTracking.patternRevisionId,
+      gradingControlsFingerprint:
+        m05Package.upstreamRevisionTracking.gradingControlsFingerprint,
+      gradingReportSha256Hex: m05Package.upstreamRevisionTracking.gradingReportSha256Hex,
+      bomFingerprint: m05Package.upstreamRevisionTracking.bomFingerprint
     },
     isProductionReady: false,
     externalCadInteroperabilityVerified: false

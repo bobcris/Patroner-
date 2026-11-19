@@ -42,6 +42,7 @@ import {
   runGarmentDrapeSimulation,
   ZoneFitStatus
 } from '../../engine/simulation';
+import { BodiceSleeveAssemblyResult } from '../../engine/assembly';
 import { Ac09PhysicalValidationPanel } from './Ac09PhysicalValidationPanel';
 
 export type ViewportHeatmapMode = 'strain' | 'pressure' | 'ease' | 'seams';
@@ -50,6 +51,8 @@ interface SimulationFitPanelProps {
   currentSpec: DesignSpecification;
   measurements: BodyMeasurements;
   pieces: PatternPiece[];
+  assemblyResult?: BodiceSleeveAssemblyResult;
+  approvedPatternRevisionId?: string;
   bodiceDartStyle: BodiceDartStyle;
   sleeveEaseStrategy: SleeveEaseStrategy;
   constructionDocRef?: string;
@@ -60,6 +63,8 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
   currentSpec,
   measurements,
   pieces,
+  assemblyResult,
+  approvedPatternRevisionId,
   bodiceDartStyle,
   sleeveEaseStrategy,
   constructionDocRef,
@@ -117,6 +122,8 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
       designSpec: currentSpec,
       measurements,
       fitReport: currentSpec.garmentCategory === 'skirt' ? fitReport : undefined,
+      patternPieces: currentSpec.garmentCategory === 'skirt' ? pieces : undefined,
+      approvedPatternRevisionId,
       poseId,
       constructionDocRef
     }),
@@ -125,6 +132,9 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
       designSpec: currentSpec,
       measurements,
       fitReport: currentSpec.garmentCategory === 'bodice' ? fitReport : undefined,
+      assemblyResult: currentSpec.garmentCategory === 'bodice' ? assemblyResult : undefined,
+      patternPieces: currentSpec.garmentCategory === 'bodice' ? pieces : undefined,
+      approvedPatternRevisionId,
       poseId,
       constructionDocRef
     })
@@ -145,12 +155,25 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
           designSpec: currentSpec,
           measurements,
           fitReport,
+          assemblyResult: targetKey === 'bodice-sleeve-v1' ? assemblyResult : undefined,
+          patternPieces: pieces,
+          approvedPatternRevisionId,
           poseId,
           constructionDocRef
         })
       };
     });
-  }, [defaultToileBlock, currentSpec, measurements, fitReport, poseId, constructionDocRef]);
+  }, [
+    defaultToileBlock,
+    currentSpec,
+    measurements,
+    fitReport,
+    assemblyResult,
+    pieces,
+    approvedPatternRevisionId,
+    poseId,
+    constructionDocRef
+  ]);
 
   const activeAc09Record = ac09Records[ac09ActiveBlock];
   const activeAc09Evaluation = useMemo(
@@ -905,6 +928,15 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
                 (ac09ActiveBlock === 'bodice-sleeve-v1') === (currentSpec.garmentCategory === 'bodice')
                   ? fitReport
                   : undefined,
+              assemblyResult:
+                ac09ActiveBlock === 'bodice-sleeve-v1' && currentSpec.garmentCategory === 'bodice'
+                  ? assemblyResult
+                  : undefined,
+              patternPieces:
+                (ac09ActiveBlock === 'bodice-sleeve-v1') === (currentSpec.garmentCategory === 'bodice')
+                  ? pieces
+                  : undefined,
+              approvedPatternRevisionId,
               poseId,
               constructionDocRef
             })

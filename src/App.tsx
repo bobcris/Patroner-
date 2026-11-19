@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BodiceDartStyle,
   BodyMeasurements,
@@ -22,15 +22,33 @@ import { PatternWorkspace } from './features/pattern-workspace/PatternWorkspace'
 import { ProductionOverview } from './features/production/ProductionOverview';
 
 import {
+  AuthoritativeProductionWorkspaceBundle,
   buildAuthoritativeProductionWorkspaceBundle,
   DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
   MeasurementApprovalStatus,
   MeasurementOrigin,
   MeasurementProvenanceEvidence,
   NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS,
+  PreviousPackageRevisionInput,
   ProductionWorkspaceBomControls,
   transitionMeasurementProvenance
 } from './engine/production';
+
+function extractRevisionBaseline(
+  bundle: AuthoritativeProductionWorkspaceBundle
+): PreviousPackageRevisionInput | undefined {
+  if (!bundle.isCadSupported || !bundle.m05Package) return undefined;
+  const tracking = bundle.m05Package.upstreamRevisionTracking;
+  return {
+    sourceSpecificationFingerprint: tracking.sourceSpecificationFingerprint,
+    sourceMeasurementFingerprint: tracking.sourceMeasurementFingerprint,
+    basePatternFingerprint: tracking.basePatternFingerprint ?? undefined,
+    patternRevisionId: tracking.patternRevisionId,
+    gradingControlsFingerprint: tracking.gradingControlsFingerprint,
+    gradingReportSha256Hex: tracking.gradingReportSha256Hex,
+    bomFingerprint: tracking.bomFingerprint
+  };
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('studio');
@@ -58,15 +76,31 @@ export default function App() {
   const [strictUncertaintyGate, setStrictUncertaintyGate] = useState<boolean>(true);
   const [requireApprovedGovernance, setRequireApprovedGovernance] = useState<boolean>(false);
 
+  // Committed package baselines per garment ID for genuine upstream staleness propagation (P1-2 remediation)
+  const [committedBaselinesByGarment, setCommittedBaselinesByGarment] = useState<
+    Record<string, PreviousPackageRevisionInput>
+  >({});
+
   const handleUpdateSpec = (nextSpec: DesignSpecification) => {
+    const isSwitchingGarment =
+      nextSpec.id !== currentSpec.id || nextSpec.garmentCategory !== currentSpec.garmentCategory;
     setCurrentSpec(nextSpec);
-    if (nextSpec.dartStyle) {
-      setBodiceDartStyle(nextSpec.dartStyle);
-    }
-    if (nextSpec.sleeveEaseStrategy) {
-      setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy);
+
+    if (isSwitchingGarment) {
+      // Reset optional bodice/sleeve strategy state cleanly so previous garment choices never leak
+      setBodiceDartStyle(nextSpec.dartStyle ?? 'waist');
+      setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy ?? 'classic');
+    } else {
+      if (nextSpec.dartStyle !== currentSpec.dartStyle) {
+        setBodiceDartStyle(nextSpec.dartStyle ?? 'waist');
+      }
+      if (nextSpec.sleeveEaseStrategy !== currentSpec.sleeveEaseStrategy) {
+        setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy ?? 'classic');
+      }
     }
   };
+
+  const committedPreviousRevision = committedBaselinesByGarment[currentSpec.id];
 
   // Single authoritative production workspace bundle consumed by Header, Module 04, and Module 05
   const workspaceBundle = useMemo(
@@ -86,7 +120,8 @@ export default function App() {
           measurementProvenance,
           measurementApprovalState,
           measurementProvenanceEvidence
-        }
+        },
+        previousPackageRevision: committedPreviousRevision
       }),
     [
       currentSpec,
@@ -99,11 +134,36 @@ export default function App() {
       requireApprovedGovernance,
       measurementProvenance,
       measurementApprovalState,
-      measurementProvenanceEvidence
+      measurementProvenanceEvidence,
+      committedPreviousRevision
     ]
   );
 
+  // Capture initial committed baseline for a newly visited garment (never overwrites once committed until explicit re-sync)
+  useEffect(() => {
+    if (committedBaselinesByGarment[currentSpec.id]) return;
+    const baseline = extractRevisionBaseline(workspaceBundle);
+    if (!baseline) return;
+    setCommittedBaselinesByGarment(prev => {
+      if (prev[currentSpec.id]) return prev;
+      return {
+        ...prev,
+        [currentSpec.id]: baseline
+      };
+    });
+  }, [currentSpec.id, committedBaselinesByGarment, workspaceBundle]);
+
+  const handleResyncPackageBaseline = () => {
+    const baseline = extractRevisionBaseline(workspaceBundle);
+    if (!baseline) return;
+    setCommittedBaselinesByGarment(prev => ({
+      ...prev,
+      [currentSpec.id]: baseline
+    }));
+  };
+
   const { isCadSupported, approvalVerification, draftValidation, pipelineReport } = workspaceBundle;
+  const isPackageStale = workspaceBundle.upstreamStaleness.isStaleAgainstPrevious;
 
   const handleUpdateMeasurements = (
     m: BodyMeasurements,
@@ -157,7 +217,8 @@ export default function App() {
         isDraftValid={isCadSupported && draftValidation.isValid}
         activeDesignName={currentSpec.name}
         specificationRevisionId={currentSpec.specificationRevisionId ?? `spec-${currentSpec.id}-v${currentSpec.version}`}
-        isSynchronized={pipelineReport.isPipelineSynchronized}
+        isSynchronized={pipelineReport.isPipelineSynchronized && !isPackageStale}
+        isPackageStale={isPackageStale}
       />
 
       {/* Main Workspace View Router */}
@@ -220,6 +281,7 @@ export default function App() {
               onToggleStrictUncertaintyGate={setStrictUncertaintyGate}
               requireApprovedGovernance={requireApprovedGovernance}
               onToggleRequireApprovedGovernance={setRequireApprovedGovernance}
+              onResyncPackageBaseline={handleResyncPackageBaseline}
               onNavigateToProduction={() => setActiveTab('production')}
               onNavigateToMeasurements={() => setActiveTab('measurements')}
               onUpdateSpec={handleUpdateSpec}
@@ -237,6 +299,7 @@ export default function App() {
               workspaceBundle={workspaceBundle}
               bomControls={bomControls}
               onChangeBomControls={setBomControls}
+              onResyncPackageBaseline={handleResyncPackageBaseline}
               onNavigateToCAD={() => setActiveTab('pattern-cad')}
             />
           )}

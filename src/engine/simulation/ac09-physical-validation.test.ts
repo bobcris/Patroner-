@@ -7,7 +7,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { INITIAL_CONCEPTS } from '../../domain/design/curated-concepts';
 import { STANDARD_SIZING_SYSTEM } from '../measurements/standards';
+import { draftBodiceBlock } from '../drafting/bodice-block';
+import { draftSleeveBlock } from '../drafting/sleeve-block';
+import { assembleBodiceSleeve } from '../assembly/bodice-sleeve-assembly';
 import {
+  AC09_MIN_REPEAT_READINGS,
   Ac09PhysicalToileRecord,
   AC09_POM_CONCORDANCE_TOLERANCE_CM,
   AC09_REGIONAL_AGREEMENT_THRESHOLD_PCT,
@@ -130,7 +134,7 @@ test('AC09-01: Default records start strictly PENDING with zero fabricated data 
   let regEval = evaluateAc09ToileRecord(registered);
   assert.equal(regEval.workflowState, 'SAMPLE_REGISTERED');
   assert.equal(regEval.status, 'INCOMPLETE');
-  assert.ok(regEval.missingEvidenceDiagnostics.some(d => d.includes('Missing physical POM reading')));
+  assert.ok(regEval.missingEvidenceDiagnostics.some(d => d.includes('Missing physical POM repeat readings')));
   assert.ok(regEval.missingEvidenceDiagnostics.some(d => d.includes('cutting or sewing process execution log')));
 
   // Adding partial POMs advances to EVIDENCE_INCOMPLETE with attachment & regional diagnostics
@@ -195,19 +199,17 @@ test('AC09-03: Authoritative boundary tolerances (0.50 cm POM & 85% regional agr
     /AC09_INVALID_TOLERANCE_POLICY/
   );
 
-  // Exact +0.500 cm POM boundary passes READY_FOR_REVIEW; +0.501 cm fails immediately
+  // Exact +0.500 cm POM boundary (with >= 2 repeat readings) passes READY_FOR_REVIEW; +0.501 cm fails immediately
   let skirt = buildWorkflowPassingFixture('skirt-block-v1');
   const targetPom = skirt.pomCheckpoints[0];
-  skirt = updateAc09PomMeasurement(skirt, targetPom.pointId, Number((targetPom.nominalCadCm + 0.5).toFixed(3)));
+  const exactVal = Number((targetPom.nominalCadCm + 0.5).toFixed(3));
+  skirt = recordAc09RepeatMeasurements(skirt, targetPom.pointId, [exactVal, exactVal]);
   const exactBoundaryEval = evaluateAc09ToileRecord(skirt);
   assert.equal(exactBoundaryEval.pomConcordancePassed, true);
   assert.equal(exactBoundaryEval.workflowState, 'READY_FOR_REVIEW');
 
-  const overBoundarySkirt = updateAc09PomMeasurement(
-    skirt,
-    targetPom.pointId,
-    Number((targetPom.nominalCadCm + 0.501).toFixed(3))
-  );
+  const overVal = Number((targetPom.nominalCadCm + 0.501).toFixed(3));
+  const overBoundarySkirt = recordAc09RepeatMeasurements(skirt, targetPom.pointId, [overVal, overVal]);
   const overBoundaryEval = evaluateAc09ToileRecord(overBoundarySkirt);
   assert.equal(overBoundaryEval.pomConcordancePassed, false);
   assert.equal(overBoundaryEval.status, 'FAILED');
@@ -336,7 +338,7 @@ test('AC09-07: Invalid workflow state transitions are rejected while valid progr
 });
 
 test('AC09-08: Unauthorized sign-off roles, incomplete sign-offs, approving failing records, and synthetic data sources are rejected', () => {
-  const ready = buildWorkflowPassingFixture('bodice-sleeve-v1');
+  const ready = transitionAc09WorkflowState(buildWorkflowPassingFixture('bodice-sleeve-v1'), 'READY_FOR_REVIEW');
 
   assert.throws(
     () =>
@@ -351,7 +353,7 @@ test('AC09-08: Unauthorized sign-off roles, incomplete sign-offs, approving fail
 
   assert.throws(
     () =>
-      recordAc09RepeatMeasurements(ready, ready.pomCheckpoints[0].pointId, [60], {
+      recordAc09RepeatMeasurements(ready, ready.pomCheckpoints[0].pointId, [60, 60], {
         sourceFlag: 'SIMULATED_SYNTHETIC'
       }),
     /AC09_SYNTHETIC_DATA_PROHIBITED/
@@ -380,7 +382,7 @@ test('AC09-08: Unauthorized sign-off roles, incomplete sign-offs, approving fail
 });
 
 test('AC09-09: Signed PASSED/FAILED records are immutable and require creating a new sample revision preserving snapshot history', () => {
-  const ready = buildWorkflowPassingFixture('bodice-sleeve-v1');
+  const ready = transitionAc09WorkflowState(buildWorkflowPassingFixture('bodice-sleeve-v1'), 'READY_FOR_REVIEW');
   const signed = recordAc09ReviewerDecision(ready, {
     reviewerName: 'Marcus Vance',
     reviewerRole: 'QA_LEAD',
@@ -394,7 +396,7 @@ test('AC09-09: Signed PASSED/FAILED records are immutable and require creating a
 
   assert.throws(() => assertAc09RecordEditable(signed), /AC09_IMMUTABLE_REVISION_LOCKED/);
   assert.throws(
-    () => updateAc09PomMeasurement(signed, signed.pomCheckpoints[0].pointId, 99.0),
+    () => recordAc09RepeatMeasurements(signed, signed.pomCheckpoints[0].pointId, [99.0, 99.0]),
     /AC09_IMMUTABLE_REVISION_LOCKED/
   );
 
@@ -409,7 +411,7 @@ test('AC09-09: Signed PASSED/FAILED records are immutable and require creating a
 });
 
 test('AC09-10: Deterministic report serialization produces stable SHA-256 canonical digests, separates sim vs physical, and preserves closed governance flags', () => {
-  const readyA = buildWorkflowPassingFixture('skirt-block-v1');
+  const readyA = transitionAc09WorkflowState(buildWorkflowPassingFixture('skirt-block-v1'), 'READY_FOR_REVIEW');
   const signedA = recordAc09ReviewerDecision(readyA, {
     reviewerName: 'Elena Rostova',
     reviewerRole: 'ATELIER_TECH_DIRECTOR',
@@ -418,7 +420,7 @@ test('AC09-10: Deterministic report serialization produces stable SHA-256 canoni
     decidedAt: '2026-11-19'
   });
 
-  const readyB = buildWorkflowPassingFixture('skirt-block-v1');
+  const readyB = transitionAc09WorkflowState(buildWorkflowPassingFixture('skirt-block-v1'), 'READY_FOR_REVIEW');
   const signedB = recordAc09ReviewerDecision(readyB, {
     reviewerName: 'Elena Rostova',
     reviewerRole: 'ATELIER_TECH_DIRECTOR',
@@ -564,4 +566,330 @@ test('AC09-13 (P1-2E): Bounded optimization child revision remains unapproved dr
   assert.ok(simPanelSource.includes('Branch Unapproved Child Revision'));
   assert.ok(!simPanelSource.includes('Approve & Branch Child'));
 });
+
+// ---------------------------------------------------------------------------
+// Checkpoint 8 Adversarial Security & Trust-Boundary Tests (P1-2 Remediation §2F)
+// ---------------------------------------------------------------------------
+
+function buildSignedPassingRecord(blockKey: 'skirt-block-v1' | 'bodice-sleeve-v1'): Ac09PhysicalToileRecord {
+  const ready = transitionAc09WorkflowState(buildWorkflowPassingFixture(blockKey), 'READY_FOR_REVIEW');
+  return recordAc09ReviewerDecision(ready, {
+    reviewerName: 'Elena Rostova',
+    reviewerRole: 'LEAD_PATTERNMAKER',
+    decision: 'APPROVED_PASS',
+    rationale: 'Verified physical toile concordance within ±0.50 cm across all POM checkpoints.',
+    decidedAt: '2026-11-19'
+  });
+}
+
+test('AC09-SEC-01: Fake or mismatched reviewer signatureDigest is rejected fail-closed', () => {
+  const signed = buildSignedPassingRecord('bodice-sleeve-v1');
+  const forgedSignature: Ac09PhysicalToileRecord = {
+    ...signed,
+    reviewerDecision: {
+      ...signed.reviewerDecision!,
+      signatureDigest: 'deadbeef'.repeat(8)
+    }
+  };
+  const evalRes = evaluateAc09ToileRecord(forgedSignature);
+  assert.equal(evalRes.status, 'FAILED');
+  assert.equal(evalRes.signOffAuthorized, false);
+  assert.ok(evalRes.blockingReasons.some(r => r.includes('AC09_SIGNATURE_TAMPER_DETECTED')));
+});
+
+test('AC09-SEC-02: Empty reviewer rationale is rejected in sign-off API and evaluator', () => {
+  const ready = transitionAc09WorkflowState(buildWorkflowPassingFixture('skirt-block-v1'), 'READY_FOR_REVIEW');
+  assert.throws(
+    () =>
+      recordAc09ReviewerDecision(ready, {
+        reviewerName: 'Elena Rostova',
+        reviewerRole: 'LEAD_PATTERNMAKER',
+        decision: 'APPROVED_PASS',
+        rationale: '   ',
+        decidedAt: '2026-11-19'
+      }),
+    /AC09_INVALID_SIGN_OFF/
+  );
+
+  const signed = buildSignedPassingRecord('skirt-block-v1');
+  const tamperedRationale: Ac09PhysicalToileRecord = {
+    ...signed,
+    reviewerDecision: {
+      ...signed.reviewerDecision!,
+      rationale: '   '
+    }
+  };
+  const evalRes = evaluateAc09ToileRecord(tamperedRationale);
+  assert.equal(evalRes.status, 'FAILED');
+  assert.equal(evalRes.signOffAuthorized, false);
+  assert.ok(evalRes.blockingReasons.some(r => r.includes('AC09_INVALID_SIGN_OFF')));
+});
+
+test('AC09-SEC-03: Unlocked signed record (isLocked=false) cannot return PASSED', () => {
+  const signed = buildSignedPassingRecord('bodice-sleeve-v1');
+  const unlocked: Ac09PhysicalToileRecord = {
+    ...signed,
+    isLocked: false
+  };
+  const evalRes = evaluateAc09ToileRecord(unlocked);
+  assert.equal(evalRes.status, 'FAILED');
+  assert.equal(evalRes.signOffAuthorized, false);
+  assert.ok(evalRes.blockingReasons.some(r => r.includes('AC09_LOCK_REQUIRED')));
+});
+
+test('AC09-SEC-04: Tampering with physical POM measurements after signature invalidates signature & lock snapshot', () => {
+  const signed = buildSignedPassingRecord('bodice-sleeve-v1');
+  const tamperedPom: Ac09PhysicalToileRecord = {
+    ...signed,
+    pomCheckpoints: signed.pomCheckpoints.map((pt, idx) =>
+      idx === 0
+        ? {
+            ...pt,
+            repeatReadingsCm: [pt.nominalCadCm, pt.nominalCadCm],
+            measuredToileCm: pt.nominalCadCm,
+            deltaCm: 0
+          }
+        : pt
+    )
+  };
+  const evalRes = evaluateAc09ToileRecord(tamperedPom);
+  assert.equal(evalRes.status, 'FAILED');
+  assert.equal(evalRes.signOffAuthorized, false);
+  assert.ok(evalRes.blockingReasons.some(r => r.includes('AC09_SIGNATURE_TAMPER_DETECTED')));
+  assert.ok(evalRes.blockingReasons.some(r => r.includes('AC09_LOCKED_SNAPSHOT_TAMPER_DETECTED')));
+});
+
+test('AC09-SEC-05: Missing recordedFabricId blocks READY_FOR_REVIEW and PASSED', () => {
+  const base = buildWorkflowPassingFixture('skirt-block-v1');
+  const missingFabricId: Ac09PhysicalToileRecord = {
+    ...base,
+    traceability: {
+      ...base.traceability!,
+      recordedFabricId: ''
+    }
+  };
+  const evalRes = evaluateAc09ToileRecord(missingFabricId);
+  assert.equal(evalRes.status, 'INCOMPLETE');
+  assert.equal(evalRes.workflowState, 'EVIDENCE_INCOMPLETE');
+  assert.ok(evalRes.missingEvidenceDiagnostics.some(d => d.includes('fabric ID')));
+});
+
+test('AC09-SEC-06: Missing recordedFabricStretchPct (null) blocks READY_FOR_REVIEW and PASSED', () => {
+  const base = buildWorkflowPassingFixture('bodice-sleeve-v1');
+  const missingStretch: Ac09PhysicalToileRecord = {
+    ...base,
+    traceability: {
+      ...base.traceability!,
+      recordedFabricStretchPct: null
+    }
+  };
+  const evalRes = evaluateAc09ToileRecord(missingStretch);
+  assert.equal(evalRes.status, 'INCOMPLETE');
+  assert.equal(evalRes.workflowState, 'EVIDENCE_INCOMPLETE');
+  assert.ok(evalRes.missingEvidenceDiagnostics.some(d => d.includes('fabric stretch percentage')));
+});
+
+test('AC09-SEC-07: Missing recordedFabricDirection blocks READY_FOR_REVIEW and PASSED', () => {
+  const base = buildWorkflowPassingFixture('bodice-sleeve-v1');
+  const missingDirection: Ac09PhysicalToileRecord = {
+    ...base,
+    traceability: {
+      ...base.traceability!,
+      recordedFabricDirection: '   '
+    }
+  };
+  const evalRes = evaluateAc09ToileRecord(missingDirection);
+  assert.equal(evalRes.status, 'INCOMPLETE');
+  assert.equal(evalRes.workflowState, 'EVIDENCE_INCOMPLETE');
+  assert.ok(evalRes.missingEvidenceDiagnostics.some(d => d.includes('fabric cut direction')));
+});
+
+test('AC09-SEC-08: Single-reading POM checkpoint cannot satisfy AC-09 (>= 2 repeat readings strictly required)', () => {
+  assert.equal(AC09_MIN_REPEAT_READINGS, 2);
+  let base = buildWorkflowPassingFixture('skirt-block-v1');
+  const firstPt = base.pomCheckpoints[0];
+  // Use updateAc09PomMeasurement (single reading) on one checkpoint
+  base = updateAc09PomMeasurement(base, firstPt.pointId, Number((firstPt.nominalCadCm + 0.1).toFixed(2)));
+  const evalRes = evaluateAc09ToileRecord(base);
+  assert.notEqual(evalRes.status, 'PASSED');
+  assert.equal(evalRes.status, 'INCOMPLETE');
+  assert.equal(evalRes.workflowState, 'EVIDENCE_INCOMPLETE');
+  assert.ok(evalRes.missingEvidenceDiagnostics.some(d => d.includes('at least 2 independent repeat readings')));
+});
+
+test('AC09-SEC-09: Forged combinedUncertaintyCm / repeatSpreadCm / measuredToileCm is caught by deterministic recomputation', () => {
+  const base = buildWorkflowPassingFixture('bodice-sleeve-v1');
+  const firstPt = base.pomCheckpoints[0];
+  // Readings have 0.80 cm spread (true combined uncertainty > 0.40 cm > 0.25 cm cap),
+  // but caller attempts to forge combinedUncertaintyCm = 0.05 and repeatSpreadCm = 0.0
+  const forgedUnc: Ac09PhysicalToileRecord = {
+    ...base,
+    pomCheckpoints: base.pomCheckpoints.map((pt, idx) =>
+      idx === 0
+        ? {
+            ...pt,
+            repeatReadingsCm: [
+              Number((firstPt.nominalCadCm - 0.4).toFixed(2)),
+              Number((firstPt.nominalCadCm + 0.4).toFixed(2))
+            ],
+            measuredToileCm: firstPt.nominalCadCm,
+            deltaCm: 0,
+            repeatSpreadCm: 0,
+            combinedUncertaintyCm: 0.05,
+            withinTolerance: true
+          }
+        : pt
+    )
+  };
+  const evalRes = evaluateAc09ToileRecord(forgedUnc);
+  assert.equal(evalRes.status, 'FAILED');
+  assert.ok((evalRes.maxMeasurementUncertaintyCm ?? 0) > DEFAULT_AC09_TOLERANCE_POLICY.maxAllowedUncertaintyCm);
+  assert.ok(evalRes.blockingReasons.some(r => r.includes('AC09_FORGED_UNCERTAINTY')));
+  assert.ok(evalRes.blockingReasons.some(r => r.includes('repeat measurement uncertainty')));
+});
+
+test('AC09-SEC-10: Empty evidenceChecklist cannot bypass photographic & evidence gate via 0 === 0', () => {
+  const base = buildWorkflowPassingFixture('skirt-block-v1');
+  const emptyChecklist: Ac09PhysicalToileRecord = {
+    ...base,
+    evidenceChecklist: []
+  };
+  const evalRes = evaluateAc09ToileRecord(emptyChecklist);
+  assert.equal(evalRes.allEvidenceRecorded, false);
+  assert.notEqual(evalRes.status, 'PASSED');
+  assert.equal(evalRes.status, 'INCOMPLETE');
+  assert.equal(evalRes.workflowState, 'EVIDENCE_INCOMPLETE');
+  assert.ok(evalRes.missingEvidenceDiagnostics.some(d => d.includes('Evidence checklist is empty')));
+});
+
+test('AC09-SEC-11: Invalid attachment URI formats (non-URI garbage or dangerous scheme) are rejected fail-closed', () => {
+  const base = buildWorkflowPassingFixture('bodice-sleeve-v1');
+  for (const badUri of ['not-a-uri', 'javascript:alert(1)', 'photo://', '   ']) {
+    const withBadUri: Ac09PhysicalToileRecord = {
+      ...base,
+      evidenceChecklist: base.evidenceChecklist.map((ev, idx) =>
+        idx === 0 ? { ...ev, attachmentUri: badUri } : ev
+      )
+    };
+    const evalRes = evaluateAc09ToileRecord(withBadUri);
+    assert.equal(evalRes.allEvidenceRecorded, false, `Expected bad URI '${badUri}' to fail`);
+    assert.notEqual(evalRes.status, 'PASSED');
+    assert.ok(
+      evalRes.missingEvidenceDiagnostics.some(d => d.includes('Invalid or placeholder attachment reference URI')) ||
+        evalRes.missingEvidenceDiagnostics.some(d => d.includes('Missing photo/log attachment reference URI'))
+    );
+  }
+});
+
+test('AC09-SEC-12: Direct reviewer APPROVED_PASS decision from DRAFT throws fail-closed error', () => {
+  const draft = {
+    ...buildWorkflowPassingFixture('skirt-block-v1'),
+    workflowState: 'DRAFT' as const
+  };
+  assert.throws(
+    () =>
+      recordAc09ReviewerDecision(draft, {
+        reviewerName: 'Elena Rostova',
+        reviewerRole: 'LEAD_PATTERNMAKER',
+        decision: 'APPROVED_PASS',
+        rationale: 'Attempting to skip workflow state machine from DRAFT.'
+      }),
+    /AC09_INVALID_WORKFLOW_STATE/
+  );
+});
+
+test('AC09-SEC-13: Direct reviewer APPROVED_PASS decision from EVIDENCE_INCOMPLETE / SAMPLE_REGISTERED throws fail-closed error', () => {
+  const base = buildWorkflowPassingFixture('bodice-sleeve-v1');
+  for (const preState of ['SAMPLE_REGISTERED', 'EVIDENCE_INCOMPLETE'] as const) {
+    const nonReady = { ...base, workflowState: preState };
+    assert.throws(
+      () =>
+        recordAc09ReviewerDecision(nonReady, {
+          reviewerName: 'Marcus Vance',
+          reviewerRole: 'QA_LEAD',
+          decision: 'APPROVED_PASS',
+          rationale: `Attempting to approve directly from ${preState}.`
+        }),
+      /AC09_INVALID_WORKFLOW_STATE/
+    );
+  }
+});
+
+test('AC09-SEC-14: Unauthorized reviewer role is rejected even if forged directly into record object', () => {
+  const signed = buildSignedPassingRecord('skirt-block-v1');
+  const forgedRole: Ac09PhysicalToileRecord = {
+    ...signed,
+    reviewerDecision: {
+      ...signed.reviewerDecision!,
+      reviewerRole: 'AUTONOMOUS_AGENT' as unknown as Ac09PhysicalToileRecord['reviewerDecision'] extends infer T
+        ? T extends { reviewerRole: infer R }
+          ? R
+          : never
+        : never
+    }
+  };
+  const evalRes = evaluateAc09ToileRecord(forgedRole);
+  assert.equal(evalRes.status, 'FAILED');
+  assert.equal(evalRes.signOffAuthorized, false);
+  assert.ok(evalRes.blockingReasons.some(r => r.includes('AC09_INVALID_SIGN_OFF')));
+});
+
+test('AC09-SEC-15: Altered lockedSnapshotDigest on locked record fails closed', () => {
+  const signed = buildSignedPassingRecord('bodice-sleeve-v1');
+  const alteredLock: Ac09PhysicalToileRecord = {
+    ...signed,
+    lockedSnapshotDigest: '0000000000000000000000000000000000000000000000000000000000000000'
+  };
+  const evalRes = evaluateAc09ToileRecord(alteredLock);
+  assert.equal(evalRes.status, 'FAILED');
+  assert.equal(evalRes.signOffAuthorized, false);
+  assert.ok(evalRes.blockingReasons.some(r => r.includes('AC09_LOCKED_SNAPSHOT_TAMPER_DETECTED')));
+});
+
+test('AC09-SEC-16 (Armscye POM Baseline): pom-scye-circ nominal CAD equals stitched bodice armhole perimeter (36.79 cm), never torso scye girth (86.40 cm), and binds approved pattern revision', () => {
+  const bodiceSpec = INITIAL_CONCEPTS.find(c => c.garmentCategory === 'bodice')!;
+  const mSizes = STANDARD_SIZING_SYSTEM.sizes.M;
+  const bodicePieces = draftBodiceBlock(mSizes, bodiceSpec, { dartStyle: 'waist' });
+  const sleeveRes = draftSleeveBlock(mSizes, bodiceSpec, { strategy: 'classic', bodicePieces });
+  const assembly = assembleBodiceSleeve({
+    bodicePieces,
+    sleevePiece: sleeveRes.piece,
+    designSpec: bodiceSpec,
+    measurements: mSizes,
+    options: { strategy: 'classic' }
+  });
+
+  const record = createPendingAc09ToileRecord({
+    toileBlockKey: 'bodice-sleeve-v1',
+    designSpec: bodiceSpec,
+    measurements: mSizes,
+    assemblyResult: assembly,
+    patternPieces: [...bodicePieces, sleeveRes.piece],
+    approvedPatternRevisionId: 'rev-spec-bodice-block-v1-M'
+  });
+
+  const scyePom = record.pomCheckpoints.find(p => p.pointId === 'pom-scye-circ');
+  assert.ok(scyePom, 'pom-scye-circ must exist on bodice-sleeve-v1');
+  assert.equal(
+    scyePom!.nominalCadCm,
+    Number(assembly.ease.totalBodiceArmholeLengthCm.toFixed(2)),
+    'Armscye seam circumference nominal must equal bodice armhole stitching perimeter L_bf + L_bb'
+  );
+  assert.ok(
+    Math.abs(scyePom!.nominalCadCm - 36.79) < 0.05,
+    `Expected Size M bodice scye perimeter ~36.79 cm, got ${scyePom!.nominalCadCm}`
+  );
+  assert.notEqual(
+    scyePom!.nominalCadCm,
+    86.4,
+    'Must NEVER equal torso chest girth at scye plane (86.40 cm)'
+  );
+  assert.ok(
+    scyePom!.nominalCadCm < assembly.ease.totalSleeveCapLengthCm,
+    'Stitched armhole perimeter (36.79 cm) must be strictly less than un-eased sleeve cap length (40.05 cm)'
+  );
+  assert.equal(record.traceability?.approvedPatternRevisionId, 'rev-spec-bodice-block-v1-M');
+  assert.ok(scyePom!.checkpointDefinition?.includes('L_bf + L_bb'));
+});
+
 

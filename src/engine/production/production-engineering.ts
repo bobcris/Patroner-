@@ -30,6 +30,7 @@ import { GradedPatternSet } from '../grading/grading-types';
 import { validatePatternDraft } from '../validation/seam-validator';
 import { computePieceContourAreaCm2, computeProductionBom } from './bom-engine';
 import { sha256Hex } from './crypto';
+import { computeArtifactInputFingerprint } from './dependency-invalidation';
 import {
   exportPatternPiecesToDxfAama,
   verifyDxfAamaRoundTrip
@@ -107,7 +108,29 @@ function buildDynamicCutSemanticsByPieceCode(
 }
 
 function computeMeasurementFingerprint(measurements: BodyMeasurements, activeSize: string): string {
-  return sha256Hex(canonicalizeJson({ measurements, activeSize }));
+  return computeArtifactInputFingerprint({
+    unit: measurements.unit,
+    waist: measurements.waist,
+    lowHip: measurements.lowHip,
+    highHip: measurements.highHip,
+    skirtLength: measurements.skirtLength,
+    bust: measurements.bust,
+    waistToHip: measurements.waistToHip,
+    backWaistLength: measurements.backWaistLength,
+    frontWaistLength: measurements.frontWaistLength,
+    acrossBack: measurements.acrossBack,
+    shoulderLength: measurements.shoulderLength,
+    neckCircumference: measurements.neckCircumference,
+    bustSpan: measurements.bustSpan,
+    bustHeight: measurements.bustHeight,
+    armholeDepth: measurements.armholeDepth,
+    bicepsCircumference: measurements.bicepsCircumference,
+    elbowCircumference: measurements.elbowCircumference,
+    wristCircumference: measurements.wristCircumference,
+    sleeveLength: measurements.sleeveLength,
+    armLengthToElbow: measurements.armLengthToElbow,
+    activeSize
+  });
 }
 
 function getEffectivePhysicalPanelCount(
@@ -146,7 +169,8 @@ export function buildCanonicalProductionPackagePayload(
     activeSize: bundle.activeSize,
     includedSizes: [...bundle.includedSizes],
     baseSize: bundle.baseSize,
-    generatedAt: bundle.generatedAt,
+    // NOTE: generatedAt is intentionally excluded from canonical content identity so
+    // identical engineering inputs always produce bit-identical SHA-256 content digests.
     patternRevisionSummary: bundle.patternRevision
       ? {
           revisionId: bundle.patternRevision.revisionId,
@@ -155,6 +179,25 @@ export function buildCanonicalProductionPackagePayload(
           currentLifecycleState: bundle.patternRevision.currentLifecycleState
         }
       : null,
+    gradingArtifactSummary: bundle.gradingArtifact
+      ? {
+          gradingArtifactId: bundle.gradingArtifact.gradingArtifactId,
+          gradingRevisionId: bundle.gradingArtifact.gradingRevisionId,
+          baseSize: bundle.gradingArtifact.baseSize,
+          sizeRange: [...bundle.gradingArtifact.sizeRange],
+          gradingRuleSetId: bundle.gradingArtifact.gradingRuleSetId,
+          gradingRuleSetRevision: bundle.gradingArtifact.gradingRuleSetRevision,
+          gradingRuleSetFingerprint: bundle.gradingArtifact.gradingRuleSetFingerprint,
+          sourceBasePatternFingerprint: bundle.gradingArtifact.sourceBasePatternFingerprint ?? null,
+          sourceSpecificationFingerprint: bundle.gradingArtifact.sourceSpecificationFingerprint,
+          sourceMeasurementSetFingerprint: bundle.gradingArtifact.sourceMeasurementSetFingerprint,
+          isOverallGradingValid: bundle.gradingArtifact.crossSizeIntegrityReport.isOverallGradingValid,
+          validSizeCount: bundle.gradingArtifact.crossSizeIntegrityReport.validSizeCount,
+          failedSizeCount: bundle.gradingArtifact.crossSizeIntegrityReport.failedSizeCount,
+          lifecycleState: bundle.gradingArtifact.lifecycleState
+        }
+      : null,
+    gradingArtifactError: bundle.gradingArtifactError,
     perSizeSummaries: bundle.perSizeSummaries,
     bom: bundle.bom,
     manufacturingDocs: bundle.manufacturingDocs,
@@ -376,6 +419,17 @@ export function buildM05ProductionPackage(
     sourceSpecificationFingerprint = sha256Hex(canonicalizeJson(designSpec));
   }
   const sourceMeasurementFingerprint = computeMeasurementFingerprint(measurements, activeSize);
+  const gradingControlsFingerprint = sha256Hex(
+    canonicalizeJson({
+      garmentCategory: designSpec.garmentCategory,
+      activeSize,
+      requiredSizes: [...requiredSizes],
+      bodiceDartStyle,
+      sleeveEaseStrategy,
+      strictUncertaintyGate,
+      requireApprovedGovernance: Boolean(opts.requireApprovedGovernance)
+    })
+  );
 
   const staleReasons: string[] = [...upstreamErrors];
   if (opts.previousPackageRevision) {
@@ -399,6 +453,19 @@ export function buildM05ProductionPackage(
       staleReasons.push('Upstream drafted pattern geometry changed since previous production package revision.');
     }
     if (
+      opts.previousPackageRevision.patternRevisionId &&
+      patternRevision?.revisionId &&
+      opts.previousPackageRevision.patternRevisionId !== patternRevision.revisionId
+    ) {
+      staleReasons.push('Upstream pattern revision ID changed since previous production package revision.');
+    }
+    if (
+      opts.previousPackageRevision.gradingControlsFingerprint &&
+      opts.previousPackageRevision.gradingControlsFingerprint !== gradingControlsFingerprint
+    ) {
+      staleReasons.push('Upstream grading or governance controls changed since previous production package revision.');
+    }
+    if (
       opts.previousPackageRevision.gradingReportSha256Hex &&
       gradedPatternSet?.reportSha256Hex &&
       opts.previousPackageRevision.gradingReportSha256Hex !== gradedPatternSet.reportSha256Hex
@@ -407,7 +474,7 @@ export function buildM05ProductionPackage(
     }
   }
 
-  // 6. PiecesBySize & Authoritative Grading Artifact + Production Sheet Set (M05.2.1)
+  // 6. PiecesBySize & Single Authoritative Grading Artifact + Production Sheet Set (M05.2.1)
   const piecesBySize: Record<string, readonly PatternPiece[]> = {};
   const includedSizes: string[] = [];
 
@@ -428,7 +495,8 @@ export function buildM05ProductionPackage(
     piecesBySize[activeSize] = activePieces;
   }
 
-  let gradingArtifact: AuthoritativeGradingArtifact | undefined;
+  let gradingArtifact: AuthoritativeGradingArtifact | null = null;
+  let gradingArtifactError: string | null = null;
   let sheetSet: AuthoritativePieceProductionSheetSet | null = null;
 
   if (patternRevision && activePieces.length > 0) {
@@ -442,7 +510,7 @@ export function buildM05ProductionPackage(
       })
     );
 
-    if (gradedPatternSet && includedSizes.length >= 2) {
+    if (designSpec.garmentCategory === 'bodice' && gradedPatternSet && includedSizes.length >= 2) {
       try {
         gradingArtifact = createAuthoritativeGradingArtifact({
           projectId,
@@ -454,7 +522,7 @@ export function buildM05ProductionPackage(
           sourcePatternRevisionId: patternRevision.revisionId,
           sourcePatternSnapshotFingerprint: patternRevision.canonicalFingerprint,
           sourceBasePatternFingerprint: patternRevision.basePatternFingerprint,
-          sourceMeasurementSetFingerprint: patternRevision.sourceMeasurementSetFingerprint ?? computeMeasurementFingerprint(measurements, activeSize),
+          sourceMeasurementSetFingerprint: sourceMeasurementFingerprint,
           gradingRuleSetRevision: 'rules-grading-iso8559-standard',
           gradingRuleSetFingerprint: gradingRulesFp,
           baseSize: gradedPatternSet.baseSize,
@@ -462,8 +530,12 @@ export function buildM05ProductionPackage(
           gradedPatternSet,
           basePatternPieces: activePieces
         });
-      } catch {
-        gradingArtifact = undefined;
+      } catch (err) {
+        gradingArtifact = null;
+        gradingArtifactError = err instanceof Error ? err.message : String(err);
+        gradingBoundaryErrors.push(
+          `Authoritative grading artifact construction failed (fail-closed): ${gradingArtifactError}`
+        );
       }
     }
 
@@ -530,6 +602,20 @@ export function buildM05ProductionPackage(
     sheetsBySize,
     options: opts.bomOptions
   });
+
+  const bomFingerprint = sha256Hex(
+    canonicalizeJson({
+      bomOptions: opts.bomOptions ?? null,
+      bom
+    })
+  );
+
+  if (
+    opts.previousPackageRevision?.bomFingerprint &&
+    opts.previousPackageRevision.bomFingerprint !== bomFingerprint
+  ) {
+    staleReasons.push('Upstream BOM parameters or calculated material quantities changed since previous production package revision.');
+  }
 
   // 9. Feature-Traced Manufacturing Documentation (Workstream B)
   const activeSheets = sheetsBySize[activeSize] ?? [];
@@ -603,6 +689,8 @@ export function buildM05ProductionPackage(
     generatedAt,
     patternRevision,
     gradedPatternSet,
+    gradingArtifact,
+    gradingArtifactError,
     sheetSet,
     perSizeSummaries,
     bom,
@@ -613,7 +701,10 @@ export function buildM05ProductionPackage(
       sourceSpecificationFingerprint,
       sourceMeasurementFingerprint,
       basePatternFingerprint: patternRevision?.basePatternFingerprint ?? null,
+      patternRevisionId: patternRevision?.revisionId ?? null,
+      gradingControlsFingerprint,
       gradingReportSha256Hex: gradedPatternSet?.reportSha256Hex ?? null,
+      bomFingerprint,
       isStaleAgainstPrevious: staleReasons.length > 0,
       staleReasons
     },

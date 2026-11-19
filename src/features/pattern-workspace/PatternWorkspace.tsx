@@ -79,6 +79,7 @@ interface PatternWorkspaceProps {
   onToggleStrictUncertaintyGate?: (next: boolean) => void;
   requireApprovedGovernance?: boolean;
   onToggleRequireApprovedGovernance?: (next: boolean) => void;
+  onResyncPackageBaseline?: () => void;
   onNavigateToProduction: () => void;
   onNavigateToMeasurements: () => void;
   onUpdateSpec?: (nextSpec: DesignSpecification) => void;
@@ -102,6 +103,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   onToggleStrictUncertaintyGate: externalOnToggleStrictUncertaintyGate,
   requireApprovedGovernance: externalRequireApprovedGovernance,
   onToggleRequireApprovedGovernance: externalOnToggleRequireApprovedGovernance,
+  onResyncPackageBaseline,
   onNavigateToProduction,
   onNavigateToMeasurements,
   onUpdateSpec
@@ -248,6 +250,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     draftValidation: validationReport,
     gradedPatternSet,
     m05Package,
+    liveSnapshot,
     exportValidation
   } = workspaceBundle;
 
@@ -635,6 +638,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           currentSpec={currentSpec}
           measurements={measurements}
           pieces={pieces}
+          assemblyResult={assemblyResult}
+          approvedPatternRevisionId={liveSnapshot?.revisionId}
           bodiceDartStyle={bodiceDartStyle}
           sleeveEaseStrategy={sleeveEaseStrategy}
           constructionDocRef={m05Package.packageId}
@@ -654,8 +659,19 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 <Badge variant={categoryPolicy.supportsMultiSizeGrading ? 'accent' : 'neutral'} size="sm">
                   {categoryPolicy.policyMode}
                 </Badge>
-                <Badge variant={exportValidation.isExportPermitted ? 'success' : 'warning'} size="sm">
-                  EXPORT: {exportValidation.isExportPermitted ? 'VERIFIED' : (exportValidation.rejectionCode ?? 'BLOCKED')}
+                <Badge
+                  variant={
+                    workspaceBundle.upstreamStaleness.isStaleAgainstPrevious
+                      ? 'danger'
+                      : exportValidation.isExportPermitted
+                      ? 'success'
+                      : 'warning'
+                  }
+                  size="sm"
+                >
+                  {workspaceBundle.upstreamStaleness.isStaleAgainstPrevious
+                    ? 'STALE — RE-SYNC REQUIRED'
+                    : `EXPORT: ${exportValidation.isExportPermitted ? 'VERIFIED' : (exportValidation.rejectionCode ?? 'BLOCKED')}`}
                 </Badge>
                 <Badge variant="neutral" size="sm">isProductionReady: false</Badge>
               </div>
@@ -677,6 +693,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
             bundle={m05Package}
             bomControls={bomControls}
             onChangeBomControls={setBomControls}
+            onResyncPackageBaseline={onResyncPackageBaseline}
             titleContext="Module 04 Shared Production Readiness (Synchronized with Module 05)"
           />
         </div>

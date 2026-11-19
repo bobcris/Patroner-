@@ -18,6 +18,7 @@ import {
   OrderQuantityBasis
 } from './manufacturing-types';
 import {
+  AuthoritativeGradingArtifact,
   AuthoritativePatternRevision,
   MeasurementApprovalStatus,
   MeasurementOrigin,
@@ -283,7 +284,10 @@ export interface M05ProductionPackageOptions {
     readonly sourceSpecificationFingerprint?: string;
     readonly sourceMeasurementFingerprint?: string;
     readonly basePatternFingerprint?: string;
-    readonly gradingReportSha256Hex?: string;
+    readonly patternRevisionId?: string | null;
+    readonly gradingControlsFingerprint?: string;
+    readonly gradingReportSha256Hex?: string | null;
+    readonly bomFingerprint?: string;
   };
 }
 
@@ -299,9 +303,14 @@ export interface M05ProductionPackageBundle {
   readonly activeSize: string;
   readonly includedSizes: readonly string[];
   readonly baseSize: string;
+  /** Wall-clock generation metadata — intentionally excluded from canonicalContentDigest. */
   readonly generatedAt: string;
   readonly patternRevision: AuthoritativePatternRevision | null;
   readonly gradedPatternSet: GradedPatternSet | null;
+  /** Single authoritative grading artifact constructed once inside buildM05ProductionPackage (null for skirt / single-size). */
+  readonly gradingArtifact: AuthoritativeGradingArtifact | null;
+  /** Non-null if authoritative grading artifact creation failed for a multi-size-supported category (fail-closed diagnostic). */
+  readonly gradingArtifactError: string | null;
   readonly sheetSet: AuthoritativePieceProductionSheetSet | null;
   readonly perSizeSummaries: readonly PerSizeProductionSummary[];
   readonly bom: M05BomReport;
@@ -312,7 +321,10 @@ export interface M05ProductionPackageBundle {
     readonly sourceSpecificationFingerprint: string;
     readonly sourceMeasurementFingerprint: string;
     readonly basePatternFingerprint: string | null;
+    readonly patternRevisionId: string | null;
+    readonly gradingControlsFingerprint: string;
     readonly gradingReportSha256Hex: string | null;
+    readonly bomFingerprint: string;
     readonly isStaleAgainstPrevious: boolean;
     readonly staleReasons: readonly string[];
   };

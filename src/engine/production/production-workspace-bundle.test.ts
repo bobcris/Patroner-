@@ -351,3 +351,200 @@ test('P1-2A-04: Module 04 and Module 05 components consume shared workspaceBundl
   assert.ok(m04Src.includes('workspaceBundle'));
   assert.ok(m05Src.includes('workspaceBundle'));
 });
+
+test('P1-2-REM-01 (§3): Independent production bundles without createdAt across wall-clock time produce identical canonical SHA-256 digests while keeping generatedAt as metadata', async () => {
+  const firstBodice = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+
+  // Guarantee distinct wall-clock millisecond ISO timestamp
+  await new Promise(resolve => setTimeout(resolve, 15));
+
+  const secondBodice = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+
+  assert.notEqual(
+    firstBodice.m05Package!.generatedAt,
+    secondBodice.m05Package!.generatedAt,
+    'generatedAt metadata must still capture distinct generation timestamps'
+  );
+  assert.equal(
+    firstBodice.m05Package!.canonicalContentDigest,
+    secondBodice.m05Package!.canonicalContentDigest,
+    'Canonical content digest MUST NOT depend on wall-clock generatedAt'
+  );
+  assert.equal(
+    firstBodice.m05Package!.reportSha256Hex,
+    secondBodice.m05Package!.reportSha256Hex
+  );
+
+  // Also verify Skirt without createdAt
+  const firstSkirt = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  const secondSkirt = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+  assert.equal(
+    firstSkirt.m05Package!.canonicalContentDigest,
+    secondSkirt.m05Package!.canonicalContentDigest
+  );
+});
+
+test('P1-2-REM-02 (§4): Authoritative gradingArtifact is constructed once inside buildM05ProductionPackage and never duplicated in workspace bundle or created for skirt', () => {
+  const bodiceBundle = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+
+  assert.ok(bodiceBundle.m05Package!.gradingArtifact !== null);
+  assert.equal(bodiceBundle.m05Package!.gradingArtifactError, null);
+  assert.equal(bodiceBundle.gradingArtifactError, null);
+  assert.strictEqual(
+    bodiceBundle.liveGradingArtifact,
+    bodiceBundle.m05Package!.gradingArtifact,
+    'Workspace bundle MUST reuse exact gradingArtifact instance from m05Package'
+  );
+  assert.equal(
+    bodiceBundle.liveGradingArtifact!.baseSize,
+    bodiceBundle.gradedPatternSet!.baseSize
+  );
+
+  const skirtBundle = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+  assert.equal(skirtBundle.m05Package!.gradingArtifact, null);
+  assert.equal(skirtBundle.m05Package!.gradingArtifactError, null);
+  assert.equal(skirtBundle.liveGradingArtifact, undefined);
+  assert.equal(skirtBundle.gradingArtifactError, null);
+
+  // Verify no duplicate createAuthoritativeGradingArtifact remains in production-workspace-bundle.ts
+  const bundleSrc = fs.readFileSync(
+    path.resolve('src/engine/production/production-workspace-bundle.ts'),
+    'utf8'
+  );
+  assert.ok(!bundleSrc.includes('createAuthoritativeGradingArtifact('));
+});
+
+test('P1-2-REM-03 (§5): Staleness propagation detects spec, measurement, BOM, grading-control, and pattern-revision changes and blocks stale export', () => {
+  const baselineBundle = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { orderQuantityPerSize: 1 },
+    governance: { bodiceDartStyle: 'waist', sleeveEaseStrategy: 'classic' }
+  });
+
+  const baseline = {
+    sourceSpecificationFingerprint:
+      baselineBundle.upstreamStaleness.sourceSpecificationFingerprint ?? undefined,
+    sourceMeasurementFingerprint:
+      baselineBundle.upstreamStaleness.sourceMeasurementFingerprint ?? undefined,
+    basePatternFingerprint:
+      baselineBundle.upstreamStaleness.basePatternFingerprint ?? undefined,
+    patternRevisionId: baselineBundle.upstreamStaleness.patternRevisionId,
+    gradingControlsFingerprint:
+      baselineBundle.upstreamStaleness.gradingControlsFingerprint ?? undefined,
+    gradingReportSha256Hex: baselineBundle.upstreamStaleness.gradingReportSha256Hex,
+    bomFingerprint: baselineBundle.upstreamStaleness.bomFingerprint ?? undefined
+  };
+
+  // Unchanged inputs against matching baseline remain fresh (NOT stale)
+  const freshCheck = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { orderQuantityPerSize: 1 },
+    governance: { bodiceDartStyle: 'waist', sleeveEaseStrategy: 'classic' },
+    previousPackageRevision: baseline
+  });
+  assert.equal(freshCheck.upstreamStaleness.isStaleAgainstPrevious, false);
+  assert.equal(freshCheck.upstreamStaleness.staleReasons.length, 0);
+
+  // 1. BOM mutation triggers staleness and blocks export
+  const bomStale = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { orderQuantityPerSize: 3 },
+    governance: { bodiceDartStyle: 'waist', sleeveEaseStrategy: 'classic' },
+    previousPackageRevision: baseline
+  });
+  assert.equal(bomStale.upstreamStaleness.isStaleAgainstPrevious, true);
+  assert.ok(bomStale.upstreamStaleness.staleReasons.some(r => r.includes('BOM')));
+  assert.equal(bomStale.exportValidation.isExportPermitted, false);
+  assert.equal(bomStale.exportValidation.rejectionCode, 'UPSTREAM_STAGE_STALE');
+
+  // 2. Sleeve ease / grading control change triggers staleness
+  const strategyStale = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { orderQuantityPerSize: 1 },
+    governance: { bodiceDartStyle: 'waist', sleeveEaseStrategy: 'tailored' },
+    previousPackageRevision: baseline
+  });
+  assert.equal(strategyStale.upstreamStaleness.isStaleAgainstPrevious, true);
+  assert.ok(strategyStale.upstreamStaleness.staleReasons.some(r => r.includes('grading or governance controls')));
+
+  // 3. Measurement change triggers staleness
+  const measStale = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: { ...M_SIZES, bust: (M_SIZES.bust ?? 90) + 2 },
+    activeSize: 'M',
+    bomControls: { orderQuantityPerSize: 1 },
+    governance: { bodiceDartStyle: 'waist', sleeveEaseStrategy: 'classic' },
+    previousPackageRevision: baseline
+  });
+  assert.equal(measStale.upstreamStaleness.isStaleAgainstPrevious, true);
+  assert.ok(measStale.upstreamStaleness.staleReasons.some(r => r.includes('measurements')));
+
+  // 4. Pattern revision ID mismatch triggers staleness
+  const revStale = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: BODICE_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { orderQuantityPerSize: 1 },
+    governance: { bodiceDartStyle: 'waist', sleeveEaseStrategy: 'classic' },
+    previousPackageRevision: {
+      ...baseline,
+      patternRevisionId: 'rev-old-superseded-v0'
+    }
+  });
+  assert.equal(revStale.upstreamStaleness.isStaleAgainstPrevious, true);
+  assert.ok(revStale.upstreamStaleness.staleReasons.some(r => r.includes('pattern revision ID')));
+});
+
+test('P1-2-REM-04 (§6): ProductionOverview consumes authoritative governance sleeveEaseStrategy, isolates skirt from bodice prototype fixture, and App wires previousPackageRevision + spec-switch reset', () => {
+  const m05Src = fs.readFileSync(
+    path.resolve('src/features/production/ProductionOverview.tsx'),
+    'utf8'
+  );
+  const appSrc = fs.readFileSync(path.resolve('src/App.tsx'), 'utf8');
+
+  // ProductionOverview reads workspaceBundle.governance.sleeveEaseStrategy for adaptedSleeveEase
+  assert.ok(m05Src.includes('workspaceBundle.governance.sleeveEaseStrategy'));
+  assert.ok(m05Src.includes('data-testid="m05-adapted-sleeve-ease"'));
+  assert.ok(m05Src.includes('data-testid="m05-skirt-prototype-isolation-card"'));
+  assert.ok(m05Src.includes('if (!isBodiceCategory) return null;'));
+
+  // App wires real previousPackageRevision and resets optional strategy fields when switching garments
+  assert.ok(appSrc.includes('previousPackageRevision: committedPreviousRevision'));
+  assert.ok(appSrc.includes('committedBaselinesByGarment'));
+  assert.ok(appSrc.includes("setBodiceDartStyle(nextSpec.dartStyle ?? 'waist')"));
+  assert.ok(appSrc.includes("setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy ?? 'classic')"));
+});
+

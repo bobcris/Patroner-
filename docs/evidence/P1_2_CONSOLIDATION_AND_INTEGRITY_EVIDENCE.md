@@ -1,10 +1,12 @@
 # P1-2 Consolidation, Skirt Readiness Integrity & AC-09 Fail-Closed Evidence Report
 
 **Evidence ID:** `PATRONER-P1-2-CONSOLIDATION-INTEGRITY-EVIDENCE`  
+**Document Revision:** **Revision 2 — Checkpoint 8 (`P1-2` Acceptance Remediation)** *(preserves Revision 1 history verbatim below and records the prior independent audit verdict of **`NOT ACCEPTED`**)*  
 **Workspace:** `/app/applet` (no `.git` repository present; no Git operations performed)  
-**Scope:** Authorized `P1-2` remediation (`P1-2A` through `P1-2E`) + Section 7 `B1`–`B4` documentation conflict record  
-**Prior Reported Baseline (Independently Reproduced Before Edits):** `850/850` tests passing across `184` suites (`0` failures)  
-**Post-Implementation Verified Result:** `862/862` tests passing across `184` suites (`0` failures, `0` skipped, `0` cancelled)  
+**Scope:** Authorized `P1-2` remediation (`P1-2A` through `P1-2E`, followed by Checkpoint 8 independent audit defect remediation `§2`–`§8` and `§9` deferred tracking record; `P1-3` NOT started)  
+**Revision 1 Prior Reported Baseline (Independently Reproduced Before Rev 1 Edits):** `850/850` tests passing across `184` suites (`0` failures)  
+**Revision 1 Post-Implementation Result (Prior Independent Audit Verdict: `NOT ACCEPTED`):** `862/862` tests passing across `184` suites (`0` failures)  
+**Revision 2 (Checkpoint 8 Remediation) Verified Result:** **`882/882` tests passing across `184` suites** (`0` failures, `0` skipped, `0` cancelled; `91,064.30 ms`)  
 
 > **Preserved Governance Posture (Unchanged):**
 > - `M00`: **NOT ACCEPTED**
@@ -156,7 +158,125 @@
 
 ---
 
-## 5. Next Planned Task
+## 5. Next Planned Task (Revision 1 Historical Note — Superseded by Revision 2 Below)
 
 - **`P1-3` (Multi-Size Skirt Grading)** remains the next planned engineering task under the authoritative roadmap, strictly subject to review and acceptance of this `P1-2` consolidation and integrity package.
 - All protected gates (`M00`, `Gate Auth-2`, `Gate Auth-3`, `Gate Auth-4`, `DEC-13 Stage 2`, `AC-09`) remain **CLOSED / NOT ACCEPTED / PENDING**, and `isProductionReady` and `externalCadInteroperabilityVerified` remain **`false`**.
+
+---
+
+# Revision 2 — Checkpoint 8: Independent P1-2 Audit Remediation & Evidence Archive
+
+## 6. Independent Audit Verdict Record & Revision 1 Errata Corrections
+
+An independent read-only acceptance audit of Revision 1 returned **`NOT ACCEPTED`**, identifying critical P0/P1 defects across the AC-09 trust boundary, production-package canonical digest determinism, duplicate grading-artifact ownership, unwired staleness tracking, Module 05 state/category consistency, armscye nominal POM computation, and Revision 1 evidence inaccuracies. All Revision 1 sections above are preserved for audit traceability; the following errata correct inaccuracies present in Revision 1:
+
+| Revision 1 Text / Claim | Authoritative Codebase Reality (Corrected in Revision 2) |
+| :--- | :--- |
+| Reviewer roles listed as `QA_ENGINEER`, `ATELIER_MASTER`, `PROJECT_OWNER` | Exact `Ac09AuthorizedReviewerRole` union in `src/engine/simulation/physical-validation.ts`: `'LEAD_PATTERNMAKER' \| 'QA_LEAD' \| 'ATELIER_TECH_DIRECTOR' \| 'PRODUCTION_ENGINEER'` |
+| Provenance field cited as `dataSource === 'PHYSICAL_TOILE_MEASUREMENT'` | Exact provenance field and literal: `sourceFlag === 'PHYSICAL_OPERATOR_CAPTURE'` (and `isSyntheticData !== true`) |
+| Workflow states omitted from Revision 1 summary | Exact `Ac09WorkflowState` union: `'PENDING' \| 'DRAFT' \| 'SAMPLE_REGISTERED' \| 'EVIDENCE_INCOMPLETE' \| 'READY_FOR_REVIEW' \| 'PASSED' \| 'FAILED'` |
+| Execution modes | Exact `Ac09ExecutionMode` union: `'workflow' \| 'legacy'`; both now enforce identical fail-closed requirements |
+| Bundle type names | Authoritative M05 package type: `M05ProductionPackageBundle`; shared workspace bundle type: `AuthoritativeProductionWorkspaceBundle` |
+| `P1-3` framing | `P1-3` is **NOT authorized** until a fresh, read-only independent acceptance audit verifies this Checkpoint 8 remediation and accepts `P1-2`. |
+| Suite count / test count | Exact verified count in Revision 2: **`882/882` tests across `184` suites** (`+20` remediation tests over Revision 1's `862/862` baseline). |
+
+---
+
+## 7. Checkpoint 8 Remediation Summary (`§2`–`§7`)
+
+### 7.1 `§2` (P0) — AC-09 Trust-Boundary Remediation (`src/engine/simulation/physical-validation.ts`)
+All five independently reported `AC-09 PASSED` bypass paths were closed fail-closed:
+1. **Cryptographic Signature & Revision-Lock Verification:** `evaluateAc09ToileRecord` now recomputes the expected SHA-256 reviewer signature digest via `computeAc09ReviewerSignatureDigest` and rejects forged/mismatched `signatureDigest` (`AC09_SIGNATURE_TAMPER_DETECTED`), invalid/incomplete sign-off fields (`AC09_INVALID_SIGN_OFF`), unlocked signed records (`AC09_LOCK_REQUIRED`), and post-sign-off tampering against the locked evidence snapshot digest (`AC09_LOCKED_SNAPSHOT_TAMPER_DETECTED`).
+2. **Mandatory Fabric Specification Traceability:** `approvedFabricId`, `measuredFabricId`, `fabricComposition`, `fabricWeightGsm > 0`, `fabricStretchWeftPct` (`>= 0` finite), and non-empty `fabricDirection` are mandatory for `READY_FOR_REVIEW` and `PASSED`.
+3. **Repeat-Measurement & Uncertainty Recomputation:** Every required POM must contain `>= 2` valid finite physical readings (`repeatReadingsCm.length >= 2`); `evaluateAc09ToileRecord` deterministically recomputes mean, half-range spread, and combined uncertainty against `instrumentUncertaintyCm` and rejects forged `measuredMeanCm`, `repeatSpreadCm`, `uncertaintyCm`, or `deltaCm` (`AC09_FORGED_UNCERTAINTY`).
+4. **Mandatory Photographic & Structural Evidence Checklist:** Non-empty `evidenceAttachments` containing all mandatory views (`front`, `side`, `back`) with valid non-blank URIs (`uri`) and checked structural flags (`grainlinePlumbVerified`, `seamsAligned`, `hemLevelDeltaCm <= 0.8`) are required fail-closed; empty checklist arrays can no longer bypass the photo gate.
+5. **Strict Workflow-State Gate in `recordAc09ReviewerDecision`:** `APPROVED_PASS` is rejected with `AC09_INVALID_WORKFLOW_STATE` unless `record.workflowState === 'READY_FOR_REVIEW'` (requiring explicit transition via `transitionAc09WorkflowState(record, 'READY_FOR_REVIEW')` after all evidence checks pass).
+- **UI Alignment (`src/features/simulation/Ac09PhysicalValidationPanel.tsx`):** Added `Req #1` / `Req #2` input cues, `≥2 reads required` warning badge (`m06-ac09-pom-minreads-warn-*`), explicit `Submit for Review (READY_FOR_REVIEW)` CTA (`m06-ac09-submit-review-btn`), and synchronous `try/catch` error handling inside `handleSafeUpdate` so fail-closed rejections surface cleanly in `m06-ac09-action-error`.
+- **Adversarial Test Coverage (`src/engine/simulation/ac09-physical-validation.test.ts`):** Added `AC09-SEC-01` through `AC09-SEC-16` (15 adversarial security tests closing all 5 loopholes + 1 armscye nominal POM regression test) and removed legacy single-reading/direct-sign-off shortcuts from `ac09-physical-validation.test.ts` and `simulation-fit-optimization.test.ts`.
+
+### 7.2 `§3` (P0) — Timestamp-Free Deterministic Production-Package Digest (`src/engine/production/production-engineering.ts`)
+- Excluded wall-clock `generatedAt` and wall-clock grading timestamps from `buildCanonicalProductionPackagePayload` while preserving `generatedAt` as external report metadata on `M05ProductionPackageBundle`.
+- Verified via `P1-2-REM-01` that independent Bodice and Skirt bundle builds separated across wall-clock milliseconds produce distinct `generatedAt` metadata yet **bit-identical** `canonicalContentDigest` and `reportSha256Hex`.
+
+### 7.3 `§4` (P1) — Single Authoritative Grading-Artifact Ownership (`production-engineering.ts` & `production-workspace-bundle.ts`)
+- Removed the duplicate, divergent `createAuthoritativeGradingArtifact` construction and silent `catch` block from `src/engine/production/production-workspace-bundle.ts`.
+- Constructed `AuthoritativeGradingArtifact` once inside `buildM05ProductionPackage`, exposed both `gradingArtifact` and `gradingArtifactError` on `M05ProductionPackageBundle`, aligned `computeMeasurementFingerprint` with `computeArtifactInputFingerprint` in `dependency-invalidation.ts`, failed closed on grading artifact errors (`GRADING_VALIDATION_FAILED`), and guaranteed no bodice grading artifact is ever generated for `skirt`.
+- Verified via `P1-2-REM-02`.
+
+### 7.4 `§5` (P1) — Real Upstream Staleness Propagation (`App.tsx`, `production-engineering.ts`, `production-workspace-bundle.ts`, `Header.tsx`, `ProductionPackagePanel.tsx`)
+- Wired committed per-garment `previousPackageRevision` baselines in `src/App.tsx` (`committedBaselinesByGarment`) into `buildAuthoritativeProductionWorkspaceBundle`.
+- Extended `upstreamRevisionTracking` to detect changes across all 7 upstream dimensions: specification fingerprint, measurement fingerprint, base pattern fingerprint, pattern revision ID, grading/governance controls fingerprint, grading report fingerprint, and BOM fingerprint.
+- Blocked stale export fail-closed (`exportValidation.isExportPermitted = false`, `rejectionCode: 'UPSTREAM_STAGE_STALE'`, DXF-AAMA button disabled as `DXF Blocked (Stale)`).
+- Distinguished `Package Stale` (`data-testid="header-package-stale-badge"`, red — strictly bound to `upstreamStaleness.isStaleAgainstPrevious`) from `Approval Pending` (`data-testid="header-approval-pending-badge"`, amber) so initial fresh load never shows a false-positive stale badge.
+- Added `m05-upstream-staleness-banner` and `Re-Sync Package Baseline` (`m05-resync-baseline-btn`) to commit updated baselines intentionally.
+- Verified via `P1-2-REM-03` and live Chromium testing.
+
+### 7.5 `§6` (P1) — Module 05 State Consistency, Skirt Prototype Isolation & Spec-Switch Reset (`ProductionOverview.tsx`, `App.tsx`)
+- `ProductionOverview.tsx` now reads `workspaceBundle.governance.sleeveEaseStrategy` directly (`data-testid="m05-adapted-sleeve-ease"`), eliminating stale `currentSpec.sleeveEaseStrategy ?? 'classic'` reads.
+- `MOCK_CONFORMING_PROTOTYPE_BODICE_M` is strictly isolated to `isBodiceCategory`; `skirt` renders `m05-skirt-sleeve-na` and `m05-skirt-prototype-isolation-card` without evaluating bodice prototype fixtures.
+- Fixed `handleUpdateSpec` in `src/App.tsx` so switching garment specifications resets optional `bodiceDartStyle` and `sleeveEaseStrategy` instead of retaining the previous garment's optional controls.
+- Verified via `P1-2-REM-04` and live Chromium testing (`+2.43 cm` -> `+0.54 cm` live update on Bodice strategy switch).
+
+### 7.6 `§7` (P0) — Armscye Nominal POM Discrepancy (`physical-validation.ts`, `PatternWorkspace.tsx`, `SimulationFitPanel.tsx`)
+- Added `resolveNominalBodiceArmscyeSeamCm` in `src/engine/simulation/physical-validation.ts` deriving `pom-scye-circ` strictly from the bodice armhole stitching perimeter (`L_bf + L_bb` = **`36.79 cm`** for Size M) via `assemblyResult.ease.totalBodiceArmholeLengthCm`, with deterministic drafted piece segment fallback (`fb-armhole` + `bb-armhole` via `seg.lengthCm()`), rather than torso chest girth (`86.40 cm`) or un-eased sleeve cap length (`40.05 cm`).
+- Wired `assemblyResult`, `pieces`, and `liveSnapshot?.revisionId` from `PatternWorkspace.tsx` -> `SimulationFitPanel.tsx` -> `createPendingAc09ToileRecord`.
+- Verified via `AC09-SEC-16` and live Chromium browser inspection (`36.79 cm` rendered in `m06-ac09-pom-nominal-pom-scye-circ`).
+
+---
+
+## 8. Separately Tracked Simulation & Optimization Findings (`§9` — Deferred Outside `P1-2`)
+
+> **Strict Boundary Preserved:** Per Checkpoint 8 instructions, cloth constitutive math (`src/engine/simulation/material-constitutive.ts`, `cloth-solver.ts`, `fit-evaluator.ts`) and bounded optimizer objectives (`src/engine/simulation/bounded-optimizer.ts`) were **NOT** modified in `P1-2`. The following six findings from the independent audit are formally recorded as separately tracked future engineering work outside `P1-2`:
+
+1. **High Fabric Strain Despite Positive Circumferential Ease:** The surrogate strain evaluation can report elevated/failing membrane strain even in regions where static circumferential ease is positive.
+2. **Low / Zero Contact Pressure Alongside Structural Strain Failure:** Contact pressure fields can read near `0 kPa` in zones simultaneously flagged for structural tensile strain failure due to decoupled clearance-vs-tension formulations.
+3. **Shared / Colliding Pareto Proposal Revision IDs:** Candidate proposals emitted by bounded optimization can collide on generated child revision identifiers unless disambiguated per Pareto candidate index/hash.
+4. **Pareto Candidate Trade-Off Transparency:** Multi-objective proposals can improve one regional fit metric while degrading another; trade-off delta reporting should be surfaced explicitly per objective in future M06 refinement.
+5. **Static Bending-Energy Approximation:** Current cloth bending formulation uses a simplified static curvature/bending approximation rather than a full nonlinear shell bending energy solver.
+6. **Clearance-Based Ease Approximation vs. Full Contact-Coupled Drape:** Regional fit ease relies on geometric clearance/offset approximation rather than full dynamic frictional body-cloth contact equilibrium.
+
+---
+
+## 9. Revision 2 Reproducible Verification & Archived Evidence Manifest (`docs/evidence/p1_2_remediation/`)
+
+All checks below were executed **after the final source modification** inside `/app/applet`:
+
+| Verification Check | Observed Result | Archived Evidence Artifact |
+| :--- | :--- | :--- |
+| **TypeScript Type Check (`npx tsc --noEmit`)** | **PASS (`0` errors, exit `0`)** | `docs/evidence/p1_2_remediation/tsc-output.log` |
+| **Lint Check (`npm run lint`)** | **PASS (`0` errors, exit `0`)** | `docs/evidence/p1_2_remediation/lint-output.log` |
+| **Production Build (`npm run build`)** | **PASS (`0` errors, exit `0`)** | `docs/evidence/p1_2_remediation/build-output.log` |
+| **Full Automated Test Suite (`npm test`)** | **PASS — `882/882` tests across `184` suites (`0` fail, `0` cancelled, `0` skipped; `91,064.30 ms`)** | `docs/evidence/p1_2_remediation/test-transcript.log` |
+| **Live Browser Verification (Headless Chromium via `playwright-cli`, `1440x900` Desktop + `768x1024` Tablet)** | **PASS — `30/30` assertions passed, `0` console errors, `0` page errors** | `docs/evidence/p1_2_remediation/browser-verification.log` + 11 PNG screenshots |
+| **Cryptographic Evidence Manifest** | **16 archived artifacts hashed (SHA-256)** | `docs/evidence/p1_2_remediation/SHA256_MANIFEST.txt` |
+
+### SHA-256 Checksum Manifest (`docs/evidence/p1_2_remediation/SHA256_MANIFEST.txt`)
+
+| SHA-256 Digest | Archived Artifact Path |
+| :--- | :--- |
+| `41241bbc40a57b67efabe0855aedd3ab3f33ee76095b62f0cebf3030ca84a6ca` | `docs/evidence/p1_2_remediation/browser-verification.log` |
+| `02b329286e4dc29c86a80674196c0308a88a12ef9a26c371a79e5db5553c27f9` | `docs/evidence/p1_2_remediation/build-output.log` |
+| `a6b21efd55cdba93c857a8b986c6aa67f41a33d644c5aa05f06a0a0ec4bcb73d` | `docs/evidence/p1_2_remediation/lint-output.log` |
+| `6b5c623fb029e89145d2fbd86f10058ea17ce2650a147af1f296d3c7bf75e33c` | `docs/evidence/p1_2_remediation/test-transcript.log` |
+| `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | `docs/evidence/p1_2_remediation/tsc-output.log` |
+| `cffd514419ac21ad64892371ff19b0fb49e620bace480b5429e9a51630154af9` | `docs/evidence/p1_2_remediation/screenshots/01_desktop_skirt_m04_production.png` |
+| `08a676aa0876ce3f877150a05f9f53c31d4a20367b98644b8e2e1db217eb9d5d` | `docs/evidence/p1_2_remediation/screenshots/02_desktop_skirt_m05_overview.png` |
+| `3f719c495ed5d1f4cda6d4af3119987612cc9d77d1a100b522e4bcf6de205fb3` | `docs/evidence/p1_2_remediation/screenshots/03_desktop_skirt_m05_isolation.png` |
+| `bb9395b2d52fcea71fe45edde10bfd4d9721db5c303e85f9cc5ed2df339bfa59` | `docs/evidence/p1_2_remediation/screenshots/04_desktop_skirt_m05_bom_stale.png` |
+| `7e573abe693e4e4df154f205bd1bea3bebd5314534ea09506e8e059138395fb7` | `docs/evidence/p1_2_remediation/screenshots/05_desktop_skirt_m04_resynced.png` |
+| `849d2c7ef45d42d0a5bfb6c7556d149cc65d09053fc58f435f9d47195f1d72d5` | `docs/evidence/p1_2_remediation/screenshots/06_desktop_bodice_m05_classic.png` |
+| `4743cc06c0fc96ee9f56b9006b3c99cef39af41372bfdeed1e593bd08a700ba2` | `docs/evidence/p1_2_remediation/screenshots/07_desktop_bodice_m05_strategy_updated.png` |
+| `18d39bdaece0b26f114616797f61f3700dbf590b0dcf8dd557bd9dd4e4f06b34` | `docs/evidence/p1_2_remediation/screenshots/08_desktop_bodice_ac09_remediated.png` |
+| `701d66716eb0485b4dbbf09688bf51a70cfe391d652380d2d1d6d4390ba1ae70` | `docs/evidence/p1_2_remediation/screenshots/09_tablet_bodice_m04_ac09.png` |
+| `a9103ce62e7ed620694d2753f895626290d0a2fa42c2da5673a916ec3f594207` | `docs/evidence/p1_2_remediation/screenshots/10_tablet_bodice_m05_overview.png` |
+| `0883c6ebdb6336cb9f75771ad8f60e29a821776889b40258517a404a8ddc1eaa` | `docs/evidence/p1_2_remediation/screenshots/11_tablet_skirt_m05_overview.png` |
+
+---
+
+## 10. Authorization & Next-Step Posture
+
+- **P1-2 Remediation Status:** Implementation and verification complete; **pending a fresh read-only independent acceptance audit**.
+- **`P1-3` Status:** **NOT STARTED and NOT AUTHORIZED** until the fresh independent read-only audit accepts `P1-2`.
+- **Protected Governance Gates (Unchanged):** `M00: NOT ACCEPTED`, `Gate Auth-2: CLOSED`, `Gate Auth-3: CLOSED`, `Gate Auth-4: CLOSED`, `DEC-13 Stage 2: CLOSED`, `AC-09: PENDING`, `isProductionReady: false`, `externalCadInteroperabilityVerified: false`.
+

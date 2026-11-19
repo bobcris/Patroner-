@@ -19,11 +19,13 @@ import {
   evaluateQuantitativeFit,
   generateParametricAvatar,
   RECIPE_BOUNDS,
+  recordAc09RepeatMeasurements,
   recordAc09ReviewerDecision,
   registerAc09PhysicalSample,
   runAnalyticalCredibilityBenchmarks,
   runBoundedPatternOptimization,
   runGarmentDrapeSimulation,
+  transitionAc09WorkflowState,
   updateAc09PomMeasurement,
   validateAvatarProvenance
 } from './index';
@@ -364,7 +366,9 @@ test('M06 §18 AC-09: Physical Toile Validation Protocol starts strictly PENDING
     }
   });
   for (const pt of registeredSkirt.pomCheckpoints) {
-    registeredSkirt = updateAc09PomMeasurement(registeredSkirt, pt.pointId, Number((pt.nominalCadCm + 0.2).toFixed(2)));
+    const readingA = Number((pt.nominalCadCm + 0.15).toFixed(2));
+    const readingB = Number((pt.nominalCadCm + 0.25).toFixed(2));
+    registeredSkirt = recordAc09RepeatMeasurements(registeredSkirt, pt.pointId, [readingA, readingB]);
   }
   registeredSkirt = {
     ...registeredSkirt,
@@ -388,7 +392,8 @@ test('M06 §18 AC-09: Physical Toile Validation Protocol starts strictly PENDING
   assert.equal(readyEval.status, 'INCOMPLETE');
   assert.equal(readyEval.workflowState, 'READY_FOR_REVIEW');
 
-  const signedSkirt = recordAc09ReviewerDecision(registeredSkirt, {
+  const readyForReviewSkirt = transitionAc09WorkflowState(registeredSkirt, 'READY_FOR_REVIEW');
+  const signedSkirt = recordAc09ReviewerDecision(readyForReviewSkirt, {
     reviewerName: 'Elena Rostova',
     reviewerRole: 'LEAD_PATTERNMAKER',
     decision: 'APPROVED_PASS',

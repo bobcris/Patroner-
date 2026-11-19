@@ -18,6 +18,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { DesignSpecification } from '../../types';
 import {
+  AC09_MIN_REPEAT_READINGS,
   Ac09AuthorizedReviewerRole,
   Ac09MeasurementInstrument,
   Ac09PhysicalToileEvaluation,
@@ -30,7 +31,8 @@ import {
   recordAc09RepeatMeasurements,
   recordAc09ReviewerDecision,
   registerAc09PhysicalSample,
-  serializeAc09ValidationReport
+  serializeAc09ValidationReport,
+  transitionAc09WorkflowState
 } from '../../engine/simulation';
 
 interface Ac09PhysicalValidationPanelProps {
@@ -79,7 +81,8 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
   const handleSafeUpdate = (updater: (prev: Ac09PhysicalToileRecord) => Ac09PhysicalToileRecord) => {
     setActionError(null);
     try {
-      onUpdateRecord(updater);
+      const next = updater(record);
+      onUpdateRecord(() => next);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     }
@@ -756,17 +759,23 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
                         </div>
                       )}
                     </td>
-                    <td className="p-2 text-neutral-700">{pt.nominalCadCm.toFixed(2)}</td>
+                    <td
+                      className="p-2 text-neutral-700"
+                      data-testid={`m06-ac09-pom-nominal-${pt.pointId}`}
+                    >
+                      {pt.nominalCadCm.toFixed(2)}
+                    </td>
                     <td className="p-2">
                       <input
                         type="number"
                         step="0.05"
                         min="0"
                         disabled={isLocked}
+                        data-testid={`m06-ac09-pom-r1-${pt.pointId}`}
                         aria-label={`Reading 1 physical cm for ${pt.label}`}
                         value={r1}
                         onChange={e => updateReadings(e.target.value, String(r2))}
-                        placeholder="Pending"
+                        placeholder="Req #1"
                         className="w-20 px-1.5 py-0.5 border border-neutral-300 rounded-xs text-xs font-mono bg-white disabled:bg-neutral-50"
                       />
                     </td>
@@ -776,10 +785,11 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
                         step="0.05"
                         min="0"
                         disabled={isLocked}
+                        data-testid={`m06-ac09-pom-r2-${pt.pointId}`}
                         aria-label={`Reading 2 physical cm for ${pt.label}`}
                         value={r2}
                         onChange={e => updateReadings(String(r1), e.target.value)}
-                        placeholder="Opt #2"
+                        placeholder="Req #2"
                         className="w-20 px-1.5 py-0.5 border border-neutral-300 rounded-xs text-xs font-mono bg-white disabled:bg-neutral-50"
                       />
                     </td>
@@ -790,6 +800,14 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
                           <span className="block text-[10px] text-neutral-500">
                             ±{(pt.combinedUncertaintyCm ?? 0.05).toFixed(3)} cm
                           </span>
+                          {(pt.repeatReadingsCm?.length ?? 0) < AC09_MIN_REPEAT_READINGS && (
+                            <span
+                              className="block text-[10px] text-amber-800 font-bold"
+                              data-testid={`m06-ac09-pom-minreads-warn-${pt.pointId}`}
+                            >
+                              ≥{AC09_MIN_REPEAT_READINGS} reads required
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <span className="text-neutral-400">—</span>
@@ -798,6 +816,10 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
                     <td className="p-2">
                       {pt.deltaCm === null ? (
                         <span className="text-neutral-400">PENDING</span>
+                      ) : (pt.repeatReadingsCm?.length ?? 0) < AC09_MIN_REPEAT_READINGS ? (
+                        <span className="text-amber-800 font-bold">
+                          INCOMPLETE (1/{AC09_MIN_REPEAT_READINGS})
+                        </span>
                       ) : (
                         <span className={pt.withinTolerance ? 'text-emerald-700 font-bold' : 'text-red-700 font-bold'}>
                           {pt.deltaCm > 0 ? '+' : ''}
@@ -1032,11 +1054,25 @@ export const Ac09PhysicalValidationPanel: React.FC<Ac09PhysicalValidationPanelPr
             <Lock className="w-3.5 h-3.5" />
             5. Authorized Human Reviewer Sign-Off &amp; Revision Lock
           </div>
-          {record.reviewerDecision?.signatureDigest && (
-            <span className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs">
-              SIGNED: {record.reviewerDecision.signatureDigest.slice(0, 16)}…
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {!isLocked && record.workflowState !== 'READY_FOR_REVIEW' && (
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="m06-ac09-submit-review-btn"
+                onClick={() =>
+                  handleSafeUpdate(r => transitionAc09WorkflowState(r, 'READY_FOR_REVIEW'))
+                }
+              >
+                Submit for Review (READY_FOR_REVIEW)
+              </Button>
+            )}
+            {record.reviewerDecision?.signatureDigest && (
+              <span className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-xs">
+                SIGNED: {record.reviewerDecision.signatureDigest.slice(0, 16)}…
+              </span>
+            )}
+          </div>
         </div>
 
         {!isLocked ? (

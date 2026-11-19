@@ -49,6 +49,7 @@ interface ProductionOverviewProps {
   workspaceBundle?: AuthoritativeProductionWorkspaceBundle;
   bomControls?: ProductionWorkspaceBomControls;
   onChangeBomControls?: (next: ProductionBomControlState) => void;
+  onResyncPackageBaseline?: () => void;
   onNavigateToCAD: () => void;
 }
 
@@ -62,6 +63,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   workspaceBundle: externalBundle,
   bomControls: externalBomControls,
   onChangeBomControls: externalOnChangeBomControls,
+  onResyncPackageBaseline,
   onNavigateToCAD
 }) => {
   const [exportWarning, setExportWarning] = React.useState<string | null>(null);
@@ -156,17 +158,22 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     );
   }, [measurements, currentSpec.easeProfile, enhancedFabric, currentSpec.silhouette, currentSpec.explicitEaseCm]);
 
+  const isBodiceCategory = currentSpec.garmentCategory === 'bodice';
+  const activeSleeveEaseStrategy = workspaceBundle.governance.sleeveEaseStrategy;
+
   const adaptedSleeveEase = React.useMemo(() => {
+    if (!isBodiceCategory) return null;
     return calculateFabricAdaptedSleeveCapEase(
-      currentSpec.sleeveEaseStrategy ?? 'classic',
+      activeSleeveEaseStrategy,
       enhancedFabric,
       { userExplicitConsentToDefaultFabric: true }
     );
-  }, [currentSpec.sleeveEaseStrategy, enhancedFabric]);
+  }, [isBodiceCategory, activeSleeveEaseStrategy, enhancedFabric]);
 
   const sampleFitReport = React.useMemo(() => {
+    if (!isBodiceCategory) return null;
     return validatePhysicalFit(MOCK_CONFORMING_PROTOTYPE_BODICE_M);
-  }, []);
+  }, [isBodiceCategory]);
 
   const uniqueSeamAllowanceRoles = React.useMemo(() => {
     if (!m05Package) return [];
@@ -588,6 +595,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         bundle={m05Package}
         bomControls={bomControls}
         onChangeBomControls={setBomControls}
+        onResyncPackageBaseline={onResyncPackageBaseline}
         titleContext="Module 05 Authoritative Production Package"
       />
 
@@ -1098,55 +1106,93 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                 <span className="text-neutral-500">Bias Stretch:</span>
                 <span className="text-neutral-900 font-semibold">{enhancedFabric.directional.bias?.stretchPercent ?? 0}%</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Sleeve Molding Factor:</span>
-                <span className="text-neutral-900 font-semibold">{enhancedFabric.moldingFactor.toFixed(2)}x (Provisional)</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Adapted Cap Ease:</span>
-                <span className="text-emerald-700 font-bold">
-                  +{adaptedSleeveEase.adaptedCapEaseCm.toFixed(2)} cm
-                </span>
-              </div>
+              {isBodiceCategory && adaptedSleeveEase ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Sleeve Molding Factor:</span>
+                    <span className="text-neutral-900 font-semibold">{enhancedFabric.moldingFactor.toFixed(2)}x (Provisional)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-500">Adapted Cap Ease ({activeSleeveEaseStrategy}):</span>
+                    <span className="text-emerald-700 font-bold" data-testid="m05-adapted-sleeve-ease">
+                      +{adaptedSleeveEase.adaptedCapEaseCm.toFixed(2)} cm
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between" data-testid="m05-skirt-sleeve-na">
+                  <span className="text-neutral-500">Sleeve Cap Ease:</span>
+                  <span className="text-neutral-500 italic">Not Applicable (Skirt Block)</span>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
-                FIT VALIDATION EVIDENCE (PROTOTYPE)
-              </span>
-              <span className="text-[9px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold">
-                SYNTHETIC DEMO
-              </span>
-            </div>
-            <div className="space-y-1.5 text-[11px]">
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Benchmark Serial:</span>
-                <span className="text-neutral-900 font-semibold">{MOCK_CONFORMING_PROTOTYPE_BODICE_M.id}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Evidence Classification:</span>
-                <span className="text-amber-800 font-semibold">Synthetic Test Fixture</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Measurement Points:</span>
-                <span className="text-emerald-700 font-bold">
-                  {sampleFitReport.passCount}/{sampleFitReport.evaluatedPointsCount} Conforming
+          {isBodiceCategory && sampleFitReport ? (
+            <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2" data-testid="m05-bodice-prototype-card">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+                  FIT VALIDATION EVIDENCE (PROTOTYPE)
+                </span>
+                <span className="text-[9px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold">
+                  SYNTHETIC DEMO
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Max Discrepancy:</span>
-                <span className="text-neutral-900 font-semibold">{sampleFitReport.maxAbsoluteDiscrepancyCm.toFixed(2)} cm</span>
-              </div>
-              <div className="flex justify-between items-center pt-1 border-t border-neutral-200">
-                <span className="text-neutral-500">Validation Status:</span>
-                <span className="text-[9px] bg-neutral-200 text-neutral-800 font-bold px-1.5 py-0.5 rounded">
-                  SYNTHETIC BENCHMARK ONLY
-                </span>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">Benchmark Serial:</span>
+                  <span className="text-neutral-900 font-semibold">{MOCK_CONFORMING_PROTOTYPE_BODICE_M.id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">Evidence Classification:</span>
+                  <span className="text-amber-800 font-semibold">Synthetic Test Fixture</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">Measurement Points:</span>
+                  <span className="text-emerald-700 font-bold">
+                    {sampleFitReport.passCount}/{sampleFitReport.evaluatedPointsCount} Conforming
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">Max Discrepancy:</span>
+                  <span className="text-neutral-900 font-semibold">{sampleFitReport.maxAbsoluteDiscrepancyCm.toFixed(2)} cm</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t border-neutral-200">
+                  <span className="text-neutral-500">Validation Status:</span>
+                  <span className="text-[9px] bg-neutral-200 text-neutral-800 font-bold px-1.5 py-0.5 rounded">
+                    SYNTHETIC BENCHMARK ONLY
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div
+              className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2"
+              data-testid="m05-skirt-prototype-isolation-card"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
+                  SKIRT PHYSICAL FIT VALIDATION (AC-09)
+                </span>
+                <span className="text-[9px] bg-neutral-200 text-neutral-800 px-1.5 py-0.5 rounded font-bold">
+                  PENDING
+                </span>
+              </div>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">Garment Scope:</span>
+                  <span className="text-neutral-900 font-semibold">Skirt Block (Category Isolated)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">Physical Toile Record:</span>
+                  <span className="text-amber-800 font-semibold">Not Yet Executed (AC-09 PENDING)</span>
+                </div>
+                <p className="text-[10px] text-neutral-600 leading-relaxed pt-1 border-t border-neutral-200">
+                  Bodice prototype benchmarks are intentionally excluded for skirt garments. Capture physical skirt toile evidence in Module 04 Simulation &amp; AC-09.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Directional Ease Allocation Matrix */}

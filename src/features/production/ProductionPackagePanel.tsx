@@ -36,6 +36,7 @@ interface ProductionPackagePanelProps {
   bundle: M05ProductionPackageBundle;
   bomControls: ProductionBomControlState;
   onChangeBomControls: (next: ProductionBomControlState) => void;
+  onResyncPackageBaseline?: () => void;
   titleContext?: string;
 }
 
@@ -45,8 +46,10 @@ export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
   bundle,
   bomControls,
   onChangeBomControls,
+  onResyncPackageBaseline,
   titleContext = 'Deterministic Production Engineering (M05)'
 }) => {
+  const isStale = bundle.upstreamRevisionTracking.isStaleAgainstPrevious;
   const [subTab, setSubTab] = useState<PackageSubTab>('validation');
   const [showCanonicalJson, setShowCanonicalJson] = useState(false);
 
@@ -106,11 +109,13 @@ export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
 
         <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
           <Badge
-            variant={bundle.validation.isValid ? 'success' : 'danger'}
+            variant={bundle.validation.isValid && !isStale ? 'success' : 'danger'}
             size="md"
             data-testid="m05-validation-badge"
           >
-            {bundle.validation.isValid
+            {isStale
+              ? `STALE — BLOCKED (${bundle.validation.failedCount} FAIL)`
+              : bundle.validation.isValid
               ? `2D PACKAGE VERIFIED (${bundle.validation.passedCount}/10)`
               : `BLOCKED (${bundle.validation.failedCount} FAIL)`}
           </Badge>
@@ -119,6 +124,37 @@ export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
           </Badge>
         </div>
       </div>
+
+      {/* Upstream Staleness Invalidation Banner */}
+      {isStale && (
+        <div
+          className="px-4 py-3 bg-red-50 border-b border-red-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono text-red-900"
+          data-testid="m05-upstream-staleness-banner"
+        >
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 font-bold uppercase text-red-950">
+              <AlertTriangle className="w-4 h-4 text-red-700 shrink-0" />
+              <span>Upstream Change Detected — Committed Package Baseline Invalidated</span>
+            </div>
+            <ul className="list-disc pl-5 text-[11px] space-y-0.5 text-red-900">
+              {bundle.upstreamRevisionTracking.staleReasons.map((reason, idx) => (
+                <li key={idx}>{reason}</li>
+              ))}
+            </ul>
+          </div>
+          {onResyncPackageBaseline && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onResyncPackageBaseline}
+              data-testid="m05-resync-baseline-btn"
+              className="shrink-0 bg-red-900 hover:bg-red-800 text-white"
+            >
+              Re-Sync Package Baseline
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Upstream Lineage & Provenance Bar */}
       <div className="px-4 py-2.5 bg-neutral-50 border-b border-neutral-200 flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono">
@@ -191,10 +227,11 @@ export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
             <Button
               variant="primary"
               size="sm"
+              disabled={isStale}
               onClick={handleDownloadDxf}
               icon={<Download className="w-3.5 h-3.5" />}
             >
-              Export DXF-AAMA
+              {isStale ? 'DXF Blocked (Stale)' : 'Export DXF-AAMA'}
             </Button>
           )}
         </div>

@@ -20,6 +20,7 @@ interface HeaderProps {
   activeDesignName: string;
   specificationRevisionId?: string;
   isSynchronized?: boolean;
+  isPackageStale?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,7 +32,8 @@ export const Header: React.FC<HeaderProps> = ({
   isDraftValid,
   activeDesignName,
   specificationRevisionId,
-  isSynchronized = true
+  isSynchronized = true,
+  isPackageStale = false
 }) => {
   return (
     <header className="border-b border-neutral-200 bg-white/90 backdrop-blur-md sticky top-0 z-40">
@@ -90,9 +92,15 @@ export const Header: React.FC<HeaderProps> = ({
             {isCadSupported && isDraftValid && (
               <Badge variant="dark" size="sm">CAD Ready</Badge>
             )}
-            {isCadSupported && !isSynchronized && (
-              <Badge variant="danger" size="sm">Pipeline Stale</Badge>
-            )}
+            {isCadSupported && isPackageStale ? (
+              <Badge variant="danger" size="sm" data-testid="header-package-stale-badge">
+                Package Stale
+              </Badge>
+            ) : isCadSupported && !isSynchronized ? (
+              <Badge variant="warning" size="sm" data-testid="header-approval-pending-badge">
+                Approval Pending
+              </Badge>
+            ) : null}
           </div>
         </div>
 
