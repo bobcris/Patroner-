@@ -37,9 +37,6 @@ export const INITIAL_CONCEPTS: DesignSpecification[] = [
       waist: 78.0,
       hip: 103.0
     },
-    seamAllowanceCm: 1.5,
-    hemAllowanceCm: 3.0,
-    waistAllowanceCm: 1.0,
     constructionFeatures: [
       {
         id: 'feat-01',

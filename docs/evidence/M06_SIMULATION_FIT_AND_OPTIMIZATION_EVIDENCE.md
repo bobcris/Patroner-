@@ -41,25 +41,25 @@
 - Optimizes only declared M02/M04 recipe parameters within strict `±1.5 cm` box bounds (`RECIPE_BOUNDS`), deduplicates clamped candidates, and re-validates every candidate through full M02 drafting + M04.3 assembly checks (verified rejection path on invalid drafts).
 - Deterministic Pareto tie-break sorting with per-zone before/after comparisons (`regionalDeltaSummary`), reusing verified `benchmarkQualification` only when `materialSpecId` and `solverVersion` match identically, and strictly emitting unapproved `draft` child specs (`isApproved: false`, `requiresHumanApproval: true`).
 
-### M06.6 — Physical Toile Validation Protocol (`AC-09`) & Pattern CAD Viewport Integration (`src/engine/simulation/physical-validation.ts`, `src/features/simulation/SimulationFitPanel.tsx`)
-- Implemented `AC-09` protocol evaluator and interactive workbench for both `skirt-block-v1` and `bodice-sleeve-v1`, strictly defaulting to `PENDING` with `null` physical tape entries (`<= 0.50 cm` POM concordance, `>= 85%` regional fit-issue agreement, photographic/grainline/seam evidence checklist).
-- Upgraded `3D Fit & Optimization (M 06)` inside `4. Pattern CAD` (`SimulationFitPanel.tsx`) with 4-layer epistemic status banner, contact/self-contact/topology symmetry strip, multi-res `B1`–`B4` readouts, constitutive warning banner, before/after optimizer zone deltas, and live `AC-09` evidence panel.
+### M06.6 — Physical Toile Validation Execution Package (`AC-09`) & Pattern CAD Viewport Integration (`src/engine/simulation/physical-validation.ts`, `src/features/simulation/Ac09PhysicalValidationPanel.tsx`, `src/features/simulation/SimulationFitPanel.tsx`)
+- Extended the `AC-09` physical sample validation package for both `skirt-block-v1` and `bodice-sleeve-v1`, strictly defaulting to `PENDING` with `null` physical measurements and zero fabricated sample values:
+  - **Explicit Validation State Machine:** Enforces `PENDING → DRAFT → SAMPLE_REGISTERED → EVIDENCE_INCOMPLETE → READY_FOR_REVIEW → PASSED / FAILED` via `registerAc09PhysicalSample`, `transitionAc09WorkflowState`, and `recordAc09ReviewerDecision`. Transition to `PASSED` is blocked unless every acceptance criterion passes AND an authorized human reviewer (`LEAD_PATTERNMAKER`, `QA_LEAD`, `ATELIER_TECH_DIRECTOR`) records sign-off.
+  - **Measurement & Uncertainty Integrity:** Captures explicit cm units, anatomical POM definitions, multi-reading repeat measurements (`recordAc09RepeatMeasurements`), instrument resolution (`±0.10 cm` / `±0.05 cm` / `±0.01 cm`), and quadrature-combined uncertainty (`<= 0.25 cm`), preserving authoritative `<= 0.50 cm` POM concordance and `>= 85%` regional agreement limits (`validateAc09TolerancePolicy`).
+  - **Traceability & Synthetic-Data Guards:** Verifies alignment to approved pattern revision ID, fabric composition/gsm/stretch/cut direction/lot, M05 construction package (`m05Package.packageId`), and M06 simulation case ID; rejects any synthetic source flags or `synthetic:`/`simulated:` attachment URIs.
+  - **Immutable Revision Locking & Canonical Export:** Locks signed revisions cryptographically (`assertAc09RecordEditable`), requires `createNewAc09SampleRevision` with archived SHA-256 history to modify finalized trials, and emits deterministic `patroner-ac09-v1` reports (`serializeAc09ValidationReport`) strictly separating `simulationBaseline` from `physicalEvidence`.
+- Upgraded `3D Fit & Optimization (M 06)` inside `4. Pattern CAD` (`SimulationFitPanel.tsx` + `Ac09PhysicalValidationPanel.tsx`) with a live state stepper, sample/fabric/cut-sew registration form, mismatch alerts, repeat POM table, 85% regional agreement threshold visualization, evidence attachment URI checklist, reviewer sign-off panel, and canonical JSON export drawer.
 
 ---
 
 ## 2. Verification Summary
 
-- **Full Test Suite (`npm test`):** **835 / 835 tests passed across 183 suites** (0 failures), preserving all 829 M01–M05 tests and passing all 6 expanded M06 suites (`src/engine/simulation/simulation-fit-optimization.test.ts`):
-  - `M06.1 REQ-BODY-01`: parametric provenance & anti-spoofing guard across all 3 poses.
-  - `M06.3 ADR-005`: orthotropic tensor symmetry (`<= 1e-9`), positive definiteness, and 3-tier evidence gating across all preset fabrics.
-  - `M06.3 AC-08`: multi-resolution `B1`–`B4` (including `8mm -> 4mm`) passing across 4 fabrics + fail-closed failure on negative-modulus/negative-determinant tensors.
-  - `M06.2/M06.3/M06.4`: convergence across Skirt (`1532` tris, `0` body penetrations, `0` cloth self-intersections, `0.0031 cm` L/R symmetry) and Bodice+Sleeve (`1400` tris, `0` body penetrations, `0` cloth self-intersections, `< 0.01 cm` L/R symmetry across `CANONICAL_A_POSE`, `ARM_FORWARD_45`, `SEATED_90`), plus Skirt mesh-refinement consistency.
-  - `M06.5 ADR-006`: deterministic ranking, `±1.5 cm` box clamp, M02/M04.3 rejection path, before/after regional deltas, and strict unapproved `draft` gate.
-  - `M06 §18 AC-09`: `PENDING` default on both `skirt-block-v1` and `bodice-sleeve-v1`, `INCOMPLETE` on partial entries, `FAILED` on out-of-tolerance POM (`> 0.50 cm`) or `< 85%` agreement, and `PASSED` only with complete in-tolerance evidence while preserving `isProductionReady: false`.
-- **TypeScript & Production Build (`compile_applet`, `lint_applet`):** Clean compilation (`vite build`) and zero errors (`tsc --noEmit`).
+- **Full Test Suite (`npm test`):** **845 / 845 tests passed across 183 suites** (0 failures), preserving all 829 M01–M05 tests, 6 core M06 suites (`src/engine/simulation/simulation-fit-optimization.test.ts`), and 10 dedicated AC-09 execution package tests (`src/engine/simulation/ac09-physical-validation.test.ts`):
+  - `M06.1`–`M06.5` & `M06 §18 AC-09` core verification (835 baseline tests preserved).
+  - `AC09-01`–`AC09-10`: default `PENDING` & missing-evidence diagnostics, repeat reading spread & uncertainty rejection, exact `0.500 cm` vs `0.501 cm` and `85%` boundary enforcement, immutable policy guards, pattern-revision & fabric spec mismatch rejection, illegal workflow jump prevention, unauthorized reviewer & synthetic-data blocking, revision locking/forking history, and deterministic SHA-256 report serialization.
+- **TypeScript & Production Build (`compile_applet`, `lint_applet`):** Clean compilation (`vite build`) and zero TypeScript errors (`tsc --noEmit`).
 - **Headless Chromium Verification (`http://127.0.0.1:3000`, `1440x900`):**
-  - Zero console or runtime errors.
-  - Verified both Skirt and Bodice+Sleeve 3D isometric renders inside `4. Pattern CAD` -> `3D Fit & Optimization (M 06)`, pose switching (`ARM_FORWARD_45`), heatmap switching (`STRAIN`), bounded optimization (`Evaluated: 5 • Rejected by M02: 0`, `Before → After Regional Delta`), `AC-09` block tab switching (`skirt-block-v1` / `bodice-sleeve-v1`), and dynamic `AC-09` tolerance transitions (`PENDING` -> `FAILED` on `92.5 cm` out-of-tolerance bust input).
+  - Zero console or runtime errors (`0 errors, 0 warnings`).
+  - Verified `4. Pattern CAD` -> `3D Fit & Optimization (M 06)` rendering of the `AC-09` physical execution panel, baseline sample registration (`TOILE-M-001` / `SAMPLE_REGISTERED`), live pattern revision mismatch alert (`spec-wrong-v99` vs `spec-skirt-01-rev1`), and deterministic canonical JSON export drawer (`patroner-ac09-v1`, 64-hex SHA-256 digest).
 
 ---
 

@@ -17,7 +17,12 @@ import type {
   MeasurementOrigin,
   MeasurementProvenanceEvidence
 } from '../../engine/production';
-import { buildM05ProductionPackage } from '../../engine/production';
+import { INITIAL_CONCEPTS } from '../../domain/design/curated-concepts';
+import {
+  buildM05ProductionPackage,
+  getUnsupportedCategoryMessage,
+  isCadDraftingSupportedCategory
+} from '../../engine/production';
 import { ProductionPackagePanel, ProductionBomControlState } from '../production/ProductionPackagePanel';
 import { SimulationFitPanel } from '../simulation/SimulationFitPanel';
 import { AssemblyInspectionPanel, AssemblyScenarioMode } from './AssemblyInspectionPanel';
@@ -168,8 +173,11 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     );
   }, [sleeveEaseStrategy, workspaceFabric]);
 
-  // Milestone 04.4: Graded Pattern Set generation
-  const gradedPatternSet: GradedPatternSet = React.useMemo(() => {
+  const isCadSupported = isCadDraftingSupportedCategory(currentSpec.garmentCategory);
+
+  // Milestone 04.4: Graded Pattern Set generation (only for CAD-supported blocks)
+  const gradedPatternSet: GradedPatternSet | null = React.useMemo(() => {
+    if (!isCadSupported) return null;
     return gradePattern(currentSpec, {
       bodiceDartStyle,
       sleeveEaseStrategy,
@@ -179,6 +187,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
       requireApprovedGovernance
     });
   }, [
+    isCadSupported,
     currentSpec,
     bodiceDartStyle,
     sleeveEaseStrategy,
@@ -188,7 +197,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     requireApprovedGovernance
   ]);
 
-  // Deterministic draft generation (Bodice includes front, back, and set-in sleeve)
+  // Deterministic draft generation (Bodice includes front, back, and set-in sleeve; Skirt drafts 2 panels)
   let pieces: PatternPiece[] = [];
   let sleeveDiag: SleeveDiagnostics | undefined = undefined;
 
@@ -205,7 +214,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
       // In case sleeve measurements are missing, fallback gracefully to bodice panels
       pieces = bodicePieces;
     }
-  } else {
+  } else if (currentSpec.garmentCategory === 'skirt') {
     pieces = draftSkirtBlock(measurements, currentSpec);
   }
 
@@ -260,6 +269,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
   // Milestone 05: Live Authoritative Production Package Bundle
   const m05Package = React.useMemo(() => {
+    if (!isCadSupported) return null;
     const qty = Math.max(1, Math.round(bomControls.orderQuantityPerSize || 1));
     const targetSizes = currentSpec.garmentCategory === 'bodice'
       ? DEFAULT_SIZE_RANGE
@@ -293,6 +303,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
       assemblyResultOverride: assemblyScenario === 'active-draft' ? assemblyResult : undefined
     });
   }, [
+    isCadSupported,
     currentSpec,
     measurements,
     activeSize,
@@ -318,6 +329,64 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     setZoom(1.0);
     setPan({ x: 0, y: 0 });
   };
+
+  if (!isCadSupported || !m05Package || !gradedPatternSet) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 lg:px-8 py-10 space-y-6">
+        <div className="border-b border-neutral-200 pb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs uppercase tracking-widest text-neutral-500 font-mono">Module 04</span>
+            <span className="text-neutral-300">/</span>
+            <Badge variant="neutral" size="sm">SPECS ONLY CATEGORY</Badge>
+          </div>
+          <h2 className="text-2xl lg:text-3xl font-serif font-bold text-neutral-900 tracking-tight">
+            Pattern Drafting &amp; Geometric CAD Canvas
+          </h2>
+        </div>
+
+        <div className="bg-white border border-amber-300 rounded-sm p-6 shadow-2xs space-y-4">
+          <div className="flex items-center gap-2 text-amber-900 font-mono text-xs uppercase font-bold">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>Deterministic CAD Block Pending for "{currentSpec.garmentCategory.toUpperCase()}"</span>
+          </div>
+          <p className="text-sm text-neutral-700 leading-relaxed">
+            {getUnsupportedCategoryMessage(currentSpec.garmentCategory)} Patroner refuses to silently substitute a skirt block for a{' '}
+            <strong className="uppercase">{currentSpec.garmentCategory}</strong> specification.
+          </p>
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            {onUpdateSpec && (
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => onUpdateSpec(INITIAL_CONCEPTS[0])}
+                  className="font-mono text-xs uppercase"
+                >
+                  Load Midi Skirt Block (CAD Ready)
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onUpdateSpec(INITIAL_CONCEPTS[2])}
+                  className="font-mono text-xs uppercase"
+                >
+                  Load Tailored Bodice + Sleeve (CAD Ready)
+                </Button>
+              </>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onNavigateToMeasurements}
+              icon={<Compass className="w-3.5 h-3.5" />}
+            >
+              Adjust Body Measurements
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-6">
@@ -580,6 +649,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           pieces={pieces}
           bodiceDartStyle={bodiceDartStyle}
           sleeveEaseStrategy={sleeveEaseStrategy}
+          constructionDocRef={m05Package.packageId}
           onApplyOptimizationProposal={proposal => {
             if (proposal.proposedDesignSpec.sleeveEaseStrategy) {
               setSleeveEaseStrategy(proposal.proposedDesignSpec.sleeveEaseStrategy);

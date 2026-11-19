@@ -7,10 +7,8 @@ import React, { useState } from 'react';
 import { BodyMeasurements, DesignSpecification, StandardSize } from './types';
 import { INITIAL_CONCEPTS } from './domain/design/curated-concepts';
 import { STANDARD_SIZING_SYSTEM } from './engine/measurements/standards';
-import { draftSkirtBlock } from './engine/drafting/skirt-block';
-import { draftBodiceBlock } from './engine/drafting/bodice-block';
-import { validatePatternDraft } from './engine/validation/seam-validator';
 import { Header, WorkspaceTab } from './components/layout/Header';
+import { WorkspaceErrorBoundary } from './components/layout/WorkspaceErrorBoundary';
 import { FashionStudio } from './features/fashion-studio/FashionStudio';
 import { DesignSpecificationView } from './features/design-specification/DesignSpecificationView';
 import { MeasurementWorkspace } from './features/measurements/MeasurementWorkspace';
@@ -18,7 +16,7 @@ import { PatternWorkspace } from './features/pattern-workspace/PatternWorkspace'
 import { ProductionOverview } from './features/production/ProductionOverview';
 
 import {
-  evaluatePipelineDependencyIntegrity,
+  evaluateSpecPipelineSafely,
   MeasurementApprovalStatus,
   MeasurementOrigin,
   MeasurementProvenanceEvidence,
@@ -39,22 +37,16 @@ export default function App() {
   const [measurementProvenanceEvidence, setMeasurementProvenanceEvidence] = useState<MeasurementProvenanceEvidence | undefined>(undefined);
   const [measurementRevisionCount, setMeasurementRevisionCount] = useState<number>(1);
 
-  // Compute live validation status for current draft
-  const pieces = currentSpec.garmentCategory === 'bodice'
-    ? draftBodiceBlock(measurements, currentSpec)
-    : draftSkirtBlock(measurements, currentSpec);
-  const validation = validatePatternDraft(pieces);
-
-  const pipelineReport = evaluatePipelineDependencyIntegrity({
+  // Evaluate live pipeline, approval verification, and category support safely without uncaught throws
+  const safePipeline = evaluateSpecPipelineSafely({
     specification: currentSpec,
     measurements,
     measurementApprovalState,
     measurementProvenance,
     activeSize: String(activeSize),
-    fabric: currentSpec.fabric,
-    patternPieces: pieces,
-    validationReport: validation
+    fabric: currentSpec.fabric
   });
+  const { isCadSupported, approvalVerification, validation, pipelineReport } = safePipeline;
 
   const handleUpdateMeasurements = (
     m: BodyMeasurements,
@@ -102,8 +94,10 @@ export default function App() {
       <Header
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        isApproved={currentSpec.isApproved}
-        isDraftValid={validation.isValid}
+        isApproved={approvalVerification.isValid}
+        approvalState={approvalVerification.state}
+        isCadSupported={isCadSupported}
+        isDraftValid={isCadSupported && validation.isValid}
         activeDesignName={currentSpec.name}
         specificationRevisionId={currentSpec.specificationRevisionId ?? `spec-${currentSpec.id}-v${currentSpec.version}`}
         isSynchronized={pipelineReport.isPipelineSynchronized}
@@ -111,64 +105,71 @@ export default function App() {
 
       {/* Main Workspace View Router */}
       <main className="flex-1">
-        {activeTab === 'studio' && (
-          <FashionStudio
-            currentSpec={currentSpec}
-            onUpdateSpec={setCurrentSpec}
-            onNavigateToSpec={() => setActiveTab('specification')}
-          />
-        )}
+        <WorkspaceErrorBoundary
+          onResetWorkspace={() => {
+            setCurrentSpec(INITIAL_CONCEPTS[0]);
+            setActiveTab('studio');
+          }}
+        >
+          {activeTab === 'studio' && (
+            <FashionStudio
+              currentSpec={currentSpec}
+              onUpdateSpec={setCurrentSpec}
+              onNavigateToSpec={() => setActiveTab('specification')}
+            />
+          )}
 
-        {activeTab === 'specification' && (
-          <DesignSpecificationView
-            spec={currentSpec}
-            onUpdateSpec={setCurrentSpec}
-            onNavigateToMeasurements={() => setActiveTab('measurements')}
-            onNavigateToCAD={() => setActiveTab('pattern-cad')}
-          />
-        )}
+          {activeTab === 'specification' && (
+            <DesignSpecificationView
+              spec={currentSpec}
+              onUpdateSpec={setCurrentSpec}
+              onNavigateToMeasurements={() => setActiveTab('measurements')}
+              onNavigateToCAD={() => setActiveTab('pattern-cad')}
+            />
+          )}
 
-        {activeTab === 'measurements' && (
-          <MeasurementWorkspace
-            currentMeasurements={measurements}
-            activeSize={activeSize}
-            currentSpec={currentSpec}
-            measurementProvenance={measurementProvenance}
-            measurementApprovalState={measurementApprovalState}
-            measurementProvenanceEvidence={measurementProvenanceEvidence}
-            measurementRevisionId={`meas-rev-${measurementRevisionCount}`}
-            onUpdateMeasurements={handleUpdateMeasurements}
-            onUpdateMeasurementApproval={handleUpdateMeasurementApproval}
-            onUpdateMeasurementProvenance={handleUpdateMeasurementProvenance}
-            onNavigateToCAD={() => setActiveTab('pattern-cad')}
-          />
-        )}
+          {activeTab === 'measurements' && (
+            <MeasurementWorkspace
+              currentMeasurements={measurements}
+              activeSize={activeSize}
+              currentSpec={currentSpec}
+              measurementProvenance={measurementProvenance}
+              measurementApprovalState={measurementApprovalState}
+              measurementProvenanceEvidence={measurementProvenanceEvidence}
+              measurementRevisionId={`meas-rev-${measurementRevisionCount}`}
+              onUpdateMeasurements={handleUpdateMeasurements}
+              onUpdateMeasurementApproval={handleUpdateMeasurementApproval}
+              onUpdateMeasurementProvenance={handleUpdateMeasurementProvenance}
+              onNavigateToCAD={() => setActiveTab('pattern-cad')}
+            />
+          )}
 
-        {activeTab === 'pattern-cad' && (
-          <PatternWorkspace
-            currentSpec={currentSpec}
-            measurements={measurements}
-            activeSize={activeSize}
-            measurementProvenance={measurementProvenance}
-            measurementApprovalState={measurementApprovalState}
-            measurementProvenanceEvidence={measurementProvenanceEvidence}
-            onNavigateToProduction={() => setActiveTab('production')}
-            onNavigateToMeasurements={() => setActiveTab('measurements')}
-            onUpdateSpec={setCurrentSpec}
-          />
-        )}
+          {activeTab === 'pattern-cad' && (
+            <PatternWorkspace
+              currentSpec={currentSpec}
+              measurements={measurements}
+              activeSize={activeSize}
+              measurementProvenance={measurementProvenance}
+              measurementApprovalState={measurementApprovalState}
+              measurementProvenanceEvidence={measurementProvenanceEvidence}
+              onNavigateToProduction={() => setActiveTab('production')}
+              onNavigateToMeasurements={() => setActiveTab('measurements')}
+              onUpdateSpec={setCurrentSpec}
+            />
+          )}
 
-        {activeTab === 'production' && (
-          <ProductionOverview
-            currentSpec={currentSpec}
-            measurements={measurements}
-            activeSize={activeSize}
-            measurementProvenance={measurementProvenance}
-            measurementApprovalState={measurementApprovalState}
-            measurementProvenanceEvidence={measurementProvenanceEvidence}
-            onNavigateToCAD={() => setActiveTab('pattern-cad')}
-          />
-        )}
+          {activeTab === 'production' && (
+            <ProductionOverview
+              currentSpec={currentSpec}
+              measurements={measurements}
+              activeSize={activeSize}
+              measurementProvenance={measurementProvenance}
+              measurementApprovalState={measurementApprovalState}
+              measurementProvenanceEvidence={measurementProvenanceEvidence}
+              onNavigateToCAD={() => setActiveTab('pattern-cad')}
+            />
+          )}
+        </WorkspaceErrorBoundary>
       </main>
 
       {/* Atelier Footer */}

@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import type { SpecificationApprovalState } from '../../engine/production';
 import { Badge } from '../ui/Badge';
 import { Layers, ShieldCheck, Compass, Sparkles } from 'lucide-react';
 
@@ -13,6 +14,8 @@ interface HeaderProps {
   activeTab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
   isApproved: boolean;
+  approvalState?: SpecificationApprovalState;
+  isCadSupported?: boolean;
   isDraftValid: boolean;
   activeDesignName: string;
   specificationRevisionId?: string;
@@ -23,6 +26,8 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   onTabChange,
   isApproved,
+  approvalState = isApproved ? 'approved' : 'draft',
+  isCadSupported = true,
   isDraftValid,
   activeDesignName,
   specificationRevisionId,
@@ -49,9 +54,9 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Main navigation header */}
-      <div className="px-4 lg:px-8 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <div className="flex items-baseline gap-2">
+      <div className="px-4 lg:px-8 py-3 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4 min-w-0">
+          <div className="flex items-baseline gap-2 shrink-0">
             <h1 className="text-xl font-serif tracking-tight font-bold text-neutral-900">
               Patroner
             </h1>
@@ -60,10 +65,10 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
 
-          <div className="h-4 w-px bg-neutral-200 hidden sm:block"></div>
+          <div className="h-4 w-px bg-neutral-200 hidden sm:block shrink-0"></div>
 
           {/* Active project pill */}
-          <div className="hidden sm:flex items-center gap-2 text-xs text-neutral-600 bg-neutral-50 px-2.5 py-1 rounded border border-neutral-200">
+          <div className="hidden sm:flex flex-wrap items-center gap-2 text-xs text-neutral-600 bg-neutral-50 px-2.5 py-1 rounded border border-neutral-200 min-w-0 max-w-full">
             <span className="text-neutral-400 font-mono text-[10px]">CURRENT:</span>
             <span className="font-medium text-neutral-800 truncate max-w-[200px]">{activeDesignName}</span>
             {specificationRevisionId && (
@@ -71,22 +76,28 @@ export const Header: React.FC<HeaderProps> = ({
                 {specificationRevisionId}
               </span>
             )}
-            {isApproved ? (
+            {!isCadSupported ? (
+              <Badge variant="neutral" size="sm">Specs Only</Badge>
+            ) : isApproved ? (
               <Badge variant="success" size="sm">Approved</Badge>
+            ) : approvalState === 'revoked' ? (
+              <Badge variant="danger" size="sm">Revoked</Badge>
+            ) : approvalState === 'invalid' ? (
+              <Badge variant="danger" size="sm">Spec Invalid</Badge>
             ) : (
               <Badge variant="warning" size="sm">Draft Spec</Badge>
             )}
-            {isDraftValid && (
+            {isCadSupported && isDraftValid && (
               <Badge variant="dark" size="sm">CAD Ready</Badge>
             )}
-            {!isSynchronized && (
+            {isCadSupported && !isSynchronized && (
               <Badge variant="danger" size="sm">Pipeline Stale</Badge>
             )}
           </div>
         </div>
 
         {/* Tab navigation */}
-        <nav className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 shrink-0" aria-label="Main Navigation">
+        <nav className="flex items-center gap-1.5 overflow-x-auto pb-1 xl:pb-0 w-full xl:w-auto shrink-0" aria-label="Main Navigation">
           <button
             onClick={() => onTabChange('studio')}
             className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
@@ -134,7 +145,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Layers className="w-3.5 h-3.5" />
             4. Pattern CAD
-            {isDraftValid && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>}
+            {isCadSupported && isDraftValid && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>}
           </button>
 
           <button

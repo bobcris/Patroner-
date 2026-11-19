@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Compass, CheckCircle2, AlertTriangle, ArrowRight, Scissors, ShieldCheck } from 'lucide-react';
 import {
+  isCadDraftingSupportedCategory,
   MeasurementApprovalStatus,
   MeasurementOrigin,
   MeasurementProvenanceEvidence,
@@ -206,6 +207,14 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
           Draft in Pattern CAD <ArrowRight className="w-3.5 h-3.5 ml-1" />
         </Button>
       </div>
+
+      {!isCadDraftingSupportedCategory(currentSpec.garmentCategory) && (
+        <div className="bg-amber-50 border border-amber-300 rounded-sm p-4 text-xs font-mono text-amber-950">
+          <strong>SPECS ONLY NOTICE:</strong> Anthropometric body inputs below can be edited and staged, but deterministic CAD block ease projections are currently calibrated only for{' '}
+          <strong>skirt</strong> and <strong>bodice</strong> garments (category{' '}
+          <strong className="uppercase">{currentSpec.garmentCategory}</strong> block pending).
+        </div>
+      )}
 
       {/* Sizing Standard Citation & Explicit Measurement Provenance/Approval Banner */}
       <div className="bg-stone-50 border border-stone-200 rounded-sm p-4 text-xs flex flex-col gap-3">

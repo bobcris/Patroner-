@@ -62,9 +62,9 @@ export function draftBodiceBlock(
   // Tolerances and allowances
   const sideSeamAllowance = options.seamAllowanceCm ?? design.seamAllowanceCm ?? 1.5;
   const waistAllowance = options.waistAllowanceCm ?? design.waistAllowanceCm ?? 1.0;
-  const neckAllowance = options.neckAllowanceCm ?? 1.0;
-  const armholeAllowance = options.armholeAllowanceCm ?? 1.0;
-  const shoulderAllowance = options.shoulderAllowanceCm ?? 1.0;
+  const neckAllowance = options.neckAllowanceCm ?? design.neckAllowanceCm ?? 1.0;
+  const armholeAllowance = options.armholeAllowanceCm ?? design.armholeAllowanceCm ?? 1.0;
+  const shoulderAllowance = options.shoulderAllowanceCm ?? design.shoulderAllowanceCm ?? 1.0;
   const bezierToleranceCm = options.bezierToleranceCm ?? 0.05;
   const miterLimit = options.miterLimit ?? 2.5;
 

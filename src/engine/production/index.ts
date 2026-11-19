@@ -19,6 +19,7 @@ export * from './bom-engine';
 export * from './manufacturing-docs';
 export * from './production-validator';
 export * from './production-engineering';
+export * from './category-support';
 
 export { canonicalizeJson } from './pattern-revision-snapshot';
 export type { OidcJwtHeader, OidcJwtPayload } from './garment-specification-types';

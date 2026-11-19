@@ -11,9 +11,10 @@ import { Badge } from '../../components/ui/Badge';
 import { CheckCircle2, ShieldCheck, ArrowRight, Plus, Trash2, Edit3, Compass, Scissors } from 'lucide-react';
 
 import {
-  computeSpecificationFingerprint,
-  SPECIFICATION_CANONICAL_SCHEMA_VERSION,
-  verifySpecificationApproval
+  isCadDraftingSupportedCategory,
+  safeComputeSpecificationFingerprint,
+  safeVerifySpecificationApproval,
+  SPECIFICATION_CANONICAL_SCHEMA_VERSION
 } from '../../engine/production';
 
 interface DesignSpecificationViewProps {
@@ -34,8 +35,10 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
   const [newFeatureImpact, setNewFeatureImpact] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const canonicalFingerprint = computeSpecificationFingerprint(spec);
-  const approvalVerification = verifySpecificationApproval(spec);
+  const isCadSupported = isCadDraftingSupportedCategory(spec.garmentCategory);
+  const fpResult = safeComputeSpecificationFingerprint(spec);
+  const canonicalFingerprint = fpResult.fingerprint ?? 'SPECS-ONLY-UNSUPPORTED-CAD-CATEGORY';
+  const approvalVerification = safeVerifySpecificationApproval(spec);
   const effectiveAuthorityTier = approvalVerification.isValid
     ? (approvalVerification.authorityTier ?? 'unauthenticated_local_session')
     : undefined;
@@ -46,6 +49,10 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
     const specRevId = willBeApproved
       ? (spec.specificationRevisionId ?? `spec-${spec.id}-v${spec.version}`)
       : `spec-${spec.id}-v${spec.version + 1}`;
+
+    if (!isCadSupported) {
+      return;
+    }
 
     if (willBeApproved) {
       const updatedSpec: DesignSpecification = {
@@ -59,7 +66,7 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
         specificationRevisionId: specRevId,
         supersededByRevisionId: undefined
       };
-      const fp = computeSpecificationFingerprint(updatedSpec);
+      const fp = safeComputeSpecificationFingerprint(updatedSpec).fingerprint ?? canonicalFingerprint;
       const eventId = `evt-approve-${specRevId}`;
       const approvalRecord = {
         eventId,
@@ -237,7 +244,13 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
 
         {/* Approval Toggle */}
         <div className="flex flex-col md:flex-row md:items-center gap-3">
-          {approvalVerification.isValid ? (
+          {!isCadSupported ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-mono text-neutral-700 bg-neutral-100 border border-neutral-300 px-3 py-1.5 rounded flex items-center gap-1.5">
+                <span>SPECS ONLY ({spec.garmentCategory.toUpperCase()}) — CAD BLOCK PENDING</span>
+              </span>
+            </div>
+          ) : approvalVerification.isValid ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-mono text-emerald-800 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -289,6 +302,14 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
           )}
         </div>
       </div>
+
+      {!isCadSupported && (
+        <div className="bg-amber-50 border border-amber-300 rounded-sm p-4 text-xs text-amber-950 font-mono">
+          <strong>SPECS ONLY MODE:</strong> Deterministic CAD drafting, canonical production SHA-256 locking, and M05 manufacturing packaging are currently implemented only for{' '}
+          <strong>skirt</strong> and <strong>bodice</strong> garments. You can review or refine specification parameters for{' '}
+          <strong className="uppercase">{spec.garmentCategory}</strong> here, or return to <strong>1. Studio</strong> to switch to a CAD-enabled garment block.
+        </div>
+      )}
 
       {/* Authority Tier & Canonical Fingerprint Provenance Banner */}
       <div className="bg-stone-50 border border-stone-200 rounded-sm p-4 text-xs font-mono space-y-2">

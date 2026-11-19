@@ -38,7 +38,9 @@ import {
   computeSpecificationFingerprint,
   createAuthoritativeGradingArtifact,
   createProductionPatternRevision,
-  evaluatePipelineDependencyIntegrity,
+  evaluateSpecPipelineSafely,
+  getUnsupportedCategoryMessage,
+  isCadDraftingSupportedCategory,
   MeasurementApprovalStatus,
   MeasurementOrigin,
   MeasurementProvenanceEvidence,
@@ -68,6 +70,8 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   measurementProvenanceEvidence,
   onNavigateToCAD
 }) => {
+  const isCadSupported = isCadDraftingSupportedCategory(currentSpec.garmentCategory);
+
   let pieces: PatternPiece[] = [];
   if (currentSpec.garmentCategory === 'bodice') {
     const bodicePieces = draftBodiceBlock(measurements, currentSpec);
@@ -80,7 +84,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     } catch {
       pieces = bodicePieces;
     }
-  } else {
+  } else if (currentSpec.garmentCategory === 'skirt') {
     pieces = draftSkirtBlock(measurements, currentSpec);
   }
 
@@ -111,7 +115,10 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       });
 
   // Milestone 04.4: Graded Pattern Set Generation
-  const gradedPatternSet = React.useMemo(() => gradePattern(currentSpec), [currentSpec]);
+  const gradedPatternSet = React.useMemo(() => {
+    if (!isCadSupported) return null;
+    return gradePattern(currentSpec);
+  }, [isCadSupported, currentSpec]);
 
   // Milestone 04.5 / 04.5.1: Fabric-Aware Ease & Physical Prototype Validation
   const enhancedFabricLookup = React.useMemo(() => {
@@ -161,6 +168,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
   // Milestone 05: Live Authoritative Production Package
   const m05Package = React.useMemo(() => {
+    if (!isCadSupported) return null;
     const qty = Math.max(1, Math.round(bomControls.orderQuantityPerSize || 1));
     const targetSizes = currentSpec.garmentCategory === 'bodice'
       ? DEFAULT_SIZE_RANGE
@@ -192,6 +200,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       assemblyResultOverride: assemblyResult
     });
   }, [
+    isCadSupported,
     currentSpec,
     measurements,
     activeSize,
@@ -205,6 +214,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   ]);
 
   const uniqueSeamAllowanceRoles = React.useMemo(() => {
+    if (!m05Package) return [];
     const seen = new Map<string, number>();
     for (const spec of m05Package.manufacturingDocs.seamSpecifications) {
       if (spec.isFold) continue;
@@ -221,6 +231,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   }, [m05Package]);
 
   const liveSnapshot = React.useMemo(() => {
+    if (!isCadSupported) return null;
     try {
       const evidenceCheck = validateMeasurementProvenanceEvidence(
         measurementProvenance,
@@ -281,10 +292,10 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     } catch {
       return null;
     }
-  }, [currentSpec, measurements, activeSize, measurementProvenance, measurementApprovalState, measurementProvenanceEvidence, enhancedFabric, pieces, validation]);
+  }, [isCadSupported, currentSpec, measurements, activeSize, measurementProvenance, measurementApprovalState, measurementProvenanceEvidence, enhancedFabric, pieces, validation]);
 
   const liveGradingArtifact = React.useMemo(() => {
-    if (!liveSnapshot) return undefined;
+    if (!isCadSupported || !liveSnapshot || !gradedPatternSet) return undefined;
     try {
       const specRevId = currentSpec.specificationRevisionId ?? `spec-${currentSpec.id}-v${currentSpec.version || 1}`;
       const specFp = computeSpecificationFingerprint(currentSpec);
@@ -340,22 +351,31 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     }
   }, [currentSpec, measurements, activeSize, liveSnapshot, gradedPatternSet, pieces]);
 
-  const pipelineReport = React.useMemo(() => {
-    return evaluatePipelineDependencyIntegrity({
+  const safeEval = React.useMemo(() => {
+    return evaluateSpecPipelineSafely({
       specification: currentSpec,
       measurements,
       measurementApprovalState,
       measurementProvenance,
       activeSize,
       fabric: enhancedFabric,
-      patternPieces: pieces,
-      validationReport: validation,
       productionSnapshot: liveSnapshot ?? undefined,
       gradingArtifact: liveGradingArtifact
     });
-  }, [currentSpec, measurements, measurementApprovalState, measurementProvenance, activeSize, enhancedFabric, pieces, validation, liveSnapshot, liveGradingArtifact]);
+  }, [currentSpec, measurements, measurementApprovalState, measurementProvenance, activeSize, enhancedFabric, liveSnapshot, liveGradingArtifact]);
+
+  const approvalVerification = safeEval.approvalVerification;
+  const pipelineReport = safeEval.pipelineReport;
 
   const liveExportValidation = React.useMemo(() => {
+    if (!isCadSupported) {
+      return {
+        isExportPermitted: false,
+        blockingArtifacts: ['art-specification'],
+        rejectionCode: 'SPECIFICATION_INVALID' as const,
+        rejectionReason: getUnsupportedCategoryMessage(currentSpec.garmentCategory)
+      };
+    }
     return validateProductionExportPrerequisites(pipelineReport, liveSnapshot ?? undefined, {
       specification: currentSpec,
       measurements,
@@ -370,7 +390,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         requiredSizes: [...DEFAULT_SIZE_RANGE]
       }
     });
-  }, [pipelineReport, liveSnapshot, currentSpec, measurements, measurementApprovalState, measurementProvenance, enhancedFabric, pieces, validation, liveGradingArtifact]);
+  }, [isCadSupported, pipelineReport, liveSnapshot, currentSpec, measurements, measurementApprovalState, measurementProvenance, enhancedFabric, pieces, validation, liveGradingArtifact]);
 
   const handlePrint = () => {
     if (!liveExportValidation.isExportPermitted) {
@@ -382,6 +402,38 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     setExportWarning(null);
     window.print();
   };
+
+  if (!isCadSupported || !m05Package || !gradedPatternSet) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 lg:px-8 py-10 space-y-6">
+        <div className="border-b border-neutral-200 pb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs uppercase tracking-widest text-neutral-500 font-mono">Module 05</span>
+            <span className="text-neutral-300">/</span>
+            <Badge variant="neutral" size="sm">SPECS ONLY CATEGORY</Badge>
+          </div>
+          <h2 className="text-2xl lg:text-3xl font-serif font-bold text-neutral-900 tracking-tight">
+            Production Sheets &amp; Cutting Documentation
+          </h2>
+        </div>
+
+        <div className="bg-white border border-amber-300 rounded-sm p-6 shadow-2xs space-y-4">
+          <div className="flex items-center gap-2 text-amber-900 font-mono text-xs uppercase font-bold">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>Production Package Unavailable for "{currentSpec.garmentCategory.toUpperCase()}"</span>
+          </div>
+          <p className="text-sm text-neutral-700 leading-relaxed">
+            {getUnsupportedCategoryMessage(currentSpec.garmentCategory)} Authoritative tech packs, BOM calculations, and DXF-AAMA exports remain gated until deterministic pattern blocks are implemented for this category.
+          </p>
+          <div className="flex items-center gap-3 pt-2">
+            <Button variant="outline" size="sm" onClick={onNavigateToCAD} icon={<Scissors className="w-4 h-4" />}>
+              Return to Pattern CAD Options
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-8 print:p-0 print:max-w-none">
@@ -529,8 +581,15 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               SPEC REV: {currentSpec.specificationRevisionId ?? `v${currentSpec.version}`}
             </span>
             <span className="text-neutral-400">|</span>
-            <span className="text-emerald-400">
-              APPROVAL: {currentSpec.isApproved ? (currentSpec.approvedBy ? `APPROVED BY ${currentSpec.approvedBy.toUpperCase()}` : 'APPROVED') : 'PENDING'}
+            <span className={approvalVerification.isValid ? 'text-emerald-400' : 'text-amber-300'}>
+              APPROVAL:{' '}
+              {approvalVerification.isValid
+                ? approvalVerification.authorityTier === 'demonstration_fixture'
+                  ? 'DEMO FIXTURE (NON-AUTHORITATIVE)'
+                  : currentSpec.approvedBy
+                    ? `VERIFIED BY ${currentSpec.approvedBy.toUpperCase()}`
+                    : 'VERIFIED'
+                : approvalVerification.state.toUpperCase()}
             </span>
           </div>
           <h3 className="text-lg font-serif font-bold tracking-tight">

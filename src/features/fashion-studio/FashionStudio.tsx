@@ -8,6 +8,7 @@ import { DesignSpecification, EaseProfile, FabricProperty, GarmentCategory, Silh
 import { PRESET_FABRICS } from '../../domain/design/preset-fabrics';
 import { INITIAL_CONCEPTS } from '../../domain/design/curated-concepts';
 import { generateGarmentConcept } from '../../services/ai/fashion-service';
+import { safeVerifySpecificationApproval } from '../../engine/production';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Sparkles, Upload, ArrowRight, CheckCircle2, Sliders, Info, Scissors } from 'lucide-react';
@@ -43,6 +44,9 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
   const [referenceImage, setReferenceImage] = useState<{ name: string; url: string } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+
+  const approvalVerification = safeVerifySpecificationApproval(currentSpec);
+  const isCadSupported = approvalVerification.isCadSupported;
 
   const selectedFabric: FabricProperty = PRESET_FABRICS.find(f => f.id === selectedFabricId) || PRESET_FABRICS[0];
 
@@ -361,8 +365,12 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
                 <div className="flex items-center gap-2 mb-1">
                   <Badge variant="dark" size="sm">ACTIVE CONCEPT</Badge>
                   <span className="text-xs font-mono text-neutral-400">REV. {currentSpec.version}</span>
-                  {currentSpec.isApproved ? (
+                  {!isCadSupported ? (
+                    <Badge variant="neutral" size="sm">SPECS ONLY</Badge>
+                  ) : approvalVerification.isValid ? (
                     <Badge variant="success" size="sm">APPROVED FOR CAD</Badge>
+                  ) : approvalVerification.state === 'invalid' ? (
+                    <Badge variant="danger" size="sm">VERIFICATION INVALID</Badge>
                   ) : (
                     <Badge variant="warning" size="sm">PENDING APPROVAL</Badge>
                   )}
@@ -396,49 +404,78 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
                   <line x1="30" y1="50" x2="170" y2="50" stroke="#e4e4e7" strokeWidth="1" strokeDasharray="2 2" />
                   <line x1="20" y1="120" x2="180" y2="120" stroke="#e4e4e7" strokeWidth="1" strokeDasharray="2 2" />
 
-                  {/* Garment silhouette rendering */}
-                  {currentSpec.silhouette === 'straight' && (
-                    <polygon
-                      points="65,50 135,50 145,120 145,260 55,260 55,120"
-                      fill={currentSpec.color.hex}
-                      stroke="#27272a"
-                      strokeWidth="2"
-                    />
+                  {/* Garment silhouette rendering by category */}
+                  {currentSpec.garmentCategory === 'bodice' ? (
+                    <>
+                      <polygon
+                        points="58,42 84,34 100,48 116,34 142,42 152,95 132,102 128,175 72,175 68,102 48,95"
+                        fill={currentSpec.color.hex}
+                        stroke="#27272a"
+                        strokeWidth="2"
+                      />
+                      <line x1="82" y1="108" x2="86" y2="175" stroke="#18181b" strokeWidth="1.2" />
+                      <line x1="118" y1="108" x2="114" y2="175" stroke="#18181b" strokeWidth="1.2" />
+                      <line x1="72" y1="168" x2="128" y2="168" stroke="#18181b" strokeWidth="1" strokeDasharray="2 2" />
+                    </>
+                  ) : currentSpec.garmentCategory === 'trouser' ? (
+                    <>
+                      <polygon
+                        points="64,45 136,45 148,125 142,262 108,262 100,138 92,262 58,262 52,125"
+                        fill={currentSpec.color.hex}
+                        stroke="#27272a"
+                        strokeWidth="2"
+                      />
+                      <line x1="64" y1="58" x2="136" y2="58" stroke="#18181b" strokeWidth="1" strokeDasharray="2 2" />
+                      <line x1="100" y1="58" x2="100" y2="138" stroke="#18181b" strokeWidth="1.2" />
+                    </>
+                  ) : currentSpec.garmentCategory === 'dress' ? (
+                    <>
+                      <polygon
+                        points="62,36 86,28 100,40 114,28 138,36 132,108 164,260 36,260 68,108"
+                        fill={currentSpec.color.hex}
+                        stroke="#27272a"
+                        strokeWidth="2"
+                      />
+                      <line x1="68" y1="108" x2="132" y2="108" stroke="#18181b" strokeWidth="1" strokeDasharray="2 2" />
+                      <line x1="42" y1="248" x2="158" y2="248" stroke="#18181b" strokeWidth="1" strokeDasharray="2 2" />
+                    </>
+                  ) : (
+                    <>
+                      {currentSpec.silhouette === 'a-line' ? (
+                        <polygon
+                          points="65,50 135,50 150,120 170,260 30,260 50,120"
+                          fill={currentSpec.color.hex}
+                          stroke="#27272a"
+                          strokeWidth="2"
+                        />
+                      ) : currentSpec.silhouette === 'pencil' ? (
+                        <polygon
+                          points="65,50 135,50 146,120 130,260 70,260 54,120"
+                          fill={currentSpec.color.hex}
+                          stroke="#27272a"
+                          strokeWidth="2"
+                        />
+                      ) : currentSpec.silhouette === 'flared' ? (
+                        <polygon
+                          points="65,50 135,50 155,120 185,260 15,260 45,120"
+                          fill={currentSpec.color.hex}
+                          stroke="#27272a"
+                          strokeWidth="2"
+                        />
+                      ) : (
+                        <polygon
+                          points="65,50 135,50 145,120 145,260 55,260 55,120"
+                          fill={currentSpec.color.hex}
+                          stroke="#27272a"
+                          strokeWidth="2"
+                        />
+                      )}
+                      <line x1="85" y1="50" x2="85" y2="90" stroke="#18181b" strokeWidth="1.2" />
+                      <line x1="115" y1="50" x2="115" y2="90" stroke="#18181b" strokeWidth="1.2" />
+                      <line x1="65" y1="62" x2="135" y2="62" stroke="#18181b" strokeWidth="1" strokeDasharray="2 2" />
+                      <line x1="58" y1="248" x2="142" y2="248" stroke="#18181b" strokeWidth="1" strokeDasharray="2 2" />
+                    </>
                   )}
-                  {currentSpec.silhouette === 'a-line' && (
-                    <polygon
-                      points="65,50 135,50 150,120 170,260 30,260 50,120"
-                      fill={currentSpec.color.hex}
-                      stroke="#27272a"
-                      strokeWidth="2"
-                    />
-                  )}
-                  {currentSpec.silhouette === 'pencil' && (
-                    <polygon
-                      points="65,50 135,50 146,120 130,260 70,260 54,120"
-                      fill={currentSpec.color.hex}
-                      stroke="#27272a"
-                      strokeWidth="2"
-                    />
-                  )}
-                  {currentSpec.silhouette === 'flared' && (
-                    <polygon
-                      points="65,50 135,50 155,120 185,260 15,260 45,120"
-                      fill={currentSpec.color.hex}
-                      stroke="#27272a"
-                      strokeWidth="2"
-                    />
-                  )}
-
-                  {/* Dart style lines */}
-                  <line x1="85" y1="50" x2="85" y2="90" stroke="#18181b" strokeWidth="1.2" />
-                  <line x1="115" y1="50" x2="115" y2="90" stroke="#18181b" strokeWidth="1.2" />
-
-                  {/* Waistband line */}
-                  <line x1="65" y1="62" x2="135" y2="62" stroke="#18181b" strokeWidth="1" strokeDasharray="2 2" />
-
-                  {/* Hem topstitch */}
-                  <line x1="58" y1="248" x2="142" y2="248" stroke="#18181b" strokeWidth="1" strokeDasharray="2 2" />
                 </svg>
 
                 {/* Fabric swatch pip */}
@@ -525,15 +562,22 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
             {/* Action Bar */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
               <div className="text-xs text-neutral-500 font-mono">
-                {currentSpec.isApproved ? (
+                {!isCadSupported ? (
+                  <span className="text-neutral-700 flex items-center gap-1.5 font-medium">
+                    <Info className="w-4 h-4" />
+                    Specification-only category ({currentSpec.garmentCategory.toUpperCase()} — CAD block pending)
+                  </span>
+                ) : approvalVerification.isValid ? (
                   <span className="text-emerald-700 flex items-center gap-1.5 font-medium">
                     <CheckCircle2 className="w-4 h-4" />
-                    Specification approved by designer
+                    {approvalVerification.authorityTier === 'demonstration_fixture'
+                      ? 'Demonstration fixture specification verified'
+                      : 'Specification approval verified'}
                   </span>
                 ) : (
                   <span className="text-amber-700 flex items-center gap-1.5">
                     <Sliders className="w-4 h-4" />
-                    Needs approval to lock pattern geometry
+                    Needs verified approval to lock pattern geometry
                   </span>
                 )}
               </div>
