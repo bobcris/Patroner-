@@ -38,6 +38,9 @@ export interface DxfAamaExportArtifact {
   dxfVersion: 'AC1009';
   geometryUnit: 'cm';
   insUnitsCode: 5;
+  sourceRevisionId?: string;
+  sourceContentFingerprint?: string;
+  sizeCode?: string;
   requiredLayers: string[];
   emittedLayers: string[];
   pieceCodes: string[];
@@ -57,7 +60,9 @@ export interface ParsedDxfAamaResult {
   tableLayersDefined: string[];
   entityLayersFound: string[];
   cutPolylines: Point[][];
+  cutPolylineClosedFlags: boolean[];
   sewPolylines: Point[][];
+  sewPolylineClosedFlags: boolean[];
   internalPolylines: Point[][];
   grainLines: Array<{ start: Point; end: Point }>;
   notchLines: Array<{ start: Point; end: Point }>;
@@ -78,12 +83,25 @@ export interface DxfRoundTripVerificationResult {
   cutVertexCountRecovered: number;
   sewVertexCountExpected: number;
   sewVertexCountRecovered: number;
+  grainLinesExpected: number;
+  grainLinesRecovered: number;
+  notchLinesExpected: number;
+  notchLinesRecovered: number;
+  drillPointsExpected: number;
+  drillPointsRecovered: number;
+  internalPolylinesExpected: number;
+  internalPolylinesRecovered: number;
+  pieceLabelsExpected: number;
+  pieceLabelsRecovered: number;
+  allCutSewPolylinesClosed: boolean;
   maxVertexRoundTripErrorCm: number;
+  maxFeatureRoundTripErrorCm: number;
   toleranceMaxCm: number;
   sha256DigestMatches: boolean;
   syntheticRoundTripVerified: boolean;
   externalCadInteroperabilityVerified: false;
   allPassed: boolean;
+  failures: string[];
 }
 
 export interface SerializedCurveSegmentSpec {
@@ -171,6 +189,9 @@ export function exportPatternPiecesToDxfAama(
     exportId?: string;
     flatnessToleranceCm?: number;
     pieceGapCm?: number;
+    sourceRevisionId?: string;
+    sourceContentFingerprint?: string;
+    sizeCode?: string;
   } = {}
 ): DxfAamaExportArtifact {
   if (pieces.length === 0) {
@@ -392,6 +413,23 @@ export function exportPatternPiecesToDxfAama(
     );
   }
 
+  if (options.sourceRevisionId || options.sizeCode) {
+    const revMeta = [
+      options.sourceRevisionId ? `REV ${options.sourceRevisionId}` : null,
+      options.sizeCode ? `SIZE ${options.sizeCode}` : null,
+      options.sourceContentFingerprint ? `FP ${options.sourceContentFingerprint.slice(0, 12)}` : null
+    ]
+      .filter(Boolean)
+      .join(' | ');
+    lines.push(
+      '0', 'TEXT', '8', '1',
+      '10', '0.000000',
+      '20', '-5.000000',
+      '40', '0.800000',
+      '1', revMeta
+    );
+  }
+
   lines.push('0', 'ENDSEC', '0', 'EOF');
   const dxfText = lines.join('\n') + '\n';
   const sha256Digest = sha256Hex(dxfText);
@@ -402,6 +440,9 @@ export function exportPatternPiecesToDxfAama(
     dxfVersion: 'AC1009',
     geometryUnit: 'cm',
     insUnitsCode: 5,
+    ...(options.sourceRevisionId ? { sourceRevisionId: options.sourceRevisionId } : {}),
+    ...(options.sourceContentFingerprint ? { sourceContentFingerprint: options.sourceContentFingerprint } : {}),
+    ...(options.sizeCode ? { sizeCode: options.sizeCode } : {}),
     requiredLayers: [...REQUIRED_DXF_AAMA_LAYERS],
     emittedLayers: [...emittedLayers].sort(),
     pieceCodes: pieceGeoms.map(pg => pg.pieceCode),
@@ -412,7 +453,7 @@ export function exportPatternPiecesToDxfAama(
     dxfText,
     externalCadInteroperabilityVerified: false,
     interoperabilityNote:
-      'Synthetic DXF-AAMA (AC1009) round-trip verification against canonical drafted PatternPiece contours; external third-party CAD software (Gerber/Lectra/Optitex/CLO3D) import/export validation remains scheduled under M05.'
+      'Synthetic DXF-AAMA (AC1009) round-trip verification against canonical drafted PatternPiece contours; external third-party CAD software (Gerber/Lectra/Optitex/CLO3D) import/export validation remains unverified outside Patroner.'
   };
 }
 
@@ -433,7 +474,9 @@ export function parseDxfAama(dxfText: string): ParsedDxfAamaResult {
   const entityLayersFound = new Set<string>();
 
   const cutPolylines: Point[][] = [];
+  const cutPolylineClosedFlags: boolean[] = [];
   const sewPolylines: Point[][] = [];
+  const sewPolylineClosedFlags: boolean[] = [];
   const internalPolylines: Point[][] = [];
   const grainLines: Array<{ start: Point; end: Point }> = [];
   const notchLines: Array<{ start: Point; end: Point }> = [];
@@ -442,6 +485,7 @@ export function parseDxfAama(dxfText: string): ParsedDxfAamaResult {
 
   let currentSection: string | null = null;
   let currentPolyLayer: string | null = null;
+  let currentPolyClosed = false;
   let currentPolyPts: Point[] = [];
 
   let i = 0;
@@ -487,13 +531,16 @@ export function parseDxfAama(dxfText: string): ParsedDxfAamaResult {
     if (currentSection === 'ENTITIES') {
       if (code === '0' && val === 'POLYLINE') {
         let layer = '0';
+        let flags = 0;
         i += 1;
         while (i < pairs.length && pairs[i][0] !== '0') {
           if (pairs[i][0] === '8') layer = pairs[i][1];
+          else if (pairs[i][0] === '70') flags = Number(pairs[i][1]);
           i += 1;
         }
         entityLayersFound.add(layer);
         currentPolyLayer = layer;
+        currentPolyClosed = (flags & 1) === 1;
         currentPolyPts = [];
         continue;
       }
@@ -510,10 +557,17 @@ export function parseDxfAama(dxfText: string): ParsedDxfAamaResult {
         continue;
       }
       if (code === '0' && val === 'SEQEND' && currentPolyLayer !== null) {
-        if (currentPolyLayer === '1') cutPolylines.push(currentPolyPts);
-        else if (currentPolyLayer === '8') sewPolylines.push(currentPolyPts);
-        else if (currentPolyLayer === '11') internalPolylines.push(currentPolyPts);
+        if (currentPolyLayer === '1') {
+          cutPolylines.push(currentPolyPts);
+          cutPolylineClosedFlags.push(currentPolyClosed);
+        } else if (currentPolyLayer === '8') {
+          sewPolylines.push(currentPolyPts);
+          sewPolylineClosedFlags.push(currentPolyClosed);
+        } else if (currentPolyLayer === '11') {
+          internalPolylines.push(currentPolyPts);
+        }
         currentPolyLayer = null;
+        currentPolyClosed = false;
         currentPolyPts = [];
         i += 1;
         continue;
@@ -579,7 +633,9 @@ export function parseDxfAama(dxfText: string): ParsedDxfAamaResult {
     tableLayersDefined: [...tableLayersDefined].sort(),
     entityLayersFound: [...entityLayersFound].sort(),
     cutPolylines,
+    cutPolylineClosedFlags,
     sewPolylines,
+    sewPolylineClosedFlags,
     internalPolylines,
     grainLines,
     notchLines,
@@ -590,7 +646,8 @@ export function parseDxfAama(dxfText: string): ParsedDxfAamaResult {
 }
 
 /**
- * Verifies lossless DXF-AAMA round-trip within <= 0.001 cm across all exported piece contours.
+ * Verifies lossless DXF-AAMA round-trip within <= 0.001 cm across all exported piece contours,
+ * grainlines, notches, drill points, internal cutouts, piece labels, and loop closure flags.
  */
 export function verifyDxfAamaRoundTrip(
   exported: DxfAamaExportArtifact,
@@ -599,13 +656,18 @@ export function verifyDxfAamaRoundTrip(
   const parsed = parseDxfAama(exported.dxfText);
   const missingTableLayers = REQUIRED_DXF_AAMA_LAYERS.filter(l => !parsed.tableLayersDefined.includes(l));
   const missingEntityLayers = REQUIRED_DXF_AAMA_LAYERS.filter(l => !parsed.entityLayersFound.includes(l));
+  const failures: string[] = [];
 
   let maxErrorCm = 0;
+  let maxFeatureErrorCm = 0;
   let cutRecoveredCount = 0;
   let sewRecoveredCount = 0;
 
   if (parsed.cutPolylines.length !== exported.pieces.length || parsed.sewPolylines.length !== exported.pieces.length) {
     maxErrorCm = Infinity;
+    failures.push(
+      `Polyline count mismatch: expected ${exported.pieces.length} cut/sew contours, parsed ${parsed.cutPolylines.length}/${parsed.sewPolylines.length}.`
+    );
   } else {
     for (let idx = 0; idx < exported.pieces.length; idx++) {
       const expectedCut = exported.pieces[idx].expectedCutVerticesCm;
@@ -613,6 +675,7 @@ export function verifyDxfAamaRoundTrip(
       cutRecoveredCount += gotCut.length;
       if (expectedCut.length !== gotCut.length) {
         maxErrorCm = Infinity;
+        failures.push(`Cut vertex count mismatch on ${exported.pieces[idx].pieceCode}: expected ${expectedCut.length}, got ${gotCut.length}.`);
       } else {
         for (let k = 0; k < expectedCut.length; k++) {
           maxErrorCm = Math.max(maxErrorCm, Math.hypot(expectedCut[k].x - gotCut[k].x, expectedCut[k].y - gotCut[k].y));
@@ -624,6 +687,7 @@ export function verifyDxfAamaRoundTrip(
       sewRecoveredCount += gotSew.length;
       if (expectedSew.length !== gotSew.length) {
         maxErrorCm = Infinity;
+        failures.push(`Sew vertex count mismatch on ${exported.pieces[idx].pieceCode}: expected ${expectedSew.length}, got ${gotSew.length}.`);
       } else {
         for (let k = 0; k < expectedSew.length; k++) {
           maxErrorCm = Math.max(maxErrorCm, Math.hypot(expectedSew[k].x - gotSew[k].x, expectedSew[k].y - gotSew[k].y));
@@ -632,23 +696,148 @@ export function verifyDxfAamaRoundTrip(
     }
   }
 
+  const allCutSewPolylinesClosed =
+    parsed.cutPolylineClosedFlags.length === exported.pieces.length &&
+    parsed.sewPolylineClosedFlags.length === exported.pieces.length &&
+    parsed.cutPolylineClosedFlags.every(Boolean) &&
+    parsed.sewPolylineClosedFlags.every(Boolean);
+  if (!allCutSewPolylinesClosed) {
+    failures.push('One or more cut/sew boundary polylines are not flagged closed (DXF group 70 bit 1).');
+  }
+
+  // Verify Layer 7 Grainlines
+  const grainLinesExpected = exported.pieces.length;
+  const grainLinesRecovered = parsed.grainLines.length;
+  if (grainLinesRecovered !== grainLinesExpected) {
+    maxFeatureErrorCm = Infinity;
+    failures.push(`Grainline count mismatch: expected ${grainLinesExpected}, recovered ${grainLinesRecovered}.`);
+  } else {
+    for (let idx = 0; idx < exported.pieces.length; idx++) {
+      const expGl = exported.pieces[idx].expectedGrainline;
+      const gotGl = parsed.grainLines[idx];
+      maxFeatureErrorCm = Math.max(
+        maxFeatureErrorCm,
+        Math.hypot(expGl.start.x - gotGl.start.x, expGl.start.y - gotGl.start.y),
+        Math.hypot(expGl.end.x - gotGl.end.x, expGl.end.y - gotGl.end.y)
+      );
+    }
+  }
+
+  // Verify Layer 4 Notches
+  const expectedNotches = exported.pieces.flatMap(pg => pg.expectedNotchSegments);
+  const notchLinesExpected = expectedNotches.length;
+  const notchLinesRecovered = parsed.notchLines.length;
+  if (notchLinesRecovered !== notchLinesExpected) {
+    maxFeatureErrorCm = Infinity;
+    failures.push(`Notch line count mismatch: expected ${notchLinesExpected}, recovered ${notchLinesRecovered}.`);
+  } else {
+    for (let idx = 0; idx < expectedNotches.length; idx++) {
+      const expN = expectedNotches[idx];
+      const gotN = parsed.notchLines[idx];
+      maxFeatureErrorCm = Math.max(
+        maxFeatureErrorCm,
+        Math.hypot(expN.start.x - gotN.start.x, expN.start.y - gotN.start.y),
+        Math.hypot(expN.end.x - gotN.end.x, expN.end.y - gotN.end.y)
+      );
+    }
+  }
+
+  // Verify Layer 2 Drill Points
+  const expectedDrills = exported.pieces.flatMap(pg => pg.expectedDrillPoints);
+  const drillPointsExpected = expectedDrills.length;
+  const drillPointsRecovered = parsed.drillPoints.length;
+  if (drillPointsRecovered !== drillPointsExpected) {
+    maxFeatureErrorCm = Infinity;
+    failures.push(`Drill point count mismatch: expected ${drillPointsExpected}, recovered ${drillPointsRecovered}.`);
+  } else {
+    for (let idx = 0; idx < expectedDrills.length; idx++) {
+      const expD = expectedDrills[idx];
+      const gotD = parsed.drillPoints[idx];
+      maxFeatureErrorCm = Math.max(maxFeatureErrorCm, Math.hypot(expD.x - gotD.x, expD.y - gotD.y));
+    }
+  }
+
+  // Verify Layer 11 Internal Polylines
+  const expectedInternals = exported.pieces.flatMap(pg => pg.expectedInternalPolylines);
+  const internalPolylinesExpected = expectedInternals.length;
+  const internalPolylinesRecovered = parsed.internalPolylines.length;
+  if (internalPolylinesRecovered !== internalPolylinesExpected) {
+    maxFeatureErrorCm = Infinity;
+    failures.push(`Internal polyline count mismatch: expected ${internalPolylinesExpected}, recovered ${internalPolylinesRecovered}.`);
+  } else {
+    for (let idx = 0; idx < expectedInternals.length; idx++) {
+      const expPoly = expectedInternals[idx];
+      const gotPoly = parsed.internalPolylines[idx];
+      if (expPoly.length !== gotPoly.length) {
+        maxFeatureErrorCm = Infinity;
+        failures.push(`Internal polyline vertex count mismatch at index ${idx}.`);
+      } else {
+        for (let k = 0; k < expPoly.length; k++) {
+          maxFeatureErrorCm = Math.max(
+            maxFeatureErrorCm,
+            Math.hypot(expPoly[k].x - gotPoly[k].x, expPoly[k].y - gotPoly[k].y)
+          );
+        }
+      }
+    }
+  }
+
+  // Verify Piece Code TEXT Labels
+  const pieceLabelsExpected = exported.pieces.length;
+  let pieceLabelsRecovered = 0;
+  for (const pg of exported.pieces) {
+    if (parsed.texts.some(t => t.value.includes(pg.pieceCode))) {
+      pieceLabelsRecovered++;
+    } else {
+      failures.push(`Missing piece identity TEXT label containing "${pg.pieceCode}".`);
+    }
+  }
+
   const shaMatches = parsed.sha256Digest === exported.sha256Digest;
+  if (!shaMatches) {
+    failures.push('SHA-256 digest of DXF payload does not match exported digest.');
+  }
+
   const sectionsOk =
     parsed.sectionsRecovered.length === 3 &&
     parsed.sectionsRecovered[0] === 'HEADER' &&
     parsed.sectionsRecovered[1] === 'TABLES' &&
     parsed.sectionsRecovered[2] === 'ENTITIES';
+  if (!sectionsOk) {
+    failures.push(`DXF sections incomplete: [${parsed.sectionsRecovered.join(', ')}].`);
+  }
+  if (parsed.acadVersionHeader !== 'AC1009') {
+    failures.push(`Unexpected DXF version header "${parsed.acadVersionHeader}" (expected AC1009).`);
+  }
+  if (parsed.insUnitsHeader !== '5') {
+    failures.push(`Unexpected DXF $INSUNITS "${parsed.insUnitsHeader}" (expected 5 = cm).`);
+  }
+  if (missingTableLayers.length > 0) {
+    failures.push(`Missing table layers: ${missingTableLayers.join(', ')}.`);
+  }
+  if (missingEntityLayers.length > 0) {
+    failures.push(`Missing entity layers: ${missingEntityLayers.join(', ')}.`);
+  }
 
   const allPassed =
+    failures.length === 0 &&
     sectionsOk &&
     parsed.acadVersionHeader === 'AC1009' &&
     parsed.insUnitsHeader === '5' &&
     missingTableLayers.length === 0 &&
     missingEntityLayers.length === 0 &&
+    allCutSewPolylinesClosed &&
     cutRecoveredCount === exported.totalCutVertices &&
     sewRecoveredCount === exported.totalSewVertices &&
+    grainLinesRecovered === grainLinesExpected &&
+    notchLinesRecovered === notchLinesExpected &&
+    drillPointsRecovered === drillPointsExpected &&
+    internalPolylinesRecovered === internalPolylinesExpected &&
+    pieceLabelsRecovered === pieceLabelsExpected &&
     Number.isFinite(maxErrorCm) &&
     maxErrorCm <= toleranceMaxCm &&
+    Number.isFinite(maxFeatureErrorCm) &&
+    maxFeatureErrorCm <= toleranceMaxCm &&
     shaMatches;
 
   return {
@@ -663,12 +852,25 @@ export function verifyDxfAamaRoundTrip(
     cutVertexCountRecovered: cutRecoveredCount,
     sewVertexCountExpected: exported.totalSewVertices,
     sewVertexCountRecovered: sewRecoveredCount,
+    grainLinesExpected,
+    grainLinesRecovered,
+    notchLinesExpected,
+    notchLinesRecovered,
+    drillPointsExpected,
+    drillPointsRecovered,
+    internalPolylinesExpected,
+    internalPolylinesRecovered,
+    pieceLabelsExpected,
+    pieceLabelsRecovered,
+    allCutSewPolylinesClosed,
     maxVertexRoundTripErrorCm: Number.isFinite(maxErrorCm) ? Number(maxErrorCm.toFixed(9)) : -1,
+    maxFeatureRoundTripErrorCm: Number.isFinite(maxFeatureErrorCm) ? Number(maxFeatureErrorCm.toFixed(9)) : -1,
     toleranceMaxCm,
     sha256DigestMatches: shaMatches,
     syntheticRoundTripVerified: allPassed,
     externalCadInteroperabilityVerified: false,
-    allPassed
+    allPassed,
+    failures
   };
 }
 

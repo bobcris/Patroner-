@@ -14,6 +14,11 @@ export * from './dependency-invalidation';
 export * from './manufacturing-types';
 export * from './piece-production-sheet';
 export * from './dxf-aama-exporter';
+export * from './production-engineering-types';
+export * from './bom-engine';
+export * from './manufacturing-docs';
+export * from './production-validator';
+export * from './production-engineering';
 
 export { canonicalizeJson } from './pattern-revision-snapshot';
 export type { OidcJwtHeader, OidcJwtPayload } from './garment-specification-types';

@@ -33,6 +33,7 @@ import { calculateCompleteGarmentEase, calculateFabricAdaptedSleeveCapEase } fro
 import { validatePhysicalFit } from '../../engine/prototype/fit-validator';
 import { MOCK_CONFORMING_PROTOTYPE_BODICE_M } from '../../engine/prototype/prototype-fixtures';
 import {
+  buildM05ProductionPackage,
   computeArtifactInputFingerprint,
   computeSpecificationFingerprint,
   createAuthoritativeGradingArtifact,
@@ -46,6 +47,7 @@ import {
   validatePatternRevision,
   validateProductionExportPrerequisites
 } from '../../engine/production';
+import { ProductionPackagePanel, ProductionBomControlState } from './ProductionPackagePanel';
 
 interface ProductionOverviewProps {
   currentSpec: DesignSpecification;
@@ -148,77 +150,75 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     return validatePhysicalFit(MOCK_CONFORMING_PROTOTYPE_BODICE_M);
   }, []);
 
-  // Approximate fabric yield calculation for a standard 140cm bolt width
-  const fabricYieldMeters = Number(((currentSpec.lengthCm + 15) / 100 * 1.15).toFixed(2));
-
-
-  const assemblySteps = currentSpec.garmentCategory === 'bodice'
-    ? [
-        {
-          step: 1,
-          title: 'Stay-stitching & Stabilization',
-          instruction: 'Stay-stitch front and back neckline and armhole scye curves at 0.8cm from cut edge to prevent distortion during handling.'
-        },
-        {
-          step: 2,
-          title: 'Dart Construction',
-          instruction: 'Stitch front waist and bust darts, and back shoulder and waist darts tapering smoothly to punch holes. Press front darts down/inward; press back darts toward center back.'
-        },
-        {
-          step: 3,
-          title: 'Shoulder Seam Assembly',
-          instruction: 'Pin and stitch front and back shoulder seams with 1.2cm seam allowance with stabilizing stay-tape. Press seam open flat.'
-        },
-        {
-          step: 4,
-          title: 'Side Seams & Sleeve Inseam',
-          instruction: 'Stitch bodice side seams at 1.2cm allowance and press open. Stitch sleeve underarm inseam (matching front and back underarm edges) and press open.'
-        },
-        {
-          step: 5,
-          title: 'Sleeve Cap Easing & Insertion',
-          instruction: 'Run two rows of ease stitching along sleeve cap between notches. Distribute cap ease over the crown, align single front notch to front scye, double back notch to back scye, and apex notch to shoulder seam. Stitch at 1.2cm and press sleeve cap seam head.'
-        },
-        {
-          step: 6,
-          title: 'Finishing & Hems',
-          instruction: 'Turn up 3.0cm sleeve wrist hem and blind stitch or topstitch. Finish neckline with fitted bias facing or collar and insert closure.'
-        }
-      ]
-    : [
-        {
-          step: 1,
-          title: 'Stay-stitching & Interfacing',
-          instruction: 'Apply 1.2cm stay-tape or stay-stitch along front and back waistlines at 0.8cm from cut edge to prevent stretching during handling.'
-        },
-        {
-          step: 2,
-          title: 'Waist Dart Construction',
-          instruction: 'Fold and pin front waist dart pair and back waist dart. Stitch from waistline tapering precisely to apex drill holes. Press front darts toward Center Front; press back darts toward Center Back.'
-        },
-        {
-          step: 3,
-          title: 'Center Back Seam & Invisible Zipper',
-          instruction: 'Finish raw edges of Center Back panels. Insert concealed invisible zipper from upper waist down to the 18cm zipper stop notch. Stitch remaining CB seam below zipper to hem.'
-        },
-        {
-          step: 4,
-          title: 'Side Seam Assembly',
-          instruction: 'Align Front Skirt Panel to Back Skirt Panels with right sides together. Match waistline, hip notches (at 20cm depth), and hem edges. Stitch at 1.5cm seam allowance. Press seams open flat.'
-        },
-        {
-          step: 5,
-          title: 'Waist Finishing',
-          instruction: 'Attach internal grosgrain ribbon facing or waistband along waist seamline at 1.0cm allowance. Understitch facing and secure to zipper tape.'
-        },
-        {
-          step: 6,
-          title: 'Hem Completion',
-          instruction: 'Turn up 3.0cm hem allowance, press crisp fold, and finish with blind catch-stitch or double needle machine hem.'
-        }
-      ];
-
   const [exportWarning, setExportWarning] = React.useState<string | null>(null);
+  const [bomControls, setBomControls] = React.useState<ProductionBomControlState>({
+    fabricRollWidthCm: 140,
+    markerWasteFactor: 0.18,
+    orderQuantityPerSize: 1,
+    includeLining: false,
+    includeLabelsAndPackaging: false
+  });
+
+  // Milestone 05: Live Authoritative Production Package
+  const m05Package = React.useMemo(() => {
+    const qty = Math.max(1, Math.round(bomControls.orderQuantityPerSize || 1));
+    const targetSizes = currentSpec.garmentCategory === 'bodice'
+      ? DEFAULT_SIZE_RANGE
+      : [activeSize];
+    const orderQuantitiesBySize: Record<string, number> = {};
+    for (const sz of targetSizes) {
+      orderQuantitiesBySize[sz] = qty;
+    }
+    return buildM05ProductionPackage({
+      designSpec: currentSpec,
+      measurements,
+      options: {
+        activeSize,
+        bodiceDartStyle: currentSpec.dartStyle ?? 'waist',
+        sleeveEaseStrategy: currentSpec.sleeveEaseStrategy ?? 'classic',
+        measurementProvenance,
+        measurementApprovalState,
+        measurementProvenanceEvidence,
+        bomOptions: {
+          fabricRollWidthCm: bomControls.fabricRollWidthCm,
+          markerWasteFactor: bomControls.markerWasteFactor,
+          includeLining: bomControls.includeLining,
+          includeLabelsAndPackaging: bomControls.includeLabelsAndPackaging,
+          orderQuantitiesBySize
+        }
+      },
+      piecesOverride: currentSpec.garmentCategory !== 'bodice' ? pieces : undefined,
+      gradedPatternSetOverride: currentSpec.garmentCategory === 'bodice' ? gradedPatternSet : null,
+      assemblyResultOverride: assemblyResult
+    });
+  }, [
+    currentSpec,
+    measurements,
+    activeSize,
+    measurementProvenance,
+    measurementApprovalState,
+    measurementProvenanceEvidence,
+    bomControls,
+    pieces,
+    gradedPatternSet,
+    assemblyResult
+  ]);
+
+  const uniqueSeamAllowanceRoles = React.useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const spec of m05Package.manufacturingDocs.seamSpecifications) {
+      if (spec.isFold) continue;
+      const rawLabel =
+        spec.segmentRole && spec.segmentRole !== 'offset'
+          ? spec.segmentRole
+          : spec.seamName.replace(/\(.*\)/g, '').trim();
+      const roleLabel = rawLabel.replace(/-/g, ' ').toUpperCase();
+      if (!seen.has(roleLabel)) {
+        seen.set(roleLabel, spec.allowanceCm);
+      }
+    }
+    return Array.from(seen.entries()).slice(0, 6);
+  }, [m05Package]);
 
   const liveSnapshot = React.useMemo(() => {
     try {
@@ -564,54 +564,51 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               <span className="font-bold text-neutral-900 text-sm">{currentSpec.fabric.name}</span>
               <span className="text-neutral-600 block text-[11px] mt-0.5">{currentSpec.fabric.composition}</span>
               <div className="flex justify-between text-neutral-700 text-[11px] mt-2 pt-2 border-t border-neutral-200">
-                <span>Estimated Yield (140cm width):</span>
-                <span className="font-bold text-neutral-900">{fabricYieldMeters} meters</span>
+                <span>
+                  Yield ({m05Package.bom.fabricRollWidthCm}cm bolt, {Math.round(m05Package.bom.markerWasteFactor * 100)}% marker):
+                </span>
+                <span className="font-bold text-neutral-900">
+                  {m05Package.bom.totalMainFabricMetersForOrder.toFixed(2)} meters ({m05Package.bom.totalOrderGarments}x)
+                </span>
               </div>
+              <span className="text-[10px] text-neutral-500 block mt-1">
+                Order Basis: {m05Package.bom.orderQuantityBasis}
+              </span>
             </div>
 
             <div className="p-2.5 bg-neutral-50 rounded border border-neutral-200">
-              <span className="text-neutral-400 uppercase text-[10px] block">THREAD &amp; HARDWARE</span>
+              <span className="text-neutral-400 uppercase text-[10px] block">TRACEABLE TRIMS, THREAD &amp; HARDWARE</span>
               <ul className="text-neutral-700 space-y-1 mt-1 text-[11px]">
-                <li>• 1x 20cm YKK invisible coil zipper (matched to {currentSpec.color.name})</li>
-                <li>• Mara 70 or 100 poly-wrapped core thread</li>
-                <li>• 1.5m bias fusible stay-tape (waistline stabilization)</li>
-                <li>• Hook &amp; eye closure set (CB waist)</li>
+                {m05Package.bom.lineItems
+                  .filter(item => item.category !== 'main-fabric')
+                  .map(item => (
+                    <li key={item.itemId} className="flex justify-between gap-2">
+                      <span>• {item.materialName}</span>
+                      <span className="font-semibold text-neutral-900 shrink-0">
+                        {item.totalOrderQuantity} {item.unit}
+                      </span>
+                    </li>
+                  ))}
+                {!m05Package.bom.lineItems.some(item => item.category === 'fasteners-hardware') && (
+                  <li className="text-neutral-500 italic">
+                    • No closures or fasteners specified in design features.
+                  </li>
+                )}
               </ul>
             </div>
 
             <div className="p-2.5 bg-neutral-50 rounded border border-neutral-200">
-              <span className="text-neutral-400 uppercase text-[10px] block">ALLOWANCE STANDARDS</span>
-              {currentSpec.garmentCategory === 'bodice' ? (
-                <div className="grid grid-cols-3 gap-2 mt-1 text-center">
-                  <div className="bg-white p-1.5 rounded border border-neutral-200">
-                    <span className="text-[10px] text-neutral-500 block">NECK/ARMHOLE</span>
-                    <span className="font-bold text-neutral-900">1.0 cm</span>
+              <span className="text-neutral-400 uppercase text-[10px] block">ALLOWANCE SCHEDULE (FROM CAD EDGES)</span>
+              <div className="grid grid-cols-3 gap-2 mt-1 text-center">
+                {uniqueSeamAllowanceRoles.map(([roleLabel, allowanceCm]) => (
+                  <div key={roleLabel} className="bg-white p-1.5 rounded border border-neutral-200">
+                    <span className="text-[9px] text-neutral-500 block truncate" title={roleLabel}>
+                      {roleLabel}
+                    </span>
+                    <span className="font-bold text-neutral-900">{allowanceCm.toFixed(1)} cm</span>
                   </div>
-                  <div className="bg-white p-1.5 rounded border border-neutral-200">
-                    <span className="text-[10px] text-neutral-500 block">SEAMS/INSEAM</span>
-                    <span className="font-bold text-neutral-900">1.2 cm</span>
-                  </div>
-                  <div className="bg-white p-1.5 rounded border border-neutral-200">
-                    <span className="text-[10px] text-neutral-500 block">WRIST HEM</span>
-                    <span className="font-bold text-neutral-900">3.0 cm</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2 mt-1 text-center">
-                  <div className="bg-white p-1.5 rounded border border-neutral-200">
-                    <span className="text-[10px] text-neutral-500 block">WAIST</span>
-                    <span className="font-bold text-neutral-900">1.0 cm</span>
-                  </div>
-                  <div className="bg-white p-1.5 rounded border border-neutral-200">
-                    <span className="text-[10px] text-neutral-500 block">SIDE SEAM</span>
-                    <span className="font-bold text-neutral-900">1.5 cm</span>
-                  </div>
-                  <div className="bg-white p-1.5 rounded border border-neutral-200">
-                    <span className="text-[10px] text-neutral-500 block">HEM</span>
-                    <span className="font-bold text-neutral-900">3.0 cm</span>
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -698,16 +695,34 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               )}
             </div>
 
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 text-[11px]">
+            <div className={`p-3 border rounded text-[11px] ${
+              validation.isValid
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}>
               <div className="flex items-center gap-1.5 font-bold mb-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                Seam Compatibility Certified
+                {validation.isValid ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                )}
+                {validation.isValid ? '2D Seam Parity Verified' : 'Geometry Verification Required'}
               </div>
-              Front side seam and back side seam lengths match with 0.00 cm mathematical variance. Ready for industrial cutting.
+              {validation.isValid
+                ? '2D seam length parity verified with <= 0.05 cm mathematical variance. Physical sample testing still required (isProductionReady: false).'
+                : `${validation.failureCount} geometry validation failure(s) must be resolved in Module 04 CAD.`}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Milestone 05: Authoritative Production Package Panel */}
+      <ProductionPackagePanel
+        bundle={m05Package}
+        bomControls={bomControls}
+        onChangeBomControls={setBomControls}
+        titleContext="Module 05 Authoritative Production Package"
+      />
 
       {/* Milestone 04.3: Integrated Bodice–Sleeve Seam Assembly Specification */}
       {assemblyResult && (
@@ -898,24 +913,31 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         </div>
       )}
 
-      {/* Assembly Sequence Section */}
+      {/* Assembly Sequence Section (Feature-Traced from M05 Manufacturing Docs) */}
       <div className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-4">
         <h4 className="text-xs font-semibold uppercase tracking-wider font-mono text-neutral-900 border-b border-neutral-100 pb-3 flex items-center justify-between">
-          <span>Industrial Sewing &amp; Assembly Sequence</span>
-          <span className="text-[10px] text-neutral-400 font-mono">6 SEQUENTIAL OPERATIONS</span>
+          <span>Industrial Sewing &amp; Assembly Sequence (Feature-Traced)</span>
+          <span className="text-[10px] text-neutral-400 font-mono">
+            {m05Package.manufacturingDocs.sewingSequence.length} SEQUENTIAL OPERATIONS
+          </span>
         </h4>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {assemblySteps.map(step => (
+          {m05Package.manufacturingDocs.sewingSequence.map(step => (
             <div
-              key={step.step}
+              key={step.operationCode}
               className="p-4 border border-neutral-200 rounded-xs bg-neutral-50/50 space-y-2 text-xs"
             >
-              <div className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-neutral-900 text-white font-mono text-[10px] flex items-center justify-center font-bold">
-                  {step.step}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-neutral-900 text-white font-mono text-[10px] flex items-center justify-center font-bold">
+                    {step.sequenceOrder}
+                  </span>
+                  <h5 className="font-semibold text-neutral-900">{step.title}</h5>
+                </div>
+                <span className="text-[10px] font-mono bg-white border border-neutral-200 px-1.5 py-0.5 rounded text-neutral-600 shrink-0">
+                  {step.stitchClassIso4915} • SA {step.seamAllowanceCm.toFixed(1)}cm
                 </span>
-                <h5 className="font-semibold text-neutral-900">{step.title}</h5>
               </div>
               <p className="text-neutral-600 leading-relaxed text-[11px]">
                 {step.instruction}

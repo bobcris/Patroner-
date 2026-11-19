@@ -12,7 +12,13 @@ import { assembleBodiceSleeve, BodiceSleeveAssemblyResult, formatSignedCm } from
 import { gradePattern, GradedPatternSet, DEFAULT_SIZE_RANGE } from '../../engine/grading';
 import { validatePatternDraft } from '../../engine/validation/seam-validator';
 import { calculateGarmentDimensions, calculateBodiceGarmentDimensions, SLEEVE_EASE_TABLE, STANDARD_SIZING_SYSTEM } from '../../engine/measurements/standards';
-import type { MeasurementApprovalStatus, MeasurementOrigin } from '../../engine/production';
+import type {
+  MeasurementApprovalStatus,
+  MeasurementOrigin,
+  MeasurementProvenanceEvidence
+} from '../../engine/production';
+import { buildM05ProductionPackage } from '../../engine/production';
+import { ProductionPackagePanel, ProductionBomControlState } from '../production/ProductionPackagePanel';
 import { AssemblyInspectionPanel, AssemblyScenarioMode } from './AssemblyInspectionPanel';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -56,6 +62,7 @@ interface PatternWorkspaceProps {
   activeSize: string;
   measurementProvenance?: MeasurementOrigin;
   measurementApprovalState?: MeasurementApprovalStatus;
+  measurementProvenanceEvidence?: MeasurementProvenanceEvidence;
   onNavigateToProduction: () => void;
   onNavigateToMeasurements: () => void;
 }
@@ -66,6 +73,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   activeSize,
   measurementProvenance = 'standard-chart',
   measurementApprovalState = 'unverified',
+  measurementProvenanceEvidence,
   onNavigateToProduction,
   onNavigateToMeasurements
 }) => {
@@ -90,7 +98,14 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   // Canvas zoom & pan state
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit'>('pieces');
+  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit' | 'production'>('pieces');
+  const [bomControls, setBomControls] = useState<ProductionBomControlState>({
+    fabricRollWidthCm: 140,
+    markerWasteFactor: 0.18,
+    orderQuantityPerSize: 1,
+    includeLining: false,
+    includeLabelsAndPackaging: false
+  });
   const [assemblyScenario, setAssemblyScenario] = useState<AssemblyScenarioMode>('active-draft');
   const [requireApprovedGovernance, setRequireApprovedGovernance] = useState(false);
   const [strictUncertaintyGate, setStrictUncertaintyGate] = useState(true);
@@ -231,6 +246,65 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
       });
 
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) || pieces[0];
+
+  const effectiveViewMode: 'pieces' | 'assembly' | 'grading' | 'fit' | 'production' =
+    currentSpec.garmentCategory !== 'bodice' &&
+    cadViewMode !== 'pieces' &&
+    cadViewMode !== 'production'
+      ? 'pieces'
+      : cadViewMode;
+
+  // Milestone 05: Live Authoritative Production Package Bundle
+  const m05Package = React.useMemo(() => {
+    const qty = Math.max(1, Math.round(bomControls.orderQuantityPerSize || 1));
+    const targetSizes = currentSpec.garmentCategory === 'bodice'
+      ? DEFAULT_SIZE_RANGE
+      : [activeSize];
+    const orderQuantitiesBySize: Record<string, number> = {};
+    for (const sz of targetSizes) {
+      orderQuantitiesBySize[sz] = qty;
+    }
+    return buildM05ProductionPackage({
+      designSpec: currentSpec,
+      measurements,
+      options: {
+        activeSize,
+        bodiceDartStyle,
+        sleeveEaseStrategy,
+        strictUncertaintyGate,
+        measurementProvenance,
+        measurementApprovalState,
+        measurementProvenanceEvidence,
+        requireApprovedGovernance,
+        bomOptions: {
+          fabricRollWidthCm: bomControls.fabricRollWidthCm,
+          markerWasteFactor: bomControls.markerWasteFactor,
+          includeLining: bomControls.includeLining,
+          includeLabelsAndPackaging: bomControls.includeLabelsAndPackaging,
+          orderQuantitiesBySize
+        }
+      },
+      piecesOverride: currentSpec.garmentCategory !== 'bodice' ? pieces : undefined,
+      gradedPatternSetOverride: currentSpec.garmentCategory === 'bodice' ? gradedPatternSet : null,
+      assemblyResultOverride: assemblyScenario === 'active-draft' ? assemblyResult : undefined
+    });
+  }, [
+    currentSpec,
+    measurements,
+    activeSize,
+    bodiceDartStyle,
+    sleeveEaseStrategy,
+    strictUncertaintyGate,
+    measurementProvenance,
+    measurementApprovalState,
+    measurementProvenanceEvidence,
+    requireApprovedGovernance,
+    bomControls,
+    pieces,
+    gradedPatternSet,
+    assemblyScenario,
+    assemblyResult
+  ]);
 
   const handleZoom = (delta: number) => {
     setZoom(prev => Math.min(3.5, Math.max(0.6, Number((prev + delta).toFixed(1)))));
@@ -379,93 +453,120 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
         </div>
       )}
 
-      {/* Main CAD Interface */}
+      {/* CAD View Mode Selector (All Garment Categories) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-neutral-200 rounded-sm p-3 shadow-2xs gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs uppercase font-mono text-neutral-500 font-bold">VIEW MODE:</span>
+          <div className="inline-flex flex-wrap rounded-xs border border-neutral-300 p-0.5 bg-neutral-100 gap-0.5">
+            <button
+              onClick={() => setCadViewMode('pieces')}
+              className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer ${
+                effectiveViewMode === 'pieces'
+                  ? 'bg-neutral-900 text-white shadow-2xs'
+                  : 'text-neutral-700 hover:text-neutral-900'
+              }`}
+            >
+              Pattern Pieces ({pieces.length})
+            </button>
+            {currentSpec.garmentCategory === 'bodice' && assemblyResult && (
+              <>
+                <button
+                  onClick={() => setCadViewMode('assembly')}
+                  className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    effectiveViewMode === 'assembly'
+                      ? 'bg-blue-900 text-white shadow-2xs'
+                      : 'text-neutral-700 hover:text-neutral-900'
+                  }`}
+                >
+                  <span>Assembly Inspection (M 04.3)</span>
+                  <Badge
+                    variant={assemblyResult?.status === 'verified-valid' ? 'success' : 'danger'}
+                    size="sm"
+                  >
+                    {assemblyResult?.status === 'verified-valid' ? 'VERIFIED' : 'INVALID'}
+                  </Badge>
+                </button>
+                <button
+                  onClick={() => setCadViewMode('grading')}
+                  className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    effectiveViewMode === 'grading'
+                      ? 'bg-purple-900 text-white shadow-2xs'
+                      : 'text-neutral-700 hover:text-neutral-900'
+                  }`}
+                >
+                  <span>Grading Nest Overlay (M 04.4)</span>
+                  <Badge
+                    variant={gradedPatternSet.isAllValid ? 'success' : 'danger'}
+                    size="sm"
+                  >
+                    {gradedPatternSet.isAllValid ? 'ALL VALID (6/6)' : 'FLAGGED'}
+                  </Badge>
+                </button>
+                <button
+                  onClick={() => setCadViewMode('fit')}
+                  className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    effectiveViewMode === 'fit'
+                      ? 'bg-amber-900 text-white shadow-2xs'
+                      : 'text-neutral-700 hover:text-neutral-900'
+                  }`}
+                >
+                  <span>Physical Fit Evidence (M 04.5)</span>
+                  <Badge
+                    variant={activePrototypeReport.overallFitStatus === 'conforming' ? 'success' : 'warning'}
+                    size="sm"
+                  >
+                    {activePrototypeReport.overallFitStatus === 'conforming' ? 'CONFORMING' : 'DISCREPANCY'}
+                  </Badge>
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => setCadViewMode('production')}
+              data-testid="cad-view-mode-production"
+              className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                effectiveViewMode === 'production'
+                  ? 'bg-emerald-900 text-white shadow-2xs'
+                  : 'text-neutral-700 hover:text-neutral-900'
+              }`}
+            >
+              <span>Production Package (M 05)</span>
+              <Badge
+                variant={m05Package.validation.isValid ? 'success' : 'warning'}
+                size="sm"
+              >
+                {m05Package.validation.passedCount}/10 GATES
+              </Badge>
+            </button>
+          </div>
+        </div>
+
+        <div className="text-[11px] font-mono text-neutral-500">
+          {effectiveViewMode === 'production' ? (
+            <span className="text-emerald-900 font-bold">M05 BOM, DOCS, DXF-AAMA &amp; 10-GATE VALIDATION</span>
+          ) : effectiveViewMode === 'assembly' ? (
+            <span className="text-blue-900 font-bold">2D RIGID ALIGNMENT AT SCYE JUNCTIONS</span>
+          ) : effectiveViewMode === 'grading' ? (
+            <span className="text-purple-900 font-bold">MULTI-SIZE NESTED OVERLAY (XS–XXL)</span>
+          ) : effectiveViewMode === 'fit' ? (
+            <span className="text-amber-900 font-bold">PHYSICAL PROTOTYPE INSPECTION &amp; FIT EVIDENCE</span>
+          ) : (
+            <span>FLAT CUTTING PATTERN VIEW</span>
+          )}
+        </div>
+      </div>
+
+      {effectiveViewMode === 'production' ? (
+        <ProductionPackagePanel
+          bundle={m05Package}
+          bomControls={bomControls}
+          onChangeBomControls={setBomControls}
+        />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Interactive CAD Canvas */}
         <div className="lg:col-span-8 flex flex-col space-y-3">
-          {/* Milestone 04.3: CAD View Mode Selector */}
-          {currentSpec.garmentCategory === 'bodice' && assemblyResult && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-neutral-200 rounded-sm p-3 shadow-2xs gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-xs uppercase font-mono text-neutral-500 font-bold">VIEW MODE:</span>
-                <div className="inline-flex rounded-xs border border-neutral-300 p-0.5 bg-neutral-100">
-                  <button
-                    onClick={() => setCadViewMode('pieces')}
-                    className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer ${
-                      cadViewMode === 'pieces'
-                        ? 'bg-neutral-900 text-white shadow-2xs'
-                        : 'text-neutral-700 hover:text-neutral-900'
-                    }`}
-                  >
-                    Pattern Pieces ({pieces.length})
-                  </button>
-                  <button
-                    onClick={() => setCadViewMode('assembly')}
-                    className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
-                      cadViewMode === 'assembly'
-                        ? 'bg-blue-900 text-white shadow-2xs'
-                        : 'text-neutral-700 hover:text-neutral-900'
-                    }`}
-                  >
-                    <span>Assembly Inspection (M 04.3)</span>
-                    <Badge
-                      variant={assemblyResult?.status === 'verified-valid' ? 'success' : 'danger'}
-                      size="sm"
-                    >
-                      {assemblyResult?.status === 'verified-valid' ? 'VERIFIED' : 'INVALID'}
-                    </Badge>
-                  </button>
-                  <button
-                    onClick={() => setCadViewMode('grading')}
-                    className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
-                      cadViewMode === 'grading'
-                        ? 'bg-purple-900 text-white shadow-2xs'
-                        : 'text-neutral-700 hover:text-neutral-900'
-                    }`}
-                  >
-                    <span>Grading Nest Overlay (M 04.4)</span>
-                    <Badge
-                      variant={gradedPatternSet.isAllValid ? 'success' : 'danger'}
-                      size="sm"
-                    >
-                      {gradedPatternSet.isAllValid ? 'ALL VALID (6/6)' : 'FLAGGED'}
-                    </Badge>
-                  </button>
-                  <button
-                    onClick={() => setCadViewMode('fit')}
-                    className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
-                      cadViewMode === 'fit'
-                        ? 'bg-amber-900 text-white shadow-2xs'
-                        : 'text-neutral-700 hover:text-neutral-900'
-                    }`}
-                  >
-                    <span>Physical Fit Evidence (M 04.5)</span>
-                    <Badge
-                      variant={activePrototypeReport.overallFitStatus === 'conforming' ? 'success' : 'warning'}
-                      size="sm"
-                    >
-                      {activePrototypeReport.overallFitStatus === 'conforming' ? 'CONFORMING' : 'DISCREPANCY'}
-                    </Badge>
-                  </button>
-                </div>
-              </div>
-
-              <div className="text-[11px] font-mono text-neutral-500">
-                {cadViewMode === 'assembly' ? (
-                  <span className="text-blue-900 font-bold">2D RIGID ALIGNMENT AT SCYE JUNCTIONS</span>
-                ) : cadViewMode === 'grading' ? (
-                  <span className="text-purple-900 font-bold">MULTI-SIZE NESTED OVERLAY (XS–XXL)</span>
-                ) : cadViewMode === 'fit' ? (
-                  <span className="text-amber-900 font-bold">PHYSICAL PROTOTYPE INSPECTION &amp; FIT EVIDENCE</span>
-                ) : (
-                  <span>FLAT CUTTING PATTERN VIEW</span>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Milestone 04.4: Grading Mode HUD Bar */}
-          {cadViewMode === 'grading' && (
+          {effectiveViewMode === 'grading' && (
             <div className="bg-purple-50/90 border border-purple-200 rounded-sm p-3.5 space-y-3 text-xs font-mono">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-purple-200/80 pb-2 gap-2">
                 <div className="flex items-center gap-2">
@@ -524,7 +625,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           )}
 
           {/* Milestone 04.5: Physical Fit Evidence HUD Bar */}
-          {cadViewMode === 'fit' && (
+          {effectiveViewMode === 'fit' && (
             <div className="bg-amber-50/90 border border-amber-200 rounded-sm p-3.5 space-y-3 text-xs font-mono">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-amber-200/80 pb-2 gap-2">
                 <div className="flex items-center gap-2">
@@ -586,7 +687,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           )}
 
           {/* Assembly Mode HUD Bar */}
-          {cadViewMode === 'assembly' && assemblyResult && (
+          {effectiveViewMode === 'assembly' && assemblyResult && (
             <div className="bg-blue-50/90 border border-blue-200 rounded-sm p-3.5 space-y-2 text-xs font-mono">
               <div className="flex items-center justify-between border-b border-blue-200/80 pb-2">
                 <div className="flex items-center gap-2">
@@ -738,7 +839,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 transformOrigin: 'center center'
               }}
             >
-              {cadViewMode === 'assembly' && assemblyResult?.inspectionLayout ? (
+              {effectiveViewMode === 'assembly' && assemblyResult?.inspectionLayout ? (
                 /* Milestone 04.3: Integrated Assembly 2D Inspection Layout */
                 <g transform="translate(40, 40) scale(4.2)">
                   {/* Front Assembly (Bodice Front + Sleeve Cap at Underarm) */}
@@ -874,7 +975,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     </text>
                   </g>
                 </g>
-              ) : cadViewMode === 'grading' ? (
+              ) : effectiveViewMode === 'grading' ? (
                 /* Milestone 04.4: Multi-Size Nested Grading Overlay */
                 <g>
                   {/* Legend / Title Header in Canvas */}
@@ -1026,7 +1127,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                     );
                   })}
                 </g>
-              ) : cadViewMode === 'fit' ? (
+              ) : effectiveViewMode === 'fit' ? (
                 /* Milestone 04.5: Caliper and Physical Inspection Overlay */
                 <g>
                   {/* Legend / Title Header in Canvas */}
@@ -1378,7 +1479,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
         {/* Right Column: Piece Geometry Inspector & Deterministic Validation HUD */}
         <div className="lg:col-span-4 space-y-6">
-          {cadViewMode === 'assembly' ? (
+          {effectiveViewMode === 'assembly' ? (
             <AssemblyInspectionPanel
               assemblyResult={assemblyResult}
               assemblyError={assemblyError}
@@ -1390,7 +1491,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               onToggleStrictUncertaintyGate={setStrictUncertaintyGate}
               onNavigateToMeasurements={onNavigateToMeasurements}
             />
-          ) : cadViewMode === 'grading' ? (
+          ) : effectiveViewMode === 'grading' ? (
             /* Milestone 04.4: Cross-Size Grading Inspector & Integrity Card */
             <div className="space-y-6">
               {/* Grading Suite Summary Card */}
@@ -1551,7 +1652,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 </div>
               </div>
             </div>
-          ) : cadViewMode === 'fit' ? (
+          ) : effectiveViewMode === 'fit' ? (
             /* Milestone 04.5 / 04.5.1: Physical Fit Evidence Inspector & Fabric Details */
             <div className="space-y-6">
               {/* Prototype Pedigree Card */}
@@ -2098,6 +2199,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };

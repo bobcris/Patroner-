@@ -5,7 +5,7 @@
 
 import React from 'react';
 
-export interface BadgeProps {
+export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   children: React.ReactNode;
   variant?: 'neutral' | 'dark' | 'success' | 'warning' | 'danger' | 'accent';
   size?: 'sm' | 'md';
@@ -16,7 +16,8 @@ export const Badge: React.FC<BadgeProps> = ({
   children,
   variant = 'neutral',
   size = 'md',
-  className = ''
+  className = '',
+  ...rest
 }) => {
   const sizes = {
     sm: 'text-[10px] px-1.5 py-0.5 tracking-wider font-mono font-medium',
@@ -33,7 +34,7 @@ export const Badge: React.FC<BadgeProps> = ({
   };
 
   return (
-    <span className={`inline-flex items-center gap-1 uppercase rounded-xs ${sizes[size]} ${variants[variant]} ${className}`}>
+    <span {...rest} className={`inline-flex items-center gap-1 uppercase rounded-xs ${sizes[size]} ${variants[variant]} ${className}`}>
       {children}
     </span>
   );
