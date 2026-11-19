@@ -18,8 +18,10 @@ import {
   AvatarBodyRepresentation,
   AvatarPoseId,
   CalibratedMaterialConstitutiveSpec,
+  ClothSolverQualificationReport,
   EnergyPoint,
   MeshTriangle,
+  MeshTopologyDiagnostics,
   MeshVertex3D,
   Point3D,
   SeamSpringEdge,
@@ -152,37 +154,51 @@ export function triangulatePiecePolygon2D(
     return { piece, mirroredSign: mirrorX, panelTag, vertices: [], triangles: [] };
   }
 
-  let minX = Infinity;
-  let maxX = -Infinity;
+  let minXRaw = Infinity;
+  let maxXRaw = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
   for (const p of rawBoundary) {
-    const px = p.x * mirrorX;
-    minX = Math.min(minX, px);
-    maxX = Math.max(maxX, px);
+    minXRaw = Math.min(minXRaw, p.x);
+    maxXRaw = Math.max(maxXRaw, p.x);
     minY = Math.min(minY, p.y);
     maxY = Math.max(maxY, p.y);
   }
 
-  const vertices: TriangulatedPiece2D['vertices'] = rawBoundary.map(b => ({
-    x: b.x * mirrorX,
-    y: b.y,
-    isBoundary: true,
-    seamRole: b.seamRole,
-    uAlongSeam: b.uAlongSeam
-  }));
-
-  const polyPts: Point[] = vertices.map(v => ({ x: v.x, y: v.y }));
+  const polyRawPts: Point[] = rawBoundary.map(b => ({ x: b.x, y: b.y }));
   const step = Math.max(1.8, edgeLengthCm);
   const minBoundaryClearance = step * 0.35;
 
+  // Generate interior lattice in canonical un-mirrored coordinates so L (-1) and R (+1) panels are exact mirror clones
+  const canonicalPoints: Array<{ x: number; y: number; isBoundary: boolean; seamRole?: string; uAlongSeam?: number }> =
+    rawBoundary.map(b => ({
+      x: b.x,
+      y: b.y,
+      isBoundary: true,
+      seamRole: b.seamRole,
+      uAlongSeam: b.uAlongSeam
+    }));
+
   for (let y = minY + step * 0.5; y < maxY - step * 0.4; y += step) {
-    for (let x = minX + step * 0.5; x < maxX - step * 0.4; x += step) {
-      if (pointInPolygon(x, y, polyPts) && minDistanceToPolygonEdges(x, y, polyPts) >= minBoundaryClearance) {
-        vertices.push({ x, y, isBoundary: false });
+    for (let x = minXRaw + step * 0.5; x < maxXRaw - step * 0.4; x += step) {
+      if (pointInPolygon(x, y, polyRawPts) && minDistanceToPolygonEdges(x, y, polyRawPts) >= minBoundaryClearance) {
+        canonicalPoints.push({ x, y, isBoundary: false });
       }
     }
   }
+
+  const vertices: TriangulatedPiece2D['vertices'] = canonicalPoints.map(pt => ({
+    ...pt,
+    x: pt.x * mirrorX
+  }));
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (const v of vertices) {
+    minX = Math.min(minX, v.x);
+    maxX = Math.max(maxX, v.x);
+  }
+  const polyPts: Point[] = vertices.slice(0, rawBoundary.length).map(v => ({ x: v.x, y: v.y }));
 
   // Super-triangle for Bowyer-Watson
   const span = Math.max(maxX - minX, maxY - minY, 20) * 4;
@@ -279,11 +295,26 @@ export function runGarmentDrapeSimulation(params: {
   avatar?: AvatarBodyRepresentation;
   poseId?: AvatarPoseId;
   meshEdgeLengthCm?: number;
+  precomputedBenchmarks?: ClothSolverQualificationReport;
 }): SimulationCaseResult {
-  const { pieces, designSpec, measurements, poseId = 'CANONICAL_A_POSE', meshEdgeLengthCm = 3.2 } = params;
+  const {
+    pieces,
+    designSpec,
+    measurements,
+    poseId = 'CANONICAL_A_POSE',
+    meshEdgeLengthCm = 3.2,
+    precomputedBenchmarks
+  } = params;
   const avatar = params.avatar ?? generateParametricAvatar(measurements, poseId);
   const material = calibrateConstitutiveMaterial(designSpec.fabric);
-  const benchmarkQualification = runAnalyticalCredibilityBenchmarks(material);
+  const canReuseBenchmarks =
+    precomputedBenchmarks &&
+    precomputedBenchmarks.allPassed &&
+    precomputedBenchmarks.materialSpecId === material.materialSpecId &&
+    precomputedBenchmarks.solverVersion === SOLVER_VERSION;
+  const benchmarkQualification = canReuseBenchmarks
+    ? precomputedBenchmarks
+    : runAnalyticalCredibilityBenchmarks(material);
 
   const vertices: MeshVertex3D[] = [];
   const triangles: MeshTriangle[] = [];
@@ -305,12 +336,29 @@ export function runGarmentDrapeSimulation(params: {
       seamEdgeCount: 0,
       equilibriumResidualNorm: Infinity,
       interpenetratingTriangles: 0,
+      selfIntersectingTriangles: 0,
       minBodyClearanceCm: 0,
+      topologyDiagnostics: {
+        degenerateTriangleCount: 0,
+        minTriangleAreaCm2: 0,
+        minInteriorAngleDeg: 0,
+        maxAspectRatio: 0,
+        leftRightSymmetryErrorCm: 0,
+        boundaryVertexCount: 0,
+        manifoldIntegrityVerified: false
+      },
       energyHistory: [],
+      energyConverging: false,
       vertices: [],
       triangles: [],
       seamEdges: [],
       benchmarkQualification,
+      epistemicLayers: {
+        analyticalQualification: benchmarkQualification.allPassed ? 'AC-08_PASSED' : 'AC-08_FAILED',
+        numericalConvergence: 'FAILED_CLOSED',
+        syntheticDrapeBasis: avatar.sourceType === 'MEASURED_3D_SCAN' ? 'SCAN_SYNTHETIC' : 'PARAMETRIC_M02C_SYNTHETIC',
+        physicalToileValidation: 'AC-09_PENDING'
+      },
       convergenceVerified: false,
       failureReason: !material.thermodynamicallyAdmissible
         ? 'STRUCTURAL_MATERIAL_CONSTITUTIVE_FAILURE'
@@ -369,14 +417,17 @@ export function runGarmentDrapeSimulation(params: {
     const waist3DY = avatar.crossSectionContours.waist.yHeightCm;
     const neckY3D = avatar.crossSectionContours.neck.yHeightCm;
 
+    // Precompute exact sleeve 2D row half-widths & cap boundary height when projecting a sleeve piece
+    const sleeveProfile = isSleeve ? buildSleeveRowProfile(panel.vertices, minY, spanY) : null;
+
     for (let i = 0; i < panel.vertices.length; i++) {
       const v2 = panel.vertices[i];
       const uNorm = (v2.x - minX) / spanX;
       const vNorm = (v2.y - minY) / spanY; // 0 at top, 1 at bottom
       let pt3: Point3D;
 
-      if (isSleeve) {
-        pt3 = projectSleevePointTo3D(avatar, panel.mirroredSign, v2.x, v2.y, minY, spanY, spanX);
+      if (isSleeve && sleeveProfile) {
+        pt3 = projectSleevePointTo3D(avatar, panel.mirroredSign, v2.x, v2.y, sleeveProfile);
       } else if (isSkirt) {
         // Preserve actual vertical drop length (waist = yWaist, hem drops by pattern length)
         const y3D = waist3DY - (v2.y - minY);
@@ -504,7 +555,11 @@ export function runGarmentDrapeSimulation(params: {
     if (isSkirtWaistPin || isBodiceShoulderPin) {
       pinnedMask[i] = 1;
     }
-    if (Math.abs(v.restX) < 0.05 && (v.seamRole === 'center-front' || v.seamRole === 'center-back')) {
+    if (
+      v.isBoundary &&
+      Math.abs(v.restX) < 0.05 &&
+      !v.pieceId.toLowerCase().includes('sleeve')
+    ) {
       centerFoldMask[i] = 1;
     }
   }
@@ -554,12 +609,12 @@ export function runGarmentDrapeSimulation(params: {
 
     // 2. Seam spring stitching constraints (close side seams, shoulder seams, CB, sleeve-scye, CF/CB fold)
     let seamEnergyJ = 0;
-    const seamPull = iter < 20 ? 0.35 : 0.48;
+    const seamPull = iter < 20 ? 0.45 : 0.72;
     for (const seam of seamEdges) {
       const va = vertices[seam.vertexA];
       const vb = vertices[seam.vertexB];
       const isCenterJoin = seam.label.includes('center-front') || seam.label.includes('center-back');
-      const localPull = isCenterJoin ? 0.92 : seamPull;
+      const localPull = isCenterJoin ? 0.94 : seamPull;
       const dx = vb.x - va.x;
       const dy = vb.y - va.y;
       const dz = vb.z - va.z;
@@ -663,8 +718,8 @@ export function runGarmentDrapeSimulation(params: {
     }
   }
 
-  // Final strict non-penetration safety projection (4 alternating vertex + centroid passes)
-  for (let safePass = 0; safePass < 4; safePass++) {
+  // Post-solve non-penetration safety projection + cloth-cloth self-intersection separation
+  for (let safePass = 0; safePass < 6; safePass++) {
     for (let i = 0; i < vertices.length; i++) {
       const v = vertices[i];
       const isSleeveVtx = v.pieceId.toLowerCase().includes('sleeve');
@@ -698,9 +753,10 @@ export function runGarmentDrapeSimulation(params: {
         }
       }
     }
+    resolveClothSelfIntersectionsPass(vertices, triangles, seamEdges, avatar, pinnedMask, centerFoldMask);
   }
 
-  // Post-solve: compute exact per-vertex warp/weft strain (%) & contact pressure (kPa), verify 0 interpenetrations
+  // Post-solve: compute exact per-vertex warp/weft strain (%) & contact pressure (kPa), verify 0 interpenetrations & topology quality
   let interpenetratingTriangles = 0;
   let minBodyClearanceCm = Infinity;
   computeFinalStrainAndContactPressure(vertices, triangles, structuralEdges, avatar, material);
@@ -725,11 +781,22 @@ export function runGarmentDrapeSimulation(params: {
 
   if (!Number.isFinite(minBodyClearanceCm)) minBodyClearanceCm = 0;
 
+  const topologyDiagnostics = computeMeshTopologyDiagnostics(vertices, triangles);
+  const selfIntersectingTriangles = countSelfIntersectingTriangles(vertices, triangles, seamEdges);
+
+  const firstHist = energyHistory[0];
+  const lastHist = energyHistory[energyHistory.length - 1];
+  const energyConverging =
+    energyHistory.length >= 2 &&
+    Number.isFinite(lastResidualNorm) &&
+    lastResidualNorm < 0.25 &&
+    (lastHist.residualNorm <= firstHist.residualNorm * 1.05 || lastHist.residualNorm < 0.05);
+
   const convergenceVerified =
     benchmarkQualification.allPassed &&
     interpenetratingTriangles === 0 &&
-    Number.isFinite(lastResidualNorm) &&
-    lastResidualNorm < 0.25 &&
+    topologyDiagnostics.degenerateTriangleCount === 0 &&
+    energyConverging &&
     triangles.length > 0;
 
   return {
@@ -747,16 +814,53 @@ export function runGarmentDrapeSimulation(params: {
     seamEdgeCount: seamEdges.length,
     equilibriumResidualNorm: Number(lastResidualNorm.toFixed(6)),
     interpenetratingTriangles,
+    selfIntersectingTriangles,
     minBodyClearanceCm: Number(minBodyClearanceCm.toFixed(4)),
+    topologyDiagnostics,
     energyHistory,
+    energyConverging,
     vertices,
     triangles,
     seamEdges,
     benchmarkQualification,
+    epistemicLayers: {
+      analyticalQualification: benchmarkQualification.allPassed ? 'AC-08_PASSED' : 'AC-08_FAILED',
+      numericalConvergence: convergenceVerified ? 'CONVERGED' : 'FAILED_CLOSED',
+      syntheticDrapeBasis: avatar.sourceType === 'MEASURED_3D_SCAN' ? 'SCAN_SYNTHETIC' : 'PARAMETRIC_M02C_SYNTHETIC',
+      physicalToileValidation: 'AC-09_PENDING'
+    },
     convergenceVerified,
     failureReason: convergenceVerified ? undefined : 'STRUCTURAL_DONNING_OR_CONVERGENCE_FAILURE',
     isProductionReady: false
   };
+}
+
+interface SleeveRowProfile {
+  minY: number;
+  spanY: number;
+  capBaseY: number;
+  bicepsHalfWidthCm: number;
+  wristHalfWidthCm: number;
+}
+
+function buildSleeveRowProfile(
+  verts: Array<{ x: number; y: number; seamRole?: string }>,
+  minY: number,
+  spanY: number
+): SleeveRowProfile {
+  const capYs = verts.filter(v => v.seamRole?.startsWith('sleeve-cap')).map(v => v.y);
+  const capBaseY = capYs.length > 0 ? Math.max(...capYs) : minY + spanY * 0.27;
+  const bicepsVerts = verts.filter(v => Math.abs(v.y - capBaseY) <= 3.5);
+  const wristVerts = verts.filter(v => v.y >= minY + spanY - 3.5);
+  const bicepsHalfWidthCm = Math.max(
+    10,
+    ...(bicepsVerts.length > 0 ? bicepsVerts : verts).map(v => Math.abs(v.x))
+  );
+  const wristHalfWidthCm = Math.max(
+    7,
+    wristVerts.length > 0 ? Math.max(...wristVerts.map(v => Math.abs(v.x))) : bicepsHalfWidthCm * 0.65
+  );
+  return { minY, spanY, capBaseY, bicepsHalfWidthCm, wristHalfWidthCm };
 }
 
 function projectSleevePointTo3D(
@@ -764,53 +868,54 @@ function projectSleevePointTo3D(
   sideSign: 1 | -1,
   x2D: number,
   y2D: number,
-  minY2D: number,
-  spanY2D: number,
-  spanX2D: number
+  profile: SleeveRowProfile
 ): Point3D {
   const axis = avatar.armAxis;
   const shoulder = {
-    x: sideSign * Math.abs(axis.shoulderPivot.x),
+    x: sideSign * (Math.abs(axis.shoulderPivot.x) + 0.55),
     y: axis.shoulderPivot.y,
     z: axis.shoulderPivot.z
   };
   const elbow = {
-    x: sideSign * Math.abs(axis.elbowJoint.x),
+    x: sideSign * (Math.abs(axis.elbowJoint.x) + 0.45),
     y: axis.elbowJoint.y,
     z: axis.elbowJoint.z
   };
   const wrist = {
-    x: sideSign * Math.abs(axis.wristJoint.x),
+    x: sideSign * (Math.abs(axis.wristJoint.x) + 0.45),
     y: axis.wristJoint.y,
     z: axis.wristJoint.z
   };
 
-  // Preserve 1:1 longitudinal sleeve length from cap base (underarm line) to wrist, and drop cap edges cleanly into torso scye oval
-  const capHeight2D = 10.5;
-  const vNormTotal = Math.max(0, Math.min(1, (y2D - minY2D) / spanY2D));
-  const vAlongArm = Math.max(0, (y2D - (minY2D + capHeight2D)) / Math.max(10, spanY2D - capHeight2D));
+  // Bijective axial coordinate along entire sleeve height (0 at shoulder crown -> 1 at wrist)
+  // so cap triangles spread smoothly down the upper arm and never pile axially onto a single ring.
+  const tLinear = Math.max(0, Math.min(1, (y2D - profile.minY) / Math.max(10, profile.spanY)));
+  const capFrac = Math.max(0.15, Math.min(0.4, (profile.capBaseY - profile.minY) / Math.max(10, profile.spanY)));
+  const elbowT = 0.58;
 
   const center: Point3D =
-    vAlongArm <= 0
-      ? shoulder
-      : vAlongArm < 0.55
-      ? lerp3D(shoulder, elbow, vAlongArm / 0.55)
-      : lerp3D(elbow, wrist, Math.min(1, (vAlongArm - 0.55) / 0.45));
+    tLinear < elbowT
+      ? lerp3D(shoulder, elbow, tLinear / elbowT)
+      : lerp3D(elbow, wrist, Math.min(1, (tLinear - elbowT) / (1 - elbowT)));
 
+  const vBelowCap = Math.max(0, (tLinear - capFrac) / Math.max(0.1, 1 - capFrac));
   const armRadius =
-    vAlongArm < 0.55
-      ? axis.bicepsRadiusCm + (axis.elbowRadiusCm - axis.bicepsRadiusCm) * Math.max(0, vAlongArm / 0.55)
-      : axis.elbowRadiusCm + (axis.wristRadiusCm - axis.elbowRadiusCm) * Math.min(1, (vAlongArm - 0.55) / 0.45);
+    tLinear < elbowT
+      ? axis.bicepsRadiusCm + (axis.elbowRadiusCm - axis.bicepsRadiusCm) * (tLinear / elbowT)
+      : axis.elbowRadiusCm + (axis.wristRadiusCm - axis.elbowRadiusCm) * ((tLinear - elbowT) / (1 - elbowT));
 
-  const localHalfSpan = Math.max(8, (spanX2D * 0.5) * (1 - 0.36 * vNormTotal));
-  const signedLateral = (x2D * sideSign) / localHalfSpan; // -1 back underarm, 0 outer crown, +1 front underarm
-  const theta = Math.max(-Math.PI, Math.min(Math.PI, signedLateral * Math.PI));
+  const localHalfSpan =
+    y2D <= profile.capBaseY
+      ? profile.bicepsHalfWidthCm + 0.35
+      : profile.bicepsHalfWidthCm + (profile.wristHalfWidthCm - profile.bicepsHalfWidthCm) * vBelowCap + 0.35;
+  const signedLateral = Math.max(-0.985, Math.min(0.985, (x2D * sideSign) / Math.max(4, localHalfSpan)));
+  const theta = signedLateral * Math.PI;
 
-  const tangent = normalize3D({
-    x: wrist.x - shoulder.x,
-    y: wrist.y - shoulder.y,
-    z: wrist.z - shoulder.z
-  });
+  const tangent = normalize3D(
+    tLinear < elbowT
+      ? { x: elbow.x - shoulder.x, y: elbow.y - shoulder.y, z: elbow.z - shoulder.z }
+      : { x: wrist.x - elbow.x, y: wrist.y - elbow.y, z: wrist.z - elbow.z }
+  );
   const fwdRef = { x: 0, y: 0, z: 1 };
   let outVec = normalize3D(cross3D(fwdRef, tangent));
   if (outVec.x * sideSign < 0) {
@@ -821,32 +926,12 @@ function projectSleevePointTo3D(
     fwdVec = { x: -fwdVec.x, y: -fwdVec.y, z: -fwdVec.z };
   }
 
-  // Smooth C0 drop along armscye height when at underarm vs top shoulder crown
-  const scyeDropTotal = Math.max(8, shoulder.y - avatar.crossSectionContours.scye.yHeightCm);
-  const sinHalf = Math.sin(Math.abs(theta) * 0.5);
-  const underarmDropY = vAlongArm < 0.25 ? (1 - vAlongArm / 0.25) * sinHalf * sinHalf * scyeDropTotal * 0.92 : 0;
-
-  const targetRadius = armRadius + 0.55;
-  const rawPt = {
+  const targetRadius = armRadius + 0.78;
+  return {
     x: center.x + (outVec.x * Math.cos(theta) + fwdVec.x * Math.sin(theta)) * targetRadius,
-    y: center.y - underarmDropY + (outVec.y * Math.cos(theta) + fwdVec.y * Math.sin(theta)) * targetRadius,
+    y: center.y + (outVec.y * Math.cos(theta) + fwdVec.y * Math.sin(theta)) * targetRadius,
     z: center.z + (outVec.z * Math.cos(theta) + fwdVec.z * Math.sin(theta)) * targetRadius
   };
-
-  // Blend upper sleeve cap crown gently onto the armscye oval rim around torso shoulder/scye so cap-to-armhole starts close
-  if (y2D <= minY2D + capHeight2D) {
-    const capT = Math.max(0, Math.min(1, (y2D - minY2D) / capHeight2D)); // 0 at crown, 1 at underarm
-    const rimX = sideSign * (avatar.crossSectionContours.shoulder.semiWidthXCm * (1 - capT) + (avatar.crossSectionContours.scye.semiWidthXCm + 0.6) * capT);
-    const rimY = shoulder.y * (1 - capT * capT) + avatar.crossSectionContours.scye.yHeightCm * (capT * capT);
-    const rimZ = (x2D * sideSign >= 0 ? 1 : -1) * Math.sin(capT * Math.PI * 0.5) * 4.5 + avatar.crossSectionContours.scye.centerZOffsetCm;
-    const capBlend = (1 - capT) * 0.55 + 0.25;
-    return {
-      x: rawPt.x * (1 - capBlend) + rimX * capBlend,
-      y: rawPt.y * (1 - capBlend) + rimY * capBlend,
-      z: rawPt.z * (1 - capBlend) + rimZ * capBlend
-    };
-  }
-  return rawPt;
 }
 
 function evaluateArmCylinderClearance(
@@ -918,20 +1003,25 @@ function buildTopologicalSeamEdges(
     const cmp = (p: { v: { x: number; y: number } }, q: { v: { x: number; y: number } }) =>
       sortByX ? Math.abs(p.v.x) - Math.abs(q.v.x) : p.v.y - q.v.y;
 
+    const matchesRole = (role: string | undefined, vx: number, targetRole: string) =>
+      role === targetRole ||
+      ((targetRole === 'center-front' || targetRole === 'center-back') && Math.abs(vx) < 0.05);
+
     const listA = panelA.vertices
       .map((v, i) => ({ v, idx: offA + i }))
-      .filter(item => item.v.isBoundary && item.v.seamRole === roleA)
+      .filter(item => item.v.isBoundary && matchesRole(item.v.seamRole, item.v.x, roleA))
       .sort(cmp);
     const listB = panelB.vertices
       .map((v, i) => ({ v, idx: offB + i }))
-      .filter(item => item.v.isBoundary && item.v.seamRole === roleB)
+      .filter(item => item.v.isBoundary && matchesRole(item.v.seamRole, item.v.x, roleB))
       .sort(cmp);
 
     if (listA.length === 0 || listB.length === 0) return;
-    const count = Math.min(maxPairs, listA.length, listB.length);
+    // Pair every vertex along the denser seam side so no intermediate seam vertex is left dangling
+    const count = Math.max(maxPairs, listA.length, listB.length);
     for (let k = 0; k < count; k++) {
-      const ia = listA[Math.floor((k / Math.max(1, count - 1)) * (listA.length - 1))].idx;
-      const ib = listB[Math.floor((k / Math.max(1, count - 1)) * (listB.length - 1))].idx;
+      const ia = listA[Math.round((k / Math.max(1, count - 1)) * (listA.length - 1))].idx;
+      const ib = listB[Math.round((k / Math.max(1, count - 1)) * (listB.length - 1))].idx;
       const gap = Math.hypot(
         vertices[ia].x - vertices[ib].x,
         vertices[ia].y - vertices[ib].y,
@@ -953,21 +1043,21 @@ function buildTopologicalSeamEdges(
     const back = panels.find(p => p.panelTag.includes('back') && p.panelTag.endsWith(`-${side}`));
     const sleeve = panels.find(p => p.panelTag.includes('sleeve') && p.panelTag.endsWith(`-${side}`));
 
-    pairBoundaryRole(front, 'side-seam', back, 'side-seam', `side-seam-${side}`, 7, false);
-    pairBoundaryRole(front, 'shoulder', back, 'shoulder', `shoulder-seam-${side}`, 4, true);
-    pairBoundaryRole(sleeve, 'sleeve-cap-front', front, 'armhole', `scye-front-${side}`, 4, false);
-    pairBoundaryRole(sleeve, 'sleeve-cap-back', back, 'armhole', `scye-back-${side}`, 4, false);
-    pairBoundaryRole(sleeve, 'sleeve-inseam-front', sleeve, 'sleeve-inseam-back', `sleeve-underarm-${side}`, 5, false);
+    pairBoundaryRole(front, 'side-seam', back, 'side-seam', `side-seam-${side}`, 12, false);
+    pairBoundaryRole(front, 'shoulder', back, 'shoulder', `shoulder-seam-${side}`, 8, true);
+    pairBoundaryRole(sleeve, 'sleeve-cap-front', front, 'armhole', `scye-front-${side}`, 10, false);
+    pairBoundaryRole(sleeve, 'sleeve-cap-back', back, 'armhole', `scye-back-${side}`, 10, false);
+    pairBoundaryRole(sleeve, 'sleeve-inseam-front', sleeve, 'sleeve-inseam-back', `sleeve-underarm-${side}`, 18, false);
   }
 
   // Center-front and Center-back join between R and L mirrored halves
   const frontR = panels.find(p => p.panelTag.includes('front') && p.panelTag.endsWith('-R'));
   const frontL = panels.find(p => p.panelTag.includes('front') && p.panelTag.endsWith('-L'));
-  pairBoundaryRole(frontR, 'center-front', frontL, 'center-front', 'center-front-join', 6, false);
+  pairBoundaryRole(frontR, 'center-front', frontL, 'center-front', 'center-front-join', 12, false);
 
   const backR = panels.find(p => p.panelTag.includes('back') && p.panelTag.endsWith('-R'));
   const backL = panels.find(p => p.panelTag.includes('back') && p.panelTag.endsWith('-L'));
-  pairBoundaryRole(backR, 'center-back', backL, 'center-back', 'center-back-join', 6, false);
+  pairBoundaryRole(backR, 'center-back', backL, 'center-back', 'center-back-join', 12, false);
 }
 
 interface StructuralEdge {
@@ -1130,4 +1220,373 @@ function cross3D(a: Point3D, b: Point3D): Point3D {
     y: a.z * b.x - a.x * b.z,
     z: a.x * b.y - a.y * b.x
   };
+}
+
+/**
+ * Evaluates 3D triangle mesh quality, degeneracy, boundary count, and sagittal Left/Right symmetry.
+ */
+export function computeMeshTopologyDiagnostics(
+  vertices: MeshVertex3D[],
+  triangles: MeshTriangle[]
+): MeshTopologyDiagnostics {
+  if (vertices.length === 0 || triangles.length === 0) {
+    return {
+      degenerateTriangleCount: triangles.length,
+      minTriangleAreaCm2: 0,
+      minInteriorAngleDeg: 0,
+      maxAspectRatio: 0,
+      leftRightSymmetryErrorCm: 0,
+      boundaryVertexCount: 0,
+      manifoldIntegrityVerified: false
+    };
+  }
+
+  let degenerateTriangleCount = 0;
+  let minTriangleAreaCm2 = Infinity;
+  let minInteriorAngleDeg = 180;
+  let maxAspectRatio = 1;
+
+  for (const tri of triangles) {
+    const a = vertices[tri.a];
+    const b = vertices[tri.b];
+    const c = vertices[tri.c];
+
+    const e1 = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    const e2 = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
+    const e3 = { x: c.x - b.x, y: c.y - b.y, z: c.z - b.z };
+    const cr = cross3D(e1, e2);
+    const area3D = 0.5 * Math.hypot(cr.x, cr.y, cr.z);
+
+    if (!Number.isFinite(area3D) || area3D < 1e-4) {
+      degenerateTriangleCount++;
+    }
+    if (area3D < minTriangleAreaCm2) minTriangleAreaCm2 = area3D;
+
+    const l1 = Math.hypot(e1.x, e1.y, e1.z);
+    const l2 = Math.hypot(e2.x, e2.y, e2.z);
+    const l3 = Math.hypot(e3.x, e3.y, e3.z);
+    const minL = Math.max(1e-6, Math.min(l1, l2, l3));
+    const maxL = Math.max(l1, l2, l3);
+    maxAspectRatio = Math.max(maxAspectRatio, maxL / minL);
+
+    const cosA = Math.max(-1, Math.min(1, (l1 * l1 + l2 * l2 - l3 * l3) / (2 * Math.max(1e-8, l1 * l2))));
+    const cosB = Math.max(-1, Math.min(1, (l1 * l1 + l3 * l3 - l2 * l2) / (2 * Math.max(1e-8, l1 * l3))));
+    const cosC = Math.max(-1, Math.min(1, (l2 * l2 + l3 * l3 - l1 * l1) / (2 * Math.max(1e-8, l2 * l3))));
+    const minAng = (Math.min(Math.acos(cosA), Math.acos(cosB), Math.acos(cosC)) * 180) / Math.PI;
+    if (Number.isFinite(minAng) && minAng < minInteriorAngleDeg) {
+      minInteriorAngleDeg = minAng;
+    }
+  }
+
+  // Left/Right symmetry check comparing +x and -x sides of matching piece types
+  let posXSum = 0;
+  let posCnt = 0;
+  let negXSum = 0;
+  let negCnt = 0;
+  let boundaryVertexCount = 0;
+  for (const v of vertices) {
+    if (v.isBoundary) boundaryVertexCount++;
+    if (v.x > 0.25) {
+      posXSum += v.x;
+      posCnt++;
+    } else if (v.x < -0.25) {
+      negXSum += Math.abs(v.x);
+      negCnt++;
+    }
+  }
+  const leftRightSymmetryErrorCm =
+    posCnt > 0 && negCnt > 0
+      ? Number(Math.abs(posXSum / posCnt - negXSum / negCnt).toFixed(4))
+      : 0;
+
+  return {
+    degenerateTriangleCount,
+    minTriangleAreaCm2: Number((Number.isFinite(minTriangleAreaCm2) ? minTriangleAreaCm2 : 0).toFixed(5)),
+    minInteriorAngleDeg: Number(minInteriorAngleDeg.toFixed(2)),
+    maxAspectRatio: Number(maxAspectRatio.toFixed(2)),
+    leftRightSymmetryErrorCm,
+    boundaryVertexCount,
+    manifoldIntegrityVerified: degenerateTriangleCount === 0 && minTriangleAreaCm2 >= 1e-4
+  };
+}
+
+/**
+ * Spatial-AABB + Möller-Trumbore interior-segment intersection detector checking cloth-cloth self-intersections
+ * among non-adjacent and unjoined triangle pairs.
+ */
+export function countSelfIntersectingTriangles(
+  vertices: MeshVertex3D[],
+  triangles: MeshTriangle[],
+  seamEdges: SeamSpringEdge[]
+): number {
+  const nTri = triangles.length;
+  if (nTri < 2) return 0;
+
+  // Map vertices connected by active seam edges so intended joined vertices do not false-trigger as punctures
+  const seamJoined = new Set<string>();
+  for (const s of seamEdges) {
+    seamJoined.add(s.vertexA < s.vertexB ? `${s.vertexA}:${s.vertexB}` : `${s.vertexB}:${s.vertexA}`);
+  }
+
+  const minX = new Float64Array(nTri);
+  const maxX = new Float64Array(nTri);
+  const minY = new Float64Array(nTri);
+  const maxY = new Float64Array(nTri);
+  const minZ = new Float64Array(nTri);
+  const maxZ = new Float64Array(nTri);
+
+  for (let i = 0; i < nTri; i++) {
+    const t = triangles[i];
+    const a = vertices[t.a];
+    const b = vertices[t.b];
+    const c = vertices[t.c];
+    minX[i] = Math.min(a.x, b.x, c.x);
+    maxX[i] = Math.max(a.x, b.x, c.x);
+    minY[i] = Math.min(a.y, b.y, c.y);
+    maxY[i] = Math.max(a.y, b.y, c.y);
+    minZ[i] = Math.min(a.z, b.z, c.z);
+    maxZ[i] = Math.max(a.z, b.z, c.z);
+  }
+
+  const intersectingSet = new Set<number>();
+  const verticesShareSeam = (u: number, v: number) =>
+    u === v || seamJoined.has(u < v ? `${u}:${v}` : `${v}:${u}`);
+
+  for (let i = 0; i < nTri; i++) {
+    const ti = triangles[i];
+    const iVerts = [ti.a, ti.b, ti.c];
+    for (let j = i + 1; j < nTri; j++) {
+      if (
+        maxX[i] < minX[j] ||
+        minX[i] > maxX[j] ||
+        maxY[i] < minY[j] ||
+        minY[i] > maxY[j] ||
+        maxZ[i] < minZ[j] ||
+        minZ[i] > maxZ[j]
+      ) {
+        continue;
+      }
+
+      const tj = triangles[j];
+      const jVerts = [tj.a, tj.b, tj.c];
+      let sharedOrSeamed = false;
+      for (const u of iVerts) {
+        for (const v of jVerts) {
+          if (verticesShareSeam(u, v)) {
+            sharedOrSeamed = true;
+            break;
+          }
+        }
+        if (sharedOrSeamed) break;
+      }
+      if (sharedOrSeamed) continue;
+
+      if (trianglesStrictlyPierce(vertices[ti.a], vertices[ti.b], vertices[ti.c], vertices[tj.a], vertices[tj.b], vertices[tj.c])) {
+        intersectingSet.add(i);
+        intersectingSet.add(j);
+      }
+    }
+  }
+
+  return intersectingSet.size;
+}
+
+function trianglesStrictlyPierce(
+  a0: Point3D,
+  a1: Point3D,
+  a2: Point3D,
+  b0: Point3D,
+  b1: Point3D,
+  b2: Point3D
+): boolean {
+  const segHitsTri = (p: Point3D, q: Point3D, v0: Point3D, v1: Point3D, v2: Point3D): boolean => {
+    const dir = { x: q.x - p.x, y: q.y - p.y, z: q.z - p.z };
+    const e1 = { x: v1.x - v0.x, y: v1.y - v0.y, z: v1.z - v0.z };
+    const e2 = { x: v2.x - v0.x, y: v2.y - v0.y, z: v2.z - v0.z };
+    const pvec = cross3D(dir, e2);
+    const det = e1.x * pvec.x + e1.y * pvec.y + e1.z * pvec.z;
+    if (Math.abs(det) < 1e-8) return false;
+    const invDet = 1 / det;
+    const tvec = { x: p.x - v0.x, y: p.y - v0.y, z: p.z - v0.z };
+    const u = (tvec.x * pvec.x + tvec.y * pvec.y + tvec.z * pvec.z) * invDet;
+    if (u <= 0.04 || u >= 0.96) return false;
+    const qvec = cross3D(tvec, e1);
+    const v = (dir.x * qvec.x + dir.y * qvec.y + dir.z * qvec.z) * invDet;
+    if (v <= 0.04 || u + v >= 0.96) return false;
+    const t = (e2.x * qvec.x + e2.y * qvec.y + e2.z * qvec.z) * invDet;
+    return t > 0.04 && t < 0.96;
+  };
+
+  return (
+    segHitsTri(a0, a1, b0, b1, b2) ||
+    segHitsTri(a1, a2, b0, b1, b2) ||
+    segHitsTri(a2, a0, b0, b1, b2) ||
+    segHitsTri(b0, b1, a0, a1, a2) ||
+    segHitsTri(b1, b2, a0, a1, a2) ||
+    segHitsTri(b2, b0, a0, a1, a2)
+  );
+}
+
+/**
+ * Resolves any remaining non-adjacent cloth-cloth triangle intersections symmetrically along
+ * body-outward / centroid-separation normals while honoring pinned anchors and sagittal symmetry.
+ */
+function resolveClothSelfIntersectionsPass(
+  vertices: MeshVertex3D[],
+  triangles: MeshTriangle[],
+  seamEdges: SeamSpringEdge[],
+  avatar: AvatarBodyRepresentation,
+  pinnedMask: Uint8Array,
+  centerFoldMask: Uint8Array
+): void {
+  const nTri = triangles.length;
+  if (nTri < 2) return;
+
+  const seamJoined = new Set<string>();
+  for (const s of seamEdges) {
+    seamJoined.add(s.vertexA < s.vertexB ? `${s.vertexA}:${s.vertexB}` : `${s.vertexB}:${s.vertexA}`);
+  }
+  const verticesShareSeam = (u: number, v: number) =>
+    u === v || seamJoined.has(u < v ? `${u}:${v}` : `${v}:${u}`);
+
+  const minX = new Float64Array(nTri);
+  const maxX = new Float64Array(nTri);
+  const minY = new Float64Array(nTri);
+  const maxY = new Float64Array(nTri);
+  const minZ = new Float64Array(nTri);
+  const maxZ = new Float64Array(nTri);
+
+  for (let i = 0; i < nTri; i++) {
+    const t = triangles[i];
+    const a = vertices[t.a];
+    const b = vertices[t.b];
+    const c = vertices[t.c];
+    minX[i] = Math.min(a.x, b.x, c.x);
+    maxX[i] = Math.max(a.x, b.x, c.x);
+    minY[i] = Math.min(a.y, b.y, c.y);
+    maxY[i] = Math.max(a.y, b.y, c.y);
+    minZ[i] = Math.min(a.z, b.z, c.z);
+    maxZ[i] = Math.max(a.z, b.z, c.z);
+  }
+
+  for (let i = 0; i < nTri; i++) {
+    const ti = triangles[i];
+    const iVerts = [ti.a, ti.b, ti.c];
+    for (let j = i + 1; j < nTri; j++) {
+      if (
+        maxX[i] < minX[j] ||
+        minX[i] > maxX[j] ||
+        maxY[i] < minY[j] ||
+        minY[i] > maxY[j] ||
+        maxZ[i] < minZ[j] ||
+        minZ[i] > maxZ[j]
+      ) {
+        continue;
+      }
+
+      const tj = triangles[j];
+      const jVerts = [tj.a, tj.b, tj.c];
+      let sharedOrSeamed = false;
+      for (const u of iVerts) {
+        for (const v of jVerts) {
+          if (verticesShareSeam(u, v)) {
+            sharedOrSeamed = true;
+            break;
+          }
+        }
+        if (sharedOrSeamed) break;
+      }
+      if (sharedOrSeamed) continue;
+
+      const ai = vertices[ti.a];
+      const bi = vertices[ti.b];
+      const ci = vertices[ti.c];
+      const aj = vertices[tj.a];
+      const bj = vertices[tj.b];
+      const cj = vertices[tj.c];
+
+      if (!trianglesStrictlyPierce(ai, bi, ci, aj, bj, cj)) continue;
+
+      const cix = (ai.x + bi.x + ci.x) / 3;
+      const ciy = (ai.y + bi.y + ci.y) / 3;
+      const ciz = (ai.z + bi.z + ci.z) / 3;
+      const cjx = (aj.x + bj.x + cj.x) / 3;
+      const cjy = (aj.y + bj.y + cj.y) / 3;
+      const cjz = (aj.z + bj.z + cj.z) / 3;
+
+      const iIsSleeve = ti.pieceId.toLowerCase().includes('sleeve');
+      const jIsSleeve = tj.pieceId.toLowerCase().includes('sleeve');
+
+      // When sleeve pierces bodice, separate cleanly:
+      // 1) Tuck loose bodice ease safely toward torso surface (never below 0.28 cm clearance)
+      // 2) Lift/push sleeve vertices outward along arm-cylinder normal + tangential lift (never INTO the arm)
+      if (iIsSleeve !== jIsSleeve) {
+        const sleeveVerts = iIsSleeve ? [ai, bi, ci] : [aj, bj, cj];
+        const bodiceVerts = iIsSleeve ? [aj, bj, cj] : [ai, bi, ci];
+        const sleeveIndices = iIsSleeve ? iVerts : jVerts;
+        const bodiceIndices = iIsSleeve ? jVerts : iVerts;
+        for (let k = 0; k < 3; k++) {
+          const bv = bodiceVerts[k];
+          if (!pinnedMask[bodiceIndices[k]] && !centerFoldMask[bodiceIndices[k]]) {
+            const bClr = evaluateTorsoSurfaceClearance(avatar, bv.x, bv.y, bv.z);
+            if (bClr.clearanceCm > 0.30) {
+              const tuck = Math.min(0.42, bClr.clearanceCm - 0.28);
+              bv.x -= bClr.normal.x * tuck;
+              bv.z -= bClr.normal.z * tuck;
+            }
+          }
+          const sv = sleeveVerts[k];
+          if (!pinnedMask[sleeveIndices[k]]) {
+            const tClr = evaluateTorsoSurfaceClearance(avatar, sv.x, sv.y, sv.z);
+            sv.x += tClr.normal.x * 0.30;
+            sv.y += 0.14;
+            sv.z += tClr.normal.z * 0.30;
+          }
+        }
+      } else {
+        let dx = cix - cjx;
+        let dy = ciy - cjy;
+        let dz = ciz - cjz;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist > 1e-6) {
+          dx /= dist;
+          dy /= dist;
+          dz /= dist;
+        } else {
+          const fallbackNorm = evaluateTorsoSurfaceClearance(avatar, cix, ciy, ciz).normal;
+          dx = fallbackNorm.x;
+          dy = fallbackNorm.y;
+          dz = fallbackNorm.z;
+        }
+        const push = 0.22;
+        for (const idx of iVerts) {
+          if (pinnedMask[idx] || centerFoldMask[idx]) continue;
+          vertices[idx].x += dx * push;
+          vertices[idx].y += dy * push;
+          vertices[idx].z += dz * push;
+        }
+        for (const idx of jVerts) {
+          if (pinnedMask[idx] || centerFoldMask[idx]) continue;
+          vertices[idx].x -= dx * push;
+          vertices[idx].y -= dy * push;
+          vertices[idx].z -= dz * push;
+        }
+      }
+
+      // Refresh AABBs for updated triangles
+      minX[i] = Math.min(ai.x, bi.x, ci.x);
+      maxX[i] = Math.max(ai.x, bi.x, ci.x);
+      minY[i] = Math.min(ai.y, bi.y, ci.y);
+      maxY[i] = Math.max(ai.y, bi.y, ci.y);
+      minZ[i] = Math.min(ai.z, bi.z, ci.z);
+      maxZ[i] = Math.max(ai.z, bi.z, ci.z);
+
+      minX[j] = Math.min(aj.x, bj.x, cj.x);
+      maxX[j] = Math.max(aj.x, bj.x, cj.x);
+      minY[j] = Math.min(aj.y, bj.y, cj.y);
+      maxY[j] = Math.max(aj.y, bj.y, cj.y);
+      minZ[j] = Math.min(aj.z, bj.z, cj.z);
+      maxZ[j] = Math.max(aj.z, bj.z, cj.z);
+    }
+  }
 }

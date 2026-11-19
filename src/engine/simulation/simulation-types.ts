@@ -134,6 +134,15 @@ export interface CalibratedMaterialConstitutiveSpec {
   warnings: string[];
 }
 
+export interface BenchmarkResolutionCheck {
+  label: string;
+  meshEdgeLengthMm: number;
+  measuredValue: number;
+  analyticalValue: number;
+  errorValue: number;
+  passed: boolean;
+}
+
 export interface AnalyticalBenchmarkResult {
   benchmarkId: AnalyticalBenchmarkId;
   title: string;
@@ -146,13 +155,28 @@ export interface AnalyticalBenchmarkResult {
   toleranceLimit: number;
   passed: boolean;
   notes: string;
+  convergenceBehavior: string;
+  resolutionChecks: BenchmarkResolutionCheck[];
 }
 
 export interface ClothSolverQualificationReport {
   solverVersion: string;
+  materialSpecId: string;
+  materialName: string;
   evaluatedAt: string;
   allPassed: boolean;
+  failureReason?: string;
   benchmarks: AnalyticalBenchmarkResult[];
+}
+
+export interface MeshTopologyDiagnostics {
+  degenerateTriangleCount: number;
+  minTriangleAreaCm2: number;
+  minInteriorAngleDeg: number;
+  maxAspectRatio: number;
+  leftRightSymmetryErrorCm: number;
+  boundaryVertexCount: number;
+  manifoldIntegrityVerified: boolean;
 }
 
 export interface MeshVertex3D {
@@ -204,6 +228,13 @@ export interface EnergyPoint {
   residualNorm: number;
 }
 
+export interface SimulationEpistemicLayers {
+  analyticalQualification: 'AC-08_PASSED' | 'AC-08_FAILED';
+  numericalConvergence: 'CONVERGED' | 'FAILED_CLOSED';
+  syntheticDrapeBasis: 'PARAMETRIC_M02C_SYNTHETIC' | 'SCAN_SYNTHETIC';
+  physicalToileValidation: 'AC-09_PENDING' | 'AC-09_PASSED' | 'AC-09_FAILED';
+}
+
 export interface SimulationCaseResult {
   simulationId: string;
   revisionId: string;
@@ -219,12 +250,16 @@ export interface SimulationCaseResult {
   seamEdgeCount: number;
   equilibriumResidualNorm: number;
   interpenetratingTriangles: number;
+  selfIntersectingTriangles: number;
   minBodyClearanceCm: number;
+  topologyDiagnostics: MeshTopologyDiagnostics;
   energyHistory: EnergyPoint[];
+  energyConverging: boolean;
   vertices: MeshVertex3D[];
   triangles: MeshTriangle[];
   seamEdges: SeamSpringEdge[];
   benchmarkQualification: ClothSolverQualificationReport;
+  epistemicLayers: SimulationEpistemicLayers;
   convergenceVerified: boolean;
   failureReason?: string;
   isProductionReady: false;
@@ -279,6 +314,8 @@ export interface FitEvaluationReport {
   grainlinePlumbDeviationDeg: number;
   pullLineVectors: PullLineVector[];
   actionableFindings: FitDiagnosticFinding[];
+  documentedAssumptions: string[];
+  measurementUncertaintyNote: string;
   prohibitsUniversalScalarScore: true;
   physicalValidationRequired: true;
   disclaimer: string;
@@ -300,12 +337,24 @@ export interface FitObjectiveVector {
   stylePreservationPenalty: number;
 }
 
+export interface OptimizationZoneDelta {
+  zoneId: FitZoneID;
+  zoneLabel: string;
+  easeDeltaBeforeCm: number;
+  easeDeltaAfterCm: number;
+  maxStrainBeforePct: number;
+  maxStrainAfterPct: number;
+  statusBefore: ZoneFitStatus;
+  statusAfter: ZoneFitStatus;
+}
+
 export interface BoundedOptimizationProposal {
   proposalId: string;
   parentRevisionId: string;
   parameterDeltas: BoundedRecipeParameters;
   objectiveScoresBefore: FitObjectiveVector;
   objectiveScoresAfter: FitObjectiveVector;
+  regionalDeltaSummary: OptimizationZoneDelta[];
   paretoRank: number;
   independentM02ValidationPassed: boolean;
   m02ValidationSummary: string;
@@ -319,11 +368,88 @@ export interface BoundedOptimizationResult {
   optimizationId: string;
   parentRevisionId: string;
   evaluatedCandidatesCount: number;
+  uniqueCandidatesTested: number;
   rejectedByM02Count: number;
+  rejectionReasons: string[];
   baselineObjectives: FitObjectiveVector;
   proposals: BoundedOptimizationProposal[];
   requiresHumanApproval: true;
   governanceNote: string;
+}
+
+export type Ac09ToileBlockKey = 'skirt-block-v1' | 'bodice-sleeve-v1';
+
+export type Ac09ValidationStatus = 'PENDING' | 'PASSED' | 'FAILED' | 'INCOMPLETE';
+
+export interface Ac09PomCheckpoint {
+  pointId: string;
+  label: string;
+  zoneId: FitZoneID;
+  nominalCadCm: number;
+  measuredToileCm: number | null;
+  toleranceCm: number; // M06 §18 authoritative limit: <= 0.50 cm
+  deltaCm: number | null;
+  withinTolerance: boolean | null;
+}
+
+export interface Ac09RegionalIssueCheck {
+  zoneId: FitZoneID;
+  zoneLabel: string;
+  digitalPredictionStatus: ZoneFitStatus;
+  digitalPredictedIssue: string;
+  physicalObservationSummary: string | null;
+  agreesWithDigitalPrediction: boolean | null;
+}
+
+export interface Ac09EvidenceItem {
+  itemId: string;
+  label: string;
+  category: 'photograph' | 'pom-tape' | 'grainline-hem' | 'seam-assembly';
+  recorded: boolean;
+  referenceNote?: string;
+}
+
+export interface Ac09PhysicalToileRecord {
+  recordId: string;
+  toileBlockKey: Ac09ToileBlockKey;
+  garmentLabel: string;
+  revisionId: string;
+  sizeCode: string;
+  fabricId: string;
+  fabricName: string;
+  grainlineVerified: boolean;
+  bodyOrDressFormId: string;
+  poseId: AvatarPoseId;
+  evaluatorName: string;
+  evaluatedAt: string | null;
+  pomCheckpoints: Ac09PomCheckpoint[];
+  regionalAgreementChecks: Ac09RegionalIssueCheck[];
+  hemLevelPhysicalDeviationCm: number | null;
+  seamAlignmentVerified: boolean | null;
+  evidenceChecklist: Ac09EvidenceItem[];
+  notes: string;
+  isProductionReady: false;
+}
+
+export interface Ac09PhysicalToileEvaluation {
+  toileBlockKey: Ac09ToileBlockKey;
+  status: Ac09ValidationStatus;
+  completedPomCount: number;
+  requiredPomCount: number;
+  maxPomConcordanceErrorCm: number | null;
+  pomToleranceLimitCm: number;
+  pomConcordancePassed: boolean;
+  evaluatedZonesCount: number;
+  agreedZonesCount: number;
+  regionalAgreementPct: number | null;
+  requiredAgreementPct: number;
+  regionalAgreementPassed: boolean;
+  evidenceCompletedCount: number;
+  requiredEvidenceCount: number;
+  allEvidenceRecorded: boolean;
+  blockingReasons: string[];
+  summary: string;
+  isProductionReady: false;
 }
 
 export interface GarmentSimulationInput {

@@ -8,6 +8,7 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  ClipboardCheck,
   Compass,
   Eye,
   GitBranch,
@@ -28,14 +29,19 @@ import {
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import {
+  Ac09PhysicalToileRecord,
+  Ac09ToileBlockKey,
   AvatarPoseId,
   BoundedOptimizationProposal,
   BoundedOptimizationResult,
   calibrateConstitutiveMaterial,
+  createPendingAc09ToileRecord,
+  evaluateAc09ToileRecord,
   evaluateQuantitativeFit,
   generateParametricAvatar,
   runBoundedPatternOptimization,
   runGarmentDrapeSimulation,
+  updateAc09PomMeasurement,
   ZoneFitStatus
 } from '../../engine/simulation';
 
@@ -100,6 +106,60 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
     () => evaluateQuantitativeFit(simulation, avatar, currentSpec, measurements),
     [simulation, avatar, currentSpec, measurements]
   );
+
+  const defaultToileBlock: Ac09ToileBlockKey =
+    currentSpec.garmentCategory === 'bodice' ? 'bodice-sleeve-v1' : 'skirt-block-v1';
+  const [ac09ActiveBlock, setAc09ActiveBlock] = useState<Ac09ToileBlockKey>(defaultToileBlock);
+  const [ac09Records, setAc09Records] = useState<Record<Ac09ToileBlockKey, Ac09PhysicalToileRecord>>(() => ({
+    'skirt-block-v1': createPendingAc09ToileRecord({
+      toileBlockKey: 'skirt-block-v1',
+      designSpec: currentSpec,
+      measurements,
+      fitReport: currentSpec.garmentCategory === 'skirt' ? fitReport : undefined,
+      poseId
+    }),
+    'bodice-sleeve-v1': createPendingAc09ToileRecord({
+      toileBlockKey: 'bodice-sleeve-v1',
+      designSpec: currentSpec,
+      measurements,
+      fitReport: currentSpec.garmentCategory === 'bodice' ? fitReport : undefined,
+      poseId
+    })
+  }));
+
+  // Sync AC-09 nominal CAD values smoothly only if that record is still unassessed (zero fabricated measurements)
+  useEffect(() => {
+    setAc09ActiveBlock(defaultToileBlock);
+    setAc09Records(prev => {
+      const targetKey = defaultToileBlock;
+      const existing = prev[targetKey];
+      const evalState = evaluateAc09ToileRecord(existing);
+      if (evalState.status !== 'PENDING') return prev;
+      return {
+        ...prev,
+        [targetKey]: createPendingAc09ToileRecord({
+          toileBlockKey: targetKey,
+          designSpec: currentSpec,
+          measurements,
+          fitReport,
+          poseId
+        })
+      };
+    });
+  }, [defaultToileBlock, currentSpec, measurements, fitReport, poseId]);
+
+  const activeAc09Record = ac09Records[ac09ActiveBlock];
+  const activeAc09Evaluation = useMemo(
+    () => evaluateAc09ToileRecord(activeAc09Record),
+    [activeAc09Record]
+  );
+
+  const updateActiveAc09Record = (updater: (prev: Ac09PhysicalToileRecord) => Ac09PhysicalToileRecord) => {
+    setAc09Records(prev => ({
+      ...prev,
+      [ac09ActiveBlock]: updater(prev[ac09ActiveBlock])
+    }));
+  };
 
   // Render deterministic 3D projected viewport canvas
   useEffect(() => {
@@ -355,11 +415,38 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
           </div>
         </div>
 
-        {/* Solver Equilibrium & Zero-Interpenetration Telemetry */}
+        {/* 4-Layer Epistemic Separation Strip (Analytical vs Numerical Convergence vs Synthetic Simulation vs Physical Toile) */}
+        <div
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[11px] font-mono"
+          data-testid="m06-epistemic-strip"
+        >
+          <div className="border border-emerald-200 bg-emerald-50/60 px-2.5 py-1.5 rounded-xs">
+            <span className="text-[10px] text-emerald-700 block uppercase">1. Analytical Mechanics (AC-08)</span>
+            <strong className="text-emerald-950">{simulation.epistemicLayers.analyticalQualification}</strong>
+          </div>
+          <div className="border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 rounded-xs">
+            <span className="text-[10px] text-neutral-500 block uppercase">2. Numerical Equilibrium</span>
+            <strong className="text-neutral-900">
+              {simulation.epistemicLayers.numericalConvergence} (res {simulation.equilibriumResidualNorm.toFixed(4)})
+            </strong>
+          </div>
+          <div className="border border-amber-200 bg-amber-50/60 px-2.5 py-1.5 rounded-xs">
+            <span className="text-[10px] text-amber-800 block uppercase">3. Synthetic 3D Drape Basis</span>
+            <strong className="text-amber-950">{simulation.epistemicLayers.syntheticDrapeBasis}</strong>
+          </div>
+          <div className="border border-amber-300 bg-amber-50 px-2.5 py-1.5 rounded-xs">
+            <span className="text-[10px] text-amber-800 block uppercase">4. Physical Toile (AC-09)</span>
+            <strong className="text-amber-950" data-testid="m06-ac09-header-status">
+              AC-09_{activeAc09Evaluation.status}
+            </strong>
+          </div>
+        </div>
+
+        {/* Solver Equilibrium, Topology Quality & Zero-Interpenetration Telemetry */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs font-mono">
           <MetricBox
             label="CONVERGENCE"
-            value={simulation.convergenceVerified ? 'VERIFIED' : 'FAILED'}
+            value={simulation.convergenceVerified && simulation.energyConverging ? 'VERIFIED' : 'FAILED'}
             tone={simulation.convergenceVerified ? 'success' : 'danger'}
           />
           <MetricBox
@@ -368,17 +455,18 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
             tone={simulation.benchmarkQualification.allPassed ? 'success' : 'danger'}
           />
           <MetricBox
-            label="INTERPENETRATION"
-            value={`${simulation.interpenetratingTriangles} tris`}
-            tone={simulation.interpenetratingTriangles === 0 ? 'success' : 'danger'}
+            label="BODY / SELF CONTACT"
+            value={`${simulation.interpenetratingTriangles} body / ${simulation.selfIntersectingTriangles} self`}
+            tone={simulation.interpenetratingTriangles === 0 && simulation.selfIntersectingTriangles === 0 ? 'success' : 'warning'}
           />
           <MetricBox
-            label="MESH TOPOLOGY"
-            value={`${simulation.vertexCount}v / ${simulation.triangleCount}t`}
+            label="MESH & QUALITY"
+            value={`${simulation.vertexCount}v / ${simulation.triangleCount}t (${simulation.topologyDiagnostics.degenerateTriangleCount} deg)`}
+            tone={simulation.topologyDiagnostics.manifoldIntegrityVerified ? 'default' : 'danger'}
           />
           <MetricBox
-            label="MIN CLEARANCE"
-            value={`${simulation.minBodyClearanceCm.toFixed(2)} cm`}
+            label="MIN CLEARANCE / L-R Δ"
+            value={`${simulation.minBodyClearanceCm.toFixed(2)} / ${simulation.topologyDiagnostics.leftRightSymmetryErrorCm.toFixed(2)} cm`}
           />
           <MetricBox
             label="OVERALL ZONE STATUS"
@@ -544,6 +632,7 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
                       Δ {b.errorValue} {b.errorUnit} (≤ {b.toleranceLimit})
                     </span>
                   </div>
+                  <div className="text-[10px] text-neutral-500">{b.convergenceBehavior}</div>
                 </div>
               ))}
             </div>
@@ -581,10 +670,17 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
                 </strong>
               </div>
               <div className="p-2 bg-neutral-50 border border-neutral-200 rounded-xs">
-                <span className="text-neutral-500 block">Symmetry Residual</span>
-                <strong className="text-neutral-900">{constitutiveMaterial.symmetryResidual.toExponential(1)}</strong>
+                <span className="text-neutral-500 block">Symmetry / det(C_2D)</span>
+                <strong className="text-neutral-900">
+                  {constitutiveMaterial.symmetryResidual.toExponential(1)} / {constitutiveMaterial.determinant2D.toFixed(0)}
+                </strong>
               </div>
             </div>
+            {constitutiveMaterial.warnings.length > 0 && (
+              <div className="p-2 bg-amber-50 border border-amber-200 rounded-xs text-[11px] text-amber-950">
+                {constitutiveMaterial.warnings[0]}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -647,6 +743,18 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
               })}
             </tbody>
           </table>
+        </div>
+
+        <div className="bg-neutral-50 border border-neutral-200 rounded-xs p-3 text-[11px] text-neutral-700 space-y-1">
+          <div className="font-mono font-bold text-neutral-900 uppercase text-[10px]">
+            Documented Model Assumptions &amp; Provenance Uncertainty
+          </div>
+          <p className="font-mono text-[10px] text-neutral-600">{fitReport.measurementUncertaintyNote}</p>
+          <ul className="list-disc pl-4 space-y-0.5">
+            {fitReport.documentedAssumptions.map((assumption, idx) => (
+              <li key={idx}>{assumption}</li>
+            ))}
+          </ul>
         </div>
       </div>
 
@@ -728,6 +836,26 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
                       </div>
                     </div>
 
+                    {prop.regionalDeltaSummary.length > 0 && (
+                      <div className="bg-white border border-neutral-200 rounded-xs p-2 text-[10px] font-mono space-y-1">
+                        <div className="text-neutral-500 uppercase font-bold">Before → After Regional Delta</div>
+                        {prop.regionalDeltaSummary.map(dz => (
+                          <div key={dz.zoneId} className="flex items-center justify-between gap-2 text-neutral-700">
+                            <span className="truncate">{dz.zoneLabel}</span>
+                            <span>
+                              Ease {dz.easeDeltaBeforeCm > 0 ? '+' : ''}
+                              {dz.easeDeltaBeforeCm.toFixed(2)} →{' '}
+                              <strong>
+                                {dz.easeDeltaAfterCm > 0 ? '+' : ''}
+                                {dz.easeDeltaAfterCm.toFixed(2)} cm
+                              </strong>{' '}
+                              • {dz.statusBefore} → <strong>{dz.statusAfter}</strong>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-[10px] font-mono text-neutral-500">
                         Child Revision State: <strong className="text-amber-800">DRAFT (UNAPPROVED)</strong>
@@ -752,6 +880,285 @@ export const SimulationFitPanel: React.FC<SimulationFitPanelProps> = ({
             Click &ldquo;Run Bounded Optimization&rdquo; to explore Pareto-optimal ease recipes inside ±1.5 cm box limits with independent M02 re-validation.
           </div>
         )}
+      </div>
+
+      {/* AC-09 Physical Toile Fit Concordance Protocol & Evidence Recorder (M06 §18) */}
+      <div className="bg-white border border-neutral-200 rounded-sm p-4 shadow-2xs space-y-4" data-testid="m06-ac09-panel">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-neutral-100 pb-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <ClipboardCheck className="w-4 h-4 text-neutral-800" />
+              <h4 className="text-sm font-serif font-bold text-neutral-900">
+                AC-09 Physical vs. Digital Toile Validation Protocol (M06 §18)
+              </h4>
+              <Badge
+                variant={
+                  activeAc09Evaluation.status === 'PASSED'
+                    ? 'success'
+                    : activeAc09Evaluation.status === 'FAILED'
+                    ? 'danger'
+                    : 'warning'
+                }
+                size="sm"
+                data-testid="m06-ac09-status-badge"
+              >
+                AC-09: {activeAc09Evaluation.status}
+              </Badge>
+            </div>
+            <p className="text-xs text-neutral-600">
+              Sewn toile verification requires physical POM concordance ≤ 0.50 cm and ≥ 85% regional fit-issue agreement before Release Level A sign-off. Zero fabricated sample values are pre-filled.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {(['skirt-block-v1', 'bodice-sleeve-v1'] as Ac09ToileBlockKey[]).map(key => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setAc09ActiveBlock(key)}
+                data-testid={`m06-ac09-tab-${key}`}
+                className={`px-2.5 py-1 text-[11px] font-mono rounded-xs border cursor-pointer ${
+                  ac09ActiveBlock === key
+                    ? 'bg-neutral-900 text-white border-neutral-900'
+                    : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                }`}
+              >
+                {key}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setAc09Records(prev => ({
+                  ...prev,
+                  [ac09ActiveBlock]: createPendingAc09ToileRecord({
+                    toileBlockKey: ac09ActiveBlock,
+                    designSpec: currentSpec,
+                    measurements,
+                    fitReport:
+                      (ac09ActiveBlock === 'bodice-sleeve-v1') === (currentSpec.garmentCategory === 'bodice')
+                        ? fitReport
+                        : undefined,
+                    poseId
+                  })
+                }))
+              }
+              className="px-2.5 py-1 text-[11px] font-mono rounded-xs border border-neutral-300 bg-neutral-50 text-neutral-700 hover:bg-neutral-100 cursor-pointer"
+            >
+              Reset Pending
+            </button>
+          </div>
+        </div>
+
+        {/* Protocol Summary & Metadata Fields */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono">
+          <div className="border border-neutral-200 bg-neutral-50 p-2.5 rounded-xs">
+            <span className="text-[10px] text-neutral-500 block uppercase">POM Concordance (≤ 0.50 cm)</span>
+            <strong>
+              {activeAc09Evaluation.completedPomCount}/{activeAc09Evaluation.requiredPomCount} recorded
+              {activeAc09Evaluation.maxPomConcordanceErrorCm !== null
+                ? ` (max Δ ${activeAc09Evaluation.maxPomConcordanceErrorCm.toFixed(2)} cm)`
+                : ' • Awaiting Tape'}
+            </strong>
+          </div>
+          <div className="border border-neutral-200 bg-neutral-50 p-2.5 rounded-xs">
+            <span className="text-[10px] text-neutral-500 block uppercase">Regional Fit Agreement (≥ 85%)</span>
+            <strong>
+              {activeAc09Evaluation.regionalAgreementPct !== null
+                ? `${activeAc09Evaluation.regionalAgreementPct.toFixed(1)}% (${activeAc09Evaluation.agreedZonesCount}/${activeAc09Evaluation.evaluatedZonesCount})`
+                : `0/${activeAc09Record.regionalAgreementChecks.length} evaluated`}
+            </strong>
+          </div>
+          <label className="border border-neutral-200 bg-white p-2 rounded-xs block">
+            <span className="text-[10px] text-neutral-500 block uppercase">Evaluator Identity</span>
+            <input
+              type="text"
+              value={activeAc09Record.evaluatorName}
+              onChange={e =>
+                updateActiveAc09Record(r => ({
+                  ...r,
+                  evaluatorName: e.target.value,
+                  evaluatedAt: r.evaluatedAt ?? new Date().toISOString().slice(0, 10)
+                }))
+              }
+              placeholder="Patternmaker / Tailor name"
+              className="w-full mt-0.5 text-xs font-sans text-neutral-900 border-b border-neutral-200 focus:outline-none focus:border-neutral-900"
+            />
+          </label>
+          <label className="border border-neutral-200 bg-white p-2 rounded-xs block">
+            <span className="text-[10px] text-neutral-500 block uppercase">Dress Form / Body ID</span>
+            <input
+              type="text"
+              value={activeAc09Record.bodyOrDressFormId}
+              onChange={e =>
+                updateActiveAc09Record(r => ({
+                  ...r,
+                  bodyOrDressFormId: e.target.value,
+                  evaluatedAt: r.evaluatedAt ?? new Date().toISOString().slice(0, 10)
+                }))
+              }
+              placeholder="e.g., Wolf-M-Form-01"
+              className="w-full mt-0.5 text-xs font-sans text-neutral-900 border-b border-neutral-200 focus:outline-none focus:border-neutral-900"
+            />
+          </label>
+        </div>
+
+        {/* POM & Regional Agreement Checklists */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="border border-neutral-200 rounded-xs overflow-hidden">
+            <div className="bg-neutral-50 px-3 py-2 border-b border-neutral-200 text-[11px] font-mono font-bold text-neutral-900 uppercase">
+              Physical POM Measurements ({activeAc09Record.sizeCode} • {activeAc09Record.fabricName})
+            </div>
+            <table className="w-full text-left text-xs font-mono">
+              <thead>
+                <tr className="border-b border-neutral-200 text-[10px] text-neutral-500">
+                  <th className="p-2">Checkpoint</th>
+                  <th className="p-2">CAD (cm)</th>
+                  <th className="p-2">Physical (cm)</th>
+                  <th className="p-2">Delta</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {activeAc09Record.pomCheckpoints.map(pt => (
+                  <tr key={pt.pointId}>
+                    <td className="p-2 font-sans text-neutral-800">{pt.label}</td>
+                    <td className="p-2 text-neutral-700">{pt.nominalCadCm.toFixed(2)}</td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        aria-label={`Measured physical cm for ${pt.label}`}
+                        value={pt.measuredToileCm ?? ''}
+                        onChange={e => {
+                          const raw = e.target.value.trim();
+                          const val = raw === '' ? null : Number(raw);
+                          updateActiveAc09Record(r => updateAc09PomMeasurement(r, pt.pointId, val));
+                        }}
+                        placeholder="Pending"
+                        className="w-20 px-1.5 py-0.5 border border-neutral-300 rounded-xs text-xs font-mono bg-white"
+                      />
+                    </td>
+                    <td className="p-2">
+                      {pt.deltaCm === null ? (
+                        <span className="text-neutral-400">PENDING</span>
+                      ) : (
+                        <span className={pt.withinTolerance ? 'text-emerald-700 font-bold' : 'text-red-700 font-bold'}>
+                          {pt.deltaCm > 0 ? '+' : ''}
+                          {pt.deltaCm.toFixed(2)} cm
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="space-y-3">
+            <div className="border border-neutral-200 rounded-xs p-3 space-y-2">
+              <div className="text-[11px] font-mono font-bold text-neutral-900 uppercase">
+                Regional Fit-Issue Agreement vs Digital Report
+              </div>
+              {activeAc09Record.regionalAgreementChecks.map(rz => (
+                <div key={rz.zoneId} className="flex items-center justify-between gap-2 text-xs border-b border-neutral-100 pb-1.5 last:border-b-0 last:pb-0">
+                  <div>
+                    <strong className="text-neutral-900">{rz.zoneLabel}</strong>
+                    <span className="text-[11px] text-neutral-500 block">Digital: {rz.digitalPredictionStatus}</span>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateActiveAc09Record(r => ({
+                          ...r,
+                          regionalAgreementChecks: r.regionalAgreementChecks.map(item =>
+                            item.zoneId === rz.zoneId
+                              ? { ...item, agreesWithDigitalPrediction: true, physicalObservationSummary: 'Matches physical toile fit behavior' }
+                              : item
+                          )
+                        }))
+                      }
+                      className={`px-2 py-0.5 border rounded-xs cursor-pointer ${
+                        rz.agreesWithDigitalPrediction === true
+                          ? 'bg-emerald-700 text-white border-emerald-700'
+                          : 'bg-white text-neutral-700 border-neutral-300'
+                      }`}
+                    >
+                      Agree
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateActiveAc09Record(r => ({
+                          ...r,
+                          regionalAgreementChecks: r.regionalAgreementChecks.map(item =>
+                            item.zoneId === rz.zoneId
+                              ? { ...item, agreesWithDigitalPrediction: false, physicalObservationSummary: 'Diverges from digital diagnostic' }
+                              : item
+                          )
+                        }))
+                      }
+                      className={`px-2 py-0.5 border rounded-xs cursor-pointer ${
+                        rz.agreesWithDigitalPrediction === false
+                          ? 'bg-red-700 text-white border-red-700'
+                          : 'bg-white text-neutral-700 border-neutral-300'
+                      }`}
+                    >
+                      Diverge
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="border border-neutral-200 rounded-xs p-3 space-y-2 text-xs">
+              <div className="text-[11px] font-mono font-bold text-neutral-900 uppercase">
+                Photographic, Grainline &amp; Seam Evidence Checklist ({activeAc09Evaluation.evidenceCompletedCount}/{activeAc09Evaluation.requiredEvidenceCount})
+              </div>
+              <div className="flex flex-wrap items-center gap-4 border-b border-neutral-100 pb-2">
+                <label className="flex items-center gap-1.5 text-[11px] font-mono text-neutral-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={activeAc09Record.grainlineVerified}
+                    onChange={e => updateActiveAc09Record(r => ({ ...r, grainlineVerified: e.target.checked }))}
+                  />
+                  Grainline Plumb Verified
+                </label>
+                <label className="flex items-center gap-1.5 text-[11px] font-mono text-neutral-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={activeAc09Record.seamAlignmentVerified === true}
+                    onChange={e => updateActiveAc09Record(r => ({ ...r, seamAlignmentVerified: e.target.checked ? true : null }))}
+                  />
+                  Seams Alignment Verified
+                </label>
+              </div>
+              {activeAc09Record.evidenceChecklist.map(ev => (
+                <label key={ev.itemId} className="flex items-start gap-2 text-[11px] text-neutral-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ev.recorded}
+                    onChange={e =>
+                      updateActiveAc09Record(r => ({
+                        ...r,
+                        evidenceChecklist: r.evidenceChecklist.map(item =>
+                          item.itemId === ev.itemId ? { ...item, recorded: e.target.checked } : item
+                        )
+                      }))
+                    }
+                    className="mt-0.5"
+                  />
+                  <span>{ev.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-neutral-50 border border-neutral-200 rounded-xs p-2.5 text-xs font-mono text-neutral-800">
+          {activeAc09Evaluation.summary}
+        </div>
       </div>
 
       {/* Epistemic Honesty Footer */}

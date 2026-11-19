@@ -61,17 +61,18 @@ export function generateParametricAvatar(
   };
 
   // Pose-dependent shoulder/elbow/wrist kinematics (Dossier 11)
-  const shoulderX = crossSections.shoulder.semiWidthXCm * 0.92;
+  // Place humerus pivot outside the lateral shoulder/deltoid ribcage envelope so inner biceps does not intersect torso SDF.
+  const shoulderX = crossSections.shoulder.semiWidthXCm + 1.1;
   const armToElbow = measurements.armLengthToElbow ?? 33.5;
   const sleeveLen = measurements.sleeveLength ?? 59.5;
   const lowerArmLen = Math.max(20, sleeveLen - armToElbow);
 
   const armAngleOutRad =
     poseId === 'CANONICAL_A_POSE'
-      ? (18 * Math.PI) / 180
+      ? (22 * Math.PI) / 180
       : poseId === 'ARM_FORWARD_45'
-      ? (14 * Math.PI) / 180
-      : (12 * Math.PI) / 180;
+      ? (18 * Math.PI) / 180
+      : (16 * Math.PI) / 180;
 
   const armForwardRad =
     poseId === 'ARM_FORWARD_45'

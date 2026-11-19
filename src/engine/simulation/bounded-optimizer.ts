@@ -24,7 +24,8 @@ import {
   BoundedOptimizationResult,
   BoundedRecipeParameters,
   FitEvaluationReport,
-  FitObjectiveVector
+  FitObjectiveVector,
+  OptimizationZoneDelta
 } from './simulation-types';
 
 export const RECIPE_BOUNDS = {
@@ -199,13 +200,15 @@ export function runBoundedPatternOptimization(params: {
   poseId?: AvatarPoseId;
   bodiceDartStyle?: BodiceDartStyle;
   sleeveEaseStrategy?: SleeveEaseStrategy;
+  candidateOverrides?: BoundedRecipeParameters[];
 }): BoundedOptimizationResult {
   const {
     currentSpec,
     measurements,
     poseId = 'CANONICAL_A_POSE',
     bodiceDartStyle = currentSpec.dartStyle ?? 'waist',
-    sleeveEaseStrategy = currentSpec.sleeveEaseStrategy ?? 'classic'
+    sleeveEaseStrategy = currentSpec.sleeveEaseStrategy ?? 'classic',
+    candidateOverrides
   } = params;
 
   const avatar = generateParametricAvatar(measurements, poseId);
@@ -233,30 +236,36 @@ export function runBoundedPatternOptimization(params: {
   });
 
   // Candidate grid guided by baseline regional ease deficits inside ADR-006 box bounds
-  const candidates: BoundedRecipeParameters[] = [];
-  if (currentSpec.garmentCategory === 'bodice') {
-    const bustDeficit = -(baseFit.regionalZones.bust?.easeDeltaCm ?? 0);
-    const waistDeficit = -(baseFit.regionalZones.waist?.easeDeltaCm ?? 0);
-    candidates.push(
-      { bustEaseDeltaCm: bustDeficit * 0.75, waistEaseDeltaCm: waistDeficit * 0.75, hipEaseDeltaCm: 0, sleeveEaseStrategy },
-      { bustEaseDeltaCm: bustDeficit, waistEaseDeltaCm: waistDeficit, hipEaseDeltaCm: 0, sleeveEaseStrategy: 'classic' },
-      { bustEaseDeltaCm: 1.0, waistEaseDeltaCm: 0.75, hipEaseDeltaCm: 0, sleeveEaseStrategy: 'tailored' },
-      { bustEaseDeltaCm: -0.75, waistEaseDeltaCm: -0.5, hipEaseDeltaCm: 0, sleeveEaseStrategy: 'fitted' },
-      { bustEaseDeltaCm: 1.4, waistEaseDeltaCm: 1.2, hipEaseDeltaCm: 0, sleeveEaseStrategy }
-    );
-  } else {
-    const waistDeficit = -(baseFit.regionalZones.waist?.easeDeltaCm ?? 0);
-    const hipDeficit = -(baseFit.regionalZones.low_hip?.easeDeltaCm ?? 0);
-    candidates.push(
-      { bustEaseDeltaCm: 0, waistEaseDeltaCm: waistDeficit * 0.8, hipEaseDeltaCm: hipDeficit * 0.8 },
-      { bustEaseDeltaCm: 0, waistEaseDeltaCm: waistDeficit, hipEaseDeltaCm: hipDeficit },
-      { bustEaseDeltaCm: 0, waistEaseDeltaCm: 0.8, hipEaseDeltaCm: 1.2 },
-      { bustEaseDeltaCm: 0, waistEaseDeltaCm: -0.6, hipEaseDeltaCm: -0.6 },
-      { bustEaseDeltaCm: 0, waistEaseDeltaCm: 1.4, hipEaseDeltaCm: 1.5 }
-    );
+  const candidates: BoundedRecipeParameters[] = candidateOverrides
+    ? [...candidateOverrides]
+    : [];
+  if (!candidateOverrides) {
+    if (currentSpec.garmentCategory === 'bodice') {
+      const bustDeficit = -(baseFit.regionalZones.bust?.easeDeltaCm ?? 0);
+      const waistDeficit = -(baseFit.regionalZones.waist?.easeDeltaCm ?? 0);
+      candidates.push(
+        { bustEaseDeltaCm: bustDeficit * 0.75, waistEaseDeltaCm: waistDeficit * 0.75, hipEaseDeltaCm: 0, sleeveEaseStrategy },
+        { bustEaseDeltaCm: bustDeficit, waistEaseDeltaCm: waistDeficit, hipEaseDeltaCm: 0, sleeveEaseStrategy: 'classic' },
+        { bustEaseDeltaCm: 1.0, waistEaseDeltaCm: 0.75, hipEaseDeltaCm: 0, sleeveEaseStrategy: 'tailored' },
+        { bustEaseDeltaCm: -0.75, waistEaseDeltaCm: -0.5, hipEaseDeltaCm: 0, sleeveEaseStrategy: 'fitted' },
+        { bustEaseDeltaCm: 1.4, waistEaseDeltaCm: 1.2, hipEaseDeltaCm: 0, sleeveEaseStrategy }
+      );
+    } else {
+      const waistDeficit = -(baseFit.regionalZones.waist?.easeDeltaCm ?? 0);
+      const hipDeficit = -(baseFit.regionalZones.low_hip?.easeDeltaCm ?? 0);
+      candidates.push(
+        { bustEaseDeltaCm: 0, waistEaseDeltaCm: waistDeficit * 0.8, hipEaseDeltaCm: hipDeficit * 0.8 },
+        { bustEaseDeltaCm: 0, waistEaseDeltaCm: waistDeficit, hipEaseDeltaCm: hipDeficit },
+        { bustEaseDeltaCm: 0, waistEaseDeltaCm: 0.8, hipEaseDeltaCm: 1.2 },
+        { bustEaseDeltaCm: 0, waistEaseDeltaCm: -0.6, hipEaseDeltaCm: -0.6 },
+        { bustEaseDeltaCm: 0, waistEaseDeltaCm: 1.4, hipEaseDeltaCm: 1.5 }
+      );
+    }
   }
 
   let rejectedByM02Count = 0;
+  const rejectionReasons: string[] = [];
+  const seenCandidateKeys = new Set<string>();
   const validCandidates: Array<{
     deltas: BoundedRecipeParameters;
     objectives: FitObjectiveVector;
@@ -267,6 +276,16 @@ export function runBoundedPatternOptimization(params: {
 
   for (let i = 0; i < candidates.length; i++) {
     const clamped = clampBoundedRecipeParameters(candidates[i]);
+    const key = [
+      clamped.bustEaseDeltaCm.toFixed(3),
+      clamped.waistEaseDeltaCm.toFixed(3),
+      clamped.hipEaseDeltaCm.toFixed(3),
+      clamped.sleeveEaseStrategy ?? '',
+      clamped.bodiceDartStyle ?? ''
+    ].join('|');
+    if (seenCandidateKeys.has(key)) continue;
+    seenCandidateKeys.add(key);
+
     const reval = compileAndRevalidateCandidate({
       parentSpec: currentSpec,
       measurements,
@@ -275,6 +294,7 @@ export function runBoundedPatternOptimization(params: {
     });
     if (!reval.passed) {
       rejectedByM02Count++;
+      rejectionReasons.push(reval.summary);
       continue;
     }
 
@@ -283,10 +303,12 @@ export function runBoundedPatternOptimization(params: {
       designSpec: reval.candidateSpec,
       measurements,
       avatar,
-      poseId
+      poseId,
+      precomputedBenchmarks: baseSim.benchmarkQualification
     });
     if (!sim.convergenceVerified) {
       rejectedByM02Count++;
+      rejectionReasons.push(sim.failureReason ?? 'Simulation solver failed to converge for candidate.');
       continue;
     }
 
@@ -310,6 +332,7 @@ export function runBoundedPatternOptimization(params: {
       parameterDeltas: c.deltas,
       objectiveScoresBefore: baselineObjectives,
       objectiveScoresAfter: c.objectives,
+      regionalDeltaSummary: buildRegionalZoneDeltaSummary(baseFit, c.fitReport),
       paretoRank: ranks[idx],
       independentM02ValidationPassed: true,
       m02ValidationSummary: c.m02Summary,
@@ -318,20 +341,49 @@ export function runBoundedPatternOptimization(params: {
       requiresHumanApproval: true as const,
       rationale: buildProposalRationale(c.deltas, baselineObjectives, c.objectives)
     }))
-    .sort((a, b) => a.paretoRank - b.paretoRank || a.objectiveScoresAfter.easeDeviationCm - b.objectiveScoresAfter.easeDeviationCm)
+    .sort(
+      (a, b) =>
+        a.paretoRank - b.paretoRank ||
+        a.objectiveScoresAfter.easeDeviationCm - b.objectiveScoresAfter.easeDeviationCm ||
+        a.objectiveScoresAfter.meanStrainEnergyPenalty - b.objectiveScoresAfter.meanStrainEnergyPenalty ||
+        a.objectiveScoresAfter.stylePreservationPenalty - b.objectiveScoresAfter.stylePreservationPenalty ||
+        a.proposalId.localeCompare(b.proposalId)
+    )
     .slice(0, 4);
 
   return {
     optimizationId: `m06-opt-${parentRev}`,
     parentRevisionId: parentRev,
     evaluatedCandidatesCount: candidates.length,
+    uniqueCandidatesTested: seenCandidateKeys.size,
     rejectedByM02Count,
+    rejectionReasons,
     baselineObjectives,
     proposals,
     requiresHumanApproval: true,
     governanceNote:
       'ADR-006 Bounded Optimization: Every proposal adjusts only declared ease/recipe parameters within ±1.5 cm bounds, passes independent M02/M04.3 re-validation, and emits an unapproved child revision requiring explicit designer approval.'
   };
+}
+
+function buildRegionalZoneDeltaSummary(
+  beforeFit: FitEvaluationReport,
+  afterFit: FitEvaluationReport
+): OptimizationZoneDelta[] {
+  return afterFit.evaluatedZoneOrder.map(zoneId => {
+    const beforeZone = beforeFit.regionalZones[zoneId];
+    const afterZone = afterFit.regionalZones[zoneId];
+    return {
+      zoneId,
+      zoneLabel: afterZone.zoneLabel,
+      easeDeltaBeforeCm: beforeZone?.easeDeltaCm ?? 0,
+      easeDeltaAfterCm: afterZone.easeDeltaCm,
+      maxStrainBeforePct: beforeZone?.maxStrainPct ?? 0,
+      maxStrainAfterPct: afterZone.maxStrainPct,
+      statusBefore: beforeZone?.status ?? 'FAIL_STRUCTURAL',
+      statusAfter: afterZone.status
+    };
+  });
 }
 
 function assignParetoRanks(objs: FitObjectiveVector[]): number[] {

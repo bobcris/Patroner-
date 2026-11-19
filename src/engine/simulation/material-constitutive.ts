@@ -62,12 +62,12 @@ export function calibrateConstitutiveMaterial(
     Number((((eWarpNCm + eWeftNCm) * 0.5) * (8.0 / Math.max(8.0, biasStretch)) * 0.24).toFixed(4))
   );
 
-  // Enforce exact orthotropic symmetry: nu12 * E_weft = nu21 * E_warp
+  // Enforce exact orthotropic symmetry: nu12 * E_weft = nu21 * E_warp (round nu12 first, solve nu21 to 12 decimals)
   const rawNu12 = enhanced.stretch === 'high-stretch' ? 0.32 : enhanced.stretch === 'low-stretch' ? 0.26 : 0.22;
   // Clamp nu12 such that nu12 * nu21 < 0.85 always holds
   const maxSafeNu12 = Math.min(0.42, 0.85 * Math.sqrt(eWarpNCm / eWeftNCm));
-  const nu12 = Math.min(rawNu12, maxSafeNu12);
-  const nu21 = (nu12 * eWeftNCm) / eWarpNCm;
+  const nu12 = Number(Math.min(rawNu12, maxSafeNu12).toFixed(6));
+  const nu21 = Number(((nu12 * eWeftNCm) / eWarpNCm).toFixed(12));
 
   // Discrete bending rigidity B ≈ E_eff * t^3 / 12 (scaled to N*cm units for cloth drape)
   const tCm = thicknessMm / 10;
@@ -112,8 +112,8 @@ export function calibrateConstitutiveMaterial(
     eWarpNCm,
     eWeftNCm,
     gShearNCm,
-    nu12: Number(nu12.toFixed(6)),
-    nu21: Number(nu21.toFixed(6)),
+    nu12,
+    nu21,
     bWarpNCm,
     bWeftNCm,
     densityKgM2: Number(densityKgM2.toFixed(4)),

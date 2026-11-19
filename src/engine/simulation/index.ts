@@ -10,3 +10,4 @@ export * from './analytical-benchmarks';
 export * from './cloth-solver';
 export * from './fit-evaluator';
 export * from './bounded-optimizer';
+export * from './physical-validation';

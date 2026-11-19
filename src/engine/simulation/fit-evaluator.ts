@@ -57,6 +57,14 @@ export function evaluateQuantitativeFit(
   const actionableFindings: FitDiagnosticFinding[] = [];
   const pullLineVectors: PullLineVector[] = [];
 
+  const documentedAssumptions = [
+    `Avatar surface '${avatar.sourceType}' uses elliptical cross-sections (Hermite C1 blend across 8 planes); cross-section eccentricity uncertainty is ±${(avatar.measurementUncertaintyCm.crossSectionEccentricity ?? 1.5).toFixed(1)} cm.`,
+    `Material constitutive tier is '${simulation.materialEvidenceTier}'; strain & ease magnitudes depend on low-load tensile modulus calibration (ADR-005).`,
+    'Contact pressure is estimated via local thin-membrane hoop Laplace equilibrium P = T / R inside a 0.36 cm SDF contact envelope.',
+    'Static equilibrium poses (CANONICAL_A_POSE, ARM_FORWARD_45, SEATED_90) exclude multi-cycle dynamic wear, stitching-thread stretch, and thermal pressing.'
+  ];
+  const measurementUncertaintyNote = `M02c tape uncertainty: bust ±${(avatar.measurementUncertaintyCm.bustCircumference ?? 1.0).toFixed(1)} cm, waist ±${(avatar.measurementUncertaintyCm.waistCircumference ?? 0.8).toFixed(1)} cm, hip ±${(avatar.measurementUncertaintyCm.lowHipCircumference ?? 1.0).toFixed(1)} cm, eccentricity ±${(avatar.measurementUncertaintyCm.crossSectionEccentricity ?? 1.5).toFixed(1)} cm.`;
+
   if (!simulation.convergenceVerified || simulation.vertices.length === 0) {
     for (const z of evaluatedZoneOrder) {
       regionalZones[z] = buildFailedZoneMetrics(z, simulation.failureReason ?? 'Simulation failed to converge.');
@@ -82,6 +90,8 @@ export function evaluateQuantitativeFit(
           detail: simulation.failureReason ?? 'Cloth equilibrium solver failed closed; cannot certify fit.'
         }
       ],
+      documentedAssumptions,
+      measurementUncertaintyNote,
       prohibitsUniversalScalarScore: true,
       physicalValidationRequired: true,
       disclaimer:
@@ -272,6 +282,8 @@ export function evaluateQuantitativeFit(
     grainlinePlumbDeviationDeg,
     pullLineVectors,
     actionableFindings,
+    documentedAssumptions,
+    measurementUncertaintyNote,
     prohibitsUniversalScalarScore: true,
     physicalValidationRequired: true,
     disclaimer:
