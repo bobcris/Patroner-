@@ -1,3 +1,51 @@
+# PATRONER — M00 Gate Auth-2 / DEC-13 Stage 2 Readiness Report (Reconciled Summary & Historical Checkpoint 15 Preservation)
+
+> **CRITICAL GOVERNANCE & AUDIT STATUS NOTICE (UPDATED `2026-11-20`):**
+> - **Formal M00 Acceptance Status:** **`NOT ACCEPTED`** (`Gate Auth-2`: **`CLOSED`**, `DEC-13 Stage 2`: **`CLOSED`**, `isProductionReady`: **`false`**, `externalCadInteroperabilityVerified`: **`false`**, `P1-3`: **`NOT STARTED / NOT AUTHORIZED`**).
+> - **Mandatory Epistemic Distinction:** Pre-gate self-verification labels (`VERIFIED (Pre-Gate)` / `pkgM0002AllVerified: true`) in `PKG-M00-02` **do NOT constitute formal Project Owner acceptance**.
+> - **Independent Adversarial Audit Verdict (`docs/evidence/M00_INDEPENDENT_ADVERSARIAL_AUDIT_REPORT.md`):** **`Technically defective` — NOT READY for formal Project Owner acceptance or `Gate Auth-2` review.**
+> - **Why the Historical Checkpoint 15 Section Below Is Stale:** The original body of this file (preserved verbatim below) reflects **Checkpoint 15** SHA-256 digests, `124/124` and `62/62` qualification counts, and `1.92 ms` / `0.02 ms` / `0.14 ms` timings that were superseded by **Checkpoint 16 (`PKG-M00-02`)**, AND omits critical mathematical, benchmark, schema, and provenance defects independently reproduced during the `2026-11-20` adversarial audit.
+
+---
+
+## 0. Independent Adversarial Audit & Checkpoint 16 (`PKG-M00-02`) Reconciliation
+
+### 0.1 Active Checkpoint 16 (`PKG-M00-02`) On-Disk Artifact Digests (Verified `17/17` vs `ReproducibleEnvironmentManifest.json`)
+
+- **Manifest SHA-256 (root & `artifacts/m00/` copies byte-identical):** `1507c296915e026a185c14e1566dfd881f1958be48778e90838cb0f2e77c197e`
+- **Omitted from Manifest (`13` files):** `M00_ARTIFACT_HASH_VERIFICATION.json` (`a1fb865da948eba1ef5312d4fe99c912d9865f7d4f501066467c9f9abd45aad4`), `artifacts/m00/IntervalCandidateBenchmarks.json` (`4644934731121936737793d6515cfa62a8ecb62c4b38ada87f1584200663b0ab`), `artifacts/m00/RuntimeBenchmarkObservation.json` (`d18fb261ffcb8bacb6a1990cd1fc303d9b232ec6d0f0faff4bb743a6f8fcf9ec`), `5` root `.md` reports, and `5` `artifacts/m00/checkpoint_13a_audit/*` files.
+
+| Artifact Path | Active Checkpoint 16 (`PKG-M00-02`) SHA-256 | Independent Audit Status |
+| :--- | :--- | :--- |
+| `artifacts/m00/SchemasLockReport.json` | `d18dc854c0fe103b0151b417968dd7181d52039daf9dae708a4c1d782123bbc4` | **`DEFECT REPRODUCED`** (`ADR-009 §2.5/§5.3` schema drift; duplicate `OffsetFailureCategory` aliases; missing `OffsetClassificationReport` fail-closed validator) |
+| `artifacts/m00/BaselineDivergenceRegistry.json` | `7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d` | **`IMPLEMENTATION VERIFIED`** (`10` `C0-Legacy` divergences documented; `isProductionReady: false` preserved) |
+| `artifacts/m00/IntervalLibraryQualificationReport.json` (and identical `M00_INTERVAL_QUALIFICATION_REPORT.json`) | `f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8` | **`DEFECT REPRODUCED`** (`40` deg-4 Bernstein checks vs `1,000` deg-5/9/12 required; unsplit root isolation bypasses all 3 interval libraries; inward binary64 rounding reproduced on `doubleGrazingRoot1_2[0].tLower`; root-drop bug on exact midpoint; 113-bit hex fields mislabeled) |
+| `artifacts/m00/AdversarialGeometryVerificationReport.json` | `42bbb531fcc8d99dd2c316790e8a4901e56345d3ce28af9843949ba27f853250` | **`DEFECT REPRODUCED`** (False `CERTIFIED_VALID` pass on high-denom/irrational cusps; inward zero-width `[float(1/3), float(1/3)]`; zero precision escalation; broken zero-straddle `INCONCLUSIVE`; unsound `1e-30` clamp; hardcoded/synthetic `AG-01..04, 07, 08, 13, 14, 15, 16, 17`) |
+| `artifacts/m00/ArcLengthVerificationReport.json` | `c62626710ace4bae8f7b828e5ec85db1840add22449d658dec7edad38cdaad2e` | **`PARTIAL / DEFECT REPRODUCED`** (`Method C1-Cert` chord/polygon enclosure is `MATHEMATICALLY VERIFIED`; forward error uses diagnostic quadrature with `±1e-12` padding; inverse `Method B1` uses round-to-nearest float64 and omits $\delta_{\mathrm{eval}}$) |
+| `artifacts/m00/TopologyVerificationReport.json` | `c6e21e20645977515e6f9cbd4387f1438813367d6f62380d139aa59a8d55e255` | **`DEFECT REPRODUCED`** (Exact `orient2d` skips 180° folded-back adjacent overlapping edges) |
+| `artifacts/m00/DxfRoundTripVerificationReport.json` | `e3552388ecbe36fdfbd51b6bd167d70a4c86f4f53d644712c23ddcf899347c01` | **`DEFECT REPRODUCED`** (`sub_oracles.py:697` `zip(...)` omits vertex-count equality check; synthetic round-trip only, `externalCadInteroperabilityVerified: false`) |
+| `artifacts/m00/AnthropometricVerificationReport.json` | `5cff9cd5b5d75ed0fbf0e5893934310927f52b8220dd2dc749814ea259e02a89` | **`TESTED BUT NOT FULLY CERTIFIED`** (Synthetic identical/rigid-translated placeholder curves on `STD-M` only; round-to-nearest `float64` seam delta) |
+| `artifacts/m00/ProductionDxfRoundTripReport.json` | `269ebd4806473c7e3c62d0f72ee033cffb586bd331bed8c021cb30b227ed9ab7` | **`TESTED BUT NOT FULLY CERTIFIED`** (Verifies `C0-Legacy` `XS/M/XL` ASCII text round-trip only; `S/L/XXL` and trousers untested) |
+| `artifacts/m00/ProductionSeamParityReport.json` | `a33d733451b5a1ac8ab22c65d249906de18aa670c16d4d791bed99deed4c05fe` | **`TESTED BUT NOT FULLY CERTIFIED`** (`C0-Legacy` `XS/M/XL` only; line endpoints via `str()` float; fixed depth-8 cubic arc-length) |
+| `M00_CANONICAL_AG01_AG17_REGISTRY.json` | `25806d0f8f10684d0922ac4fded5d2571a7c60989e0f67b694246fc16d11204f` | **`DEFECT REPRODUCED`** (Hardcodes `"allBlockingFindingsRemediated": True` at `m00_execute_all.py:522`) |
+| `M00_ADR009_SECTION6_COVERAGE_REPORT.json` | `08d5b86c1396914da6a125efa91d77e27730fb61fa3c2903d32439b27311610b` | **`DEFECT REPRODUCED`** (`#11b` and `#15` unrefined-bracket rejection missing; `#17b` uses inward `float(1/3)`) |
+| `M00_CLASSIFICATION_CONFORMANCE_REPORT.json` | `ccbad9a633e9bbb99ba03e7a0e9175d51e5f600314f09b4c538d4c7ffcd7ebb6` | **`DEFECT REPRODUCED`** (Hardcodes `"allConforming": True` at `m00_execute_all.py:463`) |
+| `M00_CONTRACT_PARITY_REPORT.json` | `2918bf434eaeca754451c30306e2bf338fc296dd161b0ef661aea107b66b5601` | **`DEFECT REPRODUCED`** (Same schema drift as `SchemasLockReport.json`) |
+| `M00_SUBORACLE_VERIFICATION_REPORT.json` | `e6b96d768ac6a90aa0da90893081b354659a92d0a2cff732fc19aab8b8f880e3` | **`DEFECT REPRODUCED`** (Aggregates `M00.5`–`M00.8` sub-oracle defects above) |
+| `M00_REPRODUCIBILITY_REPORT.json` | `b89d4e4f91938b64a02ce1777a874c03d5229ea3f4b4b30ac0718995002da90e` | **`DEFECT REPRODUCED`** (Same-process replay reusing `_CACHED_POPULATION`; embeds live wall-clock latency pass flag; cites false benchmark operation counts; container Python `3.11.2` cannot reproduce Python `3.12` run) |
+
+### 0.2 Primary Blocking Defects Preventing Formal M00 Acceptance
+1. **Invalid `DEC-13 Stage 2` Benchmark (`DEFECT B-01`):** `qualification.py:1511–1556` runs 5 operations (including pure-Python `Fraction` Bernstein/De Casteljau/Descartes) for `mpmath.iv` vs only 1 monomial evaluation for `python-flint` and `DecimalInterval`, invalidating the cited `~65.0x` speedup.
+2. **Numerical Soundness Defects (`DEFECT B-02, B-03, B-08..B-14`):** False `CERTIFIED_VALID` pass on high-denominator/irrational base-curve cusps, inward binary64 rounding on `doubleGrazingRoot1_2[0].tLower` and `1/3`, root-dropping on exact even midpoints, `40` vs `1,000` Bernstein checks, zero precision escalation, unsound `1e-30` clamping, and hardcoded/synthetic AG families.
+3. **Provenance & Monorepo Gaps (`PROV-01..05`, `CONFLICT-D4/D5/D7/D9`):** Hardcoded `pinnedPackages` and `"VERIFIED"` flags, same-process replay, missing root `pnpm-workspace.yaml`/`turbo.json`, missing `scripts/check_oracle_independence.py`, `services/geometry-engine/` vs `services/fashion-engine/` mismatch, and `ADR-009 §2.5/§5.3` schema drift.
+4. **Full Audit & Conflict Documentation:** See **`docs/evidence/M00_INDEPENDENT_ADVERSARIAL_AUDIT_REPORT.md`** and **`docs/evidence/M00_GOVERNANCE_AND_SPEC_CONFLICT_REGISTER.md`**.
+
+---
+
+## Historical Checkpoint 15 Report (Preserved Verbatim)
+
+> The section below is the **original, unmodified Checkpoint 15 content** of `M00_GATE_AUTH2_READINESS_REPORT.md`, preserved verbatim for historical audit traceability. **Do not rely on the digests, counts, or readiness assertion below as current.**
+
 # PATRONER — Gate Auth-2 / DEC-13 Stage 2 Readiness Report (Checkpoint 15)
 
 - **Governing Blueprint:** `R2.1.2-R1` (`282a303ea1126fb3b1da368e4e8e4ddbeb59c552` / Pre-Restart Gate Auth-1 `6938f808629276fd1b0860fba407b42f5cb40aaf`)
