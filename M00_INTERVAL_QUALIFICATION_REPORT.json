@@ -6,8 +6,10 @@
   "deterministicMathematicalEvidenceOnly": true,
   "runtimeBenchmarksArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
   "populationSpecification": {
-    "generatorAlgorithm": "random.Random(seed=20261116) + edge-case stratum",
+    "generatorAlgorithm": "random.Random(seed=20261116) + adversarial stress strata (subnormal, near-overflow, cancellation, tiny-divisor)",
     "seed": 20261116,
+    "adversarialStressPairStrataCount": 18,
+    "adversarialStressSqrtStrataCount": 19,
     "rationalIntervalPairsPerTier": 10000,
     "operationsPerPair": [
       "add",
@@ -65,8 +67,8 @@
         {
           "precisionBits": 113,
           "rational": "1/3",
-          "lowerEndpointHex": "[0.33333333333333333333333333333333331728, 0.33333333333333333333333333333333331728]",
-          "upperEndpointHex": "[0.33333333333333333333333333333333336543, 0.33333333333333333333333333333333336543]",
+          "lowerEndpointHex": "0x1.5555555555555555555555555555p-2",
+          "upperEndpointHex": "0x1.5555555555555555555555555556p-2",
           "width": 4.81482486096809e-35,
           "strictlyEnclosedInFraction": true
         }
@@ -170,8 +172,13 @@
           "allOutwardEnclosedInExactRational": true
         }
       ],
-      "bernsteinContainmentChecksTotal": 40,
-      "bernsteinContainmentChecksPassed": 40,
+      "bernsteinDegreesVerified": [
+        5,
+        9,
+        12
+      ],
+      "bernsteinContainmentChecksTotal": 1152,
+      "bernsteinContainmentChecksPassed": 1152,
       "domainTrapsVerified": {
         "divisionByStraddlingZeroDetected": true,
         "negativeSqrtDomainTrapDetected": true
@@ -226,6 +233,7 @@
           1.0
         ],
         "manualPreSplittingUsed": false,
+        "candidateLibraryIntervalEnclosureVerified": "mpmath_iv",
         "simpleTransverseRoot1_3": {
           "isolated": [
             {
@@ -234,7 +242,8 @@
               "tLowerRational": "366503875925/1099511627776",
               "tUpperRational": "183251937963/549755813888",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             }
           ],
           "passed": true
@@ -242,12 +251,13 @@
         "doubleGrazingRoot1_2": {
           "isolated": [
             {
-              "tLower": 0.4999999999995,
-              "tUpper": 0.5000000000005,
-              "tLowerRational": "999999999999/2000000000000",
-              "tUpperRational": "1000000000001/2000000000000",
-              "deltaT": 1e-12,
-              "multiplicity": "even-grazing-root"
+              "tLower": 0.5,
+              "tUpper": 0.5,
+              "tLowerRational": "1/2",
+              "tUpperRational": "1/2",
+              "deltaT": 0.0,
+              "multiplicity": "even-grazing-root",
+              "exactMultiplicity": 2
             }
           ],
           "passed": true
@@ -260,7 +270,8 @@
               "tLowerRational": "8589933733/17179869184",
               "tUpperRational": "549755758913/1099511627776",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             },
             {
               "tLower": 0.5000000499994712,
@@ -268,7 +279,8 @@
               "tLowerRational": "549755868863/1099511627776",
               "tUpperRational": "8589935451/17179869184",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             }
           ],
           "disjoint": true
@@ -281,7 +293,8 @@
               "tLowerRational": "366503875375/1099511627776",
               "tUpperRational": "22906492211/68719476736",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             },
             {
               "tLower": 0.33333333383325225,
@@ -289,7 +302,8 @@
               "tLowerRational": "366503876475/1099511627776",
               "tUpperRational": "91625969119/274877906944",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             }
           ],
           "disjoint": true
@@ -412,8 +426,13 @@
           "allOutwardEnclosedInExactRational": true
         }
       ],
-      "bernsteinContainmentChecksTotal": 40,
-      "bernsteinContainmentChecksPassed": 40,
+      "bernsteinDegreesVerified": [
+        5,
+        9,
+        12
+      ],
+      "bernsteinContainmentChecksTotal": 1152,
+      "bernsteinContainmentChecksPassed": 1152,
       "domainTrapsVerified": {
         "divisionByStraddlingZeroDetected": true,
         "negativeSqrtDomainTrapDetected": true
@@ -426,6 +445,7 @@
           1.0
         ],
         "manualPreSplittingUsed": false,
+        "candidateLibraryIntervalEnclosureVerified": "python_flint",
         "simpleTransverseRoot1_3": {
           "isolated": [
             {
@@ -434,7 +454,8 @@
               "tLowerRational": "366503875925/1099511627776",
               "tUpperRational": "183251937963/549755813888",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             }
           ],
           "passed": true
@@ -442,12 +463,13 @@
         "doubleGrazingRoot1_2": {
           "isolated": [
             {
-              "tLower": 0.4999999999995,
-              "tUpper": 0.5000000000005,
-              "tLowerRational": "999999999999/2000000000000",
-              "tUpperRational": "1000000000001/2000000000000",
-              "deltaT": 1e-12,
-              "multiplicity": "even-grazing-root"
+              "tLower": 0.5,
+              "tUpper": 0.5,
+              "tLowerRational": "1/2",
+              "tUpperRational": "1/2",
+              "deltaT": 0.0,
+              "multiplicity": "even-grazing-root",
+              "exactMultiplicity": 2
             }
           ],
           "passed": true
@@ -460,7 +482,8 @@
               "tLowerRational": "8589933733/17179869184",
               "tUpperRational": "549755758913/1099511627776",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             },
             {
               "tLower": 0.5000000499994712,
@@ -468,7 +491,8 @@
               "tLowerRational": "549755868863/1099511627776",
               "tUpperRational": "8589935451/17179869184",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             }
           ],
           "disjoint": true
@@ -481,7 +505,8 @@
               "tLowerRational": "366503875375/1099511627776",
               "tUpperRational": "22906492211/68719476736",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             },
             {
               "tLower": 0.33333333383325225,
@@ -489,7 +514,8 @@
               "tLowerRational": "366503876475/1099511627776",
               "tUpperRational": "91625969119/274877906944",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             }
           ],
           "disjoint": true
@@ -616,8 +642,13 @@
           "allOutwardEnclosedInExactRational": true
         }
       ],
-      "bernsteinContainmentChecksTotal": 40,
-      "bernsteinContainmentChecksPassed": 40,
+      "bernsteinDegreesVerified": [
+        5,
+        9,
+        12
+      ],
+      "bernsteinContainmentChecksTotal": 1152,
+      "bernsteinContainmentChecksPassed": 1152,
       "domainTrapsVerified": {
         "divisionByStraddlingZeroDetected": true,
         "negativeSqrtDomainTrapDetected": true
@@ -630,6 +661,7 @@
           1.0
         ],
         "manualPreSplittingUsed": false,
+        "candidateLibraryIntervalEnclosureVerified": "decimal_interval",
         "simpleTransverseRoot1_3": {
           "isolated": [
             {
@@ -638,7 +670,8 @@
               "tLowerRational": "366503875925/1099511627776",
               "tUpperRational": "183251937963/549755813888",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             }
           ],
           "passed": true
@@ -646,12 +679,13 @@
         "doubleGrazingRoot1_2": {
           "isolated": [
             {
-              "tLower": 0.4999999999995,
-              "tUpper": 0.5000000000005,
-              "tLowerRational": "999999999999/2000000000000",
-              "tUpperRational": "1000000000001/2000000000000",
-              "deltaT": 1e-12,
-              "multiplicity": "even-grazing-root"
+              "tLower": 0.5,
+              "tUpper": 0.5,
+              "tLowerRational": "1/2",
+              "tUpperRational": "1/2",
+              "deltaT": 0.0,
+              "multiplicity": "even-grazing-root",
+              "exactMultiplicity": 2
             }
           ],
           "passed": true
@@ -664,7 +698,8 @@
               "tLowerRational": "8589933733/17179869184",
               "tUpperRational": "549755758913/1099511627776",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             },
             {
               "tLower": 0.5000000499994712,
@@ -672,7 +707,8 @@
               "tLowerRational": "549755868863/1099511627776",
               "tUpperRational": "8589935451/17179869184",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             }
           ],
           "disjoint": true
@@ -685,7 +721,8 @@
               "tLowerRational": "366503875375/1099511627776",
               "tUpperRational": "22906492211/68719476736",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             },
             {
               "tLower": 0.33333333383325225,
@@ -693,7 +730,8 @@
               "tLowerRational": "366503876475/1099511627776",
               "tUpperRational": "91625969119/274877906944",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root"
+              "multiplicity": "simple-transverse-root",
+              "exactMultiplicity": 1
             }
           ],
           "disjoint": true
@@ -707,7 +745,7 @@
     "selectedOracleStack": "mpmath.iv (53-bit screen + 113-bit primary + 170/336-bit escalation) + fractions.Fraction",
     "secondaryCExtensionReserve": "python-flint 0.9.0 (arb C ball + fmpq)",
     "zeroDependencyStdlibFallback": "fractions.Fraction + DecimalInterval (prec=17, 35, 52, 102, ROUND_FLOOR/ROUND_CEILING)",
-    "rationale": "All 3 candidates passed 100% of 200,000 exact Fraction outward-rounding checks each (600,000 total checks across 10,000 rational interval pairs x 4 ops + 10,000 sqrt inputs at all 4 precision tiers: 53, 113, 170, 336 bits), Bernstein polynomial evaluation containment, domain violation traps, and un-pre-split Wilkinson root-cluster isolation (Delta t = 1e-7 and 1e-9) from [0, 1]. Explicit mpmath.iv semantic pitfalls (u*u vs u**2, non-dyadic float literal trap, silent [-inf, +inf] div-zero, pure-Python non-IEEE1788 status) are documented and mitigated, with python-flint C-backed arb balls cross-qualified as secondary reserve.",
+    "rationale": "All 3 candidates passed 100% of 200,000 exact Fraction outward-rounding checks each (600,000 total checks across 10,000 rational interval pairs x 4 ops + 10,000 sqrt inputs at all 4 precision tiers: 53, 113, 170, 336 bits, including subnormal, near-overflow, and cancellation stress strata), >=1,000 Bernstein polynomial containment checks across degrees {5, 9, 12}, domain violation traps, and un-pre-split Wilkinson root-cluster isolation (Delta t = 1e-7 and 1e-9) from [0, 1] with candidate-library interval enclosure checks. Explicit mpmath.iv semantic pitfalls are documented and mitigated, with python-flint C-backed arb balls cross-qualified as secondary reserve.",
     "stage2GovernanceNote": "Per Owner Authorization Record Checkpoint 12, this report completes M00.4 Step 1-2 Library Qualification. Production adoption for M02 remains gated on Project Owner sign-off of DEC-13 Stage 2 at Gate Auth-2."
   },
   "allCandidatesQualified": true

@@ -27,6 +27,7 @@ from .c1_cert_oracle import (
 from .contracts import BodyProfile, DxfExportManifest, NumericalVerificationRecord
 from .qualification import (
     fraction_pair_to_outward_f64_pair,
+    fraction_to_outward_upper_f64,
     mpf_to_outward_upper_f64,
 )
 
@@ -56,15 +57,17 @@ def _gl5_panel(speed_fn, a: float, b: float) -> float:
     return half * total
 
 
-def adaptive_gauss_legendre_arc_length(
+def adaptive_gauss_legendre_arc_length_checked(
     curve: ExactCubicBezier2D,
     t_end: float = 1.0,
     panel_tol_cm: float = 1e-9,
     max_depth: int = 18,
-) -> Tuple[float, int]:
-    """Computes L(t_end) = int_0^{t_end} ||B'(u)|| du using recursive 5-point Gauss-Legendre quadrature."""
+) -> Tuple[float, int, bool]:
+    """Computes L(t_end) = int_0^{t_end} ||B'(u)|| du using recursive 5-point Gauss-Legendre quadrature,
+    explicitly reporting whether every panel converged within tolerance before hitting `max_depth`.
+    """
     if t_end <= 0.0:
-        return 0.0, 0
+        return 0.0, 0, True
 
     ax, ay = [float(c) for c in curve.power_coeffs_xy()[0]], [float(c) for c in curve.power_coeffs_xy()[1]]
 
@@ -74,19 +77,38 @@ def adaptive_gauss_legendre_arc_length(
         return math.hypot(dx, dy)
 
     panels_used = [0]
+    converged = [True]
 
     def recurse(a: float, b: float, whole: float, tol: float, depth: int) -> float:
         mid = 0.5 * (a + b)
         left = _gl5_panel(speed, a, mid)
         right = _gl5_panel(speed, mid, b)
         panels_used[0] += 2
-        if abs(left + right - whole) <= tol or depth >= max_depth:
+        err = abs(left + right - whole)
+        if err <= tol:
+            return left + right
+        if depth >= max_depth:
+            converged[0] = False
             return left + right
         return recurse(a, mid, left, tol * 0.5, depth + 1) + recurse(mid, b, right, tol * 0.5, depth + 1)
 
     initial = _gl5_panel(speed, 0.0, t_end)
     panels_used[0] += 1
-    return recurse(0.0, t_end, initial, panel_tol_cm, 0), panels_used[0]
+    total = recurse(0.0, t_end, initial, panel_tol_cm, 0)
+    return total, panels_used[0], converged[0]
+
+
+def adaptive_gauss_legendre_arc_length(
+    curve: ExactCubicBezier2D,
+    t_end: float = 1.0,
+    panel_tol_cm: float = 1e-9,
+    max_depth: int = 18,
+) -> Tuple[float, int]:
+    """Computes L(t_end) = int_0^{t_end} ||B'(u)|| du using recursive 5-point Gauss-Legendre quadrature."""
+    total, panels, _converged = adaptive_gauss_legendre_arc_length_checked(
+        curve, t_end=t_end, panel_tol_cm=panel_tol_cm, max_depth=max_depth
+    )
+    return total, panels
 
 
 def inverse_arc_length_newton_brent(
@@ -98,28 +120,30 @@ def inverse_arc_length_newton_brent(
     """Inverts L(t*) = target_s_cm using monotone Newton-Raphson with bracketed Brent/bisection fallback,
     emitting an ADR-009 §2.5 NumericalVerificationRecord with Method B1 parameter-to-position propagation.
     """
-    total_len, panels_total = adaptive_gauss_legendre_arc_length(curve, 1.0)
+    total_len, panels_total, total_conv = adaptive_gauss_legendre_arc_length_checked(curve, 1.0)
     if target_s_cm <= 0.0:
         return {
             "tStar": 0.0,
-            "tBracket": (0.0, 0.0),
+            "tBracket": [0.0, 0.0],
             "arcLengthResidualCm": 0.0,
             "deltaT": 0.0,
             "maxSpeedOnBracketCmPerUnit": 0.0,
             "deltaPosCm": 0.0,
             "iterations": 0,
             "panelsUsed": panels_total,
+            "quadratureConverged": total_conv,
         }
     if target_s_cm >= total_len:
         return {
             "tStar": 1.0,
-            "tBracket": (1.0, 1.0),
+            "tBracket": [1.0, 1.0],
             "arcLengthResidualCm": abs(total_len - target_s_cm),
             "deltaT": 0.0,
             "maxSpeedOnBracketCmPerUnit": 0.0,
             "deltaPosCm": 0.0,
             "iterations": 0,
             "panelsUsed": panels_total,
+            "quadratureConverged": total_conv,
         }
 
     ax, ay = [float(c) for c in curve.power_coeffs_xy()[0]], [float(c) for c in curve.power_coeffs_xy()[1]]
@@ -133,10 +157,12 @@ def inverse_arc_length_newton_brent(
     hi = 1.0
     t_curr = target_s_cm / total_len
     iters = 0
+    all_quad_converged = total_conv
 
     for it in range(60):
         iters = it + 1
-        cur_len, _ = adaptive_gauss_legendre_arc_length(curve, t_curr)
+        cur_len, _, cur_conv = adaptive_gauss_legendre_arc_length_checked(curve, t_curr)
+        all_quad_converged = all_quad_converged and cur_conv
         res = cur_len - target_s_cm
         if res < 0.0:
             lo = max(lo, t_curr)
@@ -159,27 +185,37 @@ def inverse_arc_length_newton_brent(
 
     while (hi - lo) > tol_t:
         mid = 0.5 * (lo + hi)
-        mid_len, _ = adaptive_gauss_legendre_arc_length(curve, mid)
+        mid_len, _, mid_conv = adaptive_gauss_legendre_arc_length_checked(curve, mid)
+        all_quad_converged = all_quad_converged and mid_conv
         if mid_len < target_s_cm:
             lo = mid
         else:
             hi = mid
     t_curr = 0.5 * (lo + hi)
-    final_len, panels_final = adaptive_gauss_legendre_arc_length(curve, t_curr)
+    final_len, panels_final, final_conv = adaptive_gauss_legendre_arc_length_checked(curve, t_curr)
+    all_quad_converged = all_quad_converged and final_conv
     final_res = abs(final_len - target_s_cm)
 
     # Certified local speed upper bound on [lo, hi] in 113-bit mpmath.iv (Method B1)
+    # with outward upper rounding on both delta_t and delta_pos = sup ||B'|| * delta_t.
     iv.prec = 113
-    t_iv = iv.mpf([iv.mpf(lo).a, iv.mpf(hi).b])
+    mpmath.mp.prec = 113
+    t_iv = iv.mpf([lo, hi])
     ax_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[0]]
     ay_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[1]]
     dx_iv = ax_iv[1] + t_iv * (2 * ax_iv[2] + 3 * ax_iv[3] * t_iv)
     dy_iv = ay_iv[1] + t_iv * (2 * ay_iv[2] + 3 * ay_iv[3] * t_iv)
     spd_iv = iv.sqrt((dx_iv ** 2) + (dy_iv ** 2))
-    local_speed_upper_bound = mpf_to_outward_upper_f64(spd_iv.b)
+    local_speed_upper_bound = mpf_to_outward_upper_f64(spd_iv._mpi_[1])
 
-    delta_t = max(0.0, hi - lo)
-    delta_pos = local_speed_upper_bound * delta_t
+    dt_q = max(Fraction(0), Fraction(hi) - Fraction(lo))
+    delta_t = fraction_to_outward_upper_f64(dt_q)
+    dt_iv = iv.mpf(dt_q.numerator) / iv.mpf(dt_q.denominator)
+    delta_pos_outward = mpf_to_outward_upper_f64((spd_iv * dt_iv)._mpi_[1])
+    delta_pos = max(
+        delta_pos_outward,
+        mpf_to_outward_upper_f64(mpmath.mpf(local_speed_upper_bound) * mpmath.mpf(delta_t)),
+    )
 
     num_record = NumericalVerificationRecord(
         curve_id=curve.segment_id,
@@ -192,7 +228,12 @@ def inverse_arc_length_newton_brent(
         propagation_method="B1_FIRST_ORDER_UPPER_BOUND",
         working_precision_bits=113,
         adaptive_subdivision_panels=panels_final,
-        certified_within_tolerance=(final_res <= tol_s_cm and delta_t <= tol_t and delta_pos <= tol_s_cm),
+        certified_within_tolerance=(
+            all_quad_converged
+            and final_res <= tol_s_cm
+            and delta_t <= tol_t
+            and delta_pos <= tol_s_cm
+        ),
     )
 
     return {
@@ -203,6 +244,7 @@ def inverse_arc_length_newton_brent(
         "localSpeedUpperBoundCmPerT": local_speed_upper_bound,
         "deltaPosCm": delta_pos,
         "iterations": iters,
+        "quadratureConverged": all_quad_converged,
         "numericalVerificationRecord": num_record.model_dump(mode="json"),
     }
 
@@ -232,14 +274,15 @@ def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
     )
     c1_cert_collinear = method_c1_cert_arc_length_enclosure(collinear_curve, subdivision_depth=5)
 
-    # Diagnostic quadrature comparisons checked against the C1-Cert enclosure [L_chord, L_poly]
+    # Diagnostic quadrature comparisons checked strictly against the C1-Cert enclosure [L_chord, L_poly] (zero slack)
     cert_quad_diag_len = c1_cert_armscye["quadratureLength113BitCm"]
-    fast_len, panels = adaptive_gauss_legendre_arc_length(curve, 1.0)
+    fast_len, panels, gl5_converged = adaptive_gauss_legendre_arc_length_checked(curve, 1.0)
     forward_error_cm = abs(fast_len - cert_quad_diag_len)
     gl5_within_c1_cert = (
-        c1_cert_armscye["lowerChordBoundCm"] - 1e-12
+        gl5_converged
+        and c1_cert_armscye["lowerChordBoundCm"]
         <= fast_len
-        <= c1_cert_armscye["upperControlPolygonBoundCm"] + 1e-12
+        <= c1_cert_armscye["upperControlPolygonBoundCm"]
     )
 
     # Certified 113-bit mpmath.iv supremum of ||B'(t)||_2 across t in [0, 1] (no hardcoded speed constant)
@@ -259,31 +302,38 @@ def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
         working_precision_bits=113,
         adaptive_subdivision_panels=c1_cert_armscye["panelsCount"],
         certified_within_tolerance=(
-            c1_cert_armscye["nonStrictInequalityHolds"]
+            gl5_converged
+            and c1_cert_armscye["nonStrictInequalityHolds"]
             and c1_cert_armscye["diagnosticQuadWithinCertifiedEnclosure"]
             and gl5_within_c1_cert
             and forward_error_cm <= 1e-6
         ),
     )
 
-    # Test inverse arc-length at 25%, 50%, 75% of total length
+    # Test inverse arc-length at 25%, 50%, 75% of total length (full IEEE-754 tStar preserved inside tBracket)
     inversion_checks = []
     for frac in (0.25, 0.50, 0.75):
         target_s = frac * c1_cert_armscye["certifiedReferenceLengthCm"]
         inv_res = inverse_arc_length_newton_brent(curve, target_s)
+        t_lo, t_hi = inv_res["tBracket"]
+        t_star_enclosed = t_lo <= inv_res["tStar"] <= t_hi
         inversion_checks.append(
             {
                 "targetFraction": frac,
                 "targetArcLengthCm": round(target_s, 8),
-                "tStar": round(inv_res["tStar"], 12),
+                "tStar": inv_res["tStar"],
                 "tBracket": inv_res["tBracket"],
+                "tStarWithinBracket": t_star_enclosed,
+                "quadratureConverged": inv_res["quadratureConverged"],
                 "arcLengthResidualCm": inv_res["arcLengthResidualCm"],
                 "deltaT": inv_res["deltaT"],
                 "localSpeedUpperBoundCmPerT": inv_res["localSpeedUpperBoundCmPerT"],
                 "deltaPosCm": inv_res["deltaPosCm"],
                 "numericalVerificationRecord": inv_res["numericalVerificationRecord"],
                 "passed": (
-                    inv_res["arcLengthResidualCm"] <= 1e-7
+                    inv_res["quadratureConverged"]
+                    and t_star_enclosed
+                    and inv_res["arcLengthResidualCm"] <= 1e-7
                     and inv_res["deltaT"] <= 1e-12
                     and inv_res["deltaPosCm"] <= 1e-7
                 ),
@@ -299,6 +349,7 @@ def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
         "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
         "diagnosticQuadLength113BitCm": round(cert_quad_diag_len, 10),
         "adaptiveGaussLegendreLengthCm": round(fast_len, 10),
+        "adaptiveGaussLegendreConverged": gl5_converged,
         "adaptiveGaussLegendreWithinC1CertEnclosure": gl5_within_c1_cert,
         "forwardLengthErrorCm": forward_error_cm,
         "forwardToleranceMaxCm": 1e-6,
@@ -308,7 +359,8 @@ def execute_m00_5_arc_length_verification() -> Dict[str, Any]:
         "forwardNumericalVerificationRecord": forward_num_record.model_dump(mode="json"),
         "inverseArcLengthChecks": inversion_checks,
         "allPassed": (
-            forward_error_cm <= 1e-6
+            gl5_converged
+            and forward_error_cm <= 1e-6
             and gl5_within_c1_cert
             and c1_cert_armscye["diagnosticQuadWithinCertifiedEnclosure"]
             and c1_cert_armscye["nonStrictInequalityHolds"]
@@ -396,10 +448,35 @@ def polygon_signed_area_exact(ring: List[Tuple[Fraction, Fraction]]) -> Fraction
 
 
 def validate_polygon_topology_exact(ring: List[Tuple[Fraction, Fraction]], expected_winding: str = "CCW") -> Dict[str, Any]:
-    """Verifies exact closure, simple ring (0 proper or degenerate self-intersections), winding orientation, and non-sliver area."""
-    closure_gap_cm = math.hypot(float(ring[0][0] - ring[-1][0]), float(ring[0][1] - ring[-1][1]))
+    """Verifies exact rational closure, simple ring (0 proper, degenerate non-adjacent, zero-length, or 180-deg adjacent
+    fold-back self-intersections), exact winding orientation, and exact non-sliver area (< 1e-4 cm^2).
+    """
+    if len(ring) < 3:
+        return {
+            "closureGapCm": math.inf,
+            "signedAreaCm2": 0.0,
+            "actualWinding": "DEGENERATE",
+            "expectedWinding": expected_winding,
+            "selfIntersections": 1,
+            "properTransverseCrossings": 0,
+            "degenerateCollinearOrVertexTouches": 1,
+            "adjacentFoldBacksOrZeroEdges": 1,
+            "isSimple": False,
+            "isMicroSliver": True,
+            "passed": False,
+        }
+
+    gap_dx = ring[0][0] - ring[-1][0]
+    gap_dy = ring[0][1] - ring[-1][1]
+    closure_gap_sq_q = gap_dx * gap_dx + gap_dy * gap_dy
+    if closure_gap_sq_q == 0:
+        closure_gap_cm = 0.0
+    else:
+        iv.prec = 113
+        gap_iv = iv.sqrt(iv.mpf(closure_gap_sq_q.numerator) / iv.mpf(closure_gap_sq_q.denominator))
+        closure_gap_cm = mpf_to_outward_upper_f64(gap_iv._mpi_[1])
+
     signed_area = polygon_signed_area_exact(ring)
-    abs_area_cm2 = abs(float(signed_area))
     actual_winding = "CCW" if signed_area > 0 else ("CW" if signed_area < 0 else "DEGENERATE")
 
     pts = ring[:-1] if ring[0] == ring[-1] else ring
@@ -408,21 +485,49 @@ def validate_polygon_topology_exact(ring: List[Tuple[Fraction, Fraction]], expec
     self_intersections = 0
     proper_crossings = 0
     degenerate_contacts = 0
-    for i in range(n):
-        for j in range(i + 2, n):
-            if i == 0 and j == n - 1:
-                continue
-            hit, kind = segments_intersect_exact(edges[i][0], edges[i][1], edges[j][0], edges[j][1])
-            if hit:
-                self_intersections += 1
-                if kind == "PROPER_TRANSVERSE_CROSSING":
-                    proper_crossings += 1
-                else:
-                    degenerate_contacts += 1
+    adjacent_degeneracies = 0
 
-    is_micro_sliver = abs_area_cm2 < 1e-4
+    if n < 3:
+        self_intersections += 1
+        degenerate_contacts += 1
+        adjacent_degeneracies += 1
+    else:
+        # Check every adjacent edge pair for zero-length edges or 180-degree collinear fold-backs
+        for i in range(n):
+            p_prev = pts[i]
+            p_curr = pts[(i + 1) % n]
+            p_next = pts[(i + 2) % n]
+            if p_prev == p_curr:
+                self_intersections += 1
+                degenerate_contacts += 1
+                adjacent_degeneracies += 1
+                continue
+            if p_curr != p_next and orient2d_exact(p_prev, p_curr, p_next) == 0:
+                v1x, v1y = p_curr[0] - p_prev[0], p_curr[1] - p_prev[1]
+                v2x, v2y = p_next[0] - p_curr[0], p_next[1] - p_curr[1]
+                dot_q = v1x * v2x + v1y * v2y
+                if dot_q < 0:
+                    self_intersections += 1
+                    degenerate_contacts += 1
+                    adjacent_degeneracies += 1
+
+        # Check all non-adjacent edge pairs
+        for i in range(n):
+            for j in range(i + 2, n):
+                if i == 0 and j == n - 1:
+                    continue
+                hit, kind = segments_intersect_exact(edges[i][0], edges[i][1], edges[j][0], edges[j][1])
+                if hit:
+                    self_intersections += 1
+                    if kind == "PROPER_TRANSVERSE_CROSSING":
+                        proper_crossings += 1
+                    else:
+                        degenerate_contacts += 1
+
+    is_micro_sliver = abs(signed_area) < Fraction(1, 10000)
+    closure_ok = closure_gap_sq_q <= Fraction(1, 10**12)
     passed = (
-        closure_gap_cm <= 1e-6
+        closure_ok
         and self_intersections == 0
         and actual_winding == expected_winding
         and not is_micro_sliver
@@ -435,6 +540,7 @@ def validate_polygon_topology_exact(ring: List[Tuple[Fraction, Fraction]], expec
         "selfIntersections": self_intersections,
         "properTransverseCrossings": proper_crossings,
         "degenerateCollinearOrVertexTouches": degenerate_contacts,
+        "adjacentFoldBacksOrZeroEdges": adjacent_degeneracies,
         "isSimple": self_intersections == 0,
         "isMicroSliver": is_micro_sliver,
         "passed": passed,
@@ -505,6 +611,15 @@ def execute_m00_6_topology_verification() -> Dict[str, Any]:
     ]
     res_sliver = validate_polygon_topology_exact(sliver, expected_winding="CCW")
 
+    # 7. Folded 3-Vertex Collinear Triangle (180-deg adjacent-edge fold-back -> must NOT be simple)
+    folded_triangle_3v = [
+        (Fraction(0), Fraction(0)),
+        (Fraction(10), Fraction(0)),
+        (Fraction(5), Fraction(0)),
+        (Fraction(0), Fraction(0)),
+    ]
+    res_folded = validate_polygon_topology_exact(folded_triangle_3v, expected_winding="CCW")
+
     return {
         "milestoneId": "M00.6",
         "artifactName": "TopologyVerificationReport.json",
@@ -517,6 +632,9 @@ def execute_m00_6_topology_verification() -> Dict[str, Any]:
         "collinearOverlapDegeneracyDetected": (
             not res_collinear_overlap["isSimple"] and res_collinear_overlap["degenerateCollinearOrVertexTouches"] > 0
         ),
+        "foldedTriangle3VertexDegeneracyDetected": (
+            not res_folded["isSimple"] and res_folded["adjacentFoldBacksOrZeroEdges"] > 0
+        ),
         "microSliverDetected": res_sliver["isMicroSliver"],
         "allPassed": (
             res_ccw["passed"]
@@ -524,6 +642,7 @@ def execute_m00_6_topology_verification() -> Dict[str, Any]:
             and not res_bowtie["isSimple"]
             and not res_vertex_touch["isSimple"]
             and not res_collinear_overlap["isSimple"]
+            and not res_folded["isSimple"]
             and res_sliver["isMicroSliver"]
         ),
     }
@@ -614,7 +733,8 @@ def parse_and_verify_dxf_aama(
     expected_sew_pts: List[Tuple[float, float]],
 ) -> Dict[str, Any]:
     """Independent M00.7 DXF-AAMA round-trip parser verifying HEADER ($ACADVER=AC1009, $INSUNITS=5),
-    TABLES (LAYER definitions), and ENTITIES (Layers 1, 2, 4, 7, 8, 11 within <= 0.001 cm).
+    TABLES (LAYER definitions), and ENTITIES (Layers 1, 2, 4, 7, 8, 11 with strict polyline & vertex count parity
+    and <= 0.001 cm coordinate tolerance).
     """
     raw_lines = [ln.strip() for ln in dxf_text.strip().splitlines()]
     pairs = [(raw_lines[i], raw_lines[i + 1]) for i in range(0, len(raw_lines) - 1, 2)]
@@ -624,9 +744,11 @@ def parse_and_verify_dxf_aama(
     ins_units = ""
     table_layers_defined = set()
     entity_layers_found = set()
-    polylines_by_layer: Dict[str, List[Tuple[float, float]]] = {}
+    polylines_by_layer: Dict[str, List[List[Tuple[float, float]]]] = {}
+    entity_counts_by_layer: Dict[str, int] = {}
     current_section: str | None = None
     current_poly_layer: str | None = None
+    current_poly_pts: List[Tuple[float, float]] = []
 
     i = 0
     while i < len(pairs):
@@ -637,6 +759,10 @@ def parse_and_verify_dxf_aama(
             i += 2
             continue
         if code == "0" and val == "ENDSEC":
+            if current_poly_layer is not None:
+                polylines_by_layer.setdefault(current_poly_layer, []).append(current_poly_pts)
+                current_poly_layer = None
+                current_poly_pts = []
             current_section = None
             i += 1
             continue
@@ -669,8 +795,9 @@ def parse_and_verify_dxf_aama(
                         layer = pairs[i][1]
                     i += 1
                 entity_layers_found.add(layer)
+                entity_counts_by_layer[layer] = entity_counts_by_layer.get(layer, 0) + 1
                 current_poly_layer = layer
-                polylines_by_layer.setdefault(layer, [])
+                current_poly_pts = []
                 continue
             if code == "0" and val == "VERTEX" and current_poly_layer is not None:
                 vx, vy = 0.0, 0.0
@@ -681,10 +808,25 @@ def parse_and_verify_dxf_aama(
                     elif pairs[i][0] == "20":
                         vy = float(pairs[i][1])
                     i += 1
-                polylines_by_layer[current_poly_layer].append((vx, vy))
+                current_poly_pts.append((vx, vy))
                 continue
             if code == "0" and val == "SEQEND":
-                current_poly_layer = None
+                if current_poly_layer is not None:
+                    polylines_by_layer.setdefault(current_poly_layer, []).append(current_poly_pts)
+                    current_poly_layer = None
+                    current_poly_pts = []
+                i += 1
+                continue
+            if code == "0" and val in ("LINE", "POINT", "TEXT"):
+                layer = "0"
+                i += 1
+                while i < len(pairs) and pairs[i][0] != "0":
+                    if pairs[i][0] == "8":
+                        layer = pairs[i][1]
+                    i += 1
+                entity_layers_found.add(layer)
+                entity_counts_by_layer[layer] = entity_counts_by_layer.get(layer, 0) + 1
+                continue
             elif code == "8":
                 entity_layers_found.add(val)
         i += 1
@@ -693,29 +835,55 @@ def parse_and_verify_dxf_aama(
     missing_layers = sorted(required_layers - entity_layers_found)
     missing_table_layers = sorted(required_layers - table_layers_defined)
 
-    max_vertex_error_cm = 0.0
-    for (x1, y1), (x2, y2) in zip(expected_cut_pts, polylines_by_layer.get("1", [])):
-        max_vertex_error_cm = max(max_vertex_error_cm, math.hypot(x1 - x2, y1 - y2))
-    for (x1, y1), (x2, y2) in zip(expected_sew_pts, polylines_by_layer.get("8", [])):
-        max_vertex_error_cm = max(max_vertex_error_cm, math.hypot(x1 - x2, y1 - y2))
+    cut_polys = polylines_by_layer.get("1", [])
+    sew_polys = polylines_by_layer.get("8", [])
+    cut_recovered_count = len(cut_polys[0]) if len(cut_polys) == 1 else sum(len(p) for p in cut_polys)
+    sew_recovered_count = len(sew_polys[0]) if len(sew_polys) == 1 else sum(len(p) for p in sew_polys)
+    cut_count_match = len(cut_polys) == 1 and len(cut_polys[0]) == len(expected_cut_pts)
+    sew_count_match = len(sew_polys) == 1 and len(sew_polys[0]) == len(expected_sew_pts)
+    vertex_count_parity_matched = cut_count_match and sew_count_match
 
-    total_vertices = sum(len(v) for v in polylines_by_layer.values())
+    if not vertex_count_parity_matched:
+        max_vertex_error_cm = math.inf
+    else:
+        max_vertex_error_cm = 0.0
+        for (x1, y1), (x2, y2) in zip(expected_cut_pts, cut_polys[0]):
+            max_vertex_error_cm = max(max_vertex_error_cm, math.hypot(x1 - x2, y1 - y2))
+        for (x1, y1), (x2, y2) in zip(expected_sew_pts, sew_polys[0]):
+            max_vertex_error_cm = max(max_vertex_error_cm, math.hypot(x1 - x2, y1 - y2))
+
+    total_vertices = sum(len(poly) for polys in polylines_by_layer.values() for poly in polys)
     dxf_sha256 = hashlib.sha256(dxf_text.encode("utf-8")).hexdigest()
 
-    manifest = DxfExportManifest(
-        exportId="M00-7-REF-BF-001",
-        standard="DXF-AAMA / ASTM D6673",
-        dxfVersion="AC1009",
-        geometryUnit="cm",
-        requiredLayers=["1", "2", "4", "7", "8", "11"],
-        recoveredLayers=sorted(entity_layers_found),
-        pieceCodes=["BF-001"],
-        totalVertexCount=total_vertices,
-        maxRoundTripCoordinateErrorCm=max_vertex_error_cm,
-        sha256Digest=dxf_sha256,
-        syntheticRoundTripVerified=True,
-        externalCadInteroperabilityVerified=False,
+    round_trip_passed = (
+        sections_found == ["HEADER", "TABLES", "ENTITIES"]
+        and acad_ver == "AC1009"
+        and ins_units == "5"
+        and len(missing_layers) == 0
+        and len(missing_table_layers) == 0
+        and vertex_count_parity_matched
+        and math.isfinite(max_vertex_error_cm)
+        and max_vertex_error_cm <= 0.001
+        and all(entity_counts_by_layer.get(lyr, 0) >= 1 for lyr in required_layers)
     )
+
+    manifest_dump: Dict[str, Any] | None = None
+    if round_trip_passed and total_vertices >= 3:
+        manifest = DxfExportManifest(
+            exportId="M00-7-REF-BF-001",
+            standard="DXF-AAMA / ASTM D6673",
+            dxfVersion="AC1009",
+            geometryUnit="cm",
+            requiredLayers=["1", "2", "4", "7", "8", "11"],
+            recoveredLayers=sorted(entity_layers_found),
+            pieceCodes=["BF-001"],
+            totalVertexCount=total_vertices,
+            maxRoundTripCoordinateErrorCm=max_vertex_error_cm,
+            sha256Digest=dxf_sha256,
+            syntheticRoundTripVerified=True,
+            externalCadInteroperabilityVerified=False,
+        )
+        manifest_dump = manifest.model_dump(mode="json")
 
     return {
         "milestoneId": "M00.7",
@@ -728,23 +896,24 @@ def parse_and_verify_dxf_aama(
         "layersRecovered": sorted(entity_layers_found),
         "missingLayers": missing_layers,
         "missingTableLayers": missing_table_layers,
-        "maxVertexRoundTripErrorCm": max_vertex_error_cm,
+        "cutPolylinesRecovered": len(cut_polys),
+        "sewPolylinesRecovered": len(sew_polys),
+        "cutVertexCountExpected": len(expected_cut_pts),
+        "cutVertexCountRecovered": cut_recovered_count,
+        "sewVertexCountExpected": len(expected_sew_pts),
+        "sewVertexCountRecovered": sew_recovered_count,
+        "vertexCountParityMatched": vertex_count_parity_matched,
+        "maxVertexRoundTripErrorCm": max_vertex_error_cm if math.isfinite(max_vertex_error_cm) else None,
         "toleranceMaxCm": 0.001,
-        "syntheticRoundTripVerified": True,
+        "syntheticRoundTripVerified": round_trip_passed,
         "externalCadInteroperabilityVerified": False,
         "interoperabilityScopeNote": (
             "Verifies deterministic synthetic DXF R12 (AC1009) / ASTM D6673 emitter-to-parser round-trip in M00.7. "
             "External third-party CAD software (Gerber AccuMark, Lectra Modaris, Optitex, CLO3D) file import/export "
             "validation is scheduled under M05 Industrial Export."
         ),
-        "dxfExportManifest": manifest.model_dump(mode="json"),
-        "allPassed": (
-            sections_found == ["HEADER", "TABLES", "ENTITIES"]
-            and acad_ver == "AC1009"
-            and len(missing_layers) == 0
-            and len(missing_table_layers) == 0
-            and max_vertex_error_cm <= 0.001
-        ),
+        "dxfExportManifest": manifest_dump,
+        "allPassed": round_trip_passed,
     }
 
 
@@ -767,19 +936,20 @@ def _draft_paired_seam_curves_for_profile(profile: BodyProfile) -> List[Dict[str
     skirt_len = profile.skirtLengthCm or 65.0
     hip_drop = profile.waistToHipCm
 
-    # 1. Bodice Front Side Seam vs Bodice Back Side Seam (curved waist-to-underarm transition)
+    # 1. Bodice Front Side Seam vs Bodice Back Side Seam (distinct front/back waist-to-underarm shaping profiles)
+    dx_side = quarter_bust - quarter_waist
     bf_side = ExactCubicBezier2D.from_floats(
         f"{profile.profileId}-bodice-front-side",
         (quarter_waist, 0.0),
-        (quarter_waist + 0.35 * (quarter_bust - quarter_waist), side_len_y / 3.0),
-        (quarter_waist + 0.70 * (quarter_bust - quarter_waist), 2.0 * side_len_y / 3.0),
+        (quarter_waist + 0.30 * dx_side, side_len_y * 0.33),
+        (quarter_waist + 0.72 * dx_side, side_len_y * 0.67),
         (quarter_bust, side_len_y),
     )
     bb_side = ExactCubicBezier2D.from_floats(
         f"{profile.profileId}-bodice-back-side",
         (quarter_waist, 0.0),
-        (quarter_waist + 0.35 * (quarter_bust - quarter_waist), side_len_y / 3.0),
-        (quarter_waist + 0.70 * (quarter_bust - quarter_waist), 2.0 * side_len_y / 3.0),
+        (quarter_waist + 0.36 * dx_side, side_len_y * 0.34),
+        (quarter_waist + 0.68 * dx_side, side_len_y * 0.66),
         (quarter_bust, side_len_y),
     )
 
@@ -826,8 +996,8 @@ def _draft_paired_seam_curves_for_profile(profile: BodyProfile) -> List[Dict[str
 
     results: List[Dict[str, Any]] = []
     for label, curve_a, curve_b, target_ease in pairs_spec:
-        len_a, panels_a = adaptive_gauss_legendre_arc_length(curve_a, 1.0)
-        len_b, panels_b = adaptive_gauss_legendre_arc_length(curve_b, 1.0)
+        len_a, panels_a, conv_a = adaptive_gauss_legendre_arc_length_checked(curve_a, 1.0)
+        len_b, panels_b, conv_b = adaptive_gauss_legendre_arc_length_checked(curve_b, 1.0)
         enc_a = method_c1_cert_arc_length_enclosure(curve_a, subdivision_depth=6)
         enc_b = method_c1_cert_arc_length_enclosure(curve_b, subdivision_depth=6)
         cad_delta = abs((len_a - len_b) - target_ease)
@@ -837,30 +1007,40 @@ def _draft_paired_seam_curves_for_profile(profile: BodyProfile) -> List[Dict[str
         b_hi_q = Fraction(enc_b["upperControlPolygonBoundRational"])
         edge_a_outward = list(fraction_pair_to_outward_f64_pair(a_lo_q, a_hi_q))
         edge_b_outward = list(fraction_pair_to_outward_f64_pair(b_lo_q, b_hi_q))
+        ease_q = Fraction(str(target_ease))
         worst_case_q = max(
-            abs((a_hi_q - b_lo_q) - Fraction(str(target_ease))),
-            abs((b_hi_q - a_lo_q) - Fraction(str(target_ease))),
+            abs((a_hi_q - b_lo_q) - ease_q),
+            abs((b_hi_q - a_lo_q) - ease_q),
         )
-        worst_case_delta = max(
-            abs((edge_a_outward[1] - edge_b_outward[0]) - target_ease),
-            abs((edge_b_outward[1] - edge_a_outward[0]) - target_ease),
+        worst_case_delta = fraction_to_outward_upper_f64(worst_case_q)
+        distinct_control_points = (
+            (curve_a.p0, curve_a.p1, curve_a.p2, curve_a.p3)
+            != (curve_b.p0, curve_b.p1, curve_b.p2, curve_b.p3)
         )
         results.append(
             {
                 "profileId": profile.profileId,
                 "seamPair": label,
+                "distinctControlPoints": distinct_control_points,
                 "edgeACm": round(len_a, 6),
                 "edgeBCm": round(len_b, 6),
                 "edgeAC1CertIntervalCm": edge_a_outward,
                 "edgeBC1CertIntervalCm": edge_b_outward,
                 "worstCaseC1CertDeltaCm": worst_case_delta,
                 "exactRationalWorstCaseDeltaCm": float(worst_case_q),
+                "quadratureConverged": conv_a and conv_b,
                 "quadraturePanelsUsed": panels_a + panels_b,
                 "targetEaseCm": target_ease,
                 "cadDeltaCm": round(cad_delta, 6),
                 "diagnosticFields": ["edgeACm", "edgeBCm", "cadDeltaCm"],
                 "certificationFields": ["edgeAC1CertIntervalCm", "edgeBC1CertIntervalCm", "worstCaseC1CertDeltaCm"],
-                "withinTier1CadTolerance0_05Cm": worst_case_delta <= 0.05 and cad_delta <= 0.05,
+                "withinTier1CadTolerance0_05Cm": (
+                    conv_a
+                    and conv_b
+                    and distinct_control_points
+                    and worst_case_delta <= 0.05
+                    and cad_delta <= 0.05
+                ),
             }
         )
     return results
@@ -940,14 +1120,17 @@ def execute_m00_8_anthropometric_and_seam_parity_verification() -> Dict[str, Any
             rejected = True
         covariance_rejections.append({"caseId": case_id, "rejected": rejected})
 
-    # Compute paired seam lengths directly from drafted cubic Bezier pieces for STD-M
-    paired_seams = _draft_paired_seam_curves_for_profile(golden_profiles[1])
+    # Compute paired seam lengths directly from drafted cubic Bezier pieces across all 3 golden profiles
+    paired_seams: List[Dict[str, Any]] = []
+    for profile in golden_profiles:
+        paired_seams.extend(_draft_paired_seam_curves_for_profile(profile))
 
     all_cov_rejected = all(c["rejected"] for c in covariance_rejections)
     return {
         "milestoneId": "M00.8",
         "artifactName": "AnthropometricVerificationReport.json",
         "goldenProfilesValidatedCount": len(golden_profiles),
+        "goldenProfilesEvaluatedForSeamParity": [p.profileId for p in golden_profiles],
         "invalidAnatomicalCovarianceRejected": all_cov_rejected,
         "covarianceNegativeChecks": covariance_rejections,
         "dec11TwoTierSeamTolerancePolicy": {
@@ -958,6 +1141,7 @@ def execute_m00_8_anthropometric_and_seam_parity_verification() -> Dict[str, Any
         },
         "allPassed": (
             len(golden_profiles) == 3
+            and len(paired_seams) == 9
             and all_cov_rejected
             and all(s["withinTier1CadTolerance0_05Cm"] for s in paired_seams)
         ),

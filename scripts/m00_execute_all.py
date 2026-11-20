@@ -31,6 +31,7 @@ SYS_PATH_ENGINE = REPO_ROOT / "services" / "geometry-engine"
 sys.path.insert(0, str(SYS_PATH_ENGINE))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from check_oracle_independence import audit_repository_oracle_independence  # noqa: E402
 from m00_verify_production_dxf_and_seams import verify_exported_bundle  # noqa: E402
 from patroner_geometry.c1_cert_oracle import (  # noqa: E402
     execute_17_adversarial_geometry_families,
@@ -40,6 +41,11 @@ from patroner_geometry.contracts import (  # noqa: E402
     BaseCurveSingularityClassification,
     CanonicalOffsetClassification,
     verify_schemas_lock,
+)
+from patroner_geometry.provenance import (  # noqa: E402
+    compute_file_sha256,
+    compute_source_inputs_digest,
+    verify_python312_and_lock_environment,
 )
 from patroner_geometry.qualification import (  # noqa: E402
     benchmark_10k_population_runtimes,
@@ -52,6 +58,32 @@ from patroner_geometry.sub_oracles import (  # noqa: E402
     execute_m00_7_dxf_roundtrip_verification,
     execute_m00_8_anthropometric_and_seam_parity_verification,
 )
+
+M00_SOURCE_INPUT_PATHS: List[str] = [
+    ".github/workflows/m00-verification.yml",
+    "packages/contracts/schemas/canonical_contracts.schema.json",
+    "scripts/check_oracle_independence.py",
+    "scripts/m00_capture_c0_legacy.ts",
+    "scripts/m00_execute_all.py",
+    "scripts/m00_export_canonical_pieces.ts",
+    "scripts/m00_verify_production_dxf_and_seams.py",
+    "services/geometry-engine/patroner_geometry/__init__.py",
+    "services/geometry-engine/patroner_geometry/c1_cert_oracle.py",
+    "services/geometry-engine/patroner_geometry/contracts.py",
+    "services/geometry-engine/patroner_geometry/provenance.py",
+    "services/geometry-engine/patroner_geometry/qualification.py",
+    "services/geometry-engine/patroner_geometry/sub_oracles.py",
+    "services/geometry-engine/pyproject.toml",
+    "services/geometry-engine/uv.lock",
+]
+
+M00_ROOT_MARKDOWN_REPORTS: List[str] = [
+    "M00_EVIDENCE_RECONCILIATION_REPORT.md",
+    "M00_GATE_AUTH2_READINESS_MATRIX.md",
+    "M00_GATE_AUTH2_READINESS_REPORT.md",
+    "M00_NUMERICAL_QUALIFICATION_AUDIT.md",
+    "M00_REMEDIATION_CHANGELOG.md",
+]
 
 ARTIFACTS_DIR = REPO_ROOT / "artifacts" / "m00"
 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -530,8 +562,30 @@ def build_canonical_ag01_ag17_registry(
     }
 
 
+def _digest_existing_file(path: Path) -> Dict[str, str]:
+    raw = path.read_bytes()
+    return {
+        "artifact": path.name,
+        "path": str(path.relative_to(REPO_ROOT)),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "bytes": str(len(raw)),
+    }
+
+
 def main() -> None:
-    print("=== EXECUTING PATRONER M00 INTEGRATED VERIFICATION SUITE (CHECKPOINT 16 / PKG-M00-02) ===")
+    print("=== EXECUTING PATRONER M00 INTEGRATED VERIFICATION SUITE (PKG-M00-03 STAGE 2) ===")
+
+    # Live REM-01 runtime environment, lockfile, and CI workflow provenance verification
+    workflow_path = REPO_ROOT / ".github" / "workflows" / "m00-verification.yml"
+    env_check = verify_python312_and_lock_environment(SYS_PATH_ENGINE, workflow_path, strict=True)
+    source_inputs = compute_source_inputs_digest(REPO_ROOT, M00_SOURCE_INPUT_PATHS)
+    assert source_inputs["allSourceInputsPresent"], f"Missing M00 source inputs: {source_inputs['missingFiles']}"
+
+    # Static AST oracle-independence verification (ADR-009 §5.4 / §7.1)
+    oracle_independence_audit = audit_repository_oracle_independence(REPO_ROOT)
+    assert oracle_independence_audit["allPassed"], (
+        f"ADR-009 oracle independence audit failed: {oracle_independence_audit['violations']}"
+    )
 
     # Run 1 of all deterministic mathematical & production DXF/seam verification modules
     schema_path = REPO_ROOT / "packages" / "contracts" / "schemas" / "canonical_contracts.schema.json"
@@ -684,11 +738,18 @@ def main() -> None:
     }
     write_json_file(ARTIFACTS_DIR / "RuntimeBenchmarkObservation.json", runtime_observation_record)
 
+    per_curve_meta = runtime_benchmarks.get("perCurveLatencyBenchmarks", {}).get("metadata", {})
+    deterministic_op_counts = per_curve_meta.get("deterministicOperationCountsPerBenchmarkIteration")
+    assert isinstance(deterministic_op_counts, dict) and deterministic_op_counts, (
+        "Missing programmatically derived deterministicOperationCountsPerBenchmarkIteration in runtime benchmarks"
+    )
+
     reproducibility_report = {
         "deliverable": "M00_REPRODUCIBILITY_REPORT.json",
         "checkpoint": "16",
-        "packageId": "PKG-M00-02",
+        "packageId": "PKG-M00-03",
         "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
+        "sourceInputsDigest": source_inputs["sourceInputsDigest"],
         "consecutiveRunsCompared": 2,
         "deterministicArtifactsVerifiedCount": len(run_comparisons),
         "allMathematicalArtifactsBitExactAcrossRuns": all(c["identicalAcrossRuns"] for c in run_comparisons),
@@ -703,12 +764,7 @@ def main() -> None:
                 k: bool(v["passed"])
                 for k, v in latency_eval["candidateResults"].items()
             },
-            "deterministicOperationCountsPerBenchmarkIteration": {
-                "degree12PowerToBernsteinConversions": 1,
-                "deCasteljauExactSubdivisions": 2,
-                "descartesSignVariationScans": 2,
-                "degree12IntervalHornerEvaluations": 13,
-            },
+            "deterministicOperationCountsPerBenchmarkIteration": deterministic_op_counts,
         },
     }
 
@@ -742,11 +798,15 @@ def main() -> None:
         meta_root_repro,
     ]
 
+    replay_verified = bool(reproducibility_report["allMathematicalArtifactsBitExactAcrossRuns"])
+    env_verified = bool(env_check["verified"])
+    oracle_ind_ok = bool(oracle_independence_audit["allPassed"])
+
     env_manifest = {
         "milestoneId": "M00.9-M00.10",
         "artifactName": "ReproducibleEnvironmentManifest.json",
         "checkpoint": 16,
-        "packageId": "PKG-M00-02",
+        "packageId": "PKG-M00-03",
         "governingAuthorization": {
             "checkpoint12Date": "2026-11-16",
             "baselineBlueprint": "R2.1.2-R1 (R2.2 Documentation Overlay)",
@@ -758,30 +818,44 @@ def main() -> None:
             "synchronizedM00SubmissionCommitSha": "edafe5e9e6994233daeaedf5826c691a934bc013",
             "checkpoint13aAuditCommitSha": "0f89b292d402a4c829fdfa78a07b8dc4143df2cb",
             "approvedDecisionsAtGateAuth1": ["Gate Auth-1", "DEC-01", "DEC-13 Stage 1"],
+            "m00AcceptanceStatus": "NOT_ACCEPTED",
             "mandatoryNextGate": "Gate Auth-2 / DEC-13 Stage 2 (CLOSED - Pending Owner Sign-Off; Blocks M02 Production Implementation)",
             "gateAuth2Status": "CLOSED",
+            "gateAuth3Status": "CLOSED",
+            "gateAuth4Status": "CLOSED",
+            "dec13Stage2Status": "CLOSED",
+            "ac09PhysicalValidationStatus": "PENDING",
+            "externalCadInteroperabilityVerified": False,
         },
         "runtimeEnvironment": {
-            "pythonVersion": platform.python_version(),
-            "pythonRequiresSpec": ">=3.12,<3.13",
-            "targetRuntime": f"{platform.system().lower()}-{platform.machine()}",
-            "machine": platform.machine(),
-            "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
-            "uvLockPresent": (SYS_PATH_ENGINE / "uv.lock").exists(),
-            "pinnedPackages": {
-                "mpmath": "1.4.1",
-                "python-flint": "0.9.0",
-                "pydantic": "2.14.3",
-                "jsonschema": "4.26.0",
-                "numpy": "2.2.6",
-                "scipy": "1.15.3",
-                "pytest": "9.2.0",
-            },
+            "pythonVersion": env_check["pythonVersion"],
+            "pythonVersionInfo": env_check["pythonVersionInfo"],
+            "pythonIs312": env_check["pythonIs312"],
+            "pythonRequiresSpec": env_check["pythonRequiresSpec"],
+            "targetRuntime": env_check["targetRuntime"],
+            "machine": env_check["machine"],
+            "pythonHashSeed": env_check["pythonHashSeed"],
+            "pyprojectPresent": env_check["pyprojectPresent"],
+            "pyprojectSha256": env_check["pyprojectSha256"],
+            "uvLockPresent": env_check["uvLockPresent"],
+            "uvLockSha256": env_check["uvLockSha256"],
+            "pinnedPackages": env_check["pinnedPackages"],
+            "allPinnedPackagesMatch": env_check["allPinnedPackagesMatch"],
+            "ciWorkflowChecks": env_check["ciWorkflowChecks"],
+            "ciWorkflowVerified": env_check["ciWorkflowVerified"],
+        },
+        "sourceInputsProvenance": source_inputs,
+        "oracleIndependenceAudit": {
+            "oracleModulesAudited": oracle_independence_audit["tier2OracleFilesChecked"],
+            "productionSolverModulesFound": oracle_independence_audit["tier1ProductionFilesChecked"],
+            "violationsCount": len(oracle_independence_audit["violations"]),
+            "allPassed": oracle_ind_ok,
         },
         "requirementStatusTaxonomy": {
             "M00.1_schemasLock": "VERIFIED" if m00_1_run1["allPassed"] else "BLOCKED",
             "M00.4_step1_10kX4Tiers": "VERIFIED" if m00_4_qual_run1["allCandidatesQualified"] else "BLOCKED",
             "M00.4_step2_3_ag17_krawczyk": "VERIFIED" if (m00_4_adv_run1["allPassed"] and m00_4_sec6_run1["allPassed"]) else "BLOCKED",
+            "M00.4_oracleIndependence": "VERIFIED" if oracle_ind_ok else "BLOCKED",
             "M00.5_c1CertArcLength": "VERIFIED" if m00_5_run1["allPassed"] else "BLOCKED",
             "M00.6_exactTopology": "VERIFIED" if m00_6_run1["allPassed"] else "BLOCKED",
             "M00.7_productionSyntheticDxf": "VERIFIED" if (m00_7_run1["allPassed"] and prod_dxf_run1["allPassed"]) else "BLOCKED",
@@ -789,11 +863,12 @@ def main() -> None:
             "M00.8_productionSeamParity": "VERIFIED" if (m00_8_run1["allPassed"] and prod_seam_run1["allPassed"]) else "BLOCKED",
             "M00.8_sleeveTargetEase_ClassB_M02b": "OPEN_CLASS_B_TRACKED_M02b",
             "M00.7_M00.8_verticalSlice1TrouserBlock": "INCOMPLETE_MISSING_TROUSER_BLOCK_M02",
-            "M00.9_python312CiLock": "VERIFIED",
-            "M00.10_deterministicReplay": "VERIFIED" if reproducibility_report["allMathematicalArtifactsBitExactAcrossRuns"] else "BLOCKED",
+            "M00.9_python312CiLock": "VERIFIED" if env_verified else "BLOCKED",
+            "M00.10_deterministicReplay": "VERIFIED" if replay_verified else "BLOCKED",
+            "M00_acceptance": "NOT_ACCEPTED",
             "GateAuth2_DEC13Stage2": "CLOSED",
         },
-        "deterministicReplayVerified": True,
+        "deterministicReplayVerified": replay_verified,
         "runtimeBenchmarkObservationPolicy": {
             "runtimeBenchmarksSourceArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
             "separateNonDeterministicObservationArtifact": "artifacts/m00/RuntimeBenchmarkObservation.json",
@@ -802,11 +877,12 @@ def main() -> None:
         },
         "artifactDigests": deterministic_artifact_digests,
         "checkpoint16DeliverableDigests": checkpoint16_root_digests,
-        "pkgM0002AllVerified": bool(
+        "pkgM0003RemediationChecksPassed": bool(
             m00_1_run1["allPassed"]
             and m00_4_qual_run1["allCandidatesQualified"]
             and m00_4_adv_run1["allPassed"]
             and m00_4_sec6_run1["allPassed"]
+            and oracle_ind_ok
             and m00_5_run1["allPassed"]
             and m00_6_run1["allPassed"]
             and m00_7_run1["allPassed"]
@@ -814,25 +890,66 @@ def main() -> None:
             and prod_dxf_run1["allPassed"]
             and prod_seam_run1["allPassed"]
             and latency_eval["allThreeCandidatesVerifiedUnder5MsP95"]
-            and reproducibility_report["allMathematicalArtifactsBitExactAcrossRuns"]
+            and env_verified
+            and replay_verified
+        ),
+        "pkgM0002AllVerified": bool(
+            m00_1_run1["allPassed"]
+            and m00_4_qual_run1["allCandidatesQualified"]
+            and m00_4_adv_run1["allPassed"]
+            and m00_4_sec6_run1["allPassed"]
+            and oracle_ind_ok
+            and m00_5_run1["allPassed"]
+            and m00_6_run1["allPassed"]
+            and m00_7_run1["allPassed"]
+            and m00_8_run1["allPassed"]
+            and prod_dxf_run1["allPassed"]
+            and prod_seam_run1["allPassed"]
+            and latency_eval["allThreeCandidatesVerifiedUnder5MsP95"]
+            and env_verified
+            and replay_verified
         ),
     }
     meta_m00_10 = write_json_file(ARTIFACTS_DIR / "ReproducibleEnvironmentManifest.json", env_manifest)
     meta_root_manifest = write_json_file(REPO_ROOT / "ReproducibleEnvironmentManifest.json", env_manifest)
 
-    schema_bytes = schema_path.read_bytes()
-    schema_sha256 = hashlib.sha256(schema_bytes).hexdigest()
+    schema_sha256 = compute_file_sha256(schema_path)
+    config_and_schema_digests = [
+        _digest_existing_file(schema_path),
+        _digest_existing_file(SYS_PATH_ENGINE / "pyproject.toml"),
+        _digest_existing_file(SYS_PATH_ENGINE / "uv.lock"),
+        _digest_existing_file(workflow_path),
+    ]
+    markdown_report_digests = [
+        _digest_existing_file(REPO_ROOT / md_name)
+        for md_name in M00_ROOT_MARKDOWN_REPORTS
+        if (REPO_ROOT / md_name).is_file()
+    ]
+    all_audited_files = (
+        deterministic_artifact_digests
+        + checkpoint16_root_digests
+        + [meta_m00_10, meta_root_manifest]
+        + config_and_schema_digests
+        + markdown_report_digests
+    )
+
     hash_verification_report = {
         "auditCheckpoint": "16",
-        "auditTitle": "Patroner M00 Checkpoint 16 Consolidated Deterministic Artifact Hash Verification",
-        "packageId": "PKG-M00-02",
+        "auditTitle": "Patroner M00 Consolidated Deterministic Artifact Hash Verification (PKG-M00-03 Complete Manifest)",
+        "packageId": "PKG-M00-03",
         "historicalCheckpoint13aArchivePath": "artifacts/m00/checkpoint_13a_audit/M00_ARTIFACT_HASH_VERIFICATION.json",
         "governingBaseline": env_manifest["governingAuthorization"],
         "summary": {
             "deterministicArtifactsAudited": len(deterministic_artifact_digests),
             "checkpoint16RootDeliverablesAudited": len(checkpoint16_root_digests),
+            "configAndSchemaFilesAudited": len(config_and_schema_digests),
+            "markdownReportsAudited": len(markdown_report_digests),
+            "totalFilesAudited": len(all_audited_files),
             "referencedSchemaSha256": schema_sha256,
-            "deterministicAcrossRuns": bool(reproducibility_report["allMathematicalArtifactsBitExactAcrossRuns"]),
+            "sourceInputsDigest": source_inputs["sourceInputsDigest"],
+            "oracleIndependenceVerified": oracle_ind_ok,
+            "python312LockEnvironmentVerified": env_verified,
+            "deterministicAcrossRuns": replay_verified,
             "nonDeterministicRuntimeObservationArtifactsExcludedFromDeterminismGate": [
                 "artifacts/m00/IntervalCandidateBenchmarks.json",
                 "artifacts/m00/RuntimeBenchmarkObservation.json",
@@ -840,15 +957,19 @@ def main() -> None:
         },
         "deterministicArtifacts": deterministic_artifact_digests,
         "checkpoint16RootDeliverables": checkpoint16_root_digests,
+        "configAndSchemaFiles": config_and_schema_digests,
+        "markdownReports": markdown_report_digests,
         "reproducibleEnvironmentManifest": {
             "artifactsCopySha256": meta_m00_10["sha256"],
             "rootCopySha256": meta_root_manifest["sha256"],
             "copiesIdentical": meta_m00_10["sha256"] == meta_root_manifest["sha256"],
         },
+        "allAuditedFiles": all_audited_files,
     }
     meta_hash_verify = write_json_file(REPO_ROOT / "M00_ARTIFACT_HASH_VERIFICATION.json", hash_verification_report)
     print(f"[M00.10] ReproducibleEnvironmentManifest.json -> SHA-256: {meta_m00_10['sha256']}")
     print(f"[M00.10] M00_ARTIFACT_HASH_VERIFICATION.json    -> SHA-256: {meta_hash_verify['sha256']}")
+    print(f"[M00.10] Total audited files in manifest: {len(all_audited_files)}")
     print("=== ALL DETERMINISTIC ARTIFACTS GENERATED AND VERIFIED ===")
 
 

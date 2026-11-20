@@ -193,11 +193,11 @@
       "computedMetrics": {
         "ag06IsolatedRootsCount": 2,
         "ag07IsolatedGrazingRoot": {
-          "tLower": 0.49999999999949996,
+          "tLower": 0.5,
           "tUpper": 0.5,
-          "deltaT": 5.000000000000001e-13,
+          "deltaT": 0.0,
           "maxSpeedOnBracket": 8.000000000000002,
-          "deltaPosCm": 4.0000000000000015e-12,
+          "deltaPosCm": 0.0,
           "multiplicityOrOrder": "tangential-double-grazing (f=0, f'=0)"
         }
       },
@@ -323,9 +323,9 @@
       "canonicalOffsetClassification": "CERTIFIED_VALID",
       "computedMetrics": {
         "speedSquaredRatioMaxOverMin": 3103551725.14,
-        "maxSpeedOnRootBracketCmPerUnit": 5529.700000144674,
+        "maxSpeedOnRootBracketCmPerUnit": 5529.700000151403,
         "bracketDeltaT": 7.275957614183426e-13,
-        "bracketDeltaPosCm": 4.023386282020274e-09
+        "bracketDeltaPosCm": 4.02338628202517e-09
       },
       "status": "PASS"
     },

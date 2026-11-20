@@ -12,6 +12,7 @@
     "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
     "diagnosticQuadLength113BitCm": 16.6656505146,
     "adaptiveGaussLegendreLengthCm": 16.6656505146,
+    "adaptiveGaussLegendreConverged": true,
     "adaptiveGaussLegendreWithinC1CertEnclosure": true,
     "forwardLengthErrorCm": 1.4210854715202004e-14,
     "forwardToleranceMaxCm": 1e-06,
@@ -70,11 +71,13 @@
       {
         "targetFraction": 0.25,
         "targetArcLengthCm": 4.16641263,
-        "tStar": 0.425657617723,
+        "tStar": 0.42565761772302035,
         "tBracket": [
           0.42565761772302035,
           0.4256576177230204
         ],
+        "tStarWithinBracket": true,
+        "quadratureConverged": true,
         "arcLengthResidualCm": 8.881784197001252e-16,
         "deltaT": 5.551115123125783e-17,
         "localSpeedUpperBoundCmPerT": 14.101023588867298,
@@ -100,11 +103,13 @@
       {
         "targetFraction": 0.5,
         "targetArcLengthCm": 8.33282526,
-        "tStar": 0.667210977107,
+        "tStar": 0.6672109771073951,
         "tBracket": [
           0.667210977107091,
           0.6672109771076993
         ],
+        "tStarWithinBracket": true,
+        "quadratureConverged": true,
         "arcLengthResidualCm": 6.227907078937278e-12,
         "deltaT": 6.082911951921233e-13,
         "localSpeedUpperBoundCmPerT": 20.469830714570282,
@@ -130,11 +135,13 @@
       {
         "targetFraction": 0.75,
         "targetArcLengthCm": 12.49923789,
-        "tStar": 0.848755041555,
+        "tStar": 0.8487550415554228,
         "tBracket": [
           0.8487550415554227,
           0.8487550415554228
         ],
+        "tStarWithinBracket": true,
+        "quadratureConverged": true,
         "arcLengthResidualCm": 1.7763568394002505e-15,
         "deltaT": 1.1102230246251565e-16,
         "localSpeedUpperBoundCmPerT": 25.446326345545092,
@@ -171,6 +178,7 @@
       "selfIntersections": 0,
       "properTransverseCrossings": 0,
       "degenerateCollinearOrVertexTouches": 0,
+      "adjacentFoldBacksOrZeroEdges": 0,
       "isSimple": true,
       "isMicroSliver": false,
       "passed": true
@@ -183,6 +191,7 @@
       "selfIntersections": 0,
       "properTransverseCrossings": 0,
       "degenerateCollinearOrVertexTouches": 0,
+      "adjacentFoldBacksOrZeroEdges": 0,
       "isSimple": true,
       "isMicroSliver": false,
       "passed": true
@@ -190,6 +199,7 @@
     "bowtieSelfIntersectionDetected": true,
     "vertexOnEdgeDegeneracyDetected": true,
     "collinearOverlapDegeneracyDetected": true,
+    "foldedTriangle3VertexDegeneracyDetected": true,
     "microSliverDetected": true,
     "allPassed": true
   },
@@ -229,6 +239,13 @@
     ],
     "missingLayers": [],
     "missingTableLayers": [],
+    "cutPolylinesRecovered": 1,
+    "sewPolylinesRecovered": 1,
+    "cutVertexCountExpected": 4,
+    "cutVertexCountRecovered": 4,
+    "sewVertexCountExpected": 4,
+    "sewVertexCountRecovered": 4,
+    "vertexCountParityMatched": true,
     "maxVertexRoundTripErrorCm": 0.0,
     "toleranceMaxCm": 0.001,
     "syntheticRoundTripVerified": true,
@@ -270,6 +287,11 @@
     "milestoneId": "M00.8",
     "artifactName": "AnthropometricVerificationReport.json",
     "goldenProfilesValidatedCount": 3,
+    "goldenProfilesEvaluatedForSeamParity": [
+      "STD-XS",
+      "STD-M",
+      "PLUS-XXL"
+    ],
     "invalidAnatomicalCovarianceRejected": true,
     "covarianceNegativeChecks": [
       {
@@ -295,20 +317,54 @@
       "computedFromDraftedBezierCurves": true,
       "pairedSeamChecks": [
         {
-          "profileId": "STD-M",
+          "profileId": "STD-XS",
           "seamPair": "Bodice Front Side <-> Bodice Back Side",
-          "edgeACm": 21.102068,
-          "edgeBCm": 21.102068,
+          "distinctControlPoints": true,
+          "edgeACm": 20.617353,
+          "edgeBCm": 20.616208,
           "edgeAC1CertIntervalCm": [
-            21.102067505045312,
-            21.10206819204052
+            20.617350957971365,
+            20.61735514190771
           ],
           "edgeBC1CertIntervalCm": [
-            21.102067505045312,
-            21.10206819204052
+            20.61620736539653,
+            20.61620768684666
           ],
-          "worstCaseC1CertDeltaCm": 6.869952073884633e-07,
-          "exactRationalWorstCaseDeltaCm": 6.869952022557429e-07,
+          "worstCaseC1CertDeltaCm": 0.0011477765111747812,
+          "exactRationalWorstCaseDeltaCm": 0.0011477765111747812,
+          "quadratureConverged": true,
+          "quadraturePanelsUsed": 6,
+          "targetEaseCm": 0.0,
+          "cadDeltaCm": 0.001146,
+          "diagnosticFields": [
+            "edgeACm",
+            "edgeBCm",
+            "cadDeltaCm"
+          ],
+          "certificationFields": [
+            "edgeAC1CertIntervalCm",
+            "edgeBC1CertIntervalCm",
+            "worstCaseC1CertDeltaCm"
+          ],
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "profileId": "STD-XS",
+          "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+          "distinctControlPoints": true,
+          "edgeACm": 11.8,
+          "edgeBCm": 11.8,
+          "edgeAC1CertIntervalCm": [
+            11.799999999999997,
+            11.799999999999999
+          ],
+          "edgeBC1CertIntervalCm": [
+            11.8,
+            11.800000000000002
+          ],
+          "worstCaseC1CertDeltaCm": 2.8531695488854617e-15,
+          "exactRationalWorstCaseDeltaCm": 2.8531695488854617e-15,
+          "quadratureConverged": true,
           "quadraturePanelsUsed": 6,
           "targetEaseCm": 0.0,
           "cadDeltaCm": 0.0,
@@ -325,8 +381,73 @@
           "withinTier1CadTolerance0_05Cm": true
         },
         {
+          "profileId": "STD-XS",
+          "seamPair": "Skirt Front Side Curve <-> Skirt Back Side Curve",
+          "distinctControlPoints": true,
+          "edgeACm": 66.138594,
+          "edgeBCm": 66.13643,
+          "edgeAC1CertIntervalCm": [
+            66.13833540527295,
+            66.13885289849084
+          ],
+          "edgeBC1CertIntervalCm": [
+            66.13617282108329,
+            66.13668694124075
+          ],
+          "worstCaseC1CertDeltaCm": 0.002680077407535465,
+          "exactRationalWorstCaseDeltaCm": 0.0026800774075354645,
+          "quadratureConverged": true,
+          "quadraturePanelsUsed": 46,
+          "targetEaseCm": 0.0,
+          "cadDeltaCm": 0.002164,
+          "diagnosticFields": [
+            "edgeACm",
+            "edgeBCm",
+            "cadDeltaCm"
+          ],
+          "certificationFields": [
+            "edgeAC1CertIntervalCm",
+            "edgeBC1CertIntervalCm",
+            "worstCaseC1CertDeltaCm"
+          ],
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "profileId": "STD-M",
+          "seamPair": "Bodice Front Side <-> Bodice Back Side",
+          "distinctControlPoints": true,
+          "edgeACm": 21.102736,
+          "edgeBCm": 21.101614,
+          "edgeAC1CertIntervalCm": [
+            21.102733592069892,
+            21.102737689693434
+          ],
+          "edgeBC1CertIntervalCm": [
+            21.101613344424504,
+            21.1016136593731
+          ],
+          "worstCaseC1CertDeltaCm": 0.0011243452689269203,
+          "exactRationalWorstCaseDeltaCm": 0.0011243452689269203,
+          "quadratureConverged": true,
+          "quadraturePanelsUsed": 6,
+          "targetEaseCm": 0.0,
+          "cadDeltaCm": 0.001122,
+          "diagnosticFields": [
+            "edgeACm",
+            "edgeBCm",
+            "cadDeltaCm"
+          ],
+          "certificationFields": [
+            "edgeAC1CertIntervalCm",
+            "edgeBC1CertIntervalCm",
+            "worstCaseC1CertDeltaCm"
+          ],
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
           "profileId": "STD-M",
           "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+          "distinctControlPoints": true,
           "edgeACm": 12.8,
           "edgeBCm": 12.8,
           "edgeAC1CertIntervalCm": [
@@ -337,8 +458,9 @@
             12.8,
             12.800000000000002
           ],
-          "worstCaseC1CertDeltaCm": 3.552713678800501e-15,
+          "worstCaseC1CertDeltaCm": 2.8531695488854617e-15,
           "exactRationalWorstCaseDeltaCm": 2.8531695488854613e-15,
+          "quadratureConverged": true,
           "quadraturePanelsUsed": 6,
           "targetEaseCm": 0.0,
           "cadDeltaCm": 0.0,
@@ -357,6 +479,7 @@
         {
           "profileId": "STD-M",
           "seamPair": "Skirt Front Side Curve <-> Skirt Back Side Curve",
+          "distinctControlPoints": true,
           "edgeACm": 66.117865,
           "edgeBCm": 66.115728,
           "edgeAC1CertIntervalCm": [
@@ -367,11 +490,108 @@
             66.1154780127599,
             66.11597802979355
           ],
-          "worstCaseC1CertDeltaCm": 0.0026382413073378075,
+          "worstCaseC1CertDeltaCm": 0.002638241307313923,
           "exactRationalWorstCaseDeltaCm": 0.002638241307313923,
+          "quadratureConverged": true,
           "quadraturePanelsUsed": 38,
           "targetEaseCm": 0.0,
           "cadDeltaCm": 0.002137,
+          "diagnosticFields": [
+            "edgeACm",
+            "edgeBCm",
+            "cadDeltaCm"
+          ],
+          "certificationFields": [
+            "edgeAC1CertIntervalCm",
+            "edgeBC1CertIntervalCm",
+            "worstCaseC1CertDeltaCm"
+          ],
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "profileId": "PLUS-XXL",
+          "seamPair": "Bodice Front Side <-> Bodice Back Side",
+          "distinctControlPoints": true,
+          "edgeACm": 20.132686,
+          "edgeBCm": 20.131516,
+          "edgeAC1CertIntervalCm": [
+            20.13268341042584,
+            20.13268768393218
+          ],
+          "edgeBC1CertIntervalCm": [
+            20.131515611888375,
+            20.13151594007498
+          ],
+          "worstCaseC1CertDeltaCm": 0.001172072043802463,
+          "exactRationalWorstCaseDeltaCm": 0.0011720720438024629,
+          "quadratureConverged": true,
+          "quadraturePanelsUsed": 6,
+          "targetEaseCm": 0.0,
+          "cadDeltaCm": 0.00117,
+          "diagnosticFields": [
+            "edgeACm",
+            "edgeBCm",
+            "cadDeltaCm"
+          ],
+          "certificationFields": [
+            "edgeAC1CertIntervalCm",
+            "edgeBC1CertIntervalCm",
+            "worstCaseC1CertDeltaCm"
+          ],
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "profileId": "PLUS-XXL",
+          "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
+          "distinctControlPoints": true,
+          "edgeACm": 14.0,
+          "edgeBCm": 14.0,
+          "edgeAC1CertIntervalCm": [
+            14.0,
+            14.000000000000002
+          ],
+          "edgeBC1CertIntervalCm": [
+            14.0,
+            14.000000000000002
+          ],
+          "worstCaseC1CertDeltaCm": 1.1062541600560283e-30,
+          "exactRationalWorstCaseDeltaCm": 1.1062541600560283e-30,
+          "quadratureConverged": true,
+          "quadraturePanelsUsed": 6,
+          "targetEaseCm": 0.0,
+          "cadDeltaCm": 0.0,
+          "diagnosticFields": [
+            "edgeACm",
+            "edgeBCm",
+            "cadDeltaCm"
+          ],
+          "certificationFields": [
+            "edgeAC1CertIntervalCm",
+            "edgeBC1CertIntervalCm",
+            "worstCaseC1CertDeltaCm"
+          ],
+          "withinTier1CadTolerance0_05Cm": true
+        },
+        {
+          "profileId": "PLUS-XXL",
+          "seamPair": "Skirt Front Side Curve <-> Skirt Back Side Curve",
+          "distinctControlPoints": true,
+          "edgeACm": 66.05993,
+          "edgeBCm": 66.057876,
+          "edgeAC1CertIntervalCm": [
+            66.05969805531267,
+            66.0601623227257
+          ],
+          "edgeBC1CertIntervalCm": [
+            66.05764497608116,
+            66.05810603082371
+          ],
+          "worstCaseC1CertDeltaCm": 0.002517346644513599,
+          "exactRationalWorstCaseDeltaCm": 0.002517346644513599,
+          "quadratureConverged": true,
+          "quadraturePanelsUsed": 38,
+          "targetEaseCm": 0.0,
+          "cadDeltaCm": 0.002055,
           "diagnosticFields": [
             "edgeACm",
             "edgeBCm",
@@ -455,7 +675,7 @@
           "totalCutVertices": 276,
           "totalSewVertices": 264,
           "maxVertexRoundTripErrorCm": 0.0,
-          "dxfPayloadSha256": "a3555ded395f2eda914d326373ed544eac2be7705c0ef9d3992c207491682e18",
+          "dxfPayloadSha256": "cb01ea6c3400026db276fa3b6a1da8fa02924031414196535fcd15120dfb32a4",
           "tsRoundTripAllPassed": true,
           "syntheticRoundTripVerified": true,
           "externalCadInteroperabilityVerified": false,
@@ -505,7 +725,7 @@
           "totalCutVertices": 287,
           "totalSewVertices": 272,
           "maxVertexRoundTripErrorCm": 0.0,
-          "dxfPayloadSha256": "7349f1fa39a197362e6763cadd874f0446f176ffa4329ea5f6101de5ce317f74",
+          "dxfPayloadSha256": "d4599d1615df9cbe1325f0b4ebb59c645dbd8ba859e69459d7ebb9ad874139c4",
           "tsRoundTripAllPassed": true,
           "syntheticRoundTripVerified": true,
           "externalCadInteroperabilityVerified": false,
@@ -555,7 +775,7 @@
           "totalCutVertices": 304,
           "totalSewVertices": 290,
           "maxVertexRoundTripErrorCm": 0.0,
-          "dxfPayloadSha256": "e6b70060950151862cab28dfa03242dfd708b12d3fda283838dbbf19ad67c988",
+          "dxfPayloadSha256": "05fac3ec1bcefb893111d28eab84263d77ebf05e5a5a22dab45a54e9250cc6ad",
           "tsRoundTripAllPassed": true,
           "syntheticRoundTripVerified": true,
           "externalCadInteroperabilityVerified": false,
@@ -729,7 +949,7 @@
             "isTotalEasePermitted": true,
             "isDistributionBalanced": true,
             "isTargetCompliant": false,
-            "inseamParityDeltaCm": 0,
+            "inseamParityDeltaCm": 0.002449469427837414,
             "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
           },
           "allPassed": true
@@ -864,7 +1084,7 @@
             "isTotalEasePermitted": true,
             "isDistributionBalanced": true,
             "isTargetCompliant": false,
-            "inseamParityDeltaCm": 0,
+            "inseamParityDeltaCm": 0.00644176175416078,
             "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
           },
           "allPassed": true
@@ -999,7 +1219,7 @@
             "isTotalEasePermitted": true,
             "isDistributionBalanced": true,
             "isTargetCompliant": false,
-            "inseamParityDeltaCm": 0,
+            "inseamParityDeltaCm": 2.490363183227373e-05,
             "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
           },
           "allPassed": true

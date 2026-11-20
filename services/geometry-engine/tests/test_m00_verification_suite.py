@@ -241,7 +241,7 @@ def test_m00_4_adr009_section6_complete_suite_and_negative_guards() -> None:
             isolated_self_intersections=[],
             max_geometric_deviation_bound_cm=0.0,
             verification_outcome="INCONCLUSIVE",
-            failure_category=OffsetFailureCategory.INCONCLUSIVE,
+            failure_category=OffsetFailureCategory.INCONCLUSIVE_VERIFICATION,
             canonical_offset_classification=CanonicalOffsetClassification.INCONCLUSIVE,
             active_classifications_on_domain=[CanonicalOffsetClassification.INCONCLUSIVE],
             working_precision_bits=113,

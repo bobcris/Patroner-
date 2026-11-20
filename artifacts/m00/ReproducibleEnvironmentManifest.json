@@ -2,7 +2,7 @@
   "milestoneId": "M00.9-M00.10",
   "artifactName": "ReproducibleEnvironmentManifest.json",
   "checkpoint": 16,
-  "packageId": "PKG-M00-02",
+  "packageId": "PKG-M00-03",
   "governingAuthorization": {
     "checkpoint12Date": "2026-11-16",
     "baselineBlueprint": "R2.1.2-R1 (R2.2 Documentation Overlay)",
@@ -18,30 +18,150 @@
       "DEC-01",
       "DEC-13 Stage 1"
     ],
+    "m00AcceptanceStatus": "NOT_ACCEPTED",
     "mandatoryNextGate": "Gate Auth-2 / DEC-13 Stage 2 (CLOSED - Pending Owner Sign-Off; Blocks M02 Production Implementation)",
-    "gateAuth2Status": "CLOSED"
+    "gateAuth2Status": "CLOSED",
+    "gateAuth3Status": "CLOSED",
+    "gateAuth4Status": "CLOSED",
+    "dec13Stage2Status": "CLOSED",
+    "ac09PhysicalValidationStatus": "PENDING",
+    "externalCadInteroperabilityVerified": false
   },
   "runtimeEnvironment": {
     "pythonVersion": "3.12.16",
+    "pythonVersionInfo": [
+      3,
+      12,
+      16
+    ],
+    "pythonIs312": true,
     "pythonRequiresSpec": ">=3.12,<3.13",
     "targetRuntime": "linux-x86_64",
     "machine": "x86_64",
     "pythonHashSeed": "0",
+    "pyprojectPresent": true,
+    "pyprojectSha256": "2b9f396e920ddb24fe80e691fbeb34f1131788bf8aa62df24eda5952eab7c878",
     "uvLockPresent": true,
+    "uvLockSha256": "0dfa5181eb2075c10ce5649a63555643e0dd7e429bd2c1f6cc2e355691936908",
     "pinnedPackages": {
-      "mpmath": "1.4.1",
-      "python-flint": "0.9.0",
-      "pydantic": "2.14.3",
       "jsonschema": "4.26.0",
+      "mpmath": "1.4.1",
       "numpy": "2.2.6",
-      "scipy": "1.15.3",
-      "pytest": "9.2.0"
-    }
+      "pydantic": "2.14.3",
+      "pytest": "9.2.0",
+      "python-flint": "0.9.0",
+      "scipy": "1.15.3"
+    },
+    "allPinnedPackagesMatch": true,
+    "ciWorkflowChecks": {
+      "workflowExists": true,
+      "hasUvLockCheck": true,
+      "hasUvSyncLocked": true,
+      "hasPytestRun": true,
+      "hasOracleIndependenceCheck": true,
+      "hasManifestHashVerification": true
+    },
+    "ciWorkflowVerified": true
+  },
+  "sourceInputsProvenance": {
+    "sourceInputsDigest": "4b99969f54f2ccfd4d2fd6af4e47166ef2c8d74803fb5f0dc71f71676c89b40b",
+    "filesCount": 15,
+    "missingFiles": [],
+    "allSourceInputsPresent": true,
+    "files": [
+      {
+        "path": ".github/workflows/m00-verification.yml",
+        "sha256": "6621d0f25228565a36a14c2855d68408ee0c22e0f06ed838dce19639b05e0f8a",
+        "bytes": 4166
+      },
+      {
+        "path": "packages/contracts/schemas/canonical_contracts.schema.json",
+        "sha256": "35952f090564f3916e48896d0f11154ffd9ba061539826a8480636b0627834a6",
+        "bytes": 22349
+      },
+      {
+        "path": "scripts/check_oracle_independence.py",
+        "sha256": "6e77889b740fba87bd2fe8ccf58be65a04e7711f95a4c1a943f895a2eaa4b372",
+        "bytes": 8155
+      },
+      {
+        "path": "scripts/m00_capture_c0_legacy.ts",
+        "sha256": "85c0c7e77a85e8e373f80bef58f6eeb1e57cef5a4bc0f52d9e52e816f6785055",
+        "bytes": 5928
+      },
+      {
+        "path": "scripts/m00_execute_all.py",
+        "sha256": "425df2943d185a58cd8ab7020d83cb0d934e36ec70c29f30458761797157ecf4",
+        "bytes": 53678
+      },
+      {
+        "path": "scripts/m00_export_canonical_pieces.ts",
+        "sha256": "be9de620e3c38fdeffe46f31ab5273b84e64d50ca915730083c7c84a7088af5a",
+        "bytes": 3891
+      },
+      {
+        "path": "scripts/m00_verify_production_dxf_and_seams.py",
+        "sha256": "cc54b39402105a9ae31a1cb026754308035f6b087f8b464311cb9e208ed985c2",
+        "bytes": 18492
+      },
+      {
+        "path": "services/geometry-engine/patroner_geometry/__init__.py",
+        "sha256": "43ed3e732cb816854b5bb5c3b64af1d45acecd77a8d3ddabefb1897af12a2b41",
+        "bytes": 115
+      },
+      {
+        "path": "services/geometry-engine/patroner_geometry/c1_cert_oracle.py",
+        "sha256": "d9fe509effca0a79444d56211e55d610faffeace47037ea38f5973c0c3643496",
+        "bytes": 147134
+      },
+      {
+        "path": "services/geometry-engine/patroner_geometry/contracts.py",
+        "sha256": "510e0fc52d08c770fdf2a85b90a1353bc6a858f7b4e2c2d11ceffe79526a9a2a",
+        "bytes": 34862
+      },
+      {
+        "path": "services/geometry-engine/patroner_geometry/provenance.py",
+        "sha256": "54746c8972dfa5d41d61c23d594f1d5ddd142ddaf82135fe15c4cebd1cc2120d",
+        "bytes": 7822
+      },
+      {
+        "path": "services/geometry-engine/patroner_geometry/qualification.py",
+        "sha256": "8159c61d8ab2ce555c3498fca0d45289cb43014d1dc1aa2f2fea9c75eaedd93e",
+        "bytes": 98567
+      },
+      {
+        "path": "services/geometry-engine/patroner_geometry/sub_oracles.py",
+        "sha256": "ea25091ea979054a82d1788caa8ad03a319ab8ea2f70d6fd7104c0e2d907456d",
+        "bytes": 46952
+      },
+      {
+        "path": "services/geometry-engine/pyproject.toml",
+        "sha256": "2b9f396e920ddb24fe80e691fbeb34f1131788bf8aa62df24eda5952eab7c878",
+        "bytes": 676
+      },
+      {
+        "path": "services/geometry-engine/uv.lock",
+        "sha256": "0dfa5181eb2075c10ce5649a63555643e0dd7e429bd2c1f6cc2e355691936908",
+        "bytes": 37613
+      }
+    ]
+  },
+  "oracleIndependenceAudit": {
+    "oracleModulesAudited": [
+      "services/geometry-engine/patroner_geometry/c1_cert_oracle.py",
+      "services/geometry-engine/patroner_geometry/provenance.py",
+      "services/geometry-engine/patroner_geometry/qualification.py",
+      "services/geometry-engine/patroner_geometry/sub_oracles.py"
+    ],
+    "productionSolverModulesFound": [],
+    "violationsCount": 0,
+    "allPassed": true
   },
   "requirementStatusTaxonomy": {
     "M00.1_schemasLock": "VERIFIED",
     "M00.4_step1_10kX4Tiers": "VERIFIED",
     "M00.4_step2_3_ag17_krawczyk": "VERIFIED",
+    "M00.4_oracleIndependence": "VERIFIED",
     "M00.5_c1CertArcLength": "VERIFIED",
     "M00.6_exactTopology": "VERIFIED",
     "M00.7_productionSyntheticDxf": "VERIFIED",
@@ -51,6 +171,7 @@
     "M00.7_M00.8_verticalSlice1TrouserBlock": "INCOMPLETE_MISSING_TROUSER_BLOCK_M02",
     "M00.9_python312CiLock": "VERIFIED",
     "M00.10_deterministicReplay": "VERIFIED",
+    "M00_acceptance": "NOT_ACCEPTED",
     "GateAuth2_DEC13Stage2": "CLOSED"
   },
   "deterministicReplayVerified": true,
@@ -64,8 +185,8 @@
     {
       "artifact": "SchemasLockReport.json",
       "path": "artifacts/m00/SchemasLockReport.json",
-      "sha256": "d18dc854c0fe103b0151b417968dd7181d52039daf9dae708a4c1d782123bbc4",
-      "bytes": "6516"
+      "sha256": "20c7b961d983d8b9c162384f1662a2c20cad9b4969f98919e6240a06ecdfcee6",
+      "bytes": "7553"
     },
     {
       "artifact": "BaselineDivergenceRegistry.json",
@@ -76,64 +197,64 @@
     {
       "artifact": "IntervalLibraryQualificationReport.json",
       "path": "artifacts/m00/IntervalLibraryQualificationReport.json",
-      "sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
-      "bytes": "24902"
+      "sha256": "8e662f714a050da890c3e1d1fa4151bc7eeafdf7935754da08f041210e4bedb6",
+      "bytes": "25913"
     },
     {
       "artifact": "AdversarialGeometryVerificationReport.json",
       "path": "artifacts/m00/AdversarialGeometryVerificationReport.json",
-      "sha256": "42bbb531fcc8d99dd2c316790e8a4901e56345d3ce28af9843949ba27f853250",
-      "bytes": "51177"
+      "sha256": "5bf5252f35b06e1134221fb12dbf345dbbc5495e34f7a1d88c738af3b7b26a0a",
+      "bytes": "53141"
     },
     {
       "artifact": "ArcLengthVerificationReport.json",
       "path": "artifacts/m00/ArcLengthVerificationReport.json",
-      "sha256": "c62626710ace4bae8f7b828e5ec85db1840add22449d658dec7edad38cdaad2e",
-      "bytes": "5995"
+      "sha256": "000ee51981cd07b8f32d19e7b6fa178edba8b23be190feac041525ed8963d106",
+      "bytes": "6257"
     },
     {
       "artifact": "TopologyVerificationReport.json",
       "path": "artifacts/m00/TopologyVerificationReport.json",
-      "sha256": "c6e21e20645977515e6f9cbd4387f1438813367d6f62380d139aa59a8d55e255",
-      "bytes": "904"
+      "sha256": "9781fb97a2857e9e7c251cfc08abf809d1e045151044d4a7fe58fad2000f0458",
+      "bytes": "1033"
     },
     {
       "artifact": "DxfRoundTripVerificationReport.json",
       "path": "artifacts/m00/DxfRoundTripVerificationReport.json",
-      "sha256": "e3552388ecbe36fdfbd51b6bd167d70a4c86f4f53d644712c23ddcf899347c01",
-      "bytes": "1623"
+      "sha256": "2096a79d5be4b5524b2f655a175823ee049562dd352f965f72e1d6f52a5075dc",
+      "bytes": "1845"
     },
     {
       "artifact": "AnthropometricVerificationReport.json",
       "path": "artifacts/m00/AnthropometricVerificationReport.json",
-      "sha256": "5cff9cd5b5d75ed0fbf0e5893934310927f52b8220dd2dc749814ea259e02a89",
-      "bytes": "3463"
+      "sha256": "567153dccb58c9e3eb81379d8883679e87df5fdd75eab71be9b64714a8f00a15",
+      "bytes": "9585"
     },
     {
       "artifact": "ProductionDxfRoundTripReport.json",
       "path": "artifacts/m00/ProductionDxfRoundTripReport.json",
-      "sha256": "269ebd4806473c7e3c62d0f72ee033cffb586bd331bed8c021cb30b227ed9ab7",
+      "sha256": "7f2bd103da74f2e157fd50906bd7d048cd9477f89b04d4f99c4021173ba36ad0",
       "bytes": "4827"
     },
     {
       "artifact": "ProductionSeamParityReport.json",
       "path": "artifacts/m00/ProductionSeamParityReport.json",
-      "sha256": "a33d733451b5a1ac8ab22c65d249906de18aa670c16d4d791bed99deed4c05fe",
-      "bytes": "15423"
+      "sha256": "da6cb91bc3a31fb0f97be8c5499768c4a3aa9534165178005cfadf1e6943e35f",
+      "bytes": "15480"
     }
   ],
   "checkpoint16DeliverableDigests": [
     {
       "artifact": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
       "path": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
-      "sha256": "25806d0f8f10684d0922ac4fded5d2571a7c60989e0f67b694246fc16d11204f",
-      "bytes": "22326"
+      "sha256": "96132b72c721b79f8ed620ff1b7389513cad6b6c897f454973307ca19cfb563d",
+      "bytes": "22363"
     },
     {
       "artifact": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
       "path": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
-      "sha256": "08d5b86c1396914da6a125efa91d77e27730fb61fa3c2903d32439b27311610b",
-      "bytes": "13865"
+      "sha256": "b883c91f82511d31d9b8a4d8c28d19c4c9a3c29e6874e7c08722848155185f05",
+      "bytes": "13811"
     },
     {
       "artifact": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
@@ -144,27 +265,28 @@
     {
       "artifact": "M00_INTERVAL_QUALIFICATION_REPORT.json",
       "path": "M00_INTERVAL_QUALIFICATION_REPORT.json",
-      "sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
-      "bytes": "24902"
+      "sha256": "8e662f714a050da890c3e1d1fa4151bc7eeafdf7935754da08f041210e4bedb6",
+      "bytes": "25913"
     },
     {
       "artifact": "M00_CONTRACT_PARITY_REPORT.json",
       "path": "M00_CONTRACT_PARITY_REPORT.json",
-      "sha256": "2918bf434eaeca754451c30306e2bf338fc296dd161b0ef661aea107b66b5601",
-      "bytes": "7091"
+      "sha256": "a4871c9fe44f48be7417b8ee8632d47adad185b337aa127117a3ce68b43fb087",
+      "bytes": "8170"
     },
     {
       "artifact": "M00_SUBORACLE_VERIFICATION_REPORT.json",
       "path": "M00_SUBORACLE_VERIFICATION_REPORT.json",
-      "sha256": "e6b96d768ac6a90aa0da90893081b354659a92d0a2cff732fc19aab8b8f880e3",
-      "bytes": "35879"
+      "sha256": "8f1eea4d20854682b15c0297cbe4d11a450f17ea1adf562668bc27df4e8c6350",
+      "bytes": "43111"
     },
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "b89d4e4f91938b64a02ce1777a874c03d5229ea3f4b4b30ac0718995002da90e",
-      "bytes": "3815"
+      "sha256": "c25697ac429ad6aa85cac774cfa138ad7a48543d47a994011bef040ee65842a6",
+      "bytes": "4170"
     }
   ],
+  "pkgM0003RemediationChecksPassed": true,
   "pkgM0002AllVerified": true
 }

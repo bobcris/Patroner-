@@ -75,6 +75,16 @@
       "failureCategory": "NONE",
       "gridErrorCm": 3.60867991987695e-05,
       "certifiedIntervalErrorCm": 3.614495014129166e-05,
+      "bezierOctantOracleCrossCheck": {
+        "verificationOutcome": "CERTIFIED_VALID",
+        "canonicalOffsetClassification": "CERTIFIED_VALID",
+        "minOffsetSpeedFactorInterval": [
+          0.8451846297395738,
+          0.8509653302611222
+        ],
+        "matchesExpectedOutcome": true,
+        "matchesExpectedClassification": true
+      },
       "offsetValidationRecord": {
         "segment_id": "AG-01-ccw-circle",
         "piece_id": "sanity-circle",
@@ -147,6 +157,16 @@
       "failureCategory": "ACTUAL_ZERO_SPEED_CUSP",
       "gridErrorCm": 0.0,
       "certifiedIntervalErrorCm": 0.0,
+      "bezierOctantOracleCrossCheck": {
+        "verificationOutcome": "CERTIFIED_INVALID",
+        "canonicalOffsetClassification": "TANGENT_REVERSAL",
+        "minOffsetSpeedFactorInterval": [
+          -0.0009772478821221126,
+          -0.0002360660659896488
+        ],
+        "matchesExpectedOutcome": true,
+        "matchesExpectedClassification": true
+      },
       "offsetValidationRecord": {
         "segment_id": "AG-02-ccw-circle",
         "piece_id": "sanity-circle",
@@ -224,6 +244,16 @@
       "failureCategory": "TANGENT_REVERSAL",
       "gridErrorCm": 8.49101157618106e-06,
       "certifiedIntervalErrorCm": 8.504694150892155e-06,
+      "bezierOctantOracleCrossCheck": {
+        "verificationOutcome": "CERTIFIED_INVALID",
+        "canonicalOffsetClassification": "TANGENT_REVERSAL",
+        "minOffsetSpeedFactorInterval": [
+          -0.2100369988158562,
+          -0.19520408730179986
+        ],
+        "matchesExpectedOutcome": true,
+        "matchesExpectedClassification": true
+      },
       "offsetValidationRecord": {
         "segment_id": "AG-03-ccw-circle",
         "piece_id": "sanity-circle",
@@ -296,6 +326,16 @@
       "failureCategory": "NONE",
       "gridErrorCm": 4.882331656304109e-05,
       "certifiedIntervalErrorCm": 4.8901991367629886e-05,
+      "bezierOctantOracleCrossCheck": {
+        "verificationOutcome": "CERTIFIED_VALID",
+        "canonicalOffsetClassification": "CERTIFIED_VALID",
+        "minOffsetSpeedFactorInterval": [
+          1.1450188517913458,
+          1.1505905531213032
+        ],
+        "matchesExpectedOutcome": true,
+        "matchesExpectedClassification": true
+      },
       "offsetValidationRecord": {
         "segment_id": "AG-04-ccw-circle",
         "piece_id": "sanity-circle",
@@ -342,7 +382,8 @@
         "canonicalOffsetClassification": "CERTIFIED_VALID",
         "verificationOutcome": "CERTIFIED_VALID",
         "gridErrorCm": 9.340112733799165e-05,
-        "certifiedIntervalErrorCm": 9.35516356598137e-05
+        "certifiedIntervalErrorCm": 9.35516356598137e-05,
+        "bezierOctantOracleOutcome": "CERTIFIED_VALID"
       },
       "passed": true
     },
@@ -483,7 +524,7 @@
     },
     {
       "familyId": "AG-07",
-      "title": "Grazing Tangential Curvature Extremum (f(t*)=0, f'(t*)=0 at t*=0.5, Unsplit Isolation)",
+      "title": "Grazing Tangential Curvature Extremum (f(t*)=0, f'(t*)=0 at t*=0.5, Unsplit Oracle Certification)",
       "expectedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
       "classifiedCategory": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
       "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
@@ -497,16 +538,16 @@
       "hasTangentReversalOnDomain": false,
       "isolatedRoots": [
         {
-          "tLower": 0.49999999999949996,
+          "tLower": 0.5,
           "tUpper": 0.5,
-          "deltaT": 5.000000000000001e-13,
+          "deltaT": 0.0,
           "maxSpeedOnBracket": 8.000000000000002,
-          "deltaPosCm": 4.0000000000000015e-12,
+          "deltaPosCm": 0.0,
           "multiplicityOrOrder": "tangential-double-grazing (f=0, f'=0)"
         }
       ],
       "offsetValidationRecord": {
-        "segment_id": "AG-07-grazing-curvature-cusp",
+        "segment_id": "AG-06-high-curvature-concave",
         "piece_id": "AG-07",
         "contour_orientation": "CCW_EXTERIOR",
         "offset_direction_sign_s": 1,
@@ -514,11 +555,11 @@
         "regularity_margin_epsilon": 0.05,
         "min_base_speed_squared_interval": [
           64.0,
-          64.0
+          64.00000000052387
         ],
         "min_offset_speed_factor_interval": [
-          0.0,
-          0.0
+          -1.925929944387236e-34,
+          1.2278178473808905e-11
         ],
         "has_zero_speed_cusp_on_domain": true,
         "has_tangent_reversal_on_domain": false,
@@ -526,7 +567,7 @@
         "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
         "isolated_cusp_roots_t": [
           [
-            0.49999999999949996,
+            0.5,
             0.5
           ]
         ],
@@ -951,9 +992,9 @@
       "qMinExact": 0.0116,
       "qMaxExact": 36001200.0116,
       "speedSquaredRatioMaxOverMin": 3103551725.14,
-      "maxSpeedOnRootBracketCmPerUnit": 5529.700000144674,
+      "maxSpeedOnRootBracketCmPerUnit": 5529.700000151403,
       "bracketDeltaT": 7.275957614183426e-13,
-      "bracketDeltaPosCm": 4.023386282020274e-09,
+      "bracketDeltaPosCm": 4.02338628202517e-09,
       "escalatedToC1Cert": true,
       "passed": true
     },
@@ -970,9 +1011,30 @@
       "verificationOutcome": "CERTIFIED_VALID",
       "failureCategory": "NONE",
       "cornerAngleDeg": 20.0,
+      "offsetDistanceCm": 1.5,
       "unclippedMiterRatio": 5.75877,
       "miterLimit": 2.5,
       "bevelJoinApplied": true,
+      "bevelClipPlaneXCm": -3.75,
+      "bevelWidthCm": 1.723827,
+      "clippedOffsetPolylineCm": [
+        [
+          19.435683,
+          -4.950175
+        ],
+        [
+          -3.75,
+          -0.861914
+        ],
+        [
+          -3.75,
+          0.861914
+        ],
+        [
+          19.435683,
+          4.950175
+        ]
+      ],
       "selfIntersectionsAfterClip": 0,
       "passed": true
     },
@@ -1073,16 +1135,16 @@
           "tLower": 0.4999999499996193,
           "tUpper": 0.49999995000052877,
           "deltaT": 9.094700000000001e-13,
-          "maxSpeedOnBracket": 20.000000000000004,
-          "deltaPosCm": 1.8189400000000003e-11,
+          "maxSpeedOnBracket": 21.000000000000032,
+          "deltaPosCm": 1.909887000000003e-11,
           "multiplicityOrOrder": "wilkinson-cluster-root-1"
         },
         {
           "tLower": 0.5000000499994711,
           "tUpper": 0.5000000500003807,
           "deltaT": 9.095000000000001e-13,
-          "maxSpeedOnBracket": 20.000000000000004,
-          "deltaPosCm": 1.8190000000000004e-11,
+          "maxSpeedOnBracket": 21.000000000000032,
+          "deltaPosCm": 1.9099500000000032e-11,
           "multiplicityOrOrder": "wilkinson-cluster-root-2"
         }
       ],
@@ -1093,7 +1155,8 @@
           "tLowerRational": "366503875375/1099511627776",
           "tUpperRational": "22906492211/68719476736",
           "deltaT": 9.094947017729282e-13,
-          "multiplicity": "simple-transverse-root"
+          "multiplicity": "simple-transverse-root",
+          "exactMultiplicity": 1
         },
         {
           "tLower": 0.33333333383325225,
@@ -1101,7 +1164,8 @@
           "tLowerRational": "366503876475/1099511627776",
           "tUpperRational": "91625969119/274877906944",
           "deltaT": 9.094947017729282e-13,
-          "multiplicity": "simple-transverse-root"
+          "multiplicity": "simple-transverse-root",
+          "exactMultiplicity": 1
         }
       ],
       "passed": true
@@ -1294,7 +1358,7 @@
       "canonicalOffsetClassification": "INCONCLUSIVE",
       "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
       "verificationOutcome": "INCONCLUSIVE",
-      "failureCategory": "INCONCLUSIVE",
+      "failureCategory": "INCONCLUSIVE_VERIFICATION",
       "isProductionReady": false,
       "minOffsetSpeedFactorInterval": [
         0.030278125,
@@ -1323,7 +1387,7 @@
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
         "verification_outcome": "INCONCLUSIVE",
-        "failure_category": "INCONCLUSIVE",
+        "failure_category": "INCONCLUSIVE_VERIFICATION",
         "canonical_offset_classification": "INCONCLUSIVE",
         "active_classifications_on_domain": [
           "INCONCLUSIVE"

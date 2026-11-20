@@ -272,6 +272,10 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
             and parsed["insUnitsHeader"] == "5"
             and len(missing_table) == 0
             and len(missing_entity) == 0
+            and len(parsed["grainLines"]) >= len(pieces_meta)
+            and len(parsed["notchLines"]) >= 1
+            and len(parsed["drillPoints"]) >= 1
+            and len(parsed["internalPolylines"]) >= 1
             and parsed["sha256Digest"] == combined["sha256Digest"]
             and math.isfinite(max_err)
             and max_err <= 0.001

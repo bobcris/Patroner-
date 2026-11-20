@@ -9,6 +9,7 @@
     "selfIntersections": 0,
     "properTransverseCrossings": 0,
     "degenerateCollinearOrVertexTouches": 0,
+    "adjacentFoldBacksOrZeroEdges": 0,
     "isSimple": true,
     "isMicroSliver": false,
     "passed": true
@@ -21,6 +22,7 @@
     "selfIntersections": 0,
     "properTransverseCrossings": 0,
     "degenerateCollinearOrVertexTouches": 0,
+    "adjacentFoldBacksOrZeroEdges": 0,
     "isSimple": true,
     "isMicroSliver": false,
     "passed": true
@@ -28,6 +30,7 @@
   "bowtieSelfIntersectionDetected": true,
   "vertexOnEdgeDegeneracyDetected": true,
   "collinearOverlapDegeneracyDetected": true,
+  "foldedTriangle3VertexDegeneracyDetected": true,
   "microSliverDetected": true,
   "allPassed": true
 }

@@ -7,7 +7,7 @@
     "milestoneId": "M00.1",
     "artifactName": "SchemasLockReport.json",
     "schemaPath": "packages/contracts/schemas/canonical_contracts.schema.json",
-    "schemaSha256": "b8520e9d46948aa8b636ef22b190fd38fea669f315ca61a82deab64ea5665960",
+    "schemaSha256": "35952f090564f3916e48896d0f11154ffd9ba061539826a8480636b0627834a6",
     "draftVersion": "https://json-schema.org/draft/2020-12/schema",
     "canonicalCoordinateFrame": {
       "geometryUnit": "cm",
@@ -34,6 +34,15 @@
       "REMOVABLE_PARAMETERIZATION_DEGENERACY",
       "ENDPOINT_TANGENTIAL_DEGENERACY",
       "COLLAPSED_ZERO_LENGTH_CURVE"
+    ],
+    "offsetFailureCategories": [
+      "NONE",
+      "REGULARITY_MARGIN_VIOLATION",
+      "ACTUAL_ZERO_SPEED_CUSP",
+      "TANGENT_REVERSAL",
+      "LOCAL_OFFSET_SELF_INTERSECTION",
+      "GLOBAL_CONTOUR_SELF_INTERSECTION",
+      "INCONCLUSIVE_VERIFICATION"
     ],
     "entitiesVerifiedCount": 12,
     "entityParityResults": [
@@ -199,6 +208,18 @@
         "description": "M00.8: BodyProfile with lowHipCm < highHipCm - 2.0 must be rejected",
         "pydanticSemanticValidatorRejected": true,
         "errorMessage": "Value error, Anatomical covariance violation: lowHipCm cannot be >2 cm smaller than highHipCm"
+      },
+      {
+        "caseId": "SEM-04-CLASSIFICATION-REPORT-INCONCLUSIVE-PRODUCTION-READY-FORBIDDEN",
+        "description": "ADR-009 \u00a75.3: OffsetClassificationReport with verificationOutcome=INCONCLUSIVE must reject isProductionReady=True",
+        "pydanticSemanticValidatorRejected": true,
+        "errorMessage": "Value error, INCONCLUSIVE OffsetClassificationReport cannot set isProductionReady=True"
+      },
+      {
+        "caseId": "SEM-05-CLASSIFICATION-REPORT-GRID-EXCEEDS-CERTIFIED-ERROR",
+        "description": "ADR-009 \u00a75.3: OffsetClassificationReport must reject gridErrorCm > certifiedIntervalErrorCm",
+        "pydanticSemanticValidatorRejected": true,
+        "errorMessage": "Value error, OffsetClassificationReport violation: gridErrorCm cannot exceed certifiedIntervalErrorCm"
       }
     ],
     "allPassed": true

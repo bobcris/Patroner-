@@ -93,7 +93,7 @@
     },
     {
       "familyId": "AG-07",
-      "title": "Grazing Tangential Curvature Extremum (f(t*)=0, f'(t*)=0 at t*=0.5, Unsplit Isolation)",
+      "title": "Grazing Tangential Curvature Extremum (f(t*)=0, f'(t*)=0 at t*=0.5, Unsplit Oracle Certification)",
       "canonicalOffsetClassification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
       "activeClassificationsOnDomain": [
         "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
@@ -345,7 +345,7 @@
       "canonicalOffsetClassification": "INCONCLUSIVE",
       "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
       "verificationOutcome": "INCONCLUSIVE",
-      "failureCategory": "INCONCLUSIVE",
+      "failureCategory": "INCONCLUSIVE_VERIFICATION",
       "isProductionReady": false,
       "minOffsetSpeedFactorInterval": [
         0.030278125,
@@ -374,7 +374,7 @@
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
         "verification_outcome": "INCONCLUSIVE",
-        "failure_category": "INCONCLUSIVE",
+        "failure_category": "INCONCLUSIVE_VERIFICATION",
         "canonical_offset_classification": "INCONCLUSIVE",
         "active_classifications_on_domain": [
           "INCONCLUSIVE"

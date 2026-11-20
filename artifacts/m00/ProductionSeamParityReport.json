@@ -163,7 +163,7 @@
         "isTotalEasePermitted": true,
         "isDistributionBalanced": true,
         "isTargetCompliant": false,
-        "inseamParityDeltaCm": 0,
+        "inseamParityDeltaCm": 0.002449469427837414,
         "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
       },
       "allPassed": true
@@ -298,7 +298,7 @@
         "isTotalEasePermitted": true,
         "isDistributionBalanced": true,
         "isTargetCompliant": false,
-        "inseamParityDeltaCm": 0,
+        "inseamParityDeltaCm": 0.00644176175416078,
         "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
       },
       "allPassed": true
@@ -433,7 +433,7 @@
         "isTotalEasePermitted": true,
         "isDistributionBalanced": true,
         "isTargetCompliant": false,
-        "inseamParityDeltaCm": 0,
+        "inseamParityDeltaCm": 2.490363183227373e-05,
         "targetEaseDiagnosticNote": "C0-Legacy draftSleeveBlock scales biceps width without re-solving cap height (H_cap), yielding permitted/balanced tailoring ease (0 <= E_t <= 5.05 cm) above classic 1.80 cm target; tracked as Class B M02b solver upgrade."
       },
       "allPassed": true

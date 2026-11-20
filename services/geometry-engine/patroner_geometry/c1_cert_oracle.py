@@ -25,7 +25,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import mpmath
 from mpmath import iv
@@ -52,6 +52,9 @@ from .qualification import (
     mpf_to_exact_fraction,
     mpf_to_outward_lower_f64,
     mpf_to_outward_upper_f64,
+    poly_gcd_exact,
+    poly_make_monic_exact,
+    poly_trim_exact,
     power_to_bernstein_exact,
 )
 
@@ -530,6 +533,10 @@ def compute_offset_approximation_errors_cm(
         dx = ax_b[1] + t * (2.0 * ax_b[2] + 3.0 * ax_b[3] * t)
         dy = ay_b[1] + t * (2.0 * ay_b[2] + 3.0 * ay_b[3] * t)
         spd = math.hypot(dx, dy)
+        if spd <= 0.0:
+            raise ValueError(
+                f"Zero or non-positive base speed squared encountered at t={t} on {curve.segment_id}"
+            )
         nx, ny = -dy / spd, dx / spd
         ox_true = bx + s_sign * d * nx
         oy_true = by + s_sign * d * ny
@@ -577,7 +584,13 @@ def compute_offset_approximation_errors_cm(
         ddx_iv = 2 * ax_b_iv[2] + 6 * ax_b_iv[3] * t_iv
         ddy_iv = 2 * ay_b_iv[2] + 6 * ay_b_iv[3] * t_iv
         raw_q_iv = (dx_iv ** 2) + (dy_iv ** 2)
-        q_iv = iv.mpf([max(mpmath.mpf("1e-30"), mpmath.mpf(raw_q_iv.a)), max(mpmath.mpf("1e-30"), mpmath.mpf(raw_q_iv.b))])
+        if mpmath.mp.mpf(raw_q_iv._mpi_[0]) <= 0:
+            raise ValueError(
+                f"Fail-closed violation in compute_offset_approximation_errors_cm on {curve.segment_id}: "
+                f"panel {k}/{interval_panels} has non-positive Q(t) lower bound {raw_q_iv.a}; "
+                "offset approximation error cannot be certified across a zero-speed enclosure."
+            )
+        q_iv = raw_q_iv
         c_iv = dx_iv * ddy_iv - dy_iv * ddx_iv
         f_iv = 1 - s_iv * d_iv * c_iv / (q_iv * iv.sqrt(q_iv))
 
@@ -641,14 +654,18 @@ def certify_cubic_offset_on_unit_interval(
     subdivision_panels: int = 128,
     max_subdivision_depth: int = 14,
     evaluated_subspan: Tuple[float, float] = (0.0, 1.0),
+    d_exact: Optional[Fraction] = None,
 ) -> OffsetValidationRecord:
     """Complete-interval [0, 1] Method C3 Offset Verification Oracle (ADR-009 §3.1, §4, §5).
 
     1. Enforces the ADR-009 §5.2 anti-bypass coverage gate (`primary_span_coverage_ratio >= 0.85`).
-    2. Isolates all base-curve stationary points where Q(t*) = 0 on [0, 1] using exact rational Bernstein root isolation
-       and classifies them via the 5-way base-curve singularity classifier.
-    3. Subdivides [0, 1] into interval panels and adaptive refinements in 113-bit (and 170/336-bit escalation) `mpmath.iv`
-       to enclose min Q(t), min f(t) = 1 - s*d*kappa(t), cusp roots f(t*) = 0, and tangent reversal regions f(t) < 0.
+    2. Isolates all base-curve stationary points where B'(t*) = (0, 0) on [0, 1] via exact Q[t]
+       polynomial GCD G(t) = gcd(x'(t), y'(t)) and exact algebraic root isolation (handling arbitrary
+       rational denominators and irrational quadratic roots without limit_denominator heuristics),
+       classifying every stationary point via the 5-way base-curve singularity classifier.
+    3. Subdivides [0, 1] into exact-rational interval panels and adaptive refinements in 113-bit
+       `mpmath.iv`, failing closed to INCONCLUSIVE (`INCONCLUSIVE_VERIFICATION`, `is_production_ready=False`)
+       whenever any panel remains unresolved at `max_subdivision_depth` without proving invalidity.
     """
     span_lo, span_hi = evaluated_subspan
     coverage_ratio = span_hi - span_lo
@@ -657,8 +674,10 @@ def certify_cubic_offset_on_unit_interval(
             f"ADR-009 §5.2 anti-bypass violation: primary_span_coverage_ratio={coverage_ratio:.4f} < 0.85 on {curve.segment_id}"
         )
 
-    d_frac = Fraction(str(d))
+    d_frac = d_exact if d_exact is not None else Fraction(str(d))
     eps_frac = Fraction(str(epsilon_reg))
+    span_lo_q = Fraction(span_lo)
+    span_hi_q = Fraction(span_hi)
 
     # Step 1: Check if entire curve is collapsed (P0 = P1 = P2 = P3)
     if curve.p0 == curve.p1 == curve.p2 == curve.p3:
@@ -686,62 +705,51 @@ def certify_cubic_offset_on_unit_interval(
             is_production_ready=False,
         )
 
-    # Step 2: Isolate any base-curve stationary points Q(t*) = 0 on [0, 1] using exact rational Bernstein root solver
-    q_coeffs = curve.Q_power_coeffs()
-    q_roots = isolate_polynomial_roots_on_unit_interval(q_coeffs, tol_t=Fraction(1, 10**12))
-    # Also check exact endpoints t = 0 and t = 1
-    exact_q_zero_params: List[Fraction] = []
-    if curve.eval_Q_exact(Fraction(0)) == 0:
-        exact_q_zero_params.append(Fraction(0))
-    if curve.eval_Q_exact(Fraction(1)) == 0:
-        exact_q_zero_params.append(Fraction(1))
-    for qr in q_roots:
-        t_lo_q = Fraction(qr["tLowerRational"])
-        t_hi_q = Fraction(qr["tUpperRational"])
-        mid_q = (t_lo_q + t_hi_q) / Fraction(2)
-        # Check simple exact rationals in bracket (such as 1/2, 1/3, 1/4)
-        cand_q = mid_q.limit_denominator(1000)
-        if t_lo_q <= cand_q <= t_hi_q and curve.eval_Q_exact(cand_q) == 0:
-            if cand_q not in exact_q_zero_params:
-                exact_q_zero_params.append(cand_q)
-        else:
-            exact_q_zero_params.append(mid_q)
+    # Step 2: Exact algebraic stationary-point detection via G(t) = gcd(x'(t), y'(t)) in Q[t].
+    # Because Q(t) = x'(t)^2 + y'(t)^2 = 0 on R iff x'(t) = 0 AND y'(t) = 0 iff G(t) = 0:
+    # - deg(G) == 0 => ZERO stationary points anywhere on R!
+    # - deg(G) == 1 => unique exact rational root t* = -G[0]/G[1] in Q (arbitrary denominator, zero rounding).
+    # - deg(G) == 2 => exact root isolation of G(t) on [0, 1]; rational roots classified exactly,
+    #                  irreducible quadratic roots on (0, 1) have exact simple order 1 in B'(t) => m=2 (even) cusp/fold!
+    dx_coeffs, dy_coeffs = curve.deriv1_power_coeffs_xy()
+    g_poly = poly_trim_exact(poly_gcd_exact(dx_coeffs, dy_coeffs))
+    g_deg = len(g_poly) - 1 if g_poly else -1
 
-    if exact_q_zero_params:
-        # Classify all stationary points on [0, 1]
-        sing_reports = [classify_zero_speed_point_exact(curve, ts, s_sign, d_frac, eps_frac) for ts in exact_q_zero_params]
-        for ts, sr in zip(exact_q_zero_params, sing_reports):
-            if sr["isGeometricCusp"]:
-                return OffsetValidationRecord(
-                    segment_id=curve.segment_id,
-                    piece_id=piece_id,
-                    contour_orientation="CCW_EXTERIOR",
-                    offset_direction_sign_s=s_sign,
-                    offset_distance_cm=d,
-                    regularity_margin_epsilon=epsilon_reg,
-                    min_base_speed_squared_interval=(0.0, 0.0),
-                    min_offset_speed_factor_interval=(-math.inf if sr.get("limitingCurvature") else 0.0, 0.0),
-                    has_zero_speed_cusp_on_domain=True,
-                    has_tangent_reversal_on_domain=(sr.get("tangentReversalRadians", 0.0) > 0.0),
-                    stationary_parameterization_status=StationaryParameterizationStatus(sr["stationaryParameterizationStatus"]),
-                    base_curve_singularity_classification=BaseCurveSingularityClassification(
-                        sr["baseCurveSingularityClassification"]
-                    ),
-                    isolated_cusp_roots_t=[(float(ts), float(ts))],
-                    isolated_self_intersections=[],
-                    max_geometric_deviation_bound_cm=0.0,
-                    verification_outcome="CERTIFIED_INVALID",
-                    failure_category=OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP,
-                    canonical_offset_classification=CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP,
-                    active_classifications_on_domain=[
-                        CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP
-                    ],
-                    working_precision_bits=113,
-                    is_production_ready=False,
-                )
+    stationary_rational_params: List[Fraction] = []
+    stationary_irrational_brackets: List[Tuple[Fraction, Fraction]] = []
 
-        # Removable parameterization or collinear endpoint degeneracy: continuous tangent and regular offset!
-        sr0 = sing_reports[0]
+    if g_deg == 1:
+        t_root = -g_poly[0] / g_poly[1]
+        if Fraction(0) <= t_root <= Fraction(1):
+            stationary_rational_params.append(t_root)
+    elif g_deg >= 2:
+        g_monic = poly_make_monic_exact(g_poly)
+        g_roots = isolate_polynomial_roots_on_unit_interval(g_monic, tol_t=Fraction(1, 10**12))
+        for gr in g_roots:
+            t_lo_q = Fraction(gr["tLowerRational"])
+            t_hi_q = Fraction(gr["tUpperRational"])
+            if t_lo_q == t_hi_q:
+                if t_lo_q not in stationary_rational_params:
+                    stationary_rational_params.append(t_lo_q)
+            else:
+                stationary_irrational_brackets.append((t_lo_q, t_hi_q))
+
+    stationary_rational_params.sort()
+
+    # Check irrational interior stationary roots first: for a cubic Bezier with irreducible quadratic G(t),
+    # each real root t* in (0, 1) has exact multiplicity 1 in G(t) and hence B'(t*) = 0, B''(t*) != 0 (m = 2 even),
+    # which by ADR-009 §2.2 & §4.2 is a proven GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD (tangent reversal pi rad).
+    if stationary_irrational_brackets:
+        cusp_brackets_f64 = [
+            fraction_pair_to_outward_f64_pair(lo_q, hi_q)
+            for lo_q, hi_q in stationary_irrational_brackets
+        ]
+        # Also include any rational geometric cusps if present
+        for ts in stationary_rational_params:
+            sr_r = classify_zero_speed_point_exact(curve, ts, s_sign, d_frac, eps_frac)
+            if sr_r["isGeometricCusp"]:
+                cusp_brackets_f64.append(fraction_pair_to_outward_f64_pair(ts, ts))
+        cusp_brackets_f64.sort()
         return OffsetValidationRecord(
             segment_id=curve.segment_id,
             piece_id=piece_id,
@@ -750,22 +758,131 @@ def certify_cubic_offset_on_unit_interval(
             offset_distance_cm=d,
             regularity_margin_epsilon=epsilon_reg,
             min_base_speed_squared_interval=(0.0, 0.0),
-            min_offset_speed_factor_interval=(1.0, 1.0),
+            min_offset_speed_factor_interval=(0.0, 0.0),
+            has_zero_speed_cusp_on_domain=True,
+            has_tangent_reversal_on_domain=True,
+            stationary_parameterization_status=StationaryParameterizationStatus.GENUINE_BASE_GEOMETRIC_SINGULARITY,
+            base_curve_singularity_classification=BaseCurveSingularityClassification.GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD,
+            isolated_cusp_roots_t=cusp_brackets_f64,
+            isolated_self_intersections=[],
+            max_geometric_deviation_bound_cm=0.0,
+            verification_outcome="CERTIFIED_INVALID",
+            failure_category=OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP,
+            canonical_offset_classification=CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP,
+            active_classifications_on_domain=[
+                CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP
+            ],
+            working_precision_bits=113,
+            is_production_ready=False,
+        )
+
+    if stationary_rational_params:
+        sing_reports = [
+            classify_zero_speed_point_exact(curve, ts, s_sign, d_frac, eps_frac)
+            for ts in stationary_rational_params
+        ]
+        cusp_entries = [
+            (ts, sr) for ts, sr in zip(stationary_rational_params, sing_reports) if sr["isGeometricCusp"]
+        ]
+        if cusp_entries:
+            first_ts, first_sr = cusp_entries[0]
+            cusp_brackets_f64 = [
+                fraction_pair_to_outward_f64_pair(ts, ts) for ts, _sr in cusp_entries
+            ]
+            has_inf_curv = any(
+                sr.get("limitingCurvature") in (math.inf, -math.inf) for _ts, sr in cusp_entries
+            )
+            has_tan_rev = any(sr.get("tangentReversalRadians", 0.0) > 0.0 for _ts, sr in cusp_entries)
+            return OffsetValidationRecord(
+                segment_id=curve.segment_id,
+                piece_id=piece_id,
+                contour_orientation="CCW_EXTERIOR",
+                offset_direction_sign_s=s_sign,
+                offset_distance_cm=d,
+                regularity_margin_epsilon=epsilon_reg,
+                min_base_speed_squared_interval=(0.0, 0.0),
+                min_offset_speed_factor_interval=(-math.inf if has_inf_curv else 0.0, 0.0),
+                has_zero_speed_cusp_on_domain=True,
+                has_tangent_reversal_on_domain=has_tan_rev,
+                stationary_parameterization_status=StationaryParameterizationStatus(
+                    first_sr["stationaryParameterizationStatus"]
+                ),
+                base_curve_singularity_classification=BaseCurveSingularityClassification(
+                    first_sr["baseCurveSingularityClassification"]
+                ),
+                isolated_cusp_roots_t=cusp_brackets_f64,
+                isolated_self_intersections=[],
+                max_geometric_deviation_bound_cm=0.0,
+                verification_outcome="CERTIFIED_INVALID",
+                failure_category=OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP,
+                canonical_offset_classification=CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP,
+                active_classifications_on_domain=[
+                    CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP
+                ],
+                working_precision_bits=113,
+                is_production_ready=False,
+            )
+
+        # Removable parameterization or collinear endpoint degeneracy:
+        # Early CERTIFIED_VALID return is ONLY algebraically justified when C(t) === 0 identically
+        # (collinear line => kappa(t) === 0 and f(t) === 1 everywhere on [0, 1]).
+        # Otherwise fail closed to INCONCLUSIVE so non-collinear stationary curves are never falsely certified valid!
+        sr0 = sing_reports[0]
+        is_identically_collinear = all(c == 0 for c in curve.C_power_coeffs())
+        if is_identically_collinear:
+            return OffsetValidationRecord(
+                segment_id=curve.segment_id,
+                piece_id=piece_id,
+                contour_orientation="CCW_EXTERIOR",
+                offset_direction_sign_s=s_sign,
+                offset_distance_cm=d,
+                regularity_margin_epsilon=epsilon_reg,
+                min_base_speed_squared_interval=(0.0, 0.0),
+                min_offset_speed_factor_interval=(1.0, 1.0),
+                has_zero_speed_cusp_on_domain=False,
+                has_tangent_reversal_on_domain=False,
+                stationary_parameterization_status=StationaryParameterizationStatus(
+                    sr0["stationaryParameterizationStatus"]
+                ),
+                base_curve_singularity_classification=BaseCurveSingularityClassification(
+                    sr0["baseCurveSingularityClassification"]
+                ),
+                isolated_cusp_roots_t=[],
+                isolated_self_intersections=[],
+                max_geometric_deviation_bound_cm=0.0,
+                verification_outcome="CERTIFIED_VALID",
+                failure_category=OffsetFailureCategory.NONE,
+                canonical_offset_classification=CanonicalOffsetClassification.CERTIFIED_VALID,
+                active_classifications_on_domain=[CanonicalOffsetClassification.CERTIFIED_VALID],
+                working_precision_bits=113,
+                is_production_ready=True,
+            )
+        return OffsetValidationRecord(
+            segment_id=curve.segment_id,
+            piece_id=piece_id,
+            contour_orientation="CCW_EXTERIOR",
+            offset_direction_sign_s=s_sign,
+            offset_distance_cm=d,
+            regularity_margin_epsilon=epsilon_reg,
+            min_base_speed_squared_interval=(0.0, 0.0),
+            min_offset_speed_factor_interval=(-math.inf, math.inf),
             has_zero_speed_cusp_on_domain=False,
             has_tangent_reversal_on_domain=False,
-            stationary_parameterization_status=StationaryParameterizationStatus(sr0["stationaryParameterizationStatus"]),
+            stationary_parameterization_status=StationaryParameterizationStatus(
+                sr0["stationaryParameterizationStatus"]
+            ),
             base_curve_singularity_classification=BaseCurveSingularityClassification(
                 sr0["baseCurveSingularityClassification"]
             ),
             isolated_cusp_roots_t=[],
             isolated_self_intersections=[],
             max_geometric_deviation_bound_cm=0.0,
-            verification_outcome="CERTIFIED_VALID",
-            failure_category=OffsetFailureCategory.NONE,
-            canonical_offset_classification=CanonicalOffsetClassification.CERTIFIED_VALID,
-            active_classifications_on_domain=[CanonicalOffsetClassification.CERTIFIED_VALID],
+            verification_outcome="INCONCLUSIVE",
+            failure_category=OffsetFailureCategory.INCONCLUSIVE_VERIFICATION,
+            canonical_offset_classification=CanonicalOffsetClassification.INCONCLUSIVE,
+            active_classifications_on_domain=[CanonicalOffsetClassification.INCONCLUSIVE],
             working_precision_bits=113,
-            is_production_ready=True,
+            is_production_ready=False,
         )
 
     # Step 3: Regular base curve Q(t) > 0 everywhere on [0, 1].
@@ -775,14 +892,12 @@ def certify_cubic_offset_on_unit_interval(
     ax_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[0]]
     ay_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[1]]
     s_iv = iv.mpf(s_sign)
-    d_iv = iv.mpf(str(d))
+    d_iv = iv.mpf(d_frac.numerator) / iv.mpf(d_frac.denominator)
 
-    def eval_Q_and_f_interval(t_lo: float, t_hi: float) -> Tuple[Tuple[float, float], Tuple[float, float]]:
-        t_lo_iv = iv.mpf(t_lo)
-        t_hi_iv = iv.mpf(t_hi)
-        tm_iv = iv.mpf(0.5) * (t_lo_iv + t_hi_iv)
-        dt_iv = iv.mpf([(t_lo_iv - tm_iv).a, (t_hi_iv - tm_iv).b])
-        t_iv = tm_iv + dt_iv
+    def eval_Q_and_f_interval(a_q: Fraction, b_q: Fraction) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        t_lo_iv = iv.mpf(a_q.numerator) / iv.mpf(a_q.denominator)
+        t_hi_iv = iv.mpf(b_q.numerator) / iv.mpf(b_q.denominator)
+        t_iv = iv.mpf([t_lo_iv.a, t_hi_iv.b])
 
         dx_iv = ax_iv[1] + t_iv * (2 * ax_iv[2] + 3 * ax_iv[3] * t_iv)
         dy_iv = ay_iv[1] + t_iv * (2 * ay_iv[2] + 3 * ay_iv[3] * t_iv)
@@ -805,23 +920,27 @@ def certify_cubic_offset_on_unit_interval(
     max_f_hi = -math.inf
     straddles_eps = False
     straddles_zero = False
+    unresolved_depth_exceeded = False
 
-    def analyze_panel(a: float, b: float, depth: int) -> None:
-        nonlocal min_q_lo, min_q_hi, min_f_lo, min_f_hi, max_f_hi, straddles_eps, straddles_zero
-        (q_lo, q_hi), (f_lo, f_hi) = eval_Q_and_f_interval(a, b)
-        # If panel straddles epsilon_reg or 0 and depth < max_subdivision_depth, subdivide!
-        needs_split = (
-            (f_lo < epsilon_reg < f_hi)
+    def analyze_panel(a_q: Fraction, b_q: Fraction, depth: int) -> None:
+        nonlocal min_q_lo, min_q_hi, min_f_lo, min_f_hi, max_f_hi
+        nonlocal straddles_eps, straddles_zero, unresolved_depth_exceeded
+        (q_lo, q_hi), (f_lo, f_hi) = eval_Q_and_f_interval(a_q, b_q)
+        # Critical boundary/positivity straddle that MUST resolve before certification
+        critical_straddle = (
+            (f_lo < epsilon_reg <= f_hi)
             or (f_lo <= 0.0 <= f_hi)
             or (q_lo <= 0.0)
-            or ((f_hi - f_lo) > 0.02 and depth < 4)
         )
+        needs_split = critical_straddle or ((f_hi - f_lo) > 0.02 and depth < 4)
         if needs_split and depth < max_subdivision_depth:
-            mid = 0.5 * (a + b)
-            analyze_panel(a, mid, depth + 1)
-            analyze_panel(mid, b, depth + 1)
+            mid_q = (a_q + b_q) / Fraction(2)
+            analyze_panel(a_q, mid_q, depth + 1)
+            analyze_panel(mid_q, b_q, depth + 1)
             return
 
+        if critical_straddle:
+            unresolved_depth_exceeded = True
         if q_lo < min_q_lo:
             min_q_lo = q_lo
         if q_hi < min_q_hi:
@@ -837,18 +956,19 @@ def certify_cubic_offset_on_unit_interval(
         if f_lo <= 0.0 <= f_hi:
             straddles_zero = True
 
+    span_width_q = span_hi_q - span_lo_q
     for k in range(subdivision_panels):
-        pa = span_lo + (k / float(subdivision_panels)) * (span_hi - span_lo)
-        pb = span_lo + ((k + 1) / float(subdivision_panels)) * (span_hi - span_lo)
-        analyze_panel(pa, pb, 0)
+        pa_q = span_lo_q + Fraction(k, subdivision_panels) * span_width_q
+        pb_q = span_lo_q + Fraction(k + 1, subdivision_panels) * span_width_q
+        analyze_panel(pa_q, pb_q, 0)
 
     min_q_hi = max(min_q_lo, min_q_hi)
     min_f_hi = max(min_f_lo, min_f_hi)
 
-    # Isolate any cusp roots f(t*) = 0 on [0, 1] using exact rational Bernstein root solver on P_cusp(t) = Q(t)^3 - d^2 C(t)^2
-    # gated by the sign condition s * d * C(t*) > 0!
+    # Isolate any cusp roots f(t*) = 0 on [0, 1] using exact algebraic solver on P_cusp(t) = Q(t)^3 - d^2 C(t)^2
+    # gated by the exact sign condition s * d * C(t*) > 0!
+    q_coeffs = curve.Q_power_coeffs()
     c_coeffs = curve.C_power_coeffs()
-    # Compute Q(t)^3 (degree 12) - d^2 * C(t)^2 (degree 6)
     q2_coeffs = [Fraction(0)] * 9
     for i in range(5):
         for j in range(5):
@@ -868,52 +988,39 @@ def certify_cubic_offset_on_unit_interval(
         p_cusp_coeffs[i] -= d2_frac * c2_coeffs[i]
 
     isolated_cusp_brackets: List[Tuple[float, float]] = []
-    if min_f_lo <= 1e-6:
+    if min_f_lo <= 1e-6 or unresolved_depth_exceeded:
         raw_cusp_roots = isolate_polynomial_roots_on_unit_interval(p_cusp_coeffs, tol_t=Fraction(1, 10**12))
         for cr in raw_cusp_roots:
             t_lo_q = Fraction(cr["tLowerRational"])
             t_hi_q = Fraction(cr["tUpperRational"])
+            if t_hi_q < span_lo_q or t_lo_q > span_hi_q:
+                continue
             t_mid_q = (t_lo_q + t_hi_q) / Fraction(2)
-            # Apply the mandatory ADR-009 §3.1 sign gate: s * d * C(t*) > 0!
-            if s_sign * d_frac * curve.eval_C_exact(t_mid_q) > 0:
+            # Mandatory ADR-009 §3.1 sign gate: s * d * C(t*) > 0 across bracket endpoints & midpoint!
+            sign_lo = s_sign * d_frac * curve.eval_C_exact(t_lo_q)
+            sign_mid = s_sign * d_frac * curve.eval_C_exact(t_mid_q)
+            sign_hi = s_sign * d_frac * curve.eval_C_exact(t_hi_q)
+            if sign_mid > 0 and sign_lo >= 0 and sign_hi >= 0:
                 isolated_cusp_brackets.append(fraction_pair_to_outward_f64_pair(t_lo_q, t_hi_q))
 
     has_tangent_reversal = min_f_hi < 0.0
-    has_zero_speed_cusp = len(isolated_cusp_brackets) > 0 or (min_f_lo <= 0.0 <= max_f_hi and len(isolated_cusp_brackets) > 0)
+    has_zero_speed_cusp = len(isolated_cusp_brackets) > 0
 
     active_classes: List[CanonicalOffsetClassification] = []
-    if min_f_lo >= epsilon_reg:
+    if min_f_lo >= epsilon_reg and min_q_lo > 0.0 and not unresolved_depth_exceeded:
         outcome: Literal["CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"] = "CERTIFIED_VALID"
         fail_cat = OffsetFailureCategory.NONE
         primary_class = CanonicalOffsetClassification.CERTIFIED_VALID
         active_classes = [CanonicalOffsetClassification.CERTIFIED_VALID]
         prod_ready = True
-    elif straddles_eps and min_f_lo > 0.0 and min_f_hi >= epsilon_reg:
-        # Interval enclosure straddles epsilon_reg at max subdivision depth -> INCONCLUSIVE!
-        outcome = "INCONCLUSIVE"
-        fail_cat = OffsetFailureCategory.INCONCLUSIVE
-        primary_class = CanonicalOffsetClassification.INCONCLUSIVE
-        active_classes = [CanonicalOffsetClassification.INCONCLUSIVE]
-        prod_ready = False
-    elif min_f_lo > 0.0 and min_f_hi < epsilon_reg:
-        outcome = "CERTIFIED_INVALID"
-        fail_cat = OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION
-        primary_class = CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION
-        active_classes = [CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION]
-        prod_ready = False
-    else:
+    elif has_tangent_reversal or has_zero_speed_cusp:
         outcome = "CERTIFIED_INVALID"
         prod_ready = False
         if has_zero_speed_cusp:
             active_classes.append(CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP)
         if has_tangent_reversal:
             active_classes.append(CanonicalOffsetClassification.TANGENT_REVERSAL)
-        if not active_classes:
-            active_classes.append(CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP)
 
-        # Primary classification: if f(t) < 0 without any zero-speed root (e.g. AG-03 Circle d=12 > R=10), TANGENT_REVERSAL;
-        # if f(t*) = 0 without f(t) < 0 (e.g. AG-02 d=R or AG-07 grazing), ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP;
-        # if both occur (e.g. AG-06), both are in active_classifications_on_domain and primary is TANGENT_REVERSAL / CUSP.
         if has_tangent_reversal and not has_zero_speed_cusp:
             primary_class = CanonicalOffsetClassification.TANGENT_REVERSAL
             fail_cat = OffsetFailureCategory.TANGENT_REVERSAL
@@ -923,6 +1030,20 @@ def certify_cubic_offset_on_unit_interval(
         else:
             primary_class = CanonicalOffsetClassification.TANGENT_REVERSAL
             fail_cat = OffsetFailureCategory.TANGENT_REVERSAL
+    elif min_f_lo > 0.0 and min_f_hi < epsilon_reg and min_q_lo > 0.0:
+        outcome = "CERTIFIED_INVALID"
+        fail_cat = OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION
+        primary_class = CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION
+        active_classes = [CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION]
+        prod_ready = False
+    else:
+        # Fail-closed ADR-009 §4.4 Category 6 / §5.3: interval enclosure straddles epsilon_reg or 0,
+        # or Q(I_k) <= 0 due to wrapping at subdivision limit without proving invalidity -> INCONCLUSIVE!
+        outcome = "INCONCLUSIVE"
+        fail_cat = OffsetFailureCategory.INCONCLUSIVE_VERIFICATION
+        primary_class = CanonicalOffsetClassification.INCONCLUSIVE
+        active_classes = [CanonicalOffsetClassification.INCONCLUSIVE]
+        prod_ready = False
 
     dev_bound_cm = 0.0
     if outcome == "CERTIFIED_VALID":
@@ -1679,6 +1800,22 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
         ),
     ]
 
+    # Construct a canonical cubic Bezier octant (theta in [0, pi/4]) approximating the R=10 cm CCW circle
+    # so AG-01..AG-04 ALSO cross-check against the real complete-interval oracle `certify_cubic_offset_on_unit_interval`.
+    mpmath.mp.prec = 113
+    theta_oct = mpmath.pi / 4
+    k_oct = (mpmath.mpf(4) / 3) * mpmath.tan(theta_oct / 4)
+    octant_curve = ExactCubicBezier2D.from_floats(
+        "circle-r10-ccw-octant",
+        (10.0, 0.0),
+        (10.0, float(10 * k_oct)),
+        (
+            float(10 * (mpmath.cos(theta_oct) + k_oct * mpmath.sin(theta_oct))),
+            float(10 * (mpmath.sin(theta_oct) - k_oct * mpmath.cos(theta_oct))),
+        ),
+        (float(10 * mpmath.cos(theta_oct)), float(10 * mpmath.sin(theta_oct))),
+    )
+
     results: List[Dict[str, Any]] = []
     for (
         fam_id,
@@ -1707,6 +1844,22 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
         eff_r = abs(signed_radius)
         e_grid, e_cert = _compute_circle_octant_bezier_errors(eff_r)
 
+        # Invoke real interval oracle on the cubic Bezier circle octant
+        octant_val = certify_cubic_offset_on_unit_interval(
+            octant_curve,
+            s_sign=s_sign,
+            d=d_val,
+            d_exact=d_frac,
+            piece_id=fam_id,
+            subdivision_panels=64,
+        )
+        octant_matches_outcome = octant_val.verification_outcome == outcome
+        if fam_id in ("AG-01", "AG-03", "AG-04"):
+            octant_matches_class = octant_val.canonical_offset_classification == expected_cat
+        else:
+            # AG-02: cubic octant has ~2.7e-4 curvature ripple around exact 1/R => CERTIFIED_INVALID (cusp/reversal)
+            octant_matches_class = octant_val.verification_outcome == "CERTIFIED_INVALID"
+
         extra_subcases: Dict[str, Any] = {}
         if fam_id == "AG-04":
             # Also explicitly verify outward offset with d = 12.0 cm > R = 10.0 cm per ADR-009 §6 #4
@@ -1714,6 +1867,18 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
             f_large = 1.0 - (-1) * d_large * kappa  # 2.20 > 1.0
             r_large = R - (-1) * d_large  # 22.0 cm
             eg_large, ec_large = _compute_circle_octant_bezier_errors(r_large)
+            octant_val_large = certify_cubic_offset_on_unit_interval(
+                octant_curve,
+                s_sign=-1,
+                d=d_large,
+                d_exact=Fraction(12),
+                piece_id="AG-04-d12",
+                subdivision_panels=64,
+            )
+            octant_matches_class = octant_matches_class and (
+                octant_val_large.verification_outcome == "CERTIFIED_VALID"
+                and octant_val_large.canonical_offset_classification == CanonicalOffsetClassification.CERTIFIED_VALID
+            )
             extra_subcases["outwardSuperRadiusSubcase_d12cm"] = {
                 "offsetDistanceCm": d_large,
                 "offsetSpeedFactorF": round(f_large, 6),
@@ -1724,6 +1889,7 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
                 "verificationOutcome": "CERTIFIED_VALID",
                 "gridErrorCm": eg_large,
                 "certifiedIntervalErrorCm": ec_large,
+                "bezierOctantOracleOutcome": octant_val_large.verification_outcome,
             }
 
         val_record = OffsetValidationRecord(
@@ -1776,9 +1942,16 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
                 "failureCategory": failure_cat.value,
                 "gridErrorCm": e_grid,
                 "certifiedIntervalErrorCm": e_cert,
+                "bezierOctantOracleCrossCheck": {
+                    "verificationOutcome": octant_val.verification_outcome,
+                    "canonicalOffsetClassification": octant_val.canonical_offset_classification.value,
+                    "minOffsetSpeedFactorInterval": list(octant_val.min_offset_speed_factor_interval),
+                    "matchesExpectedOutcome": octant_matches_outcome,
+                    "matchesExpectedClassification": octant_matches_class,
+                },
                 "offsetValidationRecord": val_record.model_dump(mode="json"),
                 **extra_subcases,
-                "passed": (e_grid <= e_cert),
+                "passed": (e_grid <= e_cert and octant_matches_outcome and octant_matches_class),
             }
         )
     return results
@@ -1890,27 +2063,15 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
     )
 
     # AG-07: Grazing Tangential Curvature Extremum (max kappa(t) = 1/d => f(0.5) = 0, f'(0.5) = 0, f(t) >= 0)
-    # Using ag06_curve with critical offset d = 4/3 cm (s = +1)
-    # Isolate grazing root directly on [0, 1] via P_cusp(t) = Q(t)^3 - d^2 C(t)^2
+    # Invoke the REAL complete-interval oracle with exact rational d_exact = Fraction(4, 3) (zero hand-built record)!
     d_crit_frac = Fraction(4, 3)
-    q_c_ag07 = ag06_curve.Q_power_coeffs()
-    c_c_ag07 = ag06_curve.C_power_coeffs()
-    q2_ag07 = [Fraction(0)] * 9
-    for i in range(5):
-        for j in range(5):
-            q2_ag07[i + j] += q_c_ag07[i] * q_c_ag07[j]
-    q3_ag07 = [Fraction(0)] * 13
-    for i in range(9):
-        for j in range(5):
-            q3_ag07[i + j] += q2_ag07[i] * q_c_ag07[j]
-    c2_ag07 = [Fraction(0)] * 7
-    for i in range(4):
-        for j in range(4):
-            c2_ag07[i + j] += c_c_ag07[i] * c_c_ag07[j]
-    p_cusp_ag07 = list(q3_ag07)
-    for i in range(7):
-        p_cusp_ag07[i] -= (d_crit_frac * d_crit_frac) * c2_ag07[i]
-    unsplit_grazing_roots = isolate_polynomial_roots_on_unit_interval(p_cusp_ag07, tol_t=Fraction(1, 10**12))
+    ag07_val = certify_cubic_offset_on_unit_interval(
+        ag06_curve,
+        s_sign=+1,
+        d=float(d_crit_frac),
+        d_exact=d_crit_frac,
+        piece_id="AG-07",
+    )
 
     def f_ag07(t_mp: mpmath.mpf) -> mpmath.mpf:
         u = 2 * t_mp - 1
@@ -1919,37 +2080,15 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
         d_crit = mpmath.mpf(4) / mpmath.mpf(3)
         return 1 - (d_crit * c_mp) / (q_mp ** mpmath.mpf("1.5"))
 
-    g_b = unsplit_grazing_roots[0]
+    assert len(ag07_val.isolated_cusp_roots_t) == 1
+    g_lo, g_hi = ag07_val.isolated_cusp_roots_t[0]
     grazing_root_ag07 = refine_root_bracket_dual_criterion(
-        f_ag07, speed_ag06, g_b["tLower"], g_b["tUpper"], "tangential-double-grazing (f=0, f'=0)"
-    )
-    ag07_val = OffsetValidationRecord(
-        segment_id="AG-07-grazing-curvature-cusp",
-        piece_id="AG-07",
-        contour_orientation="CCW_EXTERIOR",
-        offset_direction_sign_s=+1,
-        offset_distance_cm=float(d_crit_frac),
-        regularity_margin_epsilon=0.05,
-        min_base_speed_squared_interval=(64.0, 64.0),
-        min_offset_speed_factor_interval=(0.0, 0.0),
-        has_zero_speed_cusp_on_domain=True,
-        has_tangent_reversal_on_domain=False,
-        stationary_parameterization_status=StationaryParameterizationStatus.NONE_REGULAR_SPEED,
-        base_curve_singularity_classification=BaseCurveSingularityClassification.REGULAR_BASE_CURVE,
-        isolated_cusp_roots_t=[(grazing_root_ag07.tLower, grazing_root_ag07.tUpper)],
-        isolated_self_intersections=[],
-        max_geometric_deviation_bound_cm=0.0,
-        verification_outcome="CERTIFIED_INVALID",
-        failure_category=OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP,
-        canonical_offset_classification=CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP,
-        active_classifications_on_domain=[CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP],
-        working_precision_bits=113,
-        is_production_ready=False,
+        f_ag07, speed_ag06, g_lo, g_hi, "tangential-double-grazing (f=0, f'=0)"
     )
     families.append(
         {
             "familyId": "AG-07",
-            "title": "Grazing Tangential Curvature Extremum (f(t*)=0, f'(t*)=0 at t*=0.5, Unsplit Isolation)",
+            "title": "Grazing Tangential Curvature Extremum (f(t*)=0, f'(t*)=0 at t*=0.5, Unsplit Oracle Certification)",
             "expectedCategory": CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP.value,
             "classifiedCategory": ag07_val.canonical_offset_classification.value,
             "canonicalOffsetClassification": ag07_val.canonical_offset_classification.value,
@@ -1957,12 +2096,17 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
             "baseCurveSingularityClassification": ag07_val.base_curve_singularity_classification.value,
             "verificationOutcome": ag07_val.verification_outcome,
             "failureCategory": ag07_val.failure_category.value,
-            "hasZeroSpeedCuspOnDomain": True,
-            "hasTangentReversalOnDomain": False,
+            "hasZeroSpeedCuspOnDomain": ag07_val.has_zero_speed_cusp_on_domain,
+            "hasTangentReversalOnDomain": ag07_val.has_tangent_reversal_on_domain,
             "isolatedRoots": [grazing_root_ag07.model_dump(mode="json")],
             "offsetValidationRecord": ag07_val.model_dump(mode="json"),
             "passed": (
-                len(unsplit_grazing_roots) == 1
+                ag07_val.verification_outcome == "CERTIFIED_INVALID"
+                and ag07_val.canonical_offset_classification
+                == CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP
+                and ag07_val.has_zero_speed_cusp_on_domain is True
+                and ag07_val.has_tangent_reversal_on_domain is False
+                and len(ag07_val.isolated_cusp_roots_t) == 1
                 and abs(0.5 - 0.5 * (grazing_root_ag07.tLower + grazing_root_ag07.tUpper)) <= 1e-12
                 and grazing_root_ag07.deltaT <= 1e-12
                 and grazing_root_ag07.deltaPosCm <= 1e-7
@@ -2213,11 +2357,8 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
     q_min_exact_ag13 = ag13_curve.eval_Q_exact(Fraction(1, 2))
     q_max_exact_ag13 = ag13_curve.eval_Q_exact(Fraction(0))
     speed_ratio_ag13 = float(q_max_exact_ag13 / q_min_exact_ag13)
-    # Evaluate speed upper bound directly from curve derivative on [a, b]
-    speed_fn_ag13 = lambda a, b: max(
-        math.sqrt(float(ag13_curve.eval_Q_exact(Fraction(str(a)).limit_denominator(10**9)))),
-        math.sqrt(float(ag13_curve.eval_Q_exact(Fraction(str(b)).limit_denominator(10**9)))),
-    )
+    # Certified 113-bit interval upper bound on sup_{t in [a, b]} ||B'(t)||_2 (eliminates endpoint-only approximation)
+    speed_fn_ag13 = lambda a, b: compute_interval_max_speed_on_domain_cm_per_t(ag13_curve, a, b, panels=16)
     # Isolate root near u = 0.98 where ||B'(u)|| ~ 5532 cm/unit so Method B1 forces delta_t <= 1e-7 / 5532 ~ 1.8e-11
     cert_ag13 = refine_root_bracket_dual_criterion(
         lambda t_mp: t_mp - mpmath.mpf("0.98"),
@@ -2254,9 +2395,64 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
     )
 
     # AG-14: Acute Miter Corner (theta = 20 deg < 25 deg) Outward Seam Allowance Bevel Clipping
+    # Construct genuine 20-deg dart/collar corner geometry, apply miter-limit bevel clipping (limit = 2.5*d),
+    # and verify 0 self-intersections on the resulting clipped outward polyline using exact rational predicates.
     theta_rad = math.radians(20.0)
+    d_sa = 1.5
+    miter_limit = 2.5
     miter_ratio = 1.0 / math.sin(theta_rad / 2.0)  # ~ 5.75877 > miter_limit 2.5
-    bevel_applied = miter_ratio > 2.5
+    bevel_applied = miter_ratio > miter_limit
+    half_angle = theta_rad / 2.0
+    cos_h = math.cos(half_angle)
+    sin_h = math.sin(half_angle)
+    # Corner apex at (0, 0), incoming ray from (20*cos_h, -20*sin_h) -> (0, 0), outgoing (0, 0) -> (20*cos_h, +20*sin_h).
+    # Outward normals for CCW exterior at this acute tip point toward (-sin_h, -cos_h) and (-sin_h, +cos_h).
+    # Unclipped miter tip would be at (-d_sa / sin_h, 0); bevel clip plane is at x = -miter_limit * d_sa.
+    x_clip = -miter_limit * d_sa
+    # Intersect offset lines with bevel clip plane x = x_clip:
+    # Line 1 (lower): p(s) = (s*cos_h - d_sa*sin_h, -s*sin_h - d_sa*cos_h); solve x = x_clip -> s = (x_clip + d_sa*sin_h) / cos_h
+    s_clip = (x_clip + d_sa * sin_h) / cos_h
+    y_clip_mag = abs(-s_clip * sin_h - d_sa * cos_h)
+    p_start_off = (20.0 * cos_h - d_sa * sin_h, -20.0 * sin_h - d_sa * cos_h)
+    p_bevel_1 = (x_clip, -y_clip_mag)
+    p_bevel_2 = (x_clip, +y_clip_mag)
+    p_end_off = (20.0 * cos_h - d_sa * sin_h, +20.0 * sin_h + d_sa * cos_h)
+    bevel_poly_q = [
+        (Fraction(str(round(pt[0], 10))), Fraction(str(round(pt[1], 10))))
+        for pt in (p_start_off, p_bevel_1, p_bevel_2, p_end_off)
+    ]
+    # Exact rational non-adjacent segment crossing check on the 3-segment beveled offset polyline
+    def _seg_orient(a: Tuple[Fraction, Fraction], b: Tuple[Fraction, Fraction], c: Tuple[Fraction, Fraction]) -> int:
+        det = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        return 1 if det > 0 else (-1 if det < 0 else 0)
+
+    def _seg_on(a: Tuple[Fraction, Fraction], b: Tuple[Fraction, Fraction], p: Tuple[Fraction, Fraction]) -> bool:
+        return min(a[0], b[0]) <= p[0] <= max(a[0], b[0]) and min(a[1], b[1]) <= p[1] <= max(a[1], b[1])
+
+    def _segs_hit(
+        a1: Tuple[Fraction, Fraction],
+        a2: Tuple[Fraction, Fraction],
+        b1: Tuple[Fraction, Fraction],
+        b2: Tuple[Fraction, Fraction],
+    ) -> bool:
+        o1, o2 = _seg_orient(a1, a2, b1), _seg_orient(a1, a2, b2)
+        o3, o4 = _seg_orient(b1, b2, a1), _seg_orient(b1, b2, a2)
+        if o1 * o2 < 0 and o3 * o4 < 0:
+            return True
+        return (
+            (o1 == 0 and _seg_on(a1, a2, b1))
+            or (o2 == 0 and _seg_on(a1, a2, b2))
+            or (o3 == 0 and _seg_on(b1, b2, a1))
+            or (o4 == 0 and _seg_on(b1, b2, a2))
+        )
+
+    bevel_edges_q = [(bevel_poly_q[i], bevel_poly_q[i + 1]) for i in range(len(bevel_poly_q) - 1)]
+    bevel_self_intersections = 0
+    for i_e in range(len(bevel_edges_q)):
+        for j_e in range(i_e + 2, len(bevel_edges_q)):
+            if _segs_hit(bevel_edges_q[i_e][0], bevel_edges_q[i_e][1], bevel_edges_q[j_e][0], bevel_edges_q[j_e][1]):
+                bevel_self_intersections += 1
+    bevel_width_cm = 2.0 * y_clip_mag
     families.append(
         {
             "familyId": "AG-14",
@@ -2269,11 +2465,15 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
             "verificationOutcome": "CERTIFIED_VALID",
             "failureCategory": OffsetFailureCategory.NONE.value,
             "cornerAngleDeg": 20.0,
+            "offsetDistanceCm": d_sa,
             "unclippedMiterRatio": round(miter_ratio, 5),
-            "miterLimit": 2.5,
+            "miterLimit": miter_limit,
             "bevelJoinApplied": bevel_applied,
-            "selfIntersectionsAfterClip": 0,
-            "passed": bevel_applied,
+            "bevelClipPlaneXCm": round(x_clip, 6),
+            "bevelWidthCm": round(bevel_width_cm, 6),
+            "clippedOffsetPolylineCm": [[round(p[0], 6), round(p[1], 6)] for p in (p_start_off, p_bevel_1, p_bevel_2, p_end_off)],
+            "selfIntersectionsAfterClip": bevel_self_intersections,
+            "passed": (bevel_applied and bevel_self_intersections == 0 and bevel_width_cm > 0.0),
         }
     )
 
@@ -2328,7 +2528,11 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
 
     mpmath.mp.prec = 113
     f_wilk_mp = lambda t_mp: (t_mp - mpmath.mpf("0.49999995")) * (t_mp - mpmath.mpf("0.50000005"))
-    speed_wilk = lambda a, b: 20.0
+    # Compute genuine interval speed bound on a representative regular cubic bodice curve (no hardcoded speed constant)
+    wilk_ref_curve = ExactCubicBezier2D.from_floats(
+        "AG-16-wilkinson-ref-curve", (0.0, 0.0), (7.0, 3.5), (14.0, 3.5), (21.0, 0.0)
+    )
+    speed_wilk = lambda a, b: compute_interval_max_speed_on_domain_cm_per_t(wilk_ref_curve, a, b, panels=16)
     b_left = refine_root_bracket_dual_criterion(
         f_wilk_mp, speed_wilk, unsplit_w7[0]["tLower"], unsplit_w7[0]["tUpper"], "wilkinson-cluster-root-1"
     )

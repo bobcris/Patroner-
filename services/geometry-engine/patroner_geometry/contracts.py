@@ -66,19 +66,15 @@ class StationaryParameterizationStatus(str, Enum):
 
 
 class OffsetFailureCategory(str, Enum):
-    """ADR-009 §5.3 failure_category enum for OffsetValidationRecord."""
+    """ADR-009 §5.3 exact 7-value failure_category enum for OffsetValidationRecord and OffsetClassificationReport."""
 
     NONE = "NONE"
     REGULARITY_MARGIN_VIOLATION = "REGULARITY_MARGIN_VIOLATION"
     ACTUAL_ZERO_SPEED_CUSP = "ACTUAL_ZERO_SPEED_CUSP"
-    ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP = "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
     TANGENT_REVERSAL = "TANGENT_REVERSAL"
     LOCAL_OFFSET_SELF_INTERSECTION = "LOCAL_OFFSET_SELF_INTERSECTION"
-    LOCAL_SELF_INTERSECTION = "LOCAL_SELF_INTERSECTION"
     GLOBAL_CONTOUR_SELF_INTERSECTION = "GLOBAL_CONTOUR_SELF_INTERSECTION"
-    GLOBAL_SELF_INTERSECTION = "GLOBAL_SELF_INTERSECTION"
     INCONCLUSIVE_VERIFICATION = "INCONCLUSIVE_VERIFICATION"
-    INCONCLUSIVE = "INCONCLUSIVE"
 
 
 class Point2D(BaseModel):
@@ -276,6 +272,20 @@ class OffsetClassificationReport(BaseModel):
         "C1-Cert-336bit-Q",
     ]
     isProductionReady: bool
+
+    @model_validator(mode="after")
+    def validate_adr009_classification_invariants(self) -> "OffsetClassificationReport":
+        if self.verificationOutcome == "INCONCLUSIVE" and self.isProductionReady:
+            raise ValueError("INCONCLUSIVE OffsetClassificationReport cannot set isProductionReady=True")
+        if self.verificationOutcome == "CERTIFIED_INVALID" and self.isProductionReady:
+            raise ValueError("CERTIFIED_INVALID OffsetClassificationReport cannot set isProductionReady=True")
+        if self.verificationOutcome == "CERTIFIED_VALID" and self.failureCategory != OffsetFailureCategory.NONE:
+            raise ValueError("CERTIFIED_VALID OffsetClassificationReport must have failureCategory == NONE")
+        if self.gridErrorCm > self.certifiedIntervalErrorCm + 1e-15:
+            raise ValueError(
+                "OffsetClassificationReport violation: gridErrorCm cannot exceed certifiedIntervalErrorCm"
+            )
+        return self
 
 
 class GeometryWarning(BaseModel):
@@ -704,7 +714,7 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
             {
                 **sample_val_rec.model_dump(mode="json"),
                 "verification_outcome": "INCONCLUSIVE",
-                "failure_category": "INCONCLUSIVE",
+                "failure_category": "INCONCLUSIVE_VERIFICATION",
                 "canonical_offset_classification": "INCONCLUSIVE",
                 "active_classifications_on_domain": ["INCONCLUSIVE"],
                 "is_production_ready": True,
@@ -734,6 +744,31 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
             }
         ),
     )
+    _expect_pydantic_error(
+        "SEM-04-CLASSIFICATION-REPORT-INCONCLUSIVE-PRODUCTION-READY-FORBIDDEN",
+        "ADR-009 §5.3: OffsetClassificationReport with verificationOutcome=INCONCLUSIVE must reject isProductionReady=True",
+        lambda: OffsetClassificationReport.model_validate(
+            {
+                **sample_report.model_dump(mode="json"),
+                "verificationOutcome": "INCONCLUSIVE",
+                "failureCategory": "INCONCLUSIVE_VERIFICATION",
+                "canonicalOffsetClassification": "INCONCLUSIVE",
+                "activeClassificationsOnDomain": ["INCONCLUSIVE"],
+                "isProductionReady": True,
+            }
+        ),
+    )
+    _expect_pydantic_error(
+        "SEM-05-CLASSIFICATION-REPORT-GRID-EXCEEDS-CERTIFIED-ERROR",
+        "ADR-009 §5.3: OffsetClassificationReport must reject gridErrorCm > certifiedIntervalErrorCm",
+        lambda: OffsetClassificationReport.model_validate(
+            {
+                **sample_report.model_dump(mode="json"),
+                "gridErrorCm": 0.005,
+                "certifiedIntervalErrorCm": 0.001,
+            }
+        ),
+    )
 
     all_passed = (
         all(r["jsonSchemaDraft202012Valid"] and r["pydanticV2RoundTripValid"] for r in parity_results)
@@ -750,6 +785,7 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
         "canonicalCoordinateFrame": sample_coord.model_dump(mode="json"),
         "canonicalOffsetClassifications": [c.value for c in CanonicalOffsetClassification],
         "baseCurveSingularityClassifications": [c.value for c in BaseCurveSingularityClassification],
+        "offsetFailureCategories": [c.value for c in OffsetFailureCategory],
         "entitiesVerifiedCount": len(parity_results),
         "entityParityResults": parity_results,
         "negativeValidationCount": len(negative_results),

@@ -7,6 +7,7 @@
   "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
   "diagnosticQuadLength113BitCm": 16.6656505146,
   "adaptiveGaussLegendreLengthCm": 16.6656505146,
+  "adaptiveGaussLegendreConverged": true,
   "adaptiveGaussLegendreWithinC1CertEnclosure": true,
   "forwardLengthErrorCm": 1.4210854715202004e-14,
   "forwardToleranceMaxCm": 1e-06,
@@ -65,11 +66,13 @@
     {
       "targetFraction": 0.25,
       "targetArcLengthCm": 4.16641263,
-      "tStar": 0.425657617723,
+      "tStar": 0.42565761772302035,
       "tBracket": [
         0.42565761772302035,
         0.4256576177230204
       ],
+      "tStarWithinBracket": true,
+      "quadratureConverged": true,
       "arcLengthResidualCm": 8.881784197001252e-16,
       "deltaT": 5.551115123125783e-17,
       "localSpeedUpperBoundCmPerT": 14.101023588867298,
@@ -95,11 +98,13 @@
     {
       "targetFraction": 0.5,
       "targetArcLengthCm": 8.33282526,
-      "tStar": 0.667210977107,
+      "tStar": 0.6672109771073951,
       "tBracket": [
         0.667210977107091,
         0.6672109771076993
       ],
+      "tStarWithinBracket": true,
+      "quadratureConverged": true,
       "arcLengthResidualCm": 6.227907078937278e-12,
       "deltaT": 6.082911951921233e-13,
       "localSpeedUpperBoundCmPerT": 20.469830714570282,
@@ -125,11 +130,13 @@
     {
       "targetFraction": 0.75,
       "targetArcLengthCm": 12.49923789,
-      "tStar": 0.848755041555,
+      "tStar": 0.8487550415554228,
       "tBracket": [
         0.8487550415554227,
         0.8487550415554228
       ],
+      "tStarWithinBracket": true,
+      "quadratureConverged": true,
       "arcLengthResidualCm": 1.7763568394002505e-15,
       "deltaT": 1.1102230246251565e-16,
       "localSpeedUpperBoundCmPerT": 25.446326345545092,

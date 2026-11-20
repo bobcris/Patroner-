@@ -1,7 +1,7 @@
 {
   "auditCheckpoint": "16",
-  "auditTitle": "Patroner M00 Checkpoint 16 Consolidated Deterministic Artifact Hash Verification",
-  "packageId": "PKG-M00-02",
+  "auditTitle": "Patroner M00 Consolidated Deterministic Artifact Hash Verification (PKG-M00-03 Complete Manifest)",
+  "packageId": "PKG-M00-03",
   "historicalCheckpoint13aArchivePath": "artifacts/m00/checkpoint_13a_audit/M00_ARTIFACT_HASH_VERIFICATION.json",
   "governingBaseline": {
     "checkpoint12Date": "2026-11-16",
@@ -18,13 +18,25 @@
       "DEC-01",
       "DEC-13 Stage 1"
     ],
+    "m00AcceptanceStatus": "NOT_ACCEPTED",
     "mandatoryNextGate": "Gate Auth-2 / DEC-13 Stage 2 (CLOSED - Pending Owner Sign-Off; Blocks M02 Production Implementation)",
-    "gateAuth2Status": "CLOSED"
+    "gateAuth2Status": "CLOSED",
+    "gateAuth3Status": "CLOSED",
+    "gateAuth4Status": "CLOSED",
+    "dec13Stage2Status": "CLOSED",
+    "ac09PhysicalValidationStatus": "PENDING",
+    "externalCadInteroperabilityVerified": false
   },
   "summary": {
     "deterministicArtifactsAudited": 10,
     "checkpoint16RootDeliverablesAudited": 7,
-    "referencedSchemaSha256": "b8520e9d46948aa8b636ef22b190fd38fea669f315ca61a82deab64ea5665960",
+    "configAndSchemaFilesAudited": 4,
+    "markdownReportsAudited": 5,
+    "totalFilesAudited": 28,
+    "referencedSchemaSha256": "35952f090564f3916e48896d0f11154ffd9ba061539826a8480636b0627834a6",
+    "sourceInputsDigest": "4b99969f54f2ccfd4d2fd6af4e47166ef2c8d74803fb5f0dc71f71676c89b40b",
+    "oracleIndependenceVerified": true,
+    "python312LockEnvironmentVerified": true,
     "deterministicAcrossRuns": true,
     "nonDeterministicRuntimeObservationArtifactsExcludedFromDeterminismGate": [
       "artifacts/m00/IntervalCandidateBenchmarks.json",
@@ -35,8 +47,8 @@
     {
       "artifact": "SchemasLockReport.json",
       "path": "artifacts/m00/SchemasLockReport.json",
-      "sha256": "d18dc854c0fe103b0151b417968dd7181d52039daf9dae708a4c1d782123bbc4",
-      "bytes": "6516"
+      "sha256": "20c7b961d983d8b9c162384f1662a2c20cad9b4969f98919e6240a06ecdfcee6",
+      "bytes": "7553"
     },
     {
       "artifact": "BaselineDivergenceRegistry.json",
@@ -47,64 +59,64 @@
     {
       "artifact": "IntervalLibraryQualificationReport.json",
       "path": "artifacts/m00/IntervalLibraryQualificationReport.json",
-      "sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
-      "bytes": "24902"
+      "sha256": "8e662f714a050da890c3e1d1fa4151bc7eeafdf7935754da08f041210e4bedb6",
+      "bytes": "25913"
     },
     {
       "artifact": "AdversarialGeometryVerificationReport.json",
       "path": "artifacts/m00/AdversarialGeometryVerificationReport.json",
-      "sha256": "42bbb531fcc8d99dd2c316790e8a4901e56345d3ce28af9843949ba27f853250",
-      "bytes": "51177"
+      "sha256": "5bf5252f35b06e1134221fb12dbf345dbbc5495e34f7a1d88c738af3b7b26a0a",
+      "bytes": "53141"
     },
     {
       "artifact": "ArcLengthVerificationReport.json",
       "path": "artifacts/m00/ArcLengthVerificationReport.json",
-      "sha256": "c62626710ace4bae8f7b828e5ec85db1840add22449d658dec7edad38cdaad2e",
-      "bytes": "5995"
+      "sha256": "000ee51981cd07b8f32d19e7b6fa178edba8b23be190feac041525ed8963d106",
+      "bytes": "6257"
     },
     {
       "artifact": "TopologyVerificationReport.json",
       "path": "artifacts/m00/TopologyVerificationReport.json",
-      "sha256": "c6e21e20645977515e6f9cbd4387f1438813367d6f62380d139aa59a8d55e255",
-      "bytes": "904"
+      "sha256": "9781fb97a2857e9e7c251cfc08abf809d1e045151044d4a7fe58fad2000f0458",
+      "bytes": "1033"
     },
     {
       "artifact": "DxfRoundTripVerificationReport.json",
       "path": "artifacts/m00/DxfRoundTripVerificationReport.json",
-      "sha256": "e3552388ecbe36fdfbd51b6bd167d70a4c86f4f53d644712c23ddcf899347c01",
-      "bytes": "1623"
+      "sha256": "2096a79d5be4b5524b2f655a175823ee049562dd352f965f72e1d6f52a5075dc",
+      "bytes": "1845"
     },
     {
       "artifact": "AnthropometricVerificationReport.json",
       "path": "artifacts/m00/AnthropometricVerificationReport.json",
-      "sha256": "5cff9cd5b5d75ed0fbf0e5893934310927f52b8220dd2dc749814ea259e02a89",
-      "bytes": "3463"
+      "sha256": "567153dccb58c9e3eb81379d8883679e87df5fdd75eab71be9b64714a8f00a15",
+      "bytes": "9585"
     },
     {
       "artifact": "ProductionDxfRoundTripReport.json",
       "path": "artifacts/m00/ProductionDxfRoundTripReport.json",
-      "sha256": "269ebd4806473c7e3c62d0f72ee033cffb586bd331bed8c021cb30b227ed9ab7",
+      "sha256": "7f2bd103da74f2e157fd50906bd7d048cd9477f89b04d4f99c4021173ba36ad0",
       "bytes": "4827"
     },
     {
       "artifact": "ProductionSeamParityReport.json",
       "path": "artifacts/m00/ProductionSeamParityReport.json",
-      "sha256": "a33d733451b5a1ac8ab22c65d249906de18aa670c16d4d791bed99deed4c05fe",
-      "bytes": "15423"
+      "sha256": "da6cb91bc3a31fb0f97be8c5499768c4a3aa9534165178005cfadf1e6943e35f",
+      "bytes": "15480"
     }
   ],
   "checkpoint16RootDeliverables": [
     {
       "artifact": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
       "path": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
-      "sha256": "25806d0f8f10684d0922ac4fded5d2571a7c60989e0f67b694246fc16d11204f",
-      "bytes": "22326"
+      "sha256": "96132b72c721b79f8ed620ff1b7389513cad6b6c897f454973307ca19cfb563d",
+      "bytes": "22363"
     },
     {
       "artifact": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
       "path": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
-      "sha256": "08d5b86c1396914da6a125efa91d77e27730fb61fa3c2903d32439b27311610b",
-      "bytes": "13865"
+      "sha256": "b883c91f82511d31d9b8a4d8c28d19c4c9a3c29e6874e7c08722848155185f05",
+      "bytes": "13811"
     },
     {
       "artifact": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
@@ -115,31 +127,259 @@
     {
       "artifact": "M00_INTERVAL_QUALIFICATION_REPORT.json",
       "path": "M00_INTERVAL_QUALIFICATION_REPORT.json",
-      "sha256": "f0c432e4f5b09dd0fcc10ffc354b1a7405f73fbf5e5a8c08004b45ea40761be8",
-      "bytes": "24902"
+      "sha256": "8e662f714a050da890c3e1d1fa4151bc7eeafdf7935754da08f041210e4bedb6",
+      "bytes": "25913"
     },
     {
       "artifact": "M00_CONTRACT_PARITY_REPORT.json",
       "path": "M00_CONTRACT_PARITY_REPORT.json",
-      "sha256": "2918bf434eaeca754451c30306e2bf338fc296dd161b0ef661aea107b66b5601",
-      "bytes": "7091"
+      "sha256": "a4871c9fe44f48be7417b8ee8632d47adad185b337aa127117a3ce68b43fb087",
+      "bytes": "8170"
     },
     {
       "artifact": "M00_SUBORACLE_VERIFICATION_REPORT.json",
       "path": "M00_SUBORACLE_VERIFICATION_REPORT.json",
-      "sha256": "e6b96d768ac6a90aa0da90893081b354659a92d0a2cff732fc19aab8b8f880e3",
-      "bytes": "35879"
+      "sha256": "8f1eea4d20854682b15c0297cbe4d11a450f17ea1adf562668bc27df4e8c6350",
+      "bytes": "43111"
     },
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "b89d4e4f91938b64a02ce1777a874c03d5229ea3f4b4b30ac0718995002da90e",
-      "bytes": "3815"
+      "sha256": "c25697ac429ad6aa85cac774cfa138ad7a48543d47a994011bef040ee65842a6",
+      "bytes": "4170"
+    }
+  ],
+  "configAndSchemaFiles": [
+    {
+      "artifact": "canonical_contracts.schema.json",
+      "path": "packages/contracts/schemas/canonical_contracts.schema.json",
+      "sha256": "35952f090564f3916e48896d0f11154ffd9ba061539826a8480636b0627834a6",
+      "bytes": "22349"
+    },
+    {
+      "artifact": "pyproject.toml",
+      "path": "services/geometry-engine/pyproject.toml",
+      "sha256": "2b9f396e920ddb24fe80e691fbeb34f1131788bf8aa62df24eda5952eab7c878",
+      "bytes": "676"
+    },
+    {
+      "artifact": "uv.lock",
+      "path": "services/geometry-engine/uv.lock",
+      "sha256": "0dfa5181eb2075c10ce5649a63555643e0dd7e429bd2c1f6cc2e355691936908",
+      "bytes": "37613"
+    },
+    {
+      "artifact": "m00-verification.yml",
+      "path": ".github/workflows/m00-verification.yml",
+      "sha256": "6621d0f25228565a36a14c2855d68408ee0c22e0f06ed838dce19639b05e0f8a",
+      "bytes": "4166"
+    }
+  ],
+  "markdownReports": [
+    {
+      "artifact": "M00_EVIDENCE_RECONCILIATION_REPORT.md",
+      "path": "M00_EVIDENCE_RECONCILIATION_REPORT.md",
+      "sha256": "2d974c098a7030afedb1694cd5e8b6a2bcf889f31a844ccda9d19e15d8b4d48b",
+      "bytes": "20109"
+    },
+    {
+      "artifact": "M00_GATE_AUTH2_READINESS_MATRIX.md",
+      "path": "M00_GATE_AUTH2_READINESS_MATRIX.md",
+      "sha256": "df990df4c826a3956bc36ef05e0dac4edf0c145ce217b51a4d12247d1fd95315",
+      "bytes": "10629"
+    },
+    {
+      "artifact": "M00_GATE_AUTH2_READINESS_REPORT.md",
+      "path": "M00_GATE_AUTH2_READINESS_REPORT.md",
+      "sha256": "c4aabaa896a52e3fa761e446fa2232b4a83c7fd3ccd2b544d6014506e638b973",
+      "bytes": "15746"
+    },
+    {
+      "artifact": "M00_NUMERICAL_QUALIFICATION_AUDIT.md",
+      "path": "M00_NUMERICAL_QUALIFICATION_AUDIT.md",
+      "sha256": "ff8fe0162f8f5ce5bfbdd4753d1c34d84108cac1a23151cda39bd750ff9dcb11",
+      "bytes": "13336"
+    },
+    {
+      "artifact": "M00_REMEDIATION_CHANGELOG.md",
+      "path": "M00_REMEDIATION_CHANGELOG.md",
+      "sha256": "fbeb4a0d9bdb0562684207bbdb59a988c0a47f0c61596e373eed939baf680a22",
+      "bytes": "9340"
     }
   ],
   "reproducibleEnvironmentManifest": {
-    "artifactsCopySha256": "1507c296915e026a185c14e1566dfd881f1958be48778e90838cb0f2e77c197e",
-    "rootCopySha256": "1507c296915e026a185c14e1566dfd881f1958be48778e90838cb0f2e77c197e",
+    "artifactsCopySha256": "d07d8538c8b0669971d45685cc0b9ace6964de90aa2a1ced710417d4d3d6cdd1",
+    "rootCopySha256": "d07d8538c8b0669971d45685cc0b9ace6964de90aa2a1ced710417d4d3d6cdd1",
     "copiesIdentical": true
-  }
+  },
+  "allAuditedFiles": [
+    {
+      "artifact": "SchemasLockReport.json",
+      "path": "artifacts/m00/SchemasLockReport.json",
+      "sha256": "20c7b961d983d8b9c162384f1662a2c20cad9b4969f98919e6240a06ecdfcee6",
+      "bytes": "7553"
+    },
+    {
+      "artifact": "BaselineDivergenceRegistry.json",
+      "path": "artifacts/m00/BaselineDivergenceRegistry.json",
+      "sha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d",
+      "bytes": "4987"
+    },
+    {
+      "artifact": "IntervalLibraryQualificationReport.json",
+      "path": "artifacts/m00/IntervalLibraryQualificationReport.json",
+      "sha256": "8e662f714a050da890c3e1d1fa4151bc7eeafdf7935754da08f041210e4bedb6",
+      "bytes": "25913"
+    },
+    {
+      "artifact": "AdversarialGeometryVerificationReport.json",
+      "path": "artifacts/m00/AdversarialGeometryVerificationReport.json",
+      "sha256": "5bf5252f35b06e1134221fb12dbf345dbbc5495e34f7a1d88c738af3b7b26a0a",
+      "bytes": "53141"
+    },
+    {
+      "artifact": "ArcLengthVerificationReport.json",
+      "path": "artifacts/m00/ArcLengthVerificationReport.json",
+      "sha256": "000ee51981cd07b8f32d19e7b6fa178edba8b23be190feac041525ed8963d106",
+      "bytes": "6257"
+    },
+    {
+      "artifact": "TopologyVerificationReport.json",
+      "path": "artifacts/m00/TopologyVerificationReport.json",
+      "sha256": "9781fb97a2857e9e7c251cfc08abf809d1e045151044d4a7fe58fad2000f0458",
+      "bytes": "1033"
+    },
+    {
+      "artifact": "DxfRoundTripVerificationReport.json",
+      "path": "artifacts/m00/DxfRoundTripVerificationReport.json",
+      "sha256": "2096a79d5be4b5524b2f655a175823ee049562dd352f965f72e1d6f52a5075dc",
+      "bytes": "1845"
+    },
+    {
+      "artifact": "AnthropometricVerificationReport.json",
+      "path": "artifacts/m00/AnthropometricVerificationReport.json",
+      "sha256": "567153dccb58c9e3eb81379d8883679e87df5fdd75eab71be9b64714a8f00a15",
+      "bytes": "9585"
+    },
+    {
+      "artifact": "ProductionDxfRoundTripReport.json",
+      "path": "artifacts/m00/ProductionDxfRoundTripReport.json",
+      "sha256": "7f2bd103da74f2e157fd50906bd7d048cd9477f89b04d4f99c4021173ba36ad0",
+      "bytes": "4827"
+    },
+    {
+      "artifact": "ProductionSeamParityReport.json",
+      "path": "artifacts/m00/ProductionSeamParityReport.json",
+      "sha256": "da6cb91bc3a31fb0f97be8c5499768c4a3aa9534165178005cfadf1e6943e35f",
+      "bytes": "15480"
+    },
+    {
+      "artifact": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
+      "path": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
+      "sha256": "96132b72c721b79f8ed620ff1b7389513cad6b6c897f454973307ca19cfb563d",
+      "bytes": "22363"
+    },
+    {
+      "artifact": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
+      "path": "M00_ADR009_SECTION6_COVERAGE_REPORT.json",
+      "sha256": "b883c91f82511d31d9b8a4d8c28d19c4c9a3c29e6874e7c08722848155185f05",
+      "bytes": "13811"
+    },
+    {
+      "artifact": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
+      "path": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
+      "sha256": "ccbad9a633e9bbb99ba03e7a0e9175d51e5f600314f09b4c538d4c7ffcd7ebb6",
+      "bytes": "6382"
+    },
+    {
+      "artifact": "M00_INTERVAL_QUALIFICATION_REPORT.json",
+      "path": "M00_INTERVAL_QUALIFICATION_REPORT.json",
+      "sha256": "8e662f714a050da890c3e1d1fa4151bc7eeafdf7935754da08f041210e4bedb6",
+      "bytes": "25913"
+    },
+    {
+      "artifact": "M00_CONTRACT_PARITY_REPORT.json",
+      "path": "M00_CONTRACT_PARITY_REPORT.json",
+      "sha256": "a4871c9fe44f48be7417b8ee8632d47adad185b337aa127117a3ce68b43fb087",
+      "bytes": "8170"
+    },
+    {
+      "artifact": "M00_SUBORACLE_VERIFICATION_REPORT.json",
+      "path": "M00_SUBORACLE_VERIFICATION_REPORT.json",
+      "sha256": "8f1eea4d20854682b15c0297cbe4d11a450f17ea1adf562668bc27df4e8c6350",
+      "bytes": "43111"
+    },
+    {
+      "artifact": "M00_REPRODUCIBILITY_REPORT.json",
+      "path": "M00_REPRODUCIBILITY_REPORT.json",
+      "sha256": "c25697ac429ad6aa85cac774cfa138ad7a48543d47a994011bef040ee65842a6",
+      "bytes": "4170"
+    },
+    {
+      "artifact": "ReproducibleEnvironmentManifest.json",
+      "path": "artifacts/m00/ReproducibleEnvironmentManifest.json",
+      "sha256": "d07d8538c8b0669971d45685cc0b9ace6964de90aa2a1ced710417d4d3d6cdd1",
+      "bytes": "11312"
+    },
+    {
+      "artifact": "ReproducibleEnvironmentManifest.json",
+      "path": "ReproducibleEnvironmentManifest.json",
+      "sha256": "d07d8538c8b0669971d45685cc0b9ace6964de90aa2a1ced710417d4d3d6cdd1",
+      "bytes": "11312"
+    },
+    {
+      "artifact": "canonical_contracts.schema.json",
+      "path": "packages/contracts/schemas/canonical_contracts.schema.json",
+      "sha256": "35952f090564f3916e48896d0f11154ffd9ba061539826a8480636b0627834a6",
+      "bytes": "22349"
+    },
+    {
+      "artifact": "pyproject.toml",
+      "path": "services/geometry-engine/pyproject.toml",
+      "sha256": "2b9f396e920ddb24fe80e691fbeb34f1131788bf8aa62df24eda5952eab7c878",
+      "bytes": "676"
+    },
+    {
+      "artifact": "uv.lock",
+      "path": "services/geometry-engine/uv.lock",
+      "sha256": "0dfa5181eb2075c10ce5649a63555643e0dd7e429bd2c1f6cc2e355691936908",
+      "bytes": "37613"
+    },
+    {
+      "artifact": "m00-verification.yml",
+      "path": ".github/workflows/m00-verification.yml",
+      "sha256": "6621d0f25228565a36a14c2855d68408ee0c22e0f06ed838dce19639b05e0f8a",
+      "bytes": "4166"
+    },
+    {
+      "artifact": "M00_EVIDENCE_RECONCILIATION_REPORT.md",
+      "path": "M00_EVIDENCE_RECONCILIATION_REPORT.md",
+      "sha256": "2d974c098a7030afedb1694cd5e8b6a2bcf889f31a844ccda9d19e15d8b4d48b",
+      "bytes": "20109"
+    },
+    {
+      "artifact": "M00_GATE_AUTH2_READINESS_MATRIX.md",
+      "path": "M00_GATE_AUTH2_READINESS_MATRIX.md",
+      "sha256": "df990df4c826a3956bc36ef05e0dac4edf0c145ce217b51a4d12247d1fd95315",
+      "bytes": "10629"
+    },
+    {
+      "artifact": "M00_GATE_AUTH2_READINESS_REPORT.md",
+      "path": "M00_GATE_AUTH2_READINESS_REPORT.md",
+      "sha256": "c4aabaa896a52e3fa761e446fa2232b4a83c7fd3ccd2b544d6014506e638b973",
+      "bytes": "15746"
+    },
+    {
+      "artifact": "M00_NUMERICAL_QUALIFICATION_AUDIT.md",
+      "path": "M00_NUMERICAL_QUALIFICATION_AUDIT.md",
+      "sha256": "ff8fe0162f8f5ce5bfbdd4753d1c34d84108cac1a23151cda39bd750ff9dcb11",
+      "bytes": "13336"
+    },
+    {
+      "artifact": "M00_REMEDIATION_CHANGELOG.md",
+      "path": "M00_REMEDIATION_CHANGELOG.md",
+      "sha256": "fbeb4a0d9bdb0562684207bbdb59a988c0a47f0c61596e373eed939baf680a22",
+      "bytes": "9340"
+    }
+  ]
 }
