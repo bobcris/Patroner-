@@ -280,3 +280,47 @@ All checks below were executed **after the final source modification** inside `/
 - **`P1-3` Status:** **NOT STARTED and NOT AUTHORIZED** until the fresh independent read-only audit accepts `P1-2`.
 - **Protected Governance Gates (Unchanged):** `M00: NOT ACCEPTED`, `Gate Auth-2: CLOSED`, `Gate Auth-3: CLOSED`, `Gate Auth-4: CLOSED`, `DEC-13 Stage 2: CLOSED`, `AC-09: PENDING`, `isProductionReady: false`, `externalCadInteroperabilityVerified: false`.
 
+---
+
+# Revision 3 Audit Disposition & Final Closeout Errata
+
+## 11. Independent Revision 3 Audit Verdict & Historical Evidence Errata
+
+> **Preservation Policy:** All historical Revision 1 (Sections 1–5) and Revision 2 (Sections 6–10) text above is intentionally preserved verbatim for immutable audit traceability. The authoritative errata below formally supersede inaccurate historical wording, symbol names, and archive path references identified during the independent Revision 3 acceptance audit.
+
+### 11.1 Independent Revision 3 Audit Verdict
+- **Independent Audit Verdict (Revision 3):** **`ACCEPTED WITH NON-CRITICAL OBSERVATIONS`**
+- **Scope of Authorized Closeout:** Project Owner authorized a strictly bounded four-item Acceptance Hygiene Pass (`Closeout Items 1–4`) covering:
+  1. Revision 3 SHA-256 evidence manifest (`docs/evidence/p1_2_remediation/revision_3/SHA256_MANIFEST.txt`),
+  2. Historical evidence documentation errata (this section),
+  3. `Print / Export Tech Pack` button disabled-state parity with handler-level enforcement, and
+  4. Bodice Module 05 Production Overview tablet horizontal overflow remediation.
+- **Closeout Acceptance Status:** Implementation and verification of Closeout Items 1–4 are complete in this pass and **await a focused read-only independent closeout verification** (this document does **not** claim independent acceptance of the closeout changes themselves).
+- **Roadmap Authorization Posture:** **`P1-3` (Multi-Size Skirt Grading) has NOT been started and is NOT authorized.**
+
+### 11.2 Historical Evidence Errata Table (Superseding Revision 2 & Revision 3 Documentation Inaccuracies)
+
+| Historical Location | Inaccurate Historical Claim / Symbol | Authoritative Codebase & Archive Reality (Superseded Here) |
+| :--- | :--- | :--- |
+| Section 6 (line 176) | Listed `'PRODUCTION_ENGINEER'` as a member of `Ac09AuthorizedReviewerRole` | Exact `Ac09AuthorizedReviewerRole` union in `src/engine/simulation/simulation-types.ts` (lines 398–401) and `AUTHORIZED_AC09_REVIEWER_ROLES` in `src/engine/simulation/physical-validation.ts` (lines 512–516) contains **exactly 3 roles**: `'LEAD_PATTERNMAKER' \| 'QA_LEAD' \| 'ATELIER_TECH_DIRECTOR'`. `'PRODUCTION_ENGINEER'` is **not** an authorized AC-09 reviewer role and is rejected fail-closed. |
+| Section 7.1 (line 190) | Described client-side SHA-256 reviewer digest as `"Cryptographic Signature"` | `signatureDigest` and `lockedSnapshotDigest` are **unkeyed client-side SHA-256 tamper-evident integrity seals** that detect accidental or partial post-lock mutation. They do **not** perform cryptographic reviewer identity authentication, use asymmetric/KMS keys, or defend against a local actor recomputing matching digests. (Corrected in source code & UI in Revision 3 `N-03`.) |
+| Section 7.1 (lines 191–193) | Cited 11 non-existent Revision 2 AC-09 field names: `approvedFabricId`, `measuredFabricId`, `fabricComposition`, `fabricWeightGsm`, `fabricStretchWeftPct`, `fabricDirection`, `evidenceAttachments`, `hemLevelDeltaCm`, `measuredMeanCm`, `uncertaintyCm`, `instrumentUncertaintyCm` (plus `grainlinePlumbVerified`, `seamsAligned`, `uri`) | Exact authoritative TypeScript property names in `src/engine/simulation/simulation-types.ts` & `src/engine/simulation/physical-validation.ts`: `expectedMaterialSpecId` / `fabricId` (not `approvedFabricId`), `recordedFabricId` (not `measuredFabricId`), `recordedFabricComposition` (not `fabricComposition`), `recordedFabricWeightGsm` (not `fabricWeightGsm`), `recordedFabricStretchPct` (not `fabricStretchWeftPct`), `recordedFabricDirection` (not `fabricDirection`), `evidenceChecklist` (not `evidenceAttachments`; note `evidenceAttachments` is only an output field inside the locked snapshot payload), `hemLevelPhysicalDeviationCm` (not `hemLevelDeltaCm`), `measuredToileCm` (not `measuredMeanCm`), `combinedUncertaintyCm` (not `uncertaintyCm`), `instrumentResolutionCm` (not `instrumentUncertaintyCm`); structural/URI fields are `grainlineVerified` (not `grainlinePlumbVerified`), `seamAlignmentVerified` (not `seamsAligned`), and `attachmentUri` (not `uri`). |
+| `docs/evidence/p1_2_remediation/revision_3/REVISION_3_EVIDENCE_SUMMARY.md` (line 21) | Referenced nonexistent subdirectories `revision_1` and `revision_2` | Actual historical archive locations are `docs/evidence/P1_2_CONSOLIDATION_AND_INTEGRITY_EVIDENCE.md` (Revision 1 & Revision 2 report) and `docs/evidence/p1_2_remediation/` (Revision 2 logs, screenshots, and `SHA256_MANIFEST.txt`). Revision 3 artifacts reside under `docs/evidence/p1_2_remediation/revision_3/`. |
+| `docs/evidence/p1_2_remediation/revision_3/REVISION_3_EVIDENCE_SUMMARY.md` (lines 15–17) | Listed `M00`, `Gate Auth-2`, and `Gate Auth-3` while omitting explicit lines for `Gate Auth-4` and `DEC-13 Stage 2` | All protected governance gates remain explicitly unchanged and closed/not-accepted/pending: **`M00: NOT ACCEPTED`**, **`Gate Auth-2: CLOSED`**, **`Gate Auth-3: CLOSED`**, **`Gate Auth-4: CLOSED`**, **`DEC-13 Stage 2: CLOSED`**, **`AC-09: PENDING`**, **`isProductionReady: false`**, **`externalCadInteroperabilityVerified: false`**. |
+| `docs/evidence/p1_2_remediation/revision_3/REVISION_3_EVIDENCE_SUMMARY.md` (line 116) | Claimed `rev3b-01-desktop-skirt-production.png` showed the full `engineeringContentDigest` value | In the original `1440×900` capture `rev3b-01-desktop-skirt-production.png` (preserved untouched), the `engineeringContentDigest` hash value fell below the 900px viewport fold and was clipped. Updated closeout screenshot `docs/evidence/p1_2_remediation/revision_3/screenshots/closeout-03-desktop-1440-print-parity-and-digests.png` captures both `canonicalContentDigest` and `engineeringContentDigest` cleanly unclipped alongside the disabled `Print / Export Tech Pack` button. |
+| `docs/evidence/p1_2_remediation/revision_3/typecheck.log` & historical `*.log` transcripts | Original Revision 3 summary cited `typecheck.log` (0-byte `tsc --noEmit` stdout on clean pass, `SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`) and `.log` transcripts without noting `.gitignore` (`*.log`) persistence exclusion | Because `.gitignore` line 6 excludes `*.log`, historical `.log` transcripts from Revision 2 and Revision 3 are omitted across workspace snapshot restorations (all `.md`, `.png`, and `.txt` artifacts persist intact). No historical `.log` files are fabricated or recreated; final closeout verification transcripts are archived as `.txt` files under `docs/evidence/p1_2_remediation/revision_3/closeout/*.txt` so every hashed artifact in `SHA256_MANIFEST.txt` persists cleanly for independent verification. |
+
+### 11.3 Disposition of Non-Critical Observations from Independent Revision 3 Audit
+
+| Observation | Disposition in Final Closeout |
+| :--- | :--- |
+| Missing SHA-256 manifest for Revision 3 evidence directory | **Resolved (Closeout Item 1):** Created and verified `docs/evidence/p1_2_remediation/revision_3/SHA256_MANIFEST.txt` covering all original Revision 3 files and final closeout artifacts (`sha256sum -c` 100% OK). |
+| Residual historical errata in `P1_2_CONSOLIDATION_AND_INTEGRITY_EVIDENCE.md` & `REVISION_3_EVIDENCE_SUMMARY.md` | **Resolved (Closeout Item 2):** Formally documented and superseded in Section 11.2 above and `CLOSEOUT_SUMMARY.md` without modifying historical Revision 1, Revision 2, or original Revision 3 files. |
+| `Print / Export Tech Pack` button appeared enabled while handler blocked execution | **Resolved (Closeout Item 3):** Bound `disabled={!workspaceBundle.exportGate.canExportCanonicalReleaseJson}` with accessible `title`/`aria-label` and visible `m05-print-blocked-hint`, backed by direct-handler `executeGuardedTechPackPrint` enforcement and unit tests (`P1-2-CLOSEOUT-PRINT-01`, `P1-2-CLOSEOUT-PRINT-02`). |
+| Bodice Module 05 Production Overview tablet horizontal overflow (`scrollWidth: 823px` at `768×1024` & `800×1280`) | **Resolved (Closeout Item 4):** Fixed non-wrapping flex banner (`m05-export-gate-banner`) in `ProductionOverview.tsx`; verified `scrollWidth <= innerWidth` (`0px` overflow) across `768×1024`, `800×1280`, `1024×768`, and `1440×900` for both Bodice and Skirt. |
+| Separately tracked M06 cloth simulation / bounded optimizer mathematical refinements (Section 8) | **Deferred Outside P1-2 (Unchanged):** Remains formally tracked outside P1-2 scope; zero changes made to cloth simulation or optimizer code. |
+
+### 11.4 Final Closeout Governance & Authorization Statement
+- **P1-2 Closeout Status:** Final Closeout Acceptance Hygiene Pass implemented and verified locally; ready for focused independent read-only closeout verification.
+- **`P1-3` Status:** **NOT STARTED and NOT AUTHORIZED.**
+- **Protected Governance Gates (Verified Unchanged):** `M00: NOT ACCEPTED`, `Gate Auth-2: CLOSED`, `Gate Auth-3: CLOSED`, `Gate Auth-4: CLOSED`, `DEC-13 Stage 2: CLOSED`, `AC-09: PENDING`, `isProductionReady: false`, `externalCadInteroperabilityVerified: false`.

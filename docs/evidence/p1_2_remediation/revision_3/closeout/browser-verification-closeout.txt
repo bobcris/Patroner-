@@ -1,0 +1,221 @@
+=== P1-2 CHECKPOINT 8 FINAL CLOSEOUT — LIVE CHROMIUM VERIFICATION ===
+Timestamp: 2026-11-20T09:52:11Z
+URL: http://localhost:3000
+### Result
+{"totalAssertions":24,"passedAssertions":24,"bodiceMetrics":{"tablet-768x1024":{"innerWidth":768,"innerHeight":1024,"scrollWidth":768,"bodyScrollWidth":768,"overflowPx":0,"offenderCount":0,"sampleOffenders":[]},"tablet-800x1280":{"innerWidth":800,"innerHeight":1280,"scrollWidth":800,"bodyScrollWidth":800,"overflowPx":0,"offenderCount":0,"sampleOffenders":[]},"tablet-1024x768":{"innerWidth":1024,"innerHeight":768,"scrollWidth":1024,"bodyScrollWidth":1024,"overflowPx":0,"offenderCount":0,"sampleOffenders":[]},"desktop-1440x900":{"innerWidth":1440,"innerHeight":900,"scrollWidth":1440,"bodyScrollWidth":1440,"overflowPx":0,"offenderCount":0,"sampleOffenders":[]}},"skirtMetrics":{"tablet-768x1024":{"innerWidth":768,"innerHeight":1024,"scrollWidth":768,"bodyScrollWidth":768,"overflowPx":0,"offenderCount":0,"sampleOffenders":[]},"tablet-800x1280":{"innerWidth":800,"innerHeight":1280,"scrollWidth":800,"bodyScrollWidth":800,"overflowPx":0,"offenderCount":0,"sampleOffenders":[]},"tablet-1024x768":{"innerWidth":1024,"innerHeight":768,"scrollWidth":1024,"bodyScrollWidth":1024,"overflowPx":0,"offenderCount":0,"sampleOffenders":[]},"desktop-1440x900":{"innerWidth":1440,"innerHeight":900,"scrollWidth":1440,"bodyScrollWidth":1440,"overflowPx":0,"offenderCount":0,"sampleOffenders":[]}},"bodiceChecks":{"printExists":true,"printDisabled":true,"printTitle":"[PATTERN_REVISION_NOT_APPROVED] [PATTERN_REVISION_NOT_APPROVED] Production export blocked by unapproved or out-of-sync pipeline stages: measurements (unverified: Anatomical measurements are unverified and require explicit verification.); finished-dimensions (stale: Underlying body measurements are not current.); drafting-configuration (stale: Finished dimensions are stale.); drafting (stale: Finished dimensions or drafting configuration is stale.); geometry-validation (stale: Geometry validation is stale because drafted geometry is stale.); assembly (stale: Assembly is stale because pattern drafting is stale.); production-snapshot (unapproved: Pattern revision 'rev-concept-bodice-01-v1-M' is in lifecycle state 'validated', expected 'approved'); measurements (invalid-provenance: Measurement origin 'standard-chart' is not permitted for production export); measurements (unapproved: Snapshot or active measurement set is not approved); pipeline-integrity-report (forged: Report contradicts recomputed active dependency evaluation — stage 'drafting' mismatch: generatedContentFingerprint ('81a61c62e1bc084a3cda3f6bd3c4024ca9afc07a8dd637602df8e5f4589c32d1' !== '533467cf844be4fa78629d271f697545a71b83be8da4b856b9f398fc45167acb'); stage 'geometry-validation' mismatch: generatedContentFingerprint ('198cdd5922f86f085a5e635d1338d40239a5744721b2487a0a2845cd9055ea26' !== 'b1ce921c6445f9adde813debc5aa40a0c922fe18367590c3a40dfd824cfe9494'); stage 'grading' mismatch: generatedContentFingerprint ('dbe19de14a1d4714fc2297fdb5cc35a65a2e2793b5ef0affcc7ac8e6c58864c9' !== 'fa711c45aa505eaab743775f19e47fd5e466a65c0c3f8d461e695d29ac0579b8'); stage 'assembly' mismatch: generatedContentFingerprint ('d61adb8f978221301d9e99f860f30f3e039457d931d0db36a07771ce7074cb75' !== '7ffb976738a3633120e69ab3a053e774049a6d649fa166e349f865f344c7fba8'); stage 'production-export' mismatch: generatedContentFingerprint ('5fc538aa2863be79c433f584d02e167149ade544891af470396aefd7c4b29524' !== 'c16f240c6f653a9f933397ec70170e0f564de96038518a9767b7b56ec40bc4a1')); grading-artifact (scope-mismatch: Grading artifact projectId/tenantId 'project-patroner-default'/'tenant-studio-local' does not match active scope 'project-patroner-default'); active-specification (unauthenticated: Production export requires verified Tier 3 authenticated_designer or Tier 4 cryptographic_principal approval; authority 'demonstration_fixture' is not permitted for manufacturing export)","printHintText":"Tech Pack print/export disabled: PATTERN_REVISION_NOT_APPROVED","dxfDisabled":true,"canonicalDisabled":true,"diagEnabled":true,"hasBustRow":true,"hasWaistRow":true,"hasHipRow":true,"printCallCount":0},"skirtChecks":{"printExists":true,"printDisabled":true,"printHintText":"Tech Pack print/export disabled: PATTERN_REVISION_NOT_APPROVED","dxfDisabled":true,"canonicalDisabled":true,"diagEnabled":true,"hasBustRow":false,"hasWaistRow":true,"hasHipRow":true,"canonicalDigest":"50fd45c55345d43b180b70dcb9cffcbcb15d0cf47fd088ea86304933162de31e","engineeringDigest":"cb1c4492633f66861546955c6194f0e39dd9980444bda9cf1ed6d70c8b2b2e4c","hasIsProductionReadyFalse":true,"hasExternalCadFalse":true,"printCallCount":0},"digestRect":{"top":2239,"bottom":2255,"viewportHeight":2316},"reSwitchBodice":{"innerWidth":768,"innerHeight":1024,"scrollWidth":768,"bodyScrollWidth":768,"overflowPx":0,"offenderCount":0,"sampleOffenders":[]},"pageErrors":[],"consoleErrors":[]}
+### Ran Playwright code
+```js
+await (async page => {
+  const results = [];
+  const pageErrors = [];
+  const consoleErrors = [];
+  page.on("pageerror", e => pageErrors.push(String(e)));
+  page.on("console", msg => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+
+  await page.evaluate(() => {
+    window.__printCallCount = 0;
+    window.print = () => { window.__printCallCount += 1; };
+  });
+
+  const assert = (cond, label, detail = "") => {
+    results.push({ pass: Boolean(cond), label, detail });
+    if (!cond) throw new Error("ASSERTION FAILED: " + label + " — " + detail);
+  };
+
+  async function measureOverflow() {
+    return await page.evaluate(() => {
+      const innerWidth = window.innerWidth;
+      const innerHeight = window.innerHeight;
+      const scrollWidth = document.documentElement.scrollWidth;
+      const bodyScrollWidth = document.body.scrollWidth;
+      const maxScroll = Math.max(scrollWidth, bodyScrollWidth);
+      const offenders = [];
+      for (const el of document.querySelectorAll("*")) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.right > innerWidth + 1) {
+          offenders.push({
+            tag: el.tagName,
+            testId: el.getAttribute("data-testid"),
+            right: Math.round(rect.right * 10) / 10,
+            cls: String(el.className || "").slice(0, 80)
+          });
+        }
+      }
+      return {
+        innerWidth,
+        innerHeight,
+        scrollWidth,
+        bodyScrollWidth,
+        overflowPx: Math.max(0, maxScroll - innerWidth),
+        offenderCount: offenders.length,
+        sampleOffenders: offenders.slice(0, 5)
+      };
+    });
+  }
+
+  async function selectConceptAndOpenM05(conceptRegex) {
+    await page.getByRole("button", { name: /1\. Studio/i }).first().click();
+    await page.waitForTimeout(300);
+    const conceptCard = page.locator("button, [role=\"button\"]").filter({ hasText: conceptRegex }).first();
+    await conceptCard.click();
+    await page.waitForTimeout(350);
+    await page.getByRole("button", { name: /5\. Production/i }).first().click();
+    await page.waitForTimeout(450);
+    await page.locator("[data-testid=\"m05-export-gate-banner\"]").waitFor({ state: "visible", timeout: 6000 });
+  }
+
+  // 1. Select Bodice and open Module 05
+  await selectConceptAndOpenM05(/Tailored Bodice|Bodice Block/i);
+
+  const viewports = [
+    { name: "tablet-768x1024", width: 768, height: 1024 },
+    { name: "tablet-800x1280", width: 800, height: 1280 },
+    { name: "tablet-1024x768", width: 1024, height: 768 },
+    { name: "desktop-1440x900", width: 1440, height: 900 }
+  ];
+
+  // Check Bodice across all 4 viewports
+  const bodiceMetrics = {};
+  for (const vp of viewports) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.waitForTimeout(250);
+    const m = await measureOverflow();
+    bodiceMetrics[vp.name] = m;
+    assert(m.overflowPx === 0 && m.offenderCount === 0, "Bodice " + vp.name + " zero horizontal overflow & zero clipped elements", JSON.stringify(m));
+
+    if (vp.name === "tablet-768x1024") {
+      await page.screenshot({ path: "docs/evidence/p1_2_remediation/revision_3/screenshots/closeout-01-tablet-768-bodice.png" });
+    }
+    if (vp.name === "tablet-800x1280") {
+      await page.screenshot({ path: "docs/evidence/p1_2_remediation/revision_3/screenshots/closeout-02-tablet-800-bodice.png" });
+    }
+  }
+
+  // Verify Bodice print parity, export gates, ease isolation, and governance
+  const bodiceChecks = await page.evaluate(() => {
+    const printBtn = document.querySelector("[data-testid=\"m05-print-tech-pack-btn\"]");
+    const printHint = document.querySelector("[data-testid=\"m05-print-blocked-hint\"]");
+    const dxfBtn = document.querySelector("[data-testid=\"m05-export-dxf-btn\"]");
+    const canonicalBtn = document.querySelector("[data-testid=\"m05-export-canonical-json-btn\"]");
+    const diagBtn = document.querySelector("[data-testid=\"m05-export-diagnostic-json-btn\"]");
+    return {
+      printExists: Boolean(printBtn),
+      printDisabled: Boolean(printBtn && printBtn.disabled),
+      printTitle: printBtn ? printBtn.getAttribute("title") : null,
+      printHintText: printHint ? printHint.textContent.trim() : null,
+      dxfDisabled: Boolean(dxfBtn && dxfBtn.disabled),
+      canonicalDisabled: Boolean(canonicalBtn && canonicalBtn.disabled),
+      diagEnabled: Boolean(diagBtn && !diagBtn.disabled),
+      hasBustRow: Boolean(document.querySelector("[data-testid=\"m05-ease-row-bust\"]")),
+      hasWaistRow: Boolean(document.querySelector("[data-testid=\"m05-ease-row-waist\"]")),
+      hasHipRow: Boolean(document.querySelector("[data-testid=\"m05-ease-row-lowHip\"]")),
+      printCallCount: window.__printCallCount
+    };
+  });
+  assert(bodiceChecks.printExists && bodiceChecks.printDisabled, "Bodice Print / Export Tech Pack disabled when blocked", JSON.stringify(bodiceChecks));
+  assert(Boolean(bodiceChecks.printHintText && bodiceChecks.printHintText.includes("PATTERN_REVISION_NOT_APPROVED")), "Bodice Print blocked hint visible", JSON.stringify(bodiceChecks));
+  assert(bodiceChecks.dxfDisabled && bodiceChecks.canonicalDisabled && bodiceChecks.diagEnabled, "Bodice DXF/Canonical disabled & Diagnostic enabled", JSON.stringify(bodiceChecks));
+  assert(bodiceChecks.hasBustRow && bodiceChecks.hasWaistRow && bodiceChecks.hasHipRow, "Bodice Ease Matrix contains Bust, Waist, Low Hip", JSON.stringify(bodiceChecks));
+  assert(bodiceChecks.printCallCount === 0, "window.print never invoked while blocked", String(bodiceChecks.printCallCount));
+
+  // 2. Switch Bodice -> Skirt and verify all 4 viewports
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await selectConceptAndOpenM05(/Skirt/i);
+
+  const skirtMetrics = {};
+  for (const vp of viewports) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.waitForTimeout(250);
+    const m = await measureOverflow();
+    skirtMetrics[vp.name] = m;
+    assert(m.overflowPx === 0 && m.offenderCount === 0, "Skirt " + vp.name + " zero horizontal overflow & zero clipped elements", JSON.stringify(m));
+    if (vp.name === "tablet-768x1024") {
+      await page.screenshot({ path: "docs/evidence/p1_2_remediation/revision_3/screenshots/closeout-04-tablet-768-skirt.png" });
+    }
+  }
+
+  // On Desktop 1440x900 Skirt: open DXF-AAMA & SHA-256 tab (role=tab)
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForTimeout(200);
+  const dxfTab = page.getByRole("tab", { name: /DXF-AAMA & SHA-256/i }).first();
+  await dxfTab.click();
+  await page.waitForTimeout(300);
+
+  const skirtChecks = await page.evaluate(() => {
+    const printBtn = document.querySelector("[data-testid=\"m05-print-tech-pack-btn\"]");
+    const printHint = document.querySelector("[data-testid=\"m05-print-blocked-hint\"]");
+    const dxfBtn = document.querySelector("[data-testid=\"m05-export-dxf-btn\"]");
+    const canonicalBtn = document.querySelector("[data-testid=\"m05-export-canonical-json-btn\"]");
+    const diagBtn = document.querySelector("[data-testid=\"m05-export-diagnostic-json-btn\"]");
+    const canonicalEl = document.querySelector("[data-testid=\"m05-canonical-digest-detail\"]");
+    const engEl = document.querySelector("[data-testid=\"m05-engineering-digest-detail\"]");
+    const bodyText = document.body.innerText;
+    return {
+      printExists: Boolean(printBtn),
+      printDisabled: Boolean(printBtn && printBtn.disabled),
+      printHintText: printHint ? printHint.textContent.trim() : null,
+      dxfDisabled: Boolean(dxfBtn && dxfBtn.disabled),
+      canonicalDisabled: Boolean(canonicalBtn && canonicalBtn.disabled),
+      diagEnabled: Boolean(diagBtn && !diagBtn.disabled),
+      hasBustRow: Boolean(document.querySelector("[data-testid=\"m05-ease-row-bust\"]")),
+      hasWaistRow: Boolean(document.querySelector("[data-testid=\"m05-ease-row-waist\"]")),
+      hasHipRow: Boolean(document.querySelector("[data-testid=\"m05-ease-row-lowHip\"]")),
+      canonicalDigest: canonicalEl ? canonicalEl.textContent.trim() : null,
+      engineeringDigest: engEl ? engEl.textContent.trim() : null,
+      hasIsProductionReadyFalse: bodyText.includes("isProductionReady: false"),
+      hasExternalCadFalse: bodyText.toLowerCase().includes("externalcadinteroperabilityverified: false"),
+      printCallCount: window.__printCallCount
+    };
+  });
+  assert(skirtChecks.printExists && skirtChecks.printDisabled, "Skirt Print / Export Tech Pack disabled when blocked", JSON.stringify(skirtChecks));
+  assert(skirtChecks.dxfDisabled && skirtChecks.canonicalDisabled && skirtChecks.diagEnabled, "Skirt DXF/Canonical disabled & Diagnostic enabled", JSON.stringify(skirtChecks));
+  assert(!skirtChecks.hasBustRow && skirtChecks.hasWaistRow && skirtChecks.hasHipRow, "Skirt Ease Matrix isolated (Waist & Low Hip only, NO Bust)", JSON.stringify(skirtChecks));
+  assert(Boolean(skirtChecks.canonicalDigest && /^[a-f0-9]{64}$/.test(skirtChecks.canonicalDigest)), "Canonical digest 64-hex visible", String(skirtChecks.canonicalDigest));
+  assert(Boolean(skirtChecks.engineeringDigest && /^[a-f0-9]{64}$/.test(skirtChecks.engineeringDigest)), "Engineering digest 64-hex visible", String(skirtChecks.engineeringDigest));
+  assert(skirtChecks.hasIsProductionReadyFalse && skirtChecks.hasExternalCadFalse, "Governance flags preserved", JSON.stringify(skirtChecks));
+  assert(skirtChecks.printCallCount === 0, "window.print never invoked", String(skirtChecks.printCallCount));
+
+  const neededHeight = await page.evaluate(() => {
+    const el = document.querySelector("[data-testid=\"m05-engineering-digest-detail\"]");
+    const r = el ? el.getBoundingClientRect() : null;
+    return r ? Math.ceil(r.bottom + window.scrollY + 60) : 1600;
+  });
+  await page.setViewportSize({ width: 1440, height: Math.max(1200, neededHeight) });
+  await page.waitForTimeout(200);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
+  const digestRect = await page.evaluate(() => {
+    const el = document.querySelector("[data-testid=\"m05-engineering-digest-detail\"]");
+    const r = el ? el.getBoundingClientRect() : null;
+    return r ? { top: Math.round(r.top), bottom: Math.round(r.bottom), viewportHeight: window.innerHeight } : null;
+  });
+  assert(Boolean(digestRect && digestRect.bottom <= digestRect.viewportHeight), "engineeringContentDigest unclipped inside capture viewport", JSON.stringify(digestRect));
+  await page.screenshot({
+    path: "docs/evidence/p1_2_remediation/revision_3/screenshots/closeout-03-desktop-1440-print-parity-and-digests.png"
+  });
+
+  // 3. Switch Skirt -> Bodice again at 768x1024 to verify category-switch layout stability
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await selectConceptAndOpenM05(/Tailored Bodice|Bodice Block/i);
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.waitForTimeout(250);
+  const reSwitchBodice = await measureOverflow();
+  assert(reSwitchBodice.overflowPx === 0 && reSwitchBodice.offenderCount === 0, "Re-switched Bodice 768x1024 zero overflow & zero clipped elements", JSON.stringify(reSwitchBodice));
+
+  assert(pageErrors.length === 0, "Zero uncaught page errors", JSON.stringify(pageErrors));
+  assert(consoleErrors.length === 0, "Zero console errors", JSON.stringify(consoleErrors));
+
+  return {
+    totalAssertions: results.length,
+    passedAssertions: results.filter(r => r.pass).length,
+    bodiceMetrics,
+    skirtMetrics,
+    bodiceChecks,
+    skirtChecks,
+    digestRect,
+    reSwitchBodice,
+    pageErrors,
+    consoleErrors
+  };
+})(page);
+```

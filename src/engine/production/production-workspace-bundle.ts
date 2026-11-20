@@ -428,6 +428,41 @@ export function executeGuardedCanonicalReleaseJsonExport(params: {
   };
 }
 
+export interface GuardedPrintExecutionResult {
+  readonly permitted: boolean;
+  readonly rejectionCode: string | null;
+  readonly blockingReasons: readonly string[];
+}
+
+/**
+ * Closeout Item 3: Direct-handler enforced Print / Export Tech Pack executor.
+ * Enforces exact parity with `canExportCanonicalReleaseJson` so neither the UI button
+ * nor direct handler invocation can trigger `window.print()` while release export is blocked.
+ */
+export function executeGuardedTechPackPrint(params: {
+  readonly bundle: M05ProductionPackageBundle | null;
+  readonly exportValidation: ProductionExportValidationResult | null | undefined;
+  readonly onPrint?: () => void;
+}): GuardedPrintExecutionResult {
+  const gate = evaluateProductionPackageExportGate({
+    bundle: params.bundle,
+    exportValidation: params.exportValidation
+  });
+  if (!gate.canExportCanonicalReleaseJson || !params.bundle) {
+    return {
+      permitted: false,
+      rejectionCode: gate.rejectionCode ?? 'EXPORT_BLOCKED',
+      blockingReasons: gate.canonicalJsonBlockingReasons
+    };
+  }
+  params.onPrint?.();
+  return {
+    permitted: true,
+    rejectionCode: null,
+    blockingReasons: []
+  };
+}
+
 /**
  * N-04: Builds a clearly labeled Non-Release Diagnostic Snapshot JSON for debugging/auditing
  * blocked or unapproved packages without misrepresenting them as production release artifacts.

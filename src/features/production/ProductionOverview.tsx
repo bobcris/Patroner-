@@ -31,6 +31,7 @@ import {
   AuthoritativeProductionWorkspaceBundle,
   buildAuthoritativeProductionWorkspaceBundle,
   DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
+  executeGuardedTechPackPrint,
   getApplicableEaseGirthsForCategory,
   getUnsupportedCategoryMessage,
   MeasurementApprovalStatus,
@@ -195,15 +196,24 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
     return Array.from(seen.entries()).slice(0, 6);
   }, [m05Package]);
 
+  const canPrintTechPack = workspaceBundle.exportGate.canExportCanonicalReleaseJson;
+  const printBlockedReason = canPrintTechPack
+    ? undefined
+    : `[${workspaceBundle.exportGate.rejectionCode ?? 'EXPORT_BLOCKED'}] ${workspaceBundle.exportGate.summaryReason ?? liveExportValidation.rejectionReason}`;
+
   const handlePrint = () => {
-    if (!workspaceBundle.exportGate.canExportCanonicalReleaseJson) {
+    const result = executeGuardedTechPackPrint({
+      bundle: m05Package,
+      exportValidation: liveExportValidation,
+      onPrint: () => window.print()
+    });
+    if (!result.permitted) {
       setExportWarning(
-        `[${workspaceBundle.exportGate.rejectionCode ?? 'EXPORT_BLOCKED'}] ${workspaceBundle.exportGate.summaryReason ?? liveExportValidation.rejectionReason}`
+        `[${result.rejectionCode ?? 'EXPORT_BLOCKED'}] ${result.blockingReasons[0] ?? liveExportValidation.rejectionReason}`
       );
       return;
     }
     setExportWarning(null);
-    window.print();
   };
 
   if (!isCadSupported || !m05Package) {
@@ -257,24 +267,42 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onNavigateToCAD}
-            icon={<Scissors className="w-4 h-4" />}
-          >
-            Review CAD Geometry
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handlePrint}
-            icon={<Printer className="w-4 h-4" />}
-            className="font-mono text-xs uppercase"
-          >
-            Print / Export Tech Pack
-          </Button>
+        <div className="flex flex-col items-start md:items-end gap-1.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onNavigateToCAD}
+              icon={<Scissors className="w-4 h-4" />}
+            >
+              Review CAD Geometry
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handlePrint}
+              disabled={!canPrintTechPack}
+              title={printBlockedReason ?? 'Print or export authoritative Tech Pack'}
+              aria-label={
+                canPrintTechPack
+                  ? 'Print / Export Tech Pack'
+                  : `Print / Export Tech Pack blocked: ${printBlockedReason}`
+              }
+              data-testid="m05-print-tech-pack-btn"
+              icon={<Printer className="w-4 h-4" />}
+              className="font-mono text-xs uppercase"
+            >
+              Print / Export Tech Pack
+            </Button>
+          </div>
+          {!canPrintTechPack && (
+            <span
+              data-testid="m05-print-blocked-hint"
+              className="text-[11px] font-mono text-amber-800"
+            >
+              Tech Pack print/export disabled: {workspaceBundle.exportGate.rejectionCode ?? 'EXPORT_BLOCKED'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -288,13 +316,13 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       {/* Independent Export Gate Status Banner */}
       <div
         data-testid="m05-export-gate-banner"
-        className={`p-3 rounded border text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+        className={`p-3 rounded border text-xs font-mono flex flex-col lg:flex-row lg:items-center justify-between gap-2 ${
           liveExportValidation.isExportPermitted
             ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
             : 'bg-amber-50 border-amber-300 text-amber-950'
         }`}
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1 break-words">
           <span className="font-bold">
             EXPORT GATE:{' '}
             {liveExportValidation.isExportPermitted
@@ -304,7 +332,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               : `BLOCKED [${liveExportValidation.rejectionCode ?? 'PENDING'}]`}
           </span>
           <span>•</span>
-          <span>
+          <span className="min-w-0 break-words">
             {liveExportValidation.isExportPermitted
               ? categoryPolicy.supportsMultiSizeGrading
                 ? `All 13 pipeline stages synchronized • Snapshot: ${liveSnapshot?.canonicalFingerprint.slice(0, 12)}… • Grading Artifact: ${liveGradingArtifact?.canonicalFingerprint.slice(0, 12)}…`
@@ -312,7 +340,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               : liveExportValidation.rejectionReason}
           </span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Badge variant={categoryPolicy.supportsMultiSizeGrading ? 'accent' : 'neutral'} size="sm">
             {categoryPolicy.policyMode}
           </Badge>

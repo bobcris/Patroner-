@@ -1,0 +1,5 @@
+=== Closeout Lint Check ===
+
+> react-example@0.0.0 lint
+> tsc --noEmit
+

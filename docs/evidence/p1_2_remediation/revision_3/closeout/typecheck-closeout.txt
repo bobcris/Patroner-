@@ -1,0 +1,2 @@
+=== Closeout TypeScript Check ===
+EXIT_CODE=0 (tsc --noEmit produced 0 errors)

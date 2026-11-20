@@ -305,7 +305,7 @@ export const ProductionPackagePanel: React.FC<ProductionPackagePanelProps> = ({
           ))}
         </div>
 
-        <div className="pb-2 flex flex-wrap items-center gap-2 shrink-0">
+        <div className="pb-2 flex flex-wrap items-center gap-2 min-w-0 max-w-full">
           <Button
             variant="outline"
             size="sm"

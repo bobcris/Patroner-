@@ -45,6 +45,7 @@ import {
   executeGuardedBaselineCommit,
   executeGuardedCanonicalReleaseJsonExport,
   executeGuardedDxfReleaseExport,
+  executeGuardedTechPackPrint,
   extractRevisionBaselineFromBundle,
   getApplicableEaseGirthsForCategory,
   ProductionExportValidationResult,
@@ -1013,4 +1014,178 @@ test('P1-2-REV3-N06-04: Identical engineering inputs under fresh vs stale upstre
   assert.match(fresh.m05Package!.engineeringContentDigest, /^[a-f0-9]{64}$/);
 });
 
+// ============================================================================
+// P1-2 CHECKPOINT 8 FINAL CLOSEOUT — PRINT / EXPORT TECH PACK PARITY TESTS
+// ============================================================================
 
+test('P1-2-CLOSEOUT-PRINT-01: executeGuardedTechPackPrint blocks direct execution across unapproved, stale, Gate 6 failing, invalid grading, and missing context, and permits execution only when all gates pass', () => {
+  let printCalls = 0;
+
+  // 1. Unapproved package -> blocked; onPrint NOT invoked
+  const unapprovedSkirt = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+  const unapprovedRes = executeGuardedTechPackPrint({
+    bundle: unapprovedSkirt.m05Package,
+    exportValidation: unapprovedSkirt.exportValidation,
+    onPrint: () => {
+      printCalls += 1;
+    }
+  });
+  assert.equal(unapprovedRes.permitted, false);
+  assert.equal(unapprovedRes.rejectionCode, 'PATTERN_REVISION_NOT_APPROVED');
+  assert.ok(unapprovedRes.blockingReasons.length > 0);
+  assert.equal(printCalls, 0);
+
+  // 2. Stale package -> blocked even if exportValidation were permitted
+  const baseline = extractRevisionBaselineFromBundle(unapprovedSkirt)!;
+  const staleSkirt = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M',
+    bomControls: { fabricRollWidthCm: 150 },
+    previousPackageRevision: baseline
+  });
+  const staleRes = executeGuardedTechPackPrint({
+    bundle: staleSkirt.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onPrint: () => {
+      printCalls += 1;
+    }
+  });
+  assert.equal(staleRes.permitted, false);
+  assert.equal(staleRes.rejectionCode, 'UPSTREAM_STAGE_STALE');
+  assert.equal(printCalls, 0);
+
+  // 3. Failing Gate 6 XXL package (Bodice Flat) -> blocked even if exportValidation were permitted
+  const flatShirtBundle = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: { ...BODICE_SPEC, id: 'spec-bodice-flat-print-test', sleeveEaseStrategy: 'flat' as const },
+    measurements: M_SIZES,
+    activeSize: 'M',
+    governance: { sleeveEaseStrategy: 'flat' }
+  });
+  const flatRes = executeGuardedTechPackPrint({
+    bundle: flatShirtBundle.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onPrint: () => {
+      printCalls += 1;
+    }
+  });
+  assert.equal(flatRes.permitted, false);
+  assert.equal(flatRes.rejectionCode, 'M05_VALIDATION_FAILED');
+  assert.equal(printCalls, 0);
+
+  // 4. Invalid grading or missing export validation -> blocked fail-closed
+  const invalidGradingRes = executeGuardedTechPackPrint({
+    bundle: { ...unapprovedSkirt.m05Package!, gradingArtifactError: 'Grading failed' },
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onPrint: () => {
+      printCalls += 1;
+    }
+  });
+  assert.equal(invalidGradingRes.permitted, false);
+  assert.equal(invalidGradingRes.rejectionCode, 'GRADING_VALIDATION_FAILED');
+
+  const missingValidationRes = executeGuardedTechPackPrint({
+    bundle: unapprovedSkirt.m05Package,
+    exportValidation: undefined,
+    onPrint: () => {
+      printCalls += 1;
+    }
+  });
+  assert.equal(missingValidationRes.permitted, false);
+  assert.equal(missingValidationRes.rejectionCode, 'EXPORT_VALIDATION_MISSING');
+  assert.equal(printCalls, 0);
+
+  // 5. All gates pass -> permitted and onPrint invoked exactly once
+  const permittedRes = executeGuardedTechPackPrint({
+    bundle: unapprovedSkirt.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    onPrint: () => {
+      printCalls += 1;
+    }
+  });
+  assert.equal(permittedRes.permitted, true);
+  assert.equal(permittedRes.rejectionCode, null);
+  assert.deepEqual(permittedRes.blockingReasons, []);
+  assert.equal(printCalls, 1);
+});
+
+test('P1-2-CLOSEOUT-PRINT-02: ProductionOverview disables Print / Export Tech Pack with blocked-state explanation when gated and enables it when all release gates pass', () => {
+  const blockedBundle = buildAuthoritativeProductionWorkspaceBundle({
+    designSpec: SKIRT_SPEC,
+    measurements: M_SIZES,
+    activeSize: 'M'
+  });
+  assert.equal(blockedBundle.exportGate.canExportCanonicalReleaseJson, false);
+
+  const blockedHtml = renderToStaticMarkup(
+    React.createElement(ProductionOverview, {
+      currentSpec: SKIRT_SPEC,
+      measurements: M_SIZES,
+      activeSize: 'M',
+      workspaceBundle: blockedBundle,
+      bomControls: DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
+      onNavigateToCAD: () => {}
+    })
+  );
+
+  const blockedBtnMatch = blockedHtml.match(/<button[^>]*data-testid="m05-print-tech-pack-btn"[^>]*>/);
+  assert.ok(blockedBtnMatch, 'Print / Export Tech Pack button must render with data-testid="m05-print-tech-pack-btn"');
+  assert.ok(
+    /\sdisabled(?:="")?(?=[\s>])/.test(blockedBtnMatch[0]),
+    'Print / Export Tech Pack button MUST be disabled when release export is blocked'
+  );
+  assert.ok(
+    blockedBtnMatch[0].includes('PATTERN_REVISION_NOT_APPROVED'),
+    'Blocked Print / Export Tech Pack button must expose blocking reason in title/aria-label'
+  );
+  assert.ok(
+    blockedHtml.includes('data-testid="m05-print-blocked-hint"'),
+    'Blocked Print / Export Tech Pack must display visible blocked-state explanation'
+  );
+
+  // When all release gates pass, Print / Export Tech Pack is enabled and blocked hint is absent
+  const permittedExportGate = evaluateProductionPackageExportGate({
+    bundle: blockedBundle.m05Package,
+    exportValidation: PERMITTED_EXPORT_VALIDATION
+  });
+  assert.equal(permittedExportGate.canExportCanonicalReleaseJson, true);
+
+  const permittedBundle = {
+    ...blockedBundle,
+    exportValidation: PERMITTED_EXPORT_VALIDATION,
+    exportGate: permittedExportGate
+  };
+
+  const permittedHtml = renderToStaticMarkup(
+    React.createElement(ProductionOverview, {
+      currentSpec: SKIRT_SPEC,
+      measurements: M_SIZES,
+      activeSize: 'M',
+      workspaceBundle: permittedBundle,
+      bomControls: DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
+      onNavigateToCAD: () => {}
+    })
+  );
+
+  const permittedBtnMatch = permittedHtml.match(/<button[^>]*data-testid="m05-print-tech-pack-btn"[^>]*>/);
+  assert.ok(permittedBtnMatch);
+  assert.ok(
+    !/\sdisabled(?:="")?(?=[\s>])/.test(permittedBtnMatch[0]),
+    'Print / Export Tech Pack button MUST be enabled when all release gates pass'
+  );
+  assert.ok(
+    !permittedHtml.includes('data-testid="m05-print-blocked-hint"'),
+    'Blocked-state hint must not appear when Print / Export Tech Pack is permitted'
+  );
+
+  // Confirm ProductionOverview invokes executeGuardedTechPackPrint in handler
+  const m05Src = fs.readFileSync(
+    path.resolve('src/features/production/ProductionOverview.tsx'),
+    'utf8'
+  );
+  assert.ok(m05Src.includes('executeGuardedTechPackPrint('));
+});
