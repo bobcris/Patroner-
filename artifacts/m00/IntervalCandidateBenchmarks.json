@@ -10,10 +10,10 @@
     "pythonHashSeed": "0"
   },
   "fullPopulation200kChecksRuntimeMs": {
-    "mpmathIvFractionMs": 4483.2,
-    "pythonFlintArbFmpqMs": 1811.64,
-    "decimalIntervalFractionMs": 2400.83,
-    "totalSuiteMs": 8708.68
+    "mpmathIvFractionMs": 4175.27,
+    "pythonFlintArbFmpqMs": 2057.12,
+    "decimalIntervalFractionMs": 2439.76,
+    "totalSuiteMs": 8685.56
   },
   "perCurveLatencyBenchmarks": {
     "metadata": {
@@ -39,30 +39,30 @@
     "sharedRationalPreprocessing": {
       "available": true,
       "iterations": 20,
-      "medianMs": 0.2679,
-      "p95Ms": 0.2848,
-      "maxMs": 0.3016,
+      "medianMs": 0.2772,
+      "p95Ms": 0.36,
+      "maxMs": 0.4958,
       "samplesMs": [
-        0.301585,
-        0.282666,
-        0.28484,
-        0.269011,
-        0.270188,
-        0.264751,
-        0.272391,
-        0.262679,
-        0.264328,
-        0.269745,
-        0.265509,
-        0.265301,
-        0.265137,
-        0.269081,
-        0.264177,
-        0.265182,
-        0.261962,
-        0.273857,
-        0.267646,
-        0.268127
+        0.3113,
+        0.288828,
+        0.297505,
+        0.282475,
+        0.313433,
+        0.359953,
+        0.3049,
+        0.270455,
+        0.266863,
+        0.267158,
+        0.271058,
+        0.495779,
+        0.266036,
+        0.303217,
+        0.326659,
+        0.271828,
+        0.270105,
+        0.266638,
+        0.264207,
+        0.264582
       ],
       "p95TargetMaxMs": 5.0,
       "withinP95Target5Ms": true,
@@ -73,30 +73,30 @@
       "mpmathIvFraction": {
         "available": true,
         "iterations": 20,
-        "medianMs": 0.1612,
-        "p95Ms": 0.1773,
-        "maxMs": 0.2314,
+        "medianMs": 0.1571,
+        "p95Ms": 0.2338,
+        "maxMs": 0.2532,
         "samplesMs": [
-          0.231385,
-          0.177257,
-          0.162092,
-          0.160464,
-          0.161234,
-          0.156045,
-          0.158976,
-          0.165855,
-          0.160463,
-          0.161199,
-          0.161572,
-          0.159476,
-          0.155376,
-          0.162766,
-          0.157528,
-          0.157225,
-          0.165209,
-          0.162431,
-          0.159914,
-          0.162933
+          0.233759,
+          0.25319,
+          0.161786,
+          0.153378,
+          0.181385,
+          0.163609,
+          0.15761,
+          0.153874,
+          0.165959,
+          0.157061,
+          0.155702,
+          0.156039,
+          0.160849,
+          0.153402,
+          0.151648,
+          0.157166,
+          0.153358,
+          0.151034,
+          0.160486,
+          0.154965
         ],
         "p95TargetMaxMs": 5.0,
         "withinP95Target5Ms": true,
@@ -106,30 +106,30 @@
       "pythonFlintArbFmpq": {
         "available": true,
         "iterations": 20,
-        "medianMs": 0.009,
-        "p95Ms": 0.0115,
-        "maxMs": 0.0601,
+        "medianMs": 0.0092,
+        "p95Ms": 0.0116,
+        "maxMs": 0.0585,
         "samplesMs": [
-          0.060082,
-          0.011507,
-          0.009866,
-          0.009161,
-          0.009561,
-          0.009326,
-          0.008968,
-          0.008938,
-          0.008966,
-          0.009026,
-          0.009074,
-          0.009157,
-          0.00892,
-          0.009002,
-          0.008961,
-          0.0091,
-          0.008864,
-          0.008937,
-          0.009062,
-          0.008929
+          0.05853,
+          0.011591,
+          0.009839,
+          0.00927,
+          0.009849,
+          0.009238,
+          0.009105,
+          0.009269,
+          0.009207,
+          0.009104,
+          0.00948,
+          0.009613,
+          0.009217,
+          0.009116,
+          0.009208,
+          0.009044,
+          0.009177,
+          0.009094,
+          0.009245,
+          0.009002
         ],
         "p95TargetMaxMs": 5.0,
         "withinP95Target5Ms": true,
@@ -139,30 +139,30 @@
       "decimalIntervalFraction": {
         "available": true,
         "iterations": 20,
-        "medianMs": 0.0431,
-        "p95Ms": 0.0476,
-        "maxMs": 0.0573,
+        "medianMs": 0.043,
+        "p95Ms": 0.0649,
+        "maxMs": 0.1071,
         "samplesMs": [
-          0.057255,
-          0.04738,
-          0.045167,
-          0.043524,
-          0.046843,
-          0.042835,
-          0.042466,
-          0.042955,
-          0.043206,
-          0.042852,
-          0.042658,
-          0.043299,
-          0.043466,
-          0.042813,
-          0.042959,
-          0.043169,
-          0.047637,
-          0.042922,
-          0.042169,
-          0.042245
+          0.064948,
+          0.107058,
+          0.044644,
+          0.043968,
+          0.043588,
+          0.042791,
+          0.042843,
+          0.042386,
+          0.042017,
+          0.050828,
+          0.042362,
+          0.042774,
+          0.043195,
+          0.042977,
+          0.042579,
+          0.043262,
+          0.042926,
+          0.042985,
+          0.043391,
+          0.043012
         ],
         "p95TargetMaxMs": 5.0,
         "withinP95Target5Ms": true,
@@ -182,21 +182,21 @@
     "candidateResults": {
       "mpmathIvFraction": {
         "present": true,
-        "p95Ms": 0.177257,
+        "p95Ms": 0.233759,
         "thresholdMs": 5.0,
         "passed": true,
         "reason": "OK"
       },
       "pythonFlintArbFmpq": {
         "present": true,
-        "p95Ms": 0.011507,
+        "p95Ms": 0.011591,
         "thresholdMs": 5.0,
         "passed": true,
         "reason": "OK"
       },
       "decimalIntervalFraction": {
         "present": true,
-        "p95Ms": 0.047637,
+        "p95Ms": 0.064948,
         "thresholdMs": 5.0,
         "passed": true,
         "reason": "OK"
@@ -207,11 +207,21 @@
   "packageId": "PKG-M00-04",
   "canonical63ContourBenchmarks": {
     "benchmarkName": "ADR-009 \u00a77.2 63 Canonical Garment Contours End-to-End Benchmark",
+    "algorithm": "ADR-009 \u00a75.1/\u00a75.2 Stage 2 Direct Bernstein-Basis Tri-State Offset Certification (113->170->336 bit)",
+    "normativeThresholdClassification": "PRODUCTION_ADOPTION_TARGET_AND_DECISION_TRIGGER (ADR-009 \u00a77.2 Decision 4: <5 ms per contour guides DEC-13 Stage 2 adoption vs C/PyO3 acceleration; M00.4 library qualification runtime budget target is <=50 ms per curve)",
+    "measurementProtocol": {
+      "coldStartRuns": 1,
+      "warmupRuns": 1,
+      "steadyStateMeasuredRepetitions": 5,
+      "zeroCrossContourCaching": true,
+      "zeroContoursSkipped": true
+    },
     "corpusPath": "/app/applet/artifacts/m00/CanonicalGarmentContours63.json",
     "corpusFileSha256": "c349969702d4b8a3072e2b821e35742a47982489abab06ae33ef83e26ff5ef04",
     "corpusSha256": "ab2d48c89b7bfb69cf4b5ffd289e5e720b48149b8c16371d6db285c8d6f75d2f",
     "contourCount": 63,
     "offsetDistanceCm": 1.5,
+    "regularityMarginEpsilon": 0.05,
     "missingBlocksDisclosure": [
       {
         "module": "src/engine/drafting/trouser-block.ts",
@@ -219,286 +229,292 @@
         "note": "Trouser block module is not implemented in the current repository; zero synthetic trouser contours were fabricated."
       }
     ],
-    "candidates": {
+    "coldStartSummary": {
       "mpmathIvFraction": {
         "available": true,
         "contoursEvaluated": 63,
-        "medianMs": 33.4344,
-        "p95Ms": 47.1573,
-        "maxMs": 49.9883,
+        "medianMs": 1.9737,
+        "p90Ms": 2.1651,
+        "p95Ms": 2.2012,
+        "p99Ms": 3.0588,
+        "maxMs": 3.0588,
         "samplesMs": [
-          35.636095,
-          36.184608,
-          36.9753,
-          40.018217,
-          41.496106,
-          41.605431,
-          34.668729,
-          36.346862,
-          38.14721,
-          38.712008,
-          41.246857,
-          41.29521,
-          34.318753,
-          34.652476,
-          36.504956,
-          39.189112,
-          39.431622,
-          42.154533,
-          38.887094,
-          45.373695,
-          41.179353,
-          44.500539,
-          47.157297,
-          48.449441,
-          38.741769,
-          38.33863,
-          46.833172,
-          44.833215,
-          47.934687,
-          49.988305,
-          30.729857,
-          29.20282,
-          28.241358,
-          33.434414,
-          29.288978,
-          28.878897,
-          29.004614,
-          30.352411,
-          28.679952,
-          28.814111,
-          29.206568,
-          38.100148,
-          32.373132,
-          27.779815,
-          28.090353,
-          28.43052,
-          27.830155,
-          27.215582,
-          12.263351,
-          9.943961,
-          10.969477,
-          10.529675,
-          9.828067,
-          10.252355,
-          10.576099,
-          10.739176,
-          9.910615,
-          9.430083,
-          10.731925,
-          9.45554,
-          9.494859,
-          9.978212,
-          10.656486
+          3.058766,
+          1.942668,
+          2.05912,
+          2.065464,
+          1.946708,
+          1.922021,
+          2.037811,
+          2.060088,
+          1.948728,
+          1.904947,
+          1.906058,
+          1.931943,
+          1.871495,
+          2.089491,
+          1.957844,
+          1.915323,
+          1.979034,
+          2.095699,
+          1.924356,
+          2.157212,
+          2.103527,
+          1.935604,
+          1.973717,
+          1.944324,
+          1.963569,
+          1.932612,
+          2.031873,
+          2.123005,
+          2.027126,
+          1.969634,
+          2.100694,
+          2.201234,
+          2.101777,
+          2.161324,
+          2.077136,
+          2.094683,
+          2.121408,
+          2.107032,
+          2.135534,
+          2.086646,
+          2.434008,
+          2.165097,
+          2.131818,
+          2.293055,
+          2.16601,
+          2.131076,
+          2.199124,
+          2.116022,
+          1.017131,
+          0.970451,
+          1.001587,
+          1.062326,
+          0.20408,
+          0.195459,
+          0.975801,
+          1.086312,
+          0.214108,
+          1.032105,
+          0.985157,
+          0.997559,
+          0.977781,
+          0.222716,
+          0.191999
         ],
         "p95TargetMaxMs": 5.0,
-        "withinP95Target5Ms": false,
+        "withinP95Target5Ms": true,
         "latencyBudgetMaxMs": 50.0,
         "withinLatencyBudget": true,
         "phaseBreakdownTotalMs": {
-          "preprocessingMs": 61.4573,
-          "backendInitMs": 0.6289,
-          "intervalArithmeticMs": 382.6394,
-          "rootIsolationMs": 1464.8031,
-          "certificationMs": 0.0203,
-          "serializationMs": 1.6658
+          "preprocessingMs": 0.6293,
+          "backendInitMs": 1.3154,
+          "intervalArithmeticMs": 108.0559,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.1004,
+          "serializationMs": 0.637
         },
         "phaseBreakdownMeanMsPerContour": {
-          "preprocessingMs": 0.975513,
-          "backendInitMs": 0.009983,
-          "intervalArithmeticMs": 6.073641,
-          "rootIsolationMs": 23.250844,
-          "certificationMs": 0.000322,
-          "serializationMs": 0.026441
+          "preprocessingMs": 0.009989,
+          "backendInitMs": 0.02088,
+          "intervalArithmeticMs": 1.715173,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.001593,
+          "serializationMs": 0.010111
         }
       },
       "pythonFlintArbFmpq": {
         "available": true,
         "contoursEvaluated": 63,
-        "medianMs": 5.3188,
-        "p95Ms": 6.783,
-        "maxMs": 7.6194,
+        "medianMs": 0.1695,
+        "p90Ms": 0.19,
+        "p95Ms": 0.1937,
+        "p99Ms": 0.3633,
+        "maxMs": 0.3633,
         "samplesMs": [
-          5.285097,
-          5.882559,
-          5.901734,
-          5.588604,
-          6.264302,
-          6.179312,
-          5.343369,
-          5.412172,
-          5.570633,
-          5.867199,
-          5.969079,
-          6.053618,
-          5.238184,
-          5.406699,
-          5.479416,
-          5.740611,
-          5.863441,
-          5.964918,
-          5.799064,
-          5.914114,
-          6.43683,
-          6.598153,
-          6.78301,
-          7.064779,
-          5.832977,
-          5.781297,
-          6.439824,
-          6.464694,
-          7.619438,
-          7.282207,
-          4.985624,
-          4.896912,
-          4.804515,
-          4.84054,
-          5.700646,
-          5.506098,
-          5.31876,
-          4.81477,
-          5.167976,
-          4.964045,
-          5.306959,
-          6.087617,
-          5.124594,
-          4.770274,
-          4.638814,
-          4.795878,
-          4.664224,
-          4.950309,
-          1.989168,
-          1.936238,
-          1.924372,
-          2.288393,
-          2.032275,
-          1.818818,
-          2.320259,
-          3.433696,
-          1.858162,
-          2.079394,
-          2.026334,
-          2.211953,
-          2.210446,
-          1.882499,
-          1.891219
+          0.363346,
+          0.176505,
+          0.176995,
+          0.15725,
+          0.193715,
+          0.1689,
+          0.17421,
+          0.162546,
+          0.177538,
+          0.163797,
+          0.164158,
+          0.178448,
+          0.15809,
+          0.161148,
+          0.15976,
+          0.16456,
+          0.188085,
+          0.176912,
+          0.163888,
+          0.192374,
+          0.174493,
+          0.164019,
+          0.218706,
+          0.165526,
+          0.168374,
+          0.167403,
+          0.163451,
+          0.177763,
+          0.169508,
+          0.160162,
+          0.189839,
+          0.185691,
+          0.183698,
+          0.183062,
+          0.181754,
+          0.189292,
+          0.188584,
+          0.18284,
+          0.181039,
+          0.178889,
+          0.215484,
+          0.192059,
+          0.183703,
+          0.190018,
+          0.183537,
+          0.175181,
+          0.178582,
+          0.186863,
+          0.102613,
+          0.122786,
+          0.102948,
+          0.094122,
+          0.039118,
+          0.034708,
+          0.091946,
+          0.097445,
+          0.036154,
+          0.089694,
+          0.089167,
+          0.088038,
+          0.094453,
+          0.035088,
+          0.033946
         ],
         "p95TargetMaxMs": 5.0,
-        "withinP95Target5Ms": false,
+        "withinP95Target5Ms": true,
         "latencyBudgetMaxMs": 50.0,
         "withinLatencyBudget": true,
         "phaseBreakdownTotalMs": {
-          "preprocessingMs": 61.4573,
-          "backendInitMs": 0.4684,
-          "intervalArithmeticMs": 56.7121,
-          "rootIsolationMs": 184.6664,
-          "certificationMs": 0.0124,
-          "serializationMs": 0.9526
+          "preprocessingMs": 0.6293,
+          "backendInitMs": 0.2854,
+          "intervalArithmeticMs": 8.3492,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.0786,
+          "serializationMs": 0.5115
         },
         "phaseBreakdownMeanMsPerContour": {
-          "preprocessingMs": 0.975513,
-          "backendInitMs": 0.007435,
-          "intervalArithmeticMs": 0.900191,
-          "rootIsolationMs": 2.931212,
-          "certificationMs": 0.000196,
-          "serializationMs": 0.015121
+          "preprocessingMs": 0.009989,
+          "backendInitMs": 0.004529,
+          "intervalArithmeticMs": 0.132527,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.001247,
+          "serializationMs": 0.00812
         }
       },
       "decimalIntervalFraction": {
         "available": true,
         "contoursEvaluated": 63,
-        "medianMs": 9.3855,
-        "p95Ms": 14.1752,
-        "maxMs": 15.9664,
+        "medianMs": 1.2495,
+        "p90Ms": 1.3692,
+        "p95Ms": 1.4201,
+        "p99Ms": 1.5722,
+        "maxMs": 1.5722,
         "samplesMs": [
-          10.901391,
-          10.730236,
-          11.054548,
-          11.51015,
-          12.562143,
-          12.006155,
-          10.222928,
-          10.347641,
-          10.869699,
-          11.497105,
-          11.728703,
-          11.890326,
-          10.133803,
-          10.333569,
-          10.690073,
-          11.871086,
-          12.215883,
-          15.966361,
-          11.423164,
-          11.538469,
-          11.940391,
-          12.900722,
-          13.858757,
-          14.770442,
-          11.387606,
-          12.728377,
-          12.87994,
-          13.067345,
-          14.454271,
-          14.175239,
-          9.064536,
-          8.719548,
-          8.783483,
-          9.385516,
-          8.955096,
-          8.636509,
-          8.461549,
-          8.863707,
-          9.016132,
-          8.846409,
-          8.576667,
-          10.06859,
-          9.270256,
-          8.880515,
-          8.449549,
-          8.805581,
-          8.858778,
-          8.370345,
-          2.893436,
-          3.101566,
-          3.054251,
-          3.021278,
-          3.044015,
-          3.225695,
-          2.977803,
-          3.069071,
-          3.017033,
-          3.034022,
-          3.54843,
-          3.648239,
-          3.33,
-          3.042987,
-          3.264172
+          1.43334,
+          1.216362,
+          1.223604,
+          1.205413,
+          1.193337,
+          1.218425,
+          1.244186,
+          1.314624,
+          1.207853,
+          1.263412,
+          1.199842,
+          1.18164,
+          1.197475,
+          1.204358,
+          1.197588,
+          1.22087,
+          1.299929,
+          1.26573,
+          1.297639,
+          1.420129,
+          1.24951,
+          1.374848,
+          1.279806,
+          1.344446,
+          1.326956,
+          1.223223,
+          1.259755,
+          1.259544,
+          1.224737,
+          1.233288,
+          1.317118,
+          1.317628,
+          1.326569,
+          1.287513,
+          1.523271,
+          1.572207,
+          1.403265,
+          1.317263,
+          1.316247,
+          1.309628,
+          1.369224,
+          1.280126,
+          1.315361,
+          1.324856,
+          1.317118,
+          1.34717,
+          1.325119,
+          1.331132,
+          0.634465,
+          0.633231,
+          0.68831,
+          0.658125,
+          0.097019,
+          0.100736,
+          0.634649,
+          0.633095,
+          0.09653,
+          0.633888,
+          0.639364,
+          0.634678,
+          0.716737,
+          0.102438,
+          0.093252
         ],
         "p95TargetMaxMs": 5.0,
-        "withinP95Target5Ms": false,
+        "withinP95Target5Ms": true,
         "latencyBudgetMaxMs": 50.0,
         "withinLatencyBudget": true,
         "phaseBreakdownTotalMs": {
-          "preprocessingMs": 61.4573,
-          "backendInitMs": 0.3855,
-          "intervalArithmeticMs": 100.0139,
-          "rootIsolationMs": 406.0388,
-          "certificationMs": 0.0138,
-          "serializationMs": 1.0319
+          "preprocessingMs": 0.6293,
+          "backendInitMs": 0.2219,
+          "intervalArithmeticMs": 67.5981,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.0925,
+          "serializationMs": 0.5374
         },
         "phaseBreakdownMeanMsPerContour": {
-          "preprocessingMs": 0.975513,
-          "backendInitMs": 0.006119,
-          "intervalArithmeticMs": 1.587523,
-          "rootIsolationMs": 6.44506,
-          "certificationMs": 0.00022,
-          "serializationMs": 0.01638
+          "preprocessingMs": 0.009989,
+          "backendInitMs": 0.003522,
+          "intervalArithmeticMs": 1.072986,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.001468,
+          "serializationMs": 0.00853
         }
       }
     },
-    "latencyQualificationEvaluation5Ms": {
-      "allThreeCandidatesVerifiedUnder5MsP95": false,
+    "coldStartLatencyEvaluation5Ms": {
+      "allThreeCandidatesVerifiedUnder5MsP95": true,
       "thresholdMs": 5.0,
       "requiredCandidates": [
         "mpmathIvFraction",
@@ -508,31 +524,389 @@
       "candidateResults": {
         "mpmathIvFraction": {
           "present": true,
-          "p95Ms": 47.157297,
+          "p95Ms": 2.201234,
           "thresholdMs": 5.0,
-          "passed": false,
-          "reason": "P95_EXCEEDS_THRESHOLD"
+          "passed": true,
+          "reason": "OK"
         },
         "pythonFlintArbFmpq": {
           "present": true,
-          "p95Ms": 6.78301,
+          "p95Ms": 0.193715,
           "thresholdMs": 5.0,
-          "passed": false,
-          "reason": "P95_EXCEEDS_THRESHOLD"
+          "passed": true,
+          "reason": "OK"
         },
         "decimalIntervalFraction": {
           "present": true,
-          "p95Ms": 14.175239,
+          "p95Ms": 1.420129,
           "thresholdMs": 5.0,
-          "passed": false,
-          "reason": "P95_EXCEEDS_THRESHOLD"
+          "passed": true,
+          "reason": "OK"
         }
       },
-      "failures": [
-        "mpmathIvFraction: P95_EXCEEDS_THRESHOLD (47.157297 ms > 5.0 ms)",
-        "pythonFlintArbFmpq: P95_EXCEEDS_THRESHOLD (6.783010 ms > 5.0 ms)",
-        "decimalIntervalFraction: P95_EXCEEDS_THRESHOLD (14.175239 ms > 5.0 ms)"
-      ]
+      "failures": []
+    },
+    "candidates": {
+      "mpmathIvFraction": {
+        "available": true,
+        "contoursEvaluated": 63,
+        "medianMs": 1.926,
+        "p90Ms": 2.1482,
+        "p95Ms": 2.1608,
+        "p99Ms": 2.1977,
+        "maxMs": 2.1977,
+        "samplesMs": [
+          1.95976,
+          1.897691,
+          1.897002,
+          1.887282,
+          1.905185,
+          2.007135,
+          1.89336,
+          1.941949,
+          1.940462,
+          1.900076,
+          1.895913,
+          1.913528,
+          1.90328,
+          1.919588,
+          1.922852,
+          1.936829,
+          2.037045,
+          1.924274,
+          1.935217,
+          1.971944,
+          1.925896,
+          1.926011,
+          2.043043,
+          1.928829,
+          1.971079,
+          1.907971,
+          1.909769,
+          1.903088,
+          2.133541,
+          2.040398,
+          2.112409,
+          2.148821,
+          2.122574,
+          2.197744,
+          2.148214,
+          2.073353,
+          2.160375,
+          2.108641,
+          2.160849,
+          2.134624,
+          2.177796,
+          2.139908,
+          2.122211,
+          2.126969,
+          2.114846,
+          2.108875,
+          2.163937,
+          2.085668,
+          0.986296,
+          0.994757,
+          0.966131,
+          0.958916,
+          0.19271,
+          0.189739,
+          0.98462,
+          0.976265,
+          0.20315,
+          0.958622,
+          0.966114,
+          0.966727,
+          0.964505,
+          0.198952,
+          0.193895
+        ],
+        "p95TargetMaxMs": 5.0,
+        "withinP95Target5Ms": true,
+        "latencyBudgetMaxMs": 50.0,
+        "withinLatencyBudget": true,
+        "phaseBreakdownTotalMs": {
+          "preprocessingMs": 0.6376,
+          "backendInitMs": 0.2334,
+          "intervalArithmeticMs": 107.494,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.103,
+          "serializationMs": 0.592
+        },
+        "phaseBreakdownMeanMsPerContour": {
+          "preprocessingMs": 0.010121,
+          "backendInitMs": 0.003705,
+          "intervalArithmeticMs": 1.706253,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.001635,
+          "serializationMs": 0.009397
+        },
+        "repetitionP95sMs": [
+          2.373,
+          2.2368,
+          2.3706,
+          2.1635,
+          2.4076
+        ],
+        "pooledRepetitionsSummary": {
+          "totalSamples": 315,
+          "p50Ms": 1.9351,
+          "p90Ms": 2.195,
+          "p95Ms": 2.3292,
+          "p99Ms": 2.5439,
+          "maxMs": 3.0728
+        }
+      },
+      "pythonFlintArbFmpq": {
+        "available": true,
+        "contoursEvaluated": 63,
+        "medianMs": 0.1657,
+        "p90Ms": 0.1837,
+        "p95Ms": 0.1871,
+        "p99Ms": 0.1961,
+        "maxMs": 0.1961,
+        "samplesMs": [
+          0.168599,
+          0.159178,
+          0.163863,
+          0.159439,
+          0.165771,
+          0.167919,
+          0.165035,
+          0.161748,
+          0.160493,
+          0.164485,
+          0.162064,
+          0.1642,
+          0.161529,
+          0.161756,
+          0.174577,
+          0.161113,
+          0.172477,
+          0.172184,
+          0.165673,
+          0.167171,
+          0.165448,
+          0.177958,
+          0.17292,
+          0.15863,
+          0.173319,
+          0.164629,
+          0.167443,
+          0.167683,
+          0.160651,
+          0.168176,
+          0.180717,
+          0.187142,
+          0.183747,
+          0.182353,
+          0.181662,
+          0.177607,
+          0.19607,
+          0.180762,
+          0.181516,
+          0.182792,
+          0.187004,
+          0.185712,
+          0.183181,
+          0.181766,
+          0.192832,
+          0.176148,
+          0.180802,
+          0.187056,
+          0.098256,
+          0.094389,
+          0.089763,
+          0.094854,
+          0.035449,
+          0.033913,
+          0.091538,
+          0.092342,
+          0.034384,
+          0.092082,
+          0.090297,
+          0.087889,
+          0.08917,
+          0.03336,
+          0.032541
+        ],
+        "p95TargetMaxMs": 5.0,
+        "withinP95Target5Ms": true,
+        "latencyBudgetMaxMs": 50.0,
+        "withinLatencyBudget": true,
+        "phaseBreakdownTotalMs": {
+          "preprocessingMs": 0.6376,
+          "backendInitMs": 0.1319,
+          "intervalArithmeticMs": 8.3124,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.0764,
+          "serializationMs": 0.5093
+        },
+        "phaseBreakdownMeanMsPerContour": {
+          "preprocessingMs": 0.010121,
+          "backendInitMs": 0.002094,
+          "intervalArithmeticMs": 0.131943,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.001212,
+          "serializationMs": 0.008084
+        },
+        "repetitionP95sMs": [
+          0.2189,
+          0.1997,
+          0.2115,
+          0.1924,
+          0.2272
+        ],
+        "pooledRepetitionsSummary": {
+          "totalSamples": 315,
+          "p50Ms": 0.1657,
+          "p90Ms": 0.196,
+          "p95Ms": 0.2127,
+          "p99Ms": 0.2413,
+          "maxMs": 0.3467
+        }
+      },
+      "decimalIntervalFraction": {
+        "available": true,
+        "contoursEvaluated": 63,
+        "medianMs": 1.2186,
+        "p90Ms": 1.3206,
+        "p95Ms": 1.3242,
+        "p99Ms": 1.35,
+        "maxMs": 1.35,
+        "samplesMs": [
+          1.218573,
+          1.187827,
+          1.188599,
+          1.204583,
+          1.193439,
+          1.189315,
+          1.228008,
+          1.202878,
+          1.220187,
+          1.196274,
+          1.22278,
+          1.203302,
+          1.259388,
+          1.204073,
+          1.197045,
+          1.350015,
+          1.236865,
+          1.25038,
+          1.226377,
+          1.217327,
+          1.212233,
+          1.239812,
+          1.212051,
+          1.199643,
+          1.2502,
+          1.221183,
+          1.220013,
+          1.220804,
+          1.191182,
+          1.203201,
+          1.299325,
+          1.32058,
+          1.287128,
+          1.304883,
+          1.306548,
+          1.319569,
+          1.292937,
+          1.315869,
+          1.339846,
+          1.322885,
+          1.306999,
+          1.324207,
+          1.284503,
+          1.331841,
+          1.32151,
+          1.306521,
+          1.296521,
+          1.294316,
+          0.626252,
+          0.616318,
+          0.616514,
+          0.618405,
+          0.10049,
+          0.095637,
+          0.617854,
+          0.613177,
+          0.098092,
+          0.621355,
+          0.617672,
+          0.643963,
+          0.608652,
+          0.09488,
+          0.096409
+        ],
+        "p95TargetMaxMs": 5.0,
+        "withinP95Target5Ms": true,
+        "latencyBudgetMaxMs": 50.0,
+        "withinLatencyBudget": true,
+        "phaseBreakdownTotalMs": {
+          "preprocessingMs": 0.6376,
+          "backendInitMs": 0.0437,
+          "intervalArithmeticMs": 66.5325,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.0852,
+          "serializationMs": 0.5325
+        },
+        "phaseBreakdownMeanMsPerContour": {
+          "preprocessingMs": 0.010121,
+          "backendInitMs": 0.000694,
+          "intervalArithmeticMs": 1.056071,
+          "rootIsolationMs": 0.0,
+          "certificationMs": 0.001352,
+          "serializationMs": 0.008453
+        },
+        "repetitionP95sMs": [
+          1.4931,
+          1.4041,
+          1.3797,
+          1.3652,
+          1.4846
+        ],
+        "pooledRepetitionsSummary": {
+          "totalSamples": 315,
+          "p50Ms": 1.2145,
+          "p90Ms": 1.3503,
+          "p95Ms": 1.4231,
+          "p99Ms": 1.5653,
+          "maxMs": 1.6486
+        }
+      }
+    },
+    "latencyQualificationEvaluation5Ms": {
+      "allThreeCandidatesVerifiedUnder5MsP95": true,
+      "thresholdMs": 5.0,
+      "requiredCandidates": [
+        "mpmathIvFraction",
+        "pythonFlintArbFmpq",
+        "decimalIntervalFraction"
+      ],
+      "candidateResults": {
+        "mpmathIvFraction": {
+          "present": true,
+          "p95Ms": 2.160849,
+          "thresholdMs": 5.0,
+          "passed": true,
+          "reason": "OK"
+        },
+        "pythonFlintArbFmpq": {
+          "present": true,
+          "p95Ms": 0.187056,
+          "thresholdMs": 5.0,
+          "passed": true,
+          "reason": "OK"
+        },
+        "decimalIntervalFraction": {
+          "present": true,
+          "p95Ms": 1.324207,
+          "thresholdMs": 5.0,
+          "passed": true,
+          "reason": "OK"
+        }
+      },
+      "failures": []
     },
     "perContourRecords": [
       {
@@ -543,23 +917,36 @@
         "variant": "dartStyle=waist,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "dedaa9e09814a7aec711261cc6c03499e9435ed84821481595587f5d549da232",
-        "preprocessingMs": 0.9109,
+        "preprocessingMs": 0.0118,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 35.6361,
-            "candidateKernelMs": 34.6881
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9598,
+            "candidateKernelMs": 1.9377,
+            "steadyStateMedianEndToEndMs": 1.9598
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.2851,
-            "candidateKernelMs": 4.358
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1686,
+            "candidateKernelMs": 0.1492,
+            "steadyStateMedianEndToEndMs": 0.1686
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.9014,
-            "candidateKernelMs": 9.9723
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.21,
+            "candidateKernelMs": 1.1845,
+            "steadyStateMedianEndToEndMs": 1.2186
           }
         }
       },
@@ -571,23 +958,36 @@
         "variant": "dartStyle=waist,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "bcaae4a8530064795dd84be1f1526be8a4f302d570aa3e28aa4b7885d6a39394",
-        "preprocessingMs": 1.0289,
+        "preprocessingMs": 0.0113,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 36.1846,
-            "candidateKernelMs": 35.1297
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9051,
+            "candidateKernelMs": 1.8858,
+            "steadyStateMedianEndToEndMs": 1.8977
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.8826,
-            "candidateKernelMs": 4.8347
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1648,
+            "candidateKernelMs": 0.1459,
+            "steadyStateMedianEndToEndMs": 0.1592
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.7302,
-            "candidateKernelMs": 9.6864
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.1858,
+            "candidateKernelMs": 1.1663,
+            "steadyStateMedianEndToEndMs": 1.1878
           }
         }
       },
@@ -599,23 +999,36 @@
         "variant": "dartStyle=waist,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "696df293dfde27b15cdd47222e92c0ad488e578d6acb81a761978e320fd38674",
-        "preprocessingMs": 0.9368,
+        "preprocessingMs": 0.0106,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 36.9753,
-            "candidateKernelMs": 35.9975
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.8814,
+            "candidateKernelMs": 1.8628,
+            "steadyStateMedianEndToEndMs": 1.897
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.9017,
-            "candidateKernelMs": 4.953
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1595,
+            "candidateKernelMs": 0.1419,
+            "steadyStateMedianEndToEndMs": 0.1639
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.0545,
-            "candidateKernelMs": 10.1019
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.1929,
+            "candidateKernelMs": 1.1746,
+            "steadyStateMedianEndToEndMs": 1.1886
           }
         }
       },
@@ -627,23 +1040,36 @@
         "variant": "dartStyle=waist,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "1c2c833d3fac280bd6cdfce1cfee1a08473601e49ef41972feac977e3e467293",
-        "preprocessingMs": 0.888,
+        "preprocessingMs": 0.0099,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 40.0182,
-            "candidateKernelMs": 39.1049
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9491,
+            "candidateKernelMs": 1.9304,
+            "steadyStateMedianEndToEndMs": 1.8873
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.5886,
-            "candidateKernelMs": 4.6888
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1639,
+            "candidateKernelMs": 0.1462,
+            "steadyStateMedianEndToEndMs": 0.1594
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.5102,
-            "candidateKernelMs": 10.6072
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2046,
+            "candidateKernelMs": 1.1866,
+            "steadyStateMedianEndToEndMs": 1.2046
           }
         }
       },
@@ -655,23 +1081,36 @@
         "variant": "dartStyle=waist,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "e10f6f8bd76dab7eb4fe6dcd3e5c3b89423b592f06dea0d73a3bd0d02a00e46b",
-        "preprocessingMs": 0.8866,
+        "preprocessingMs": 0.01,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 41.4961,
-            "candidateKernelMs": 40.5803
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9052,
+            "candidateKernelMs": 1.8865,
+            "steadyStateMedianEndToEndMs": 1.9052
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.2643,
-            "candidateKernelMs": 5.3592
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1658,
+            "candidateKernelMs": 0.1475,
+            "steadyStateMedianEndToEndMs": 0.1658
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.5621,
-            "candidateKernelMs": 11.6158
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2145,
+            "candidateKernelMs": 1.196,
+            "steadyStateMedianEndToEndMs": 1.1934
           }
         }
       },
@@ -683,23 +1122,36 @@
         "variant": "dartStyle=waist,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "eaf0e2c7dc31253278c3f498c5fa120f9a2dcac99e884c99b90b235ff5259e2b",
-        "preprocessingMs": 0.8924,
+        "preprocessingMs": 0.0085,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 41.6054,
-            "candidateKernelMs": 40.6865
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0071,
+            "candidateKernelMs": 1.9893,
+            "steadyStateMedianEndToEndMs": 2.0071
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.1793,
-            "candidateKernelMs": 5.2707
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1642,
+            "candidateKernelMs": 0.1482,
+            "steadyStateMedianEndToEndMs": 0.1679
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.0062,
-            "candidateKernelMs": 11.1007
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2438,
+            "candidateKernelMs": 1.2256,
+            "steadyStateMedianEndToEndMs": 1.1893
           }
         }
       },
@@ -711,23 +1163,36 @@
         "variant": "dartStyle=side-bust,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "db9a812540e06e90db22124629e0985ce89d85b945bc5b5e7c3e74a22522f82a",
-        "preprocessingMs": 1.039,
+        "preprocessingMs": 0.01,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 34.6687,
-            "candidateKernelMs": 33.6008
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.912,
+            "candidateKernelMs": 1.8931,
+            "steadyStateMedianEndToEndMs": 1.8934
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.3434,
-            "candidateKernelMs": 4.2936
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.165,
+            "candidateKernelMs": 0.1466,
+            "steadyStateMedianEndToEndMs": 0.165
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.2229,
-            "candidateKernelMs": 9.1733
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.26,
+            "candidateKernelMs": 1.2415,
+            "steadyStateMedianEndToEndMs": 1.228
           }
         }
       },
@@ -739,23 +1204,36 @@
         "variant": "dartStyle=side-bust,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "af008b8f26df1040f32f0fb5cc956deb7e6fd1a9b9d581d36cb72d457213aed6",
-        "preprocessingMs": 0.8666,
+        "preprocessingMs": 0.0093,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 36.3469,
-            "candidateKernelMs": 35.4485
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9098,
+            "candidateKernelMs": 1.892,
+            "steadyStateMedianEndToEndMs": 1.9419
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.4122,
-            "candidateKernelMs": 4.533
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1611,
+            "candidateKernelMs": 0.1447,
+            "steadyStateMedianEndToEndMs": 0.1617
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.3476,
-            "candidateKernelMs": 9.4704
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2675,
+            "candidateKernelMs": 1.2498,
+            "steadyStateMedianEndToEndMs": 1.2029
           }
         }
       },
@@ -767,23 +1245,36 @@
         "variant": "dartStyle=side-bust,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "f13928eef09210b660b8e0f6e5894ddf77ea04408e1af32fcc11abad72459491",
-        "preprocessingMs": 0.8741,
+        "preprocessingMs": 0.0098,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 38.1472,
-            "candidateKernelMs": 37.2418
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0751,
+            "candidateKernelMs": 2.0531,
+            "steadyStateMedianEndToEndMs": 1.9405
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.5706,
-            "candidateKernelMs": 4.6795
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1729,
+            "candidateKernelMs": 0.1493,
+            "steadyStateMedianEndToEndMs": 0.1605
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.8697,
-            "candidateKernelMs": 9.977
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2202,
+            "candidateKernelMs": 1.2015,
+            "steadyStateMedianEndToEndMs": 1.2202
           }
         }
       },
@@ -795,23 +1286,36 @@
         "variant": "dartStyle=side-bust,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "a387ecc6bd5f70ec6927ea18ca892e8873ca69def22a07d8a0090e25ba360c6d",
-        "preprocessingMs": 0.8836,
+        "preprocessingMs": 0.0113,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 38.712,
-            "candidateKernelMs": 37.8034
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.8922,
+            "candidateKernelMs": 1.8705,
+            "steadyStateMedianEndToEndMs": 1.9001
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.8672,
-            "candidateKernelMs": 4.9658
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1636,
+            "candidateKernelMs": 0.144,
+            "steadyStateMedianEndToEndMs": 0.1645
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.4971,
-            "candidateKernelMs": 10.5992
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2029,
+            "candidateKernelMs": 1.1828,
+            "steadyStateMedianEndToEndMs": 1.1963
           }
         }
       },
@@ -823,23 +1327,36 @@
         "variant": "dartStyle=side-bust,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "77f03cc149696fa4d75c2a6b79727792843c0cfe7004945434f23ab984740fd1",
-        "preprocessingMs": 0.8919,
+        "preprocessingMs": 0.0105,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 41.2469,
-            "candidateKernelMs": 40.3249
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.8959,
+            "candidateKernelMs": 1.8761,
+            "steadyStateMedianEndToEndMs": 1.8959
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.9691,
-            "candidateKernelMs": 5.0644
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1621,
+            "candidateKernelMs": 0.1436,
+            "steadyStateMedianEndToEndMs": 0.1621
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.7287,
-            "candidateKernelMs": 10.8235
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2457,
+            "candidateKernelMs": 1.2273,
+            "steadyStateMedianEndToEndMs": 1.2228
           }
         }
       },
@@ -851,23 +1368,36 @@
         "variant": "dartStyle=side-bust,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "0224fc30de78d837f20f37b588c4f1af5f0186274efac676671b1b92be765cc6",
-        "preprocessingMs": 0.8424,
+        "preprocessingMs": 0.0097,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 41.2952,
-            "candidateKernelMs": 40.4298
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9122,
+            "candidateKernelMs": 1.8924,
+            "steadyStateMedianEndToEndMs": 1.9135
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.0536,
-            "candidateKernelMs": 5.195
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1746,
+            "candidateKernelMs": 0.1563,
+            "steadyStateMedianEndToEndMs": 0.1642
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.8903,
-            "candidateKernelMs": 11.0332
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2033,
+            "candidateKernelMs": 1.1852,
+            "steadyStateMedianEndToEndMs": 1.2033
           }
         }
       },
@@ -879,23 +1409,36 @@
         "variant": "dartStyle=french,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "f8ec7fce794612f1a8cab442c8622ea24d7a8267980828deed87b65c9243442f",
-        "preprocessingMs": 0.9634,
+        "preprocessingMs": 0.0093,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 34.3188,
-            "candidateKernelMs": 33.33
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.8802,
+            "candidateKernelMs": 1.8616,
+            "steadyStateMedianEndToEndMs": 1.9033
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.2382,
-            "candidateKernelMs": 4.2634
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1595,
+            "candidateKernelMs": 0.1427,
+            "steadyStateMedianEndToEndMs": 0.1615
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.1338,
-            "candidateKernelMs": 9.1595
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.3017,
+            "candidateKernelMs": 1.2837,
+            "steadyStateMedianEndToEndMs": 1.2594
           }
         }
       },
@@ -907,23 +1450,36 @@
         "variant": "dartStyle=french,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "f1e822d05ea56cd30081af729845dc54d5f8f2e926bf8aa08a388d0c69efdf1f",
-        "preprocessingMs": 0.8738,
+        "preprocessingMs": 0.0101,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 34.6525,
-            "candidateKernelMs": 33.7639
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0373,
+            "candidateKernelMs": 2.0168,
+            "steadyStateMedianEndToEndMs": 1.9196
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.4067,
-            "candidateKernelMs": 4.5207
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1735,
+            "candidateKernelMs": 0.1512,
+            "steadyStateMedianEndToEndMs": 0.1618
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.3336,
-            "candidateKernelMs": 9.449
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2041,
+            "candidateKernelMs": 1.1857,
+            "steadyStateMedianEndToEndMs": 1.2041
           }
         }
       },
@@ -935,23 +1491,36 @@
         "variant": "dartStyle=french,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "46567e94a667e08ead153ca3f8da395c970a9fdb50fc2202791cb8a4927cd6f4",
-        "preprocessingMs": 0.8662,
+        "preprocessingMs": 0.0104,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 36.505,
-            "candidateKernelMs": 35.6083
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9229,
+            "candidateKernelMs": 1.9037,
+            "steadyStateMedianEndToEndMs": 1.9229
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.4794,
-            "candidateKernelMs": 4.6015
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.2317,
+            "candidateKernelMs": 0.2126,
+            "steadyStateMedianEndToEndMs": 0.1746
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.6901,
-            "candidateKernelMs": 9.8118
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.197,
+            "candidateKernelMs": 1.178,
+            "steadyStateMedianEndToEndMs": 1.197
           }
         }
       },
@@ -963,23 +1532,36 @@
         "variant": "dartStyle=french,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "b503173da5fd7ec1142a23622c6fc442607b54379cc1bec5ef54bc19e1887085",
-        "preprocessingMs": 1.0544,
+        "preprocessingMs": 0.0095,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 39.1891,
-            "candidateKernelMs": 38.1141
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9368,
+            "candidateKernelMs": 1.9187,
+            "steadyStateMedianEndToEndMs": 1.9368
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.7406,
-            "candidateKernelMs": 4.6703
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1611,
+            "candidateKernelMs": 0.1441,
+            "steadyStateMedianEndToEndMs": 0.1611
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.8711,
-            "candidateKernelMs": 10.7839
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.3503,
+            "candidateKernelMs": 1.3318,
+            "steadyStateMedianEndToEndMs": 1.35
           }
         }
       },
@@ -991,23 +1573,36 @@
         "variant": "dartStyle=french,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "016e357e8693504133ed5698a36bfbbdd341a1f792f09e7fa4db59b311d3ee81",
-        "preprocessingMs": 0.9087,
+        "preprocessingMs": 0.0102,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 39.4316,
-            "candidateKernelMs": 38.4931
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9142,
+            "candidateKernelMs": 1.8943,
+            "steadyStateMedianEndToEndMs": 2.037
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.8634,
-            "candidateKernelMs": 4.9421
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1682,
+            "candidateKernelMs": 0.1501,
+            "steadyStateMedianEndToEndMs": 0.1725
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.2159,
-            "candidateKernelMs": 11.2931
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2369,
+            "candidateKernelMs": 1.2185,
+            "steadyStateMedianEndToEndMs": 1.2369
           }
         }
       },
@@ -1019,23 +1614,36 @@
         "variant": "dartStyle=french,ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "4af157635bfc70e981ca3017bcdbe2c7fa88592f770fd722aa9ae06791e059b2",
-        "preprocessingMs": 0.8723,
+        "preprocessingMs": 0.0111,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 42.1545,
-            "candidateKernelMs": 41.2564
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.8979,
+            "candidateKernelMs": 1.8775,
+            "steadyStateMedianEndToEndMs": 1.9243
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.9649,
-            "candidateKernelMs": 5.0808
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1682,
+            "candidateKernelMs": 0.1491,
+            "steadyStateMedianEndToEndMs": 0.1722
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 15.9664,
-            "candidateKernelMs": 15.0611
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.205,
+            "candidateKernelMs": 1.1856,
+            "steadyStateMedianEndToEndMs": 1.2504
           }
         }
       },
@@ -1047,23 +1655,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "530c9d5444531cef7ae0257463054da79fa9206cb3b03ac0667d3ff47db79a4c",
-        "preprocessingMs": 0.9259,
+        "preprocessingMs": 0.0106,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 38.8871,
-            "candidateKernelMs": 37.9433
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9352,
+            "candidateKernelMs": 1.9164,
+            "steadyStateMedianEndToEndMs": 1.9352
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.7991,
-            "candidateKernelMs": 4.8623
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1657,
+            "candidateKernelMs": 0.1471,
+            "steadyStateMedianEndToEndMs": 0.1657
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.4232,
-            "candidateKernelMs": 10.486
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2315,
+            "candidateKernelMs": 1.2126,
+            "steadyStateMedianEndToEndMs": 1.2264
           }
         }
       },
@@ -1075,23 +1696,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "099adcce3bea2dddd25bfeceff917357611f39dab090a0e87c35c3fe8340dc5e",
-        "preprocessingMs": 0.9146,
+        "preprocessingMs": 0.0099,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 45.3737,
-            "candidateKernelMs": 44.4274
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9719,
+            "candidateKernelMs": 1.9534,
+            "steadyStateMedianEndToEndMs": 1.9719
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.9141,
-            "candidateKernelMs": 4.9875
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.159,
+            "candidateKernelMs": 0.1422,
+            "steadyStateMedianEndToEndMs": 0.1672
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.5385,
-            "candidateKernelMs": 10.6133
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2173,
+            "candidateKernelMs": 1.2,
+            "steadyStateMedianEndToEndMs": 1.2173
           }
         }
       },
@@ -1103,23 +1737,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "d6c99cf3d34bb0a32e90d082460549b2ab8d610a11a2e8218f07930ac0b4ea79",
-        "preprocessingMs": 0.9223,
+        "preprocessingMs": 0.0106,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 41.1794,
-            "candidateKernelMs": 40.2366
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9345,
+            "candidateKernelMs": 1.9143,
+            "steadyStateMedianEndToEndMs": 1.9259
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.4368,
-            "candidateKernelMs": 5.5007
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1632,
+            "candidateKernelMs": 0.1445,
+            "steadyStateMedianEndToEndMs": 0.1654
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.9404,
-            "candidateKernelMs": 11.0074
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2122,
+            "candidateKernelMs": 1.1932,
+            "steadyStateMedianEndToEndMs": 1.2122
           }
         }
       },
@@ -1131,23 +1778,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "98a074a64d2d3cf8e2d984477a9a9cf2f2603dd4a589209764b5ddd66d434318",
-        "preprocessingMs": 0.9095,
+        "preprocessingMs": 0.0094,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 44.5005,
-            "candidateKernelMs": 43.5648
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9172,
+            "candidateKernelMs": 1.8989,
+            "steadyStateMedianEndToEndMs": 1.926
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.5982,
-            "candidateKernelMs": 5.6753
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.196,
+            "candidateKernelMs": 0.1785,
+            "steadyStateMedianEndToEndMs": 0.178
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.9007,
-            "candidateKernelMs": 11.9798
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.1922,
+            "candidateKernelMs": 1.1747,
+            "steadyStateMedianEndToEndMs": 1.2398
           }
         }
       },
@@ -1159,23 +1819,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "36d155352ad24cd744dd196aab9101760a0a8dd61fb1363e179b272fb6c0a55e",
-        "preprocessingMs": 0.9057,
+        "preprocessingMs": 0.0096,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 47.1573,
-            "candidateKernelMs": 46.2273
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.1342,
+            "candidateKernelMs": 2.1142,
+            "steadyStateMedianEndToEndMs": 2.043
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.783,
-            "candidateKernelMs": 5.8637
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.2339,
+            "candidateKernelMs": 0.2155,
+            "steadyStateMedianEndToEndMs": 0.1729
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 13.8588,
-            "candidateKernelMs": 12.9349
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.261,
+            "candidateKernelMs": 1.2432,
+            "steadyStateMedianEndToEndMs": 1.2121
           }
         }
       },
@@ -1187,23 +1860,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "a8b017c52d440eb52f511335aa639a2c7121b2e4ce7a94227d53fe18b224fd59",
-        "preprocessingMs": 0.9694,
+        "preprocessingMs": 0.0111,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 48.4494,
-            "candidateKernelMs": 47.4608
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0056,
+            "candidateKernelMs": 1.9851,
+            "steadyStateMedianEndToEndMs": 1.9288
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 7.0648,
-            "candidateKernelMs": 6.0845
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1643,
+            "candidateKernelMs": 0.1459,
+            "steadyStateMedianEndToEndMs": 0.1586
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 14.7704,
-            "candidateKernelMs": 13.7709
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.1996,
+            "candidateKernelMs": 1.1805,
+            "steadyStateMedianEndToEndMs": 1.1996
           }
         }
       },
@@ -1215,23 +1901,36 @@
         "variant": "ease=fitted",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "7e7dca52d5309f018897f353c84985653f32166a2b120c7eac403094ab6c2190",
-        "preprocessingMs": 0.9321,
+        "preprocessingMs": 0.0104,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 38.7418,
-            "candidateKernelMs": 37.7907
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9606,
+            "candidateKernelMs": 1.9417,
+            "steadyStateMedianEndToEndMs": 1.9711
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.833,
-            "candidateKernelMs": 4.8889
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1624,
+            "candidateKernelMs": 0.1447,
+            "steadyStateMedianEndToEndMs": 0.1733
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.3876,
-            "candidateKernelMs": 10.444
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2074,
+            "candidateKernelMs": 1.1835,
+            "steadyStateMedianEndToEndMs": 1.2502
           }
         }
       },
@@ -1243,23 +1942,36 @@
         "variant": "ease=fitted",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "590fa2e4e448f69a24448c5d5205d926c841788e5747389740cd622664373c9e",
-        "preprocessingMs": 0.8851,
+        "preprocessingMs": 0.0106,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 38.3386,
-            "candidateKernelMs": 37.4351
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.908,
+            "candidateKernelMs": 1.8896,
+            "steadyStateMedianEndToEndMs": 1.908
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.7813,
-            "candidateKernelMs": 4.8846
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1646,
+            "candidateKernelMs": 0.1461,
+            "steadyStateMedianEndToEndMs": 0.1646
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.7284,
-            "candidateKernelMs": 11.804
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2284,
+            "candidateKernelMs": 1.2085,
+            "steadyStateMedianEndToEndMs": 1.2212
           }
         }
       },
@@ -1271,23 +1983,36 @@
         "variant": "ease=fitted",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "c7928d2134fa5e90297e2261b8263df61cc3c08c7dfaadbebc3dac1fed85b7ee",
-        "preprocessingMs": 0.9513,
+        "preprocessingMs": 0.0118,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 46.8332,
-            "candidateKernelMs": 45.8475
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9764,
+            "candidateKernelMs": 1.9554,
+            "steadyStateMedianEndToEndMs": 1.9098
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.4398,
-            "candidateKernelMs": 5.4748
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1727,
+            "candidateKernelMs": 0.1531,
+            "steadyStateMedianEndToEndMs": 0.1674
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.8799,
-            "candidateKernelMs": 11.9009
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.22,
+            "candidateKernelMs": 1.1999,
+            "steadyStateMedianEndToEndMs": 1.22
           }
         }
       },
@@ -1299,23 +2024,36 @@
         "variant": "ease=fitted",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "d9e3ab7390332a4b4cca2cb4611fb2deab5611a663f3b12c8c90e78942fb3ffe",
-        "preprocessingMs": 0.9385,
+        "preprocessingMs": 0.0096,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 44.8332,
-            "candidateKernelMs": 43.8627
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.9845,
+            "candidateKernelMs": 1.9659,
+            "steadyStateMedianEndToEndMs": 1.9031
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.4647,
-            "candidateKernelMs": 5.5075
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1671,
+            "candidateKernelMs": 0.1494,
+            "steadyStateMedianEndToEndMs": 0.1677
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 13.0673,
-            "candidateKernelMs": 12.1048
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2153,
+            "candidateKernelMs": 1.1977,
+            "steadyStateMedianEndToEndMs": 1.2208
           }
         }
       },
@@ -1327,23 +2065,36 @@
         "variant": "ease=fitted",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "3f24d3402041309af2a76ab3a5e577aa1551535bd3c5111d7fe44820cb57d960",
-        "preprocessingMs": 0.937,
+        "preprocessingMs": 0.0097,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 47.9347,
-            "candidateKernelMs": 46.9673
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.2835,
+            "candidateKernelMs": 2.2624,
+            "steadyStateMedianEndToEndMs": 2.1335
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 7.6194,
-            "candidateKernelMs": 6.656
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1765,
+            "candidateKernelMs": 0.1593,
+            "steadyStateMedianEndToEndMs": 0.1607
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 14.4543,
-            "candidateKernelMs": 13.4856
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2258,
+            "candidateKernelMs": 1.2028,
+            "steadyStateMedianEndToEndMs": 1.1912
           }
         }
       },
@@ -1355,23 +2106,36 @@
         "variant": "ease=fitted",
         "segmentCount": 9,
         "cubicBezierCount": 2,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "410b1da63e236df0e874a1c1f1d4531975804ae50cd5df22e845885f0ef8a049",
-        "preprocessingMs": 0.919,
+        "preprocessingMs": 0.0113,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 49.9883,
-            "candidateKernelMs": 49.0381
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0404,
+            "candidateKernelMs": 2.0202,
+            "steadyStateMedianEndToEndMs": 2.0404
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 7.2822,
-            "candidateKernelMs": 6.344
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1693,
+            "candidateKernelMs": 0.1505,
+            "steadyStateMedianEndToEndMs": 0.1682
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 14.1752,
-            "candidateKernelMs": 13.2378
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2118,
+            "candidateKernelMs": 1.1924,
+            "steadyStateMedianEndToEndMs": 1.2032
           }
         }
       },
@@ -1383,23 +2147,36 @@
         "variant": "sleeveEaseStrategy=classic",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "aaa628db043c05e632f9f52f42bf68b88b25a3dcdd02567d261986225a8a039b",
-        "preprocessingMs": 1.3764,
+        "preprocessingMs": 0.0098,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 30.7299,
-            "candidateKernelMs": 29.3182
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.1124,
+            "candidateKernelMs": 2.0919,
+            "steadyStateMedianEndToEndMs": 2.1124
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.9856,
-            "candidateKernelMs": 3.5956
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1807,
+            "candidateKernelMs": 0.1627,
+            "steadyStateMedianEndToEndMs": 0.1807
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.0645,
-            "candidateKernelMs": 7.6736
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.3207,
+            "candidateKernelMs": 1.3013,
+            "steadyStateMedianEndToEndMs": 1.2993
           }
         }
       },
@@ -1411,23 +2188,36 @@
         "variant": "sleeveEaseStrategy=classic",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "100833ca85620820e1d8d4c26d850d47f6d52c3bf81350ada47b5a808577d03b",
-        "preprocessingMs": 1.3597,
+        "preprocessingMs": 0.0107,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.2028,
-            "candidateKernelMs": 27.8141
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.1001,
+            "candidateKernelMs": 2.0798,
+            "steadyStateMedianEndToEndMs": 2.1488
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.8969,
-            "candidateKernelMs": 3.5231
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1871,
+            "candidateKernelMs": 0.1684,
+            "steadyStateMedianEndToEndMs": 0.1871
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.7195,
-            "candidateKernelMs": 7.3459
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.3206,
+            "candidateKernelMs": 1.2999,
+            "steadyStateMedianEndToEndMs": 1.3206
           }
         }
       },
@@ -1439,23 +2229,36 @@
         "variant": "sleeveEaseStrategy=classic",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "c8015a9a3263e17a8c0466ac37f99daab4593f400546ca4c1751a749e2d5f8e3",
-        "preprocessingMs": 1.373,
+        "preprocessingMs": 0.008,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.2414,
-            "candidateKernelMs": 26.85
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.4076,
+            "candidateKernelMs": 2.3779,
+            "steadyStateMedianEndToEndMs": 2.1226
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.8045,
-            "candidateKernelMs": 3.4167
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.2348,
+            "candidateKernelMs": 0.2177,
+            "steadyStateMedianEndToEndMs": 0.1837
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.7835,
-            "candidateKernelMs": 7.3957
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.5716,
+            "candidateKernelMs": 1.5546,
+            "steadyStateMedianEndToEndMs": 1.2871
           }
         }
       },
@@ -1467,23 +2270,36 @@
         "variant": "sleeveEaseStrategy=classic",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "bd8e8e38a74936c6c70fb0834c309b8af8e5b25403132760d8040ba7882d291a",
-        "preprocessingMs": 1.3626,
+        "preprocessingMs": 0.0087,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 33.4344,
-            "candidateKernelMs": 32.0409
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.413,
+            "candidateKernelMs": 2.3939,
+            "steadyStateMedianEndToEndMs": 2.1977
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.8405,
-            "candidateKernelMs": 3.4617
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1775,
+            "candidateKernelMs": 0.1604,
+            "steadyStateMedianEndToEndMs": 0.1824
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.3855,
-            "candidateKernelMs": 7.9998
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.3535,
+            "candidateKernelMs": 1.3357,
+            "steadyStateMedianEndToEndMs": 1.3049
           }
         }
       },
@@ -1495,23 +2311,36 @@
         "variant": "sleeveEaseStrategy=classic",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "93e533ea782e2cf2190e4c808adf3a173f6e45bf394f1f8ed0710f9b41275118",
-        "preprocessingMs": 1.3865,
+        "preprocessingMs": 0.0091,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.289,
-            "candidateKernelMs": 27.8726
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.1482,
+            "candidateKernelMs": 2.1281,
+            "steadyStateMedianEndToEndMs": 2.1482
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.7006,
-            "candidateKernelMs": 4.2988
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1817,
+            "candidateKernelMs": 0.164,
+            "steadyStateMedianEndToEndMs": 0.1817
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.9551,
-            "candidateKernelMs": 7.5552
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.3406,
+            "candidateKernelMs": 1.3213,
+            "steadyStateMedianEndToEndMs": 1.3065
           }
         }
       },
@@ -1523,23 +2352,36 @@
         "variant": "sleeveEaseStrategy=classic",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "5985939b03ccd0f7bc60a4e58a367b2ce7aae1c1a7df249ba2a88d2dc95648f3",
-        "preprocessingMs": 1.327,
+        "preprocessingMs": 0.0097,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.8789,
-            "candidateKernelMs": 27.522
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0734,
+            "candidateKernelMs": 2.0534,
+            "steadyStateMedianEndToEndMs": 2.0734
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.5061,
-            "candidateKernelMs": 4.1578
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1755,
+            "candidateKernelMs": 0.1578,
+            "steadyStateMedianEndToEndMs": 0.1776
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.6365,
-            "candidateKernelMs": 7.2951
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2931,
+            "candidateKernelMs": 1.2749,
+            "steadyStateMedianEndToEndMs": 1.3196
           }
         }
       },
@@ -1551,23 +2393,36 @@
         "variant": "sleeveEaseStrategy=tailored",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "2b6c2008c7a669a1d0f40bf4fa9a4a08a1cb3b35708691b6444113f63bc5f6b2",
-        "preprocessingMs": 1.3176,
+        "preprocessingMs": 0.0104,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.0046,
-            "candidateKernelMs": 27.659
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.099,
+            "candidateKernelMs": 2.0778,
+            "steadyStateMedianEndToEndMs": 2.1604
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.3188,
-            "candidateKernelMs": 3.9811
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1861,
+            "candidateKernelMs": 0.167,
+            "steadyStateMedianEndToEndMs": 0.1961
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.4615,
-            "candidateKernelMs": 7.1297
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2929,
+            "candidateKernelMs": 1.2737,
+            "steadyStateMedianEndToEndMs": 1.2929
           }
         }
       },
@@ -1579,23 +2434,36 @@
         "variant": "sleeveEaseStrategy=tailored",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "9005c6f63c210b44a655c10e231c6ac844209204de48db5a29ead594b40e962a",
-        "preprocessingMs": 1.3739,
+        "preprocessingMs": 0.0096,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 30.3524,
-            "candidateKernelMs": 28.9128
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0593,
+            "candidateKernelMs": 2.0405,
+            "steadyStateMedianEndToEndMs": 2.1086
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.8148,
-            "candidateKernelMs": 3.4269
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1787,
+            "candidateKernelMs": 0.1614,
+            "steadyStateMedianEndToEndMs": 0.1808
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.8637,
-            "candidateKernelMs": 7.4765
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.52,
+            "candidateKernelMs": 1.5002,
+            "steadyStateMedianEndToEndMs": 1.3159
           }
         }
       },
@@ -1607,23 +2475,36 @@
         "variant": "sleeveEaseStrategy=tailored",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "175ec55fdf817587c5c9a8a6a8014a6b3f6a5641b7c5ec081c5de00823e5f29c",
-        "preprocessingMs": 1.6721,
+        "preprocessingMs": 0.0092,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.68,
-            "candidateKernelMs": 26.9791
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.5439,
+            "candidateKernelMs": 2.5249,
+            "steadyStateMedianEndToEndMs": 2.1608
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.168,
-            "candidateKernelMs": 3.481
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.2147,
+            "candidateKernelMs": 0.1966,
+            "steadyStateMedianEndToEndMs": 0.1815
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.0161,
-            "candidateKernelMs": 7.3313
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.4846,
+            "candidateKernelMs": 1.467,
+            "steadyStateMedianEndToEndMs": 1.3398
           }
         }
       },
@@ -1635,23 +2516,36 @@
         "variant": "sleeveEaseStrategy=tailored",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "08dc5da1821e67d112f2dcfe9662141faa581ed6de850b8f9046f3aafde40cc6",
-        "preprocessingMs": 1.4054,
+        "preprocessingMs": 0.0089,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.8141,
-            "candidateKernelMs": 27.3805
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.1581,
+            "candidateKernelMs": 2.139,
+            "steadyStateMedianEndToEndMs": 2.1346
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.964,
-            "candidateKernelMs": 3.5438
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1971,
+            "candidateKernelMs": 0.1792,
+            "steadyStateMedianEndToEndMs": 0.1828
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.8464,
-            "candidateKernelMs": 7.425
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2984,
+            "candidateKernelMs": 1.2799,
+            "steadyStateMedianEndToEndMs": 1.3229
           }
         }
       },
@@ -1663,23 +2557,36 @@
         "variant": "sleeveEaseStrategy=tailored",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "595ca587a9282945aca1a407f04b6d1a7f92f31254867624616a27bfe6fdaaf0",
-        "preprocessingMs": 1.3589,
+        "preprocessingMs": 0.0093,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.2066,
-            "candidateKernelMs": 27.8136
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0745,
+            "candidateKernelMs": 2.0558,
+            "steadyStateMedianEndToEndMs": 2.1778
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.307,
-            "candidateKernelMs": 3.9201
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1788,
+            "candidateKernelMs": 0.1616,
+            "steadyStateMedianEndToEndMs": 0.187
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.5767,
-            "candidateKernelMs": 7.2007
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2994,
+            "candidateKernelMs": 1.2816,
+            "steadyStateMedianEndToEndMs": 1.307
           }
         }
       },
@@ -1691,23 +2598,36 @@
         "variant": "sleeveEaseStrategy=tailored",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "7987281fe691e20b02cf8967f06ea76ba1025279d5fa79141e5e2aba3f7ceb3d",
-        "preprocessingMs": 2.2634,
+        "preprocessingMs": 0.0087,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 38.1001,
-            "candidateKernelMs": 35.8056
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.1399,
+            "candidateKernelMs": 2.122,
+            "steadyStateMedianEndToEndMs": 2.1399
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.0876,
-            "candidateKernelMs": 3.807
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.176,
+            "candidateKernelMs": 0.1597,
+            "steadyStateMedianEndToEndMs": 0.1857
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.0686,
-            "candidateKernelMs": 7.7878
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.3242,
+            "candidateKernelMs": 1.3066,
+            "steadyStateMedianEndToEndMs": 1.3242
           }
         }
       },
@@ -1719,23 +2639,36 @@
         "variant": "sleeveEaseStrategy=fitted",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "4856d93bd76e5e647917f225434927261b2a4bdae86512cb95110eccf36ff8b1",
-        "preprocessingMs": 1.3778,
+        "preprocessingMs": 0.0088,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 32.3731,
-            "candidateKernelMs": 30.964
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.1222,
+            "candidateKernelMs": 2.1032,
+            "steadyStateMedianEndToEndMs": 2.1222
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.1246,
-            "candidateKernelMs": 3.7276
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1832,
+            "candidateKernelMs": 0.166,
+            "steadyStateMedianEndToEndMs": 0.1832
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.2703,
-            "candidateKernelMs": 7.8746
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2744,
+            "candidateKernelMs": 1.2574,
+            "steadyStateMedianEndToEndMs": 1.2845
           }
         }
       },
@@ -1747,23 +2680,36 @@
         "variant": "sleeveEaseStrategy=fitted",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "920f468dbfc220cc4bef53078ad919fb753d8fe02796d66deaa35f1991499726",
-        "preprocessingMs": 1.3249,
+        "preprocessingMs": 0.01,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 27.7798,
-            "candidateKernelMs": 26.4301
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.4273,
+            "candidateKernelMs": 2.4065,
+            "steadyStateMedianEndToEndMs": 2.127
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.7703,
-            "candidateKernelMs": 3.432
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.2272,
+            "candidateKernelMs": 0.2075,
+            "steadyStateMedianEndToEndMs": 0.1818
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.8805,
-            "candidateKernelMs": 7.5396
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.5863,
+            "candidateKernelMs": 1.5643,
+            "steadyStateMedianEndToEndMs": 1.3318
           }
         }
       },
@@ -1775,23 +2721,36 @@
         "variant": "sleeveEaseStrategy=fitted",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "0a8301020bee548a1336f60a3e4c89f33679968f7e2b0d0346a592da1a48e1ac",
-        "preprocessingMs": 1.3138,
+        "preprocessingMs": 0.0118,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.0904,
-            "candidateKernelMs": 26.749
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.1051,
+            "candidateKernelMs": 2.0827,
+            "steadyStateMedianEndToEndMs": 2.1148
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.6388,
-            "candidateKernelMs": 3.3129
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1928,
+            "candidateKernelMs": 0.1723,
+            "steadyStateMedianEndToEndMs": 0.1928
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.4495,
-            "candidateKernelMs": 7.1239
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2929,
+            "candidateKernelMs": 1.2726,
+            "steadyStateMedianEndToEndMs": 1.3215
           }
         }
       },
@@ -1803,23 +2762,36 @@
         "variant": "sleeveEaseStrategy=fitted",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "d77cce6856863a98f3b1da60671514d9ced8ed5c59f4de37375786a835686b22",
-        "preprocessingMs": 1.4156,
+        "preprocessingMs": 0.0095,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.4305,
-            "candidateKernelMs": 26.9822
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0975,
+            "candidateKernelMs": 2.0792,
+            "steadyStateMedianEndToEndMs": 2.1089
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.7959,
-            "candidateKernelMs": 3.3659
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1745,
+            "candidateKernelMs": 0.1573,
+            "steadyStateMedianEndToEndMs": 0.1761
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.8056,
-            "candidateKernelMs": 7.374
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.3275,
+            "candidateKernelMs": 1.3098,
+            "steadyStateMedianEndToEndMs": 1.3065
           }
         }
       },
@@ -1831,23 +2803,36 @@
         "variant": "sleeveEaseStrategy=fitted",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "c494acff43a082d1615bb9980ead51d3463bfcc3ca03c587aabfde01e62f36b9",
-        "preprocessingMs": 1.3119,
+        "preprocessingMs": 0.0087,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 27.8302,
-            "candidateKernelMs": 26.4956
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.1066,
+            "candidateKernelMs": 2.0891,
+            "steadyStateMedianEndToEndMs": 2.1639
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.6642,
-            "candidateKernelMs": 3.3396
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.173,
+            "candidateKernelMs": 0.1569,
+            "steadyStateMedianEndToEndMs": 0.1808
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.8588,
-            "candidateKernelMs": 7.5328
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2937,
+            "candidateKernelMs": 1.277,
+            "steadyStateMedianEndToEndMs": 1.2965
           }
         }
       },
@@ -1859,23 +2844,36 @@
         "variant": "sleeveEaseStrategy=fitted",
         "segmentCount": 5,
         "cubicBezierCount": 3,
+        "outwardOffsetSignS": -1,
         "contourInputSha256": "d51a74d65627f34ac9ae320874f27c249114b6799dae56bc29ad6aaa7b3639e6",
-        "preprocessingMs": 1.327,
+        "preprocessingMs": 0.0117,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 27.2156,
-            "candidateKernelMs": 25.8695
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 2.0857,
+            "candidateKernelMs": 2.0651,
+            "steadyStateMedianEndToEndMs": 2.0857
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.9503,
-            "candidateKernelMs": 3.6073
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1871,
+            "candidateKernelMs": 0.1674,
+            "steadyStateMedianEndToEndMs": 0.1871
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.3703,
-            "candidateKernelMs": 7.0313
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": -1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.2943,
+            "candidateKernelMs": 1.2747,
+            "steadyStateMedianEndToEndMs": 1.2943
           }
         }
       },
@@ -1887,23 +2885,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "53e938eb3262122d6036ef697a8444463cf2f231bfabefe1cf98cd61a043798b",
-        "preprocessingMs": 0.477,
+        "preprocessingMs": 0.0115,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.2634,
-            "candidateKernelMs": 11.7555
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.9863,
+            "candidateKernelMs": 0.965,
+            "steadyStateMedianEndToEndMs": 0.9863
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.9892,
-            "candidateKernelMs": 1.4975
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1039,
+            "candidateKernelMs": 0.0852,
+            "steadyStateMedianEndToEndMs": 0.0983
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.8934,
-            "candidateKernelMs": 2.4037
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.6248,
+            "candidateKernelMs": 0.6056,
+            "steadyStateMedianEndToEndMs": 0.6263
           }
         }
       },
@@ -1915,23 +2926,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "06b8d70acaf5feea1699c6fc235cc770558aeee079438a99d79b3ed8ca75db00",
-        "preprocessingMs": 0.4941,
+        "preprocessingMs": 0.0097,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.944,
-            "candidateKernelMs": 9.4262
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.9504,
+            "candidateKernelMs": 0.9329,
+            "steadyStateMedianEndToEndMs": 0.9948
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.9362,
-            "candidateKernelMs": 1.4315
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0926,
+            "candidateKernelMs": 0.0763,
+            "steadyStateMedianEndToEndMs": 0.0944
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.1016,
-            "candidateKernelMs": 2.5951
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.6143,
+            "candidateKernelMs": 0.5974,
+            "steadyStateMedianEndToEndMs": 0.6163
           }
         }
       },
@@ -1943,23 +2967,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "2e148006acfad1c305c2b0d6c8a695de809cd0514264f63fe5c810e937f7c9df",
-        "preprocessingMs": 0.4909,
+        "preprocessingMs": 0.0081,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.9695,
-            "candidateKernelMs": 10.4496
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.9708,
+            "candidateKernelMs": 0.9556,
+            "steadyStateMedianEndToEndMs": 0.9661
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.9244,
-            "candidateKernelMs": 1.4227
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0898,
+            "candidateKernelMs": 0.075,
+            "steadyStateMedianEndToEndMs": 0.0898
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.0543,
-            "candidateKernelMs": 2.5534
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.6165,
+            "candidateKernelMs": 0.6013,
+            "steadyStateMedianEndToEndMs": 0.6165
           }
         }
       },
@@ -1971,23 +3008,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "bd4f9657615c2c6eda673564144ca95f31deb46b887034c6c93ef0664714a102",
-        "preprocessingMs": 0.7049,
+        "preprocessingMs": 0.0088,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.5297,
-            "candidateKernelMs": 9.7976
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.9543,
+            "candidateKernelMs": 0.9375,
+            "steadyStateMedianEndToEndMs": 0.9589
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.2884,
-            "candidateKernelMs": 1.5705
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0902,
+            "candidateKernelMs": 0.0743,
+            "steadyStateMedianEndToEndMs": 0.0949
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.0213,
-            "candidateKernelMs": 2.3064
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.6545,
+            "candidateKernelMs": 0.6388,
+            "steadyStateMedianEndToEndMs": 0.6184
           }
         }
       },
@@ -1999,23 +3049,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "72ec8529d16e12e94ef6cd5db6acfdd7299ecf91d58e49e5126949500832c391",
-        "preprocessingMs": 0.5379,
+        "preprocessingMs": 0.0095,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.8281,
-            "candidateKernelMs": 9.2735
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.202,
+            "candidateKernelMs": 0.1856,
+            "steadyStateMedianEndToEndMs": 0.1927
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.0323,
-            "candidateKernelMs": 1.4822
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0368,
+            "candidateKernelMs": 0.021,
+            "steadyStateMedianEndToEndMs": 0.0354
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.044,
-            "candidateKernelMs": 2.496
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0967,
+            "candidateKernelMs": 0.0815,
+            "steadyStateMedianEndToEndMs": 0.1005
           }
         }
       },
@@ -2027,23 +3090,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "7fc63920331c7f048958053f86f67fdae113d9ba4c49eb09e43e40a68be0ef8b",
-        "preprocessingMs": 0.5011,
+        "preprocessingMs": 0.0094,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.2524,
-            "candidateKernelMs": 9.7334
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1989,
+            "candidateKernelMs": 0.183,
+            "steadyStateMedianEndToEndMs": 0.1897
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8188,
-            "candidateKernelMs": 1.3078
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0391,
+            "candidateKernelMs": 0.0228,
+            "steadyStateMedianEndToEndMs": 0.0339
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.2257,
-            "candidateKernelMs": 2.7147
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1022,
+            "candidateKernelMs": 0.0861,
+            "steadyStateMedianEndToEndMs": 0.0956
           }
         }
       },
@@ -2055,23 +3131,36 @@
         "variant": "ease=fitted",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "2c6f8ab43ad5c54d848edddde86411e7b2f75d50ceba085e7a2d0e612b53344c",
-        "preprocessingMs": 0.5608,
+        "preprocessingMs": 0.0074,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.5761,
-            "candidateKernelMs": 9.9896
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.987,
+            "candidateKernelMs": 0.972,
+            "steadyStateMedianEndToEndMs": 0.9846
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.3203,
-            "candidateKernelMs": 1.7443
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0915,
+            "candidateKernelMs": 0.0777,
+            "steadyStateMedianEndToEndMs": 0.0915
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.9778,
-            "candidateKernelMs": 2.4068
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.6098,
+            "candidateKernelMs": 0.5961,
+            "steadyStateMedianEndToEndMs": 0.6179
           }
         }
       },
@@ -2083,23 +3172,36 @@
         "variant": "ease=fitted",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "eb6f1ee908e1b36fff723bb672f1d2c704aad98ed96b26def451864c0e984b15",
-        "preprocessingMs": 0.5929,
+        "preprocessingMs": 0.0072,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.7392,
-            "candidateKernelMs": 10.1261
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.0806,
+            "candidateKernelMs": 1.0616,
+            "steadyStateMedianEndToEndMs": 0.9763
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.4337,
-            "candidateKernelMs": 2.8125
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1208,
+            "candidateKernelMs": 0.0999,
+            "steadyStateMedianEndToEndMs": 0.0923
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.0691,
-            "candidateKernelMs": 2.4649
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.6232,
+            "candidateKernelMs": 0.6086,
+            "steadyStateMedianEndToEndMs": 0.6132
           }
         }
       },
@@ -2111,23 +3213,36 @@
         "variant": "ease=fitted",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "c9273ac906d55479587f0f391e97ee5f0b3cb154704a05ceb21566923655b29e",
-        "preprocessingMs": 0.542,
+        "preprocessingMs": 0.0086,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.9106,
-            "candidateKernelMs": 9.3552
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.2136,
+            "candidateKernelMs": 0.1977,
+            "steadyStateMedianEndToEndMs": 0.2032
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8582,
-            "candidateKernelMs": 1.306
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0354,
+            "candidateKernelMs": 0.0203,
+            "steadyStateMedianEndToEndMs": 0.0344
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.017,
-            "candidateKernelMs": 2.4653
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1038,
+            "candidateKernelMs": 0.0879,
+            "steadyStateMedianEndToEndMs": 0.0981
           }
         }
       },
@@ -2139,23 +3254,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "e439f825168f22bc4bff258ab31d022636bf95780d8a2184375ad52d429dbd44",
-        "preprocessingMs": 0.506,
+        "preprocessingMs": 0.009,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.4301,
-            "candidateKernelMs": 8.904
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.9746,
+            "candidateKernelMs": 0.957,
+            "steadyStateMedianEndToEndMs": 0.9586
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.0794,
-            "candidateKernelMs": 1.5633
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0939,
+            "candidateKernelMs": 0.0773,
+            "steadyStateMedianEndToEndMs": 0.0921
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.034,
-            "candidateKernelMs": 2.5176
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.6223,
+            "candidateKernelMs": 0.6057,
+            "steadyStateMedianEndToEndMs": 0.6214
           }
         }
       },
@@ -2167,23 +3295,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "a25927e6670c1dad9b1007564f49f6e9734175899ae0fa14f9171f18c0fb1dc4",
-        "preprocessingMs": 0.5313,
+        "preprocessingMs": 0.0087,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.7319,
-            "candidateKernelMs": 10.1779
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.0293,
+            "candidateKernelMs": 1.0119,
+            "steadyStateMedianEndToEndMs": 0.9661
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.0263,
-            "candidateKernelMs": 1.4843
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0929,
+            "candidateKernelMs": 0.0773,
+            "steadyStateMedianEndToEndMs": 0.0903
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.5484,
-            "candidateKernelMs": 2.9918
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.6219,
+            "candidateKernelMs": 0.6061,
+            "steadyStateMedianEndToEndMs": 0.6177
           }
         }
       },
@@ -2195,23 +3336,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "13231bf8ae6e65d78b54806122625a323ff989f9058bc4a3344f343814403ab6",
-        "preprocessingMs": 0.5626,
+        "preprocessingMs": 0.0074,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.4555,
-            "candidateKernelMs": 8.8789
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.9673,
+            "candidateKernelMs": 0.9521,
+            "steadyStateMedianEndToEndMs": 0.9667
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.212,
-            "candidateKernelMs": 1.6038
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.089,
+            "candidateKernelMs": 0.0744,
+            "steadyStateMedianEndToEndMs": 0.0879
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.6482,
-            "candidateKernelMs": 3.0743
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.7061,
+            "candidateKernelMs": 0.691,
+            "steadyStateMedianEndToEndMs": 0.644
           }
         }
       },
@@ -2223,23 +3377,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "898167243f90b606d1c6751b3ad96acf23359d9fb7f148bfb41d04b24805b2ae",
-        "preprocessingMs": 0.7582,
+        "preprocessingMs": 0.0109,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.4949,
-            "candidateKernelMs": 8.7176
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 1.0306,
+            "candidateKernelMs": 1.0115,
+            "steadyStateMedianEndToEndMs": 0.9645
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.2104,
-            "candidateKernelMs": 1.4417
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0958,
+            "candidateKernelMs": 0.0771,
+            "steadyStateMedianEndToEndMs": 0.0892
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.33,
-            "candidateKernelMs": 2.5612
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.6107,
+            "candidateKernelMs": 0.5924,
+            "steadyStateMedianEndToEndMs": 0.6087
           }
         }
       },
@@ -2251,23 +3418,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "227c9eac9acdbee0386db9de61568e5826498a94b045fcd68215567e563181ef",
-        "preprocessingMs": 0.4846,
+        "preprocessingMs": 0.008,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.9782,
-            "candidateKernelMs": 9.4801
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.199,
+            "candidateKernelMs": 0.1842,
+            "steadyStateMedianEndToEndMs": 0.199
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8825,
-            "candidateKernelMs": 1.3875
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0332,
+            "candidateKernelMs": 0.0189,
+            "steadyStateMedianEndToEndMs": 0.0334
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.043,
-            "candidateKernelMs": 2.5485
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0935,
+            "candidateKernelMs": 0.0795,
+            "steadyStateMedianEndToEndMs": 0.0949
           }
         }
       },
@@ -2279,23 +3459,36 @@
         "variant": "ease=classic",
         "segmentCount": 9,
         "cubicBezierCount": 1,
+        "outwardOffsetSignS": 1,
         "contourInputSha256": "3664ffac1f23dbcb83e70a3b81eb4dc94b8873a1ec28efa8f770d9a4c1d6678e",
-        "preprocessingMs": 0.4749,
+        "preprocessingMs": 0.0078,
         "candidateResults": {
           "mpmathIvFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.6565,
-            "candidateKernelMs": 10.1642
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.1954,
+            "candidateKernelMs": 0.1803,
+            "steadyStateMedianEndToEndMs": 0.1939
           },
           "pythonFlintArbFmpq": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8912,
-            "candidateKernelMs": 1.4005
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0331,
+            "candidateKernelMs": 0.0188,
+            "steadyStateMedianEndToEndMs": 0.0325
           },
           "decimalIntervalFraction": {
-            "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.2642,
-            "candidateKernelMs": 2.771
+            "outcome": "CERTIFIED_VALID",
+            "failureCategory": "NONE",
+            "offsetSignS": 1,
+            "maxSubdivisionDepthReached": 0,
+            "endToEndMs": 0.0964,
+            "candidateKernelMs": 0.0825,
+            "steadyStateMedianEndToEndMs": 0.0964
           }
         }
       }

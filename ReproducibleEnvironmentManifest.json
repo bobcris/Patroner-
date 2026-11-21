@@ -69,8 +69,8 @@
     "ciWorkflowVerified": true
   },
   "sourceInputsProvenance": {
-    "sourceInputsDigest": "123824083f62da5ce64058fa4ed83197907c6cb6647dce69fa1f8f99c042782d",
-    "filesCount": 35,
+    "sourceInputsDigest": "409374876a9eb6c7fa3cab0cf46c282e31fc39e8febb0d77dab51cc46eb47cfc",
+    "filesCount": 36,
     "missingFiles": [],
     "allSourceInputsPresent": true,
     "files": [
@@ -171,8 +171,8 @@
       },
       {
         "path": "services/geometry-engine/patroner_geometry/qualification.py",
-        "sha256": "df909fa762037567752d8f5e8015159f25a393d3c1abb321312718fb6b8842b1",
-        "bytes": 117520
+        "sha256": "63b3b08971c6c2b31744b81009758f1cce6db3e30ac8bd05a8211ae55122e4f9",
+        "bytes": 165677
       },
       {
         "path": "services/geometry-engine/patroner_geometry/sub_oracles.py",
@@ -183,6 +183,11 @@
         "path": "services/geometry-engine/pyproject.toml",
         "sha256": "2b9f396e920ddb24fe80e691fbeb34f1131788bf8aa62df24eda5952eab7c878",
         "bytes": 676
+      },
+      {
+        "path": "services/geometry-engine/tests/test_checkpoint_j_performance_and_equivalence.py",
+        "sha256": "7451e84779784239ef1e90245d7fa5421903527e3038afe99ed732ce3699778e",
+        "bytes": 14242
       },
       {
         "path": "services/geometry-engine/tests/test_m00_production_dxf_and_seams.py",
@@ -501,7 +506,7 @@
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "09229a927cc9db07186162edf5a3c94fda8b1fa04fe9d75e0560ec06f713c267",
+      "sha256": "1b1d56e564ab17cfa06ba3deecf70544f517368153da6605c0243abd5c42c609",
       "bytes": "4896",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     }

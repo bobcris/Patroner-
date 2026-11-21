@@ -33,10 +33,10 @@
     "compatibilityMirrorCount": 2,
     "configAndSchemaFilesAudited": 4,
     "historicalPreservedReportsAudited": 10,
-    "evidenceAndPrepDocsAudited": 6,
-    "totalFilesAudited": 40,
+    "evidenceAndPrepDocsAudited": 7,
+    "totalFilesAudited": 41,
     "referencedSchemaSha256": "ce150c21338472cb5fb4e597e05cb3fde23c90da3868ed5b010be1a37b2a3af9",
-    "sourceInputsDigest": "123824083f62da5ce64058fa4ed83197907c6cb6647dce69fa1f8f99c042782d",
+    "sourceInputsDigest": "409374876a9eb6c7fa3cab0cf46c282e31fc39e8febb0d77dab51cc46eb47cfc",
     "oracleIndependenceVerified": true,
     "python312LockEnvironmentVerified": true,
     "twoSubprocessDeterministicReplayVerified": true,
@@ -126,8 +126,8 @@
     {
       "artifact": "ReproducibleEnvironmentManifest.json",
       "path": "artifacts/m00/ReproducibleEnvironmentManifest.json",
-      "sha256": "f712e30a8d226cc5d5873d70a55f3aa9f0de6a06d2c28852d7bd5e425620bd4e",
-      "bytes": "20530",
+      "sha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
+      "bytes": "20755",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },
     {
@@ -168,7 +168,7 @@
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "09229a927cc9db07186162edf5a3c94fda8b1fa04fe9d75e0560ec06f713c267",
+      "sha256": "1b1d56e564ab17cfa06ba3deecf70544f517368153da6605c0243abd5c42c609",
       "bytes": "4896",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     }
@@ -184,8 +184,8 @@
     {
       "primaryPath": "artifacts/m00/ReproducibleEnvironmentManifest.json",
       "mirrorPath": "ReproducibleEnvironmentManifest.json",
-      "sha256": "f712e30a8d226cc5d5873d70a55f3aa9f0de6a06d2c28852d7bd5e425620bd4e",
-      "bytes": "20530",
+      "sha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
+      "bytes": "20755",
       "identicalToPrimary": true
     }
   ],
@@ -314,6 +314,13 @@
       "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
     },
     {
+      "artifact": "CHECKPOINT_J_PERFORMANCE_REPORT.md",
+      "path": "docs/evidence/pkg_m00_04/CHECKPOINT_J_PERFORMANCE_REPORT.md",
+      "sha256": "c7984b5f520077343287623e653d0defa987e270d2dbd2e11fe77ae52036a25b",
+      "bytes": "26549",
+      "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
+    },
+    {
       "artifact": "FINAL_VERIFICATION_REPORT.md",
       "path": "docs/evidence/pkg_m00_04/FINAL_VERIFICATION_REPORT.md",
       "sha256": "d36908a775c3c1d5c9a142b47bbe275bf92afae5f38f6393644d976bed7be404",
@@ -336,8 +343,8 @@
     }
   ],
   "reproducibleEnvironmentManifest": {
-    "artifactsCopySha256": "f712e30a8d226cc5d5873d70a55f3aa9f0de6a06d2c28852d7bd5e425620bd4e",
-    "rootCopySha256": "f712e30a8d226cc5d5873d70a55f3aa9f0de6a06d2c28852d7bd5e425620bd4e",
+    "artifactsCopySha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
+    "rootCopySha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
     "copiesIdentical": true
   },
   "allAuditedFiles": [
@@ -421,7 +428,7 @@
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "09229a927cc9db07186162edf5a3c94fda8b1fa04fe9d75e0560ec06f713c267",
+      "sha256": "1b1d56e564ab17cfa06ba3deecf70544f517368153da6605c0243abd5c42c609",
       "bytes": "4896",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     },
@@ -435,8 +442,8 @@
     {
       "artifact": "ReproducibleEnvironmentManifest.json",
       "path": "ReproducibleEnvironmentManifest.json",
-      "sha256": "f712e30a8d226cc5d5873d70a55f3aa9f0de6a06d2c28852d7bd5e425620bd4e",
-      "bytes": "20530",
+      "sha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
+      "bytes": "20755",
       "category": "COMPATIBILITY_MIRROR"
     },
     {
@@ -505,8 +512,8 @@
     {
       "artifact": "ReproducibleEnvironmentManifest.json",
       "path": "artifacts/m00/ReproducibleEnvironmentManifest.json",
-      "sha256": "f712e30a8d226cc5d5873d70a55f3aa9f0de6a06d2c28852d7bd5e425620bd4e",
-      "bytes": "20530",
+      "sha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
+      "bytes": "20755",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },
     {
@@ -577,6 +584,13 @@
       "path": "docs/evidence/pkg_m00_04/00_BASELINE_AND_CHANGE_IMPACT_MATRIX.md",
       "sha256": "f531669331a2330b41e65eafa9f1676e1bd98b17350be602b01463174913e03e",
       "bytes": "14560",
+      "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
+    },
+    {
+      "artifact": "CHECKPOINT_J_PERFORMANCE_REPORT.md",
+      "path": "docs/evidence/pkg_m00_04/CHECKPOINT_J_PERFORMANCE_REPORT.md",
+      "sha256": "c7984b5f520077343287623e653d0defa987e270d2dbd2e11fe77ae52036a25b",
+      "bytes": "26549",
       "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
     },
     {

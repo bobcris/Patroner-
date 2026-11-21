@@ -261,6 +261,29 @@ class DecimalInterval:
         ]
         return DecimalInterval(min(products_lo), max(products_hi))
 
+    def sqr(
+        self,
+        ctx_floor: decimal.Context,
+        ctx_ceil: decimal.Context,
+    ) -> "DecimalInterval":
+        """Exact outward-rounded interval squaring preserving non-negativity across zero."""
+        zero = decimal.Decimal(0)
+        if self.lo >= zero:
+            return DecimalInterval(
+                ctx_floor.multiply(self.lo, self.lo),
+                ctx_ceil.multiply(self.hi, self.hi),
+            )
+        if self.hi <= zero:
+            return DecimalInterval(
+                ctx_floor.multiply(self.hi, self.hi),
+                ctx_ceil.multiply(self.lo, self.lo),
+            )
+        hi_sq = max(
+            ctx_ceil.multiply(self.lo, self.lo),
+            ctx_ceil.multiply(self.hi, self.hi),
+        )
+        return DecimalInterval(zero, hi_sq)
+
     def div(
         self,
         other: "DecimalInterval",
@@ -2250,12 +2273,918 @@ def _cubic_segment_to_exact_p_cusp_and_q_c(
     return q_c, c_c, p_cusp
 
 
-def _evaluate_contour_cusp_panels_with_candidate(
-    prepared_beziers: List[Tuple[List[Fraction], List[Fraction], List[Fraction]]],
+# Precomputed immutable exact rational binomial weights for direct Bernstein algebra (Checkpoint J / ADR-009 §5.1)
+_W_BERN_4_4: Tuple[Tuple[Tuple[int, int, Fraction], ...], ...] = tuple(
+    tuple(
+        (i, k - i, Fraction(math.comb(4, i) * math.comb(4, k - i), math.comb(8, k)))
+        for i in range(max(0, k - 4), min(4, k) + 1)
+    )
+    for k in range(9)
+)
+_W_BERN_8_4: Tuple[Tuple[Tuple[int, int, Fraction], ...], ...] = tuple(
+    tuple(
+        (i, k - i, Fraction(math.comb(8, i) * math.comb(4, k - i), math.comb(12, k)))
+        for i in range(max(0, k - 4), min(8, k) + 1)
+    )
+    for k in range(13)
+)
+_W_BERN_ELEV_4_12: Tuple[Tuple[Tuple[int, Fraction], ...], ...] = tuple(
+    tuple(
+        (i, Fraction(math.comb(4, i) * math.comb(8, k - i), math.comb(12, k)))
+        for i in range(max(0, k - 8), min(4, k) + 1)
+    )
+    for k in range(13)
+)
+
+_PREC_BITS_TO_DEC_DIGITS: Dict[int, int] = {53: 17, 113: 35, 170: 52, 336: 102}
+_BERNSTEIN_CANDIDATE_TABLES_CACHE: Dict[Tuple[str, int], Dict[str, Any]] = {}
+
+
+def _get_bernstein_candidate_tables(candidate_library: str, prec_bits: int) -> Dict[str, Any]:
+    """Returns immutable precomputed mathematical binomial constants and contexts for (candidate_library, prec_bits).
+    Caches ONLY pure mathematical constants (zero contour-specific data cached).
+    """
+    cache_key = (candidate_library, prec_bits)
+    cached = _BERNSTEIN_CANDIDATE_TABLES_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    if candidate_library == "mpmath_iv":
+        iv.prec = prec_bits
+        mpmath.mp.prec = prec_bits
+
+        def _conv_q(f: Fraction) -> Any:
+            return iv.mpf(f.numerator) if f.denominator == 1 else (iv.mpf(f.numerator) / iv.mpf(f.denominator))
+
+        tables: Dict[str, Any] = {
+            "zero": iv.mpf(0),
+            "half": iv.mpf(0.5),
+            "two": iv.mpf(2),
+            "three": iv.mpf(3),
+            "one_third": _conv_q(Fraction(1, 3)),
+            "two_thirds": _conv_q(Fraction(2, 3)),
+            "w44": tuple(tuple((i, j, _conv_q(w)) for i, j, w in row) for row in _W_BERN_4_4),
+            "w84": tuple(tuple((i, j, _conv_q(w)) for i, j, w in row) for row in _W_BERN_8_4),
+            "welev": tuple(tuple((i, _conv_q(w)) for i, w in row) for row in _W_BERN_ELEV_4_12),
+        }
+    elif candidate_library == "python_flint":
+        if not HAS_FLINT:
+            raise RuntimeError("python-flint is unavailable")
+        flint.ctx.prec = prec_bits
+
+        def _conv_q_fl(f: Fraction) -> Any:
+            return flint.arb(f.numerator) if f.denominator == 1 else flint.arb(flint.fmpq(f.numerator, f.denominator))
+
+        tables = {
+            "zero": flint.arb(0),
+            "half": flint.arb(0.5),
+            "two": flint.arb(2),
+            "three": flint.arb(3),
+            "one_third": _conv_q_fl(Fraction(1, 3)),
+            "two_thirds": _conv_q_fl(Fraction(2, 3)),
+            "w44": tuple(tuple((i, j, _conv_q_fl(w)) for i, j, w in row) for row in _W_BERN_4_4),
+            "w84": tuple(tuple((i, j, _conv_q_fl(w)) for i, j, w in row) for row in _W_BERN_8_4),
+            "welev": tuple(tuple((i, _conv_q_fl(w)) for i, w in row) for row in _W_BERN_ELEV_4_12),
+        }
+    else:
+        dec_prec = _PREC_BITS_TO_DEC_DIGITS.get(prec_bits, max(35, int(math.ceil(prec_bits * 0.302)) + 2))
+        cf = decimal.Context(prec=dec_prec, rounding=decimal.ROUND_FLOOR)
+        cc = decimal.Context(prec=dec_prec, rounding=decimal.ROUND_CEILING)
+
+        def _conv_q_dc(f: Fraction) -> DecimalInterval:
+            if f.denominator == 1:
+                d = decimal.Decimal(f.numerator)
+                return DecimalInterval(d, d)
+            return DecimalInterval.from_fraction(f, cf, cc)
+
+        tables = {
+            "cf": cf,
+            "cc": cc,
+            "zero_dec": decimal.Decimal(0),
+            "zero": DecimalInterval(decimal.Decimal(0), decimal.Decimal(0)),
+            "half": DecimalInterval(decimal.Decimal("0.5"), decimal.Decimal("0.5")),
+            "two": DecimalInterval(decimal.Decimal(2), decimal.Decimal(2)),
+            "three": DecimalInterval(decimal.Decimal(3), decimal.Decimal(3)),
+            "one_third": _conv_q_dc(Fraction(1, 3)),
+            "two_thirds": _conv_q_dc(Fraction(2, 3)),
+            "w44": tuple(tuple((i, j, _conv_q_dc(w)) for i, j, w in row) for row in _W_BERN_4_4),
+            "w84": tuple(tuple((i, j, _conv_q_dc(w)) for i, j, w in row) for row in _W_BERN_8_4),
+            "welev": tuple(tuple((i, _conv_q_dc(w)) for i, w in row) for row in _W_BERN_ELEV_4_12),
+        }
+
+    _BERNSTEIN_CANDIDATE_TABLES_CACHE[cache_key] = tables
+    return tables
+
+
+def _to_exact_fraction(v: Any) -> Fraction:
+    if isinstance(v, Fraction):
+        return v
+    if isinstance(v, int):
+        return Fraction(v)
+    return Fraction(float(v))
+
+
+def _coord_to_candidate_iv(v: Any, candidate_library: str, tables: Dict[str, Any]) -> Any:
+    """Lossless dyadic float64 conversion or outward-rounded exact Fraction conversion into candidate interval."""
+    if candidate_library == "mpmath_iv":
+        if isinstance(v, Fraction):
+            return iv.mpf(v.numerator) if v.denominator == 1 else (iv.mpf(v.numerator) / iv.mpf(v.denominator))
+        return iv.mpf(v)
+    if candidate_library == "python_flint":
+        if isinstance(v, Fraction):
+            return flint.arb(v.numerator) if v.denominator == 1 else flint.arb(flint.fmpq(v.numerator, v.denominator))
+        return flint.arb(v)
+    if isinstance(v, Fraction):
+        if v.denominator == 1:
+            d = decimal.Decimal(v.numerator)
+            return DecimalInterval(d, d)
+        return DecimalInterval.from_fraction(v, tables["cf"], tables["cc"])
+    if isinstance(v, int):
+        d = decimal.Decimal(v)
+        return DecimalInterval(d, d)
+    return DecimalInterval.from_float_exact(float(v))
+
+
+def _de_casteljau_mid_candidate(
+    b_coeffs: List[Any],
     candidate_library: str,
-    panels: int = 8,
+    tables: Dict[str, Any],
+) -> Tuple[List[Any], List[Any]]:
+    """Outward-rounded midpoint De Casteljau subdivision of a Bernstein control polygon in the candidate library."""
+    n = len(b_coeffs) - 1
+    work = list(b_coeffs)
+    left: List[Any] = [work[0]]
+    right_rev: List[Any] = [work[-1]]
+    half = tables["half"]
+    if candidate_library == "decimal_interval":
+        cf, cc = tables["cf"], tables["cc"]
+        for r in range(1, n + 1):
+            work = [work[i].add(work[i + 1], cf, cc).mul(half, cf, cc) for i in range(n - r + 1)]
+            left.append(work[0])
+            right_rev.append(work[-1])
+    else:
+        for r in range(1, n + 1):
+            work = [(work[i] + work[i + 1]) * half for i in range(n - r + 1)]
+            left.append(work[0])
+            right_rev.append(work[-1])
+    right_rev.reverse()
+    return left, right_rev
+
+
+def _bernstein_sign_predicates(
+    coeffs: List[Any],
+    candidate_library: str,
+    tables: Dict[str, Any],
+) -> Tuple[bool, bool, bool]:
+    """Returns (all_strictly_pos, all_strictly_neg, all_non_pos) with 100% conservative outward semantics."""
+    if candidate_library == "mpmath_iv":
+        all_pos = True
+        all_neg = True
+        all_le0 = True
+        for c in coeffs:
+            lo_t, hi_t = c._mpi_
+            # Finite check: non-finite intervals fail closed (all flags False)
+            if lo_t == mpmath.libmp.fnan or hi_t == mpmath.libmp.fnan or lo_t == mpmath.libmp.fninf or hi_t == mpmath.libmp.finf:
+                return False, False, False
+            # lo_t = (sign, man, exp, bc); strictly > 0 iff sign == 0 and man != 0
+            if not (lo_t[0] == 0 and lo_t[1] != 0):
+                all_pos = False
+            # strictly < 0 iff hi_t sign == 1 and hi_t man != 0
+            if not (hi_t[0] == 1 and hi_t[1] != 0):
+                all_neg = False
+            # <= 0 iff hi_t sign == 1 or hi_t man == 0
+            if not (hi_t[0] == 1 or hi_t[1] == 0):
+                all_le0 = False
+        return all_pos, all_neg, all_le0
+    if candidate_library == "python_flint":
+        all_pos = True
+        all_neg = True
+        all_le0 = True
+        for c in coeffs:
+            if not c.is_finite():
+                return False, False, False
+            if not (c > 0):
+                all_pos = False
+            if not (c < 0):
+                all_neg = False
+                if not (c == 0):
+                    all_le0 = False
+        return all_pos, all_neg, all_le0
+    zero_d = tables["zero_dec"]
+    all_pos = True
+    all_neg = True
+    all_le0 = True
+    for c in coeffs:
+        if not (c.lo > zero_d):
+            all_pos = False
+        if not (c.hi < zero_d):
+            all_neg = False
+        if not (c.hi <= zero_d):
+            all_le0 = False
+    return all_pos, all_neg, all_le0
+
+
+def _classify_stationary_roots_exact_jet(
+    p0_q: Tuple[Fraction, Fraction],
+    p1_q: Tuple[Fraction, Fraction],
+    p2_q: Tuple[Fraction, Fraction],
+    p3_q: Tuple[Fraction, Fraction],
+    q_pow: List[Fraction],
+    c_pow: List[Fraction],
+    d_q: Fraction,
+    s_sign: int,
+    epsilon_reg_q: Fraction,
+) -> Tuple[str, str, str, int]:
+    """Exact rational ADR-009 §4.3 five-way stationary-point jet classifier for Q(t*) = 0.
+    Returns (outcome, failure_category, stationary_status, isolated_root_count).
+    """
+    ax1 = 3 * (p1_q[0] - p0_q[0])
+    ax2 = 3 * (p2_q[0] - 2 * p1_q[0] + p0_q[0])
+    ax3 = p3_q[0] - 3 * p2_q[0] + 3 * p1_q[0] - p0_q[0]
+    ay1 = 3 * (p1_q[1] - p0_q[1])
+    ay2 = 3 * (p2_q[1] - 2 * p1_q[1] + p0_q[1])
+    ay3 = p3_q[1] - 3 * p2_q[1] + 3 * p1_q[1] - p0_q[1]
+
+    if ax1 == 0 and ax2 == 0 and ax3 == 0 and ay1 == 0 and ay2 == 0 and ay3 == 0:
+        return "CERTIFIED_INVALID", "ACTUAL_ZERO_SPEED_CUSP", "GENUINE_BASE_GEOMETRIC_SINGULARITY", 1
+
+    q_roots = isolate_polynomial_roots_on_unit_interval(q_pow)
+    if not q_roots:
+        return "REGULAR_SPEED", "NONE", "NONE_REGULAR_SPEED", 0
+
+    b2_x_pow = [2 * ax2, 6 * ax3]
+    b2_y_pow = [2 * ay2, 6 * ay3]
+    b3_x = 6 * ax3
+    b3_y = 6 * ay3
+
+    removable_seen = False
+    for r in q_roots:
+        lo_r = Fraction(r["tLowerRational"])
+        hi_r = Fraction(r["tUpperRational"])
+        if lo_r != hi_r:
+            # Non-rational exact root of Q(t)=0: evaluate derivative jet over rational bracket;
+            # interior simple/even stationary point with B'' != 0 is genuine cusp, else fail closed.
+            mid_r = (lo_r + hi_r) / Fraction(2)
+            if lo_r > 0 and hi_r < 1:
+                b2x_m = eval_polynomial_exact(b2_x_pow, mid_r)
+                b2y_m = eval_polynomial_exact(b2_y_pow, mid_r)
+                # Bound |B''(t) - B''(mid)| <= |6*a3| * (hi-lo)/2
+                hw = (hi_r - lo_r) / Fraction(2)
+                if abs(b2x_m) > abs(b3_x) * hw or abs(b2y_m) > abs(b3_y) * hw:
+                    return "CERTIFIED_INVALID", "ACTUAL_ZERO_SPEED_CUSP", "GENUINE_BASE_GEOMETRIC_SINGULARITY", len(q_roots)
+            return "INCONCLUSIVE", "INCONCLUSIVE_VERIFICATION", "UNRESOLVED", len(q_roots)
+
+        t_star = lo_r
+        b2x = eval_polynomial_exact(b2_x_pow, t_star)
+        b2y = eval_polynomial_exact(b2_y_pow, t_star)
+        b2_nonzero = (b2x != 0) or (b2y != 0)
+        b3_nonzero = (b3_x != 0) or (b3_y != 0)
+
+        if t_star == 0 or t_star == 1:
+            if b2_nonzero:
+                cross_23 = b2x * b3_y - b2y * b3_x
+                if cross_23 != 0:
+                    # Endpoint curvature blows up: |kappa(t)| -> infinity
+                    return "CERTIFIED_INVALID", "ACTUAL_ZERO_SPEED_CUSP", "GENUINE_BASE_GEOMETRIC_SINGULARITY", len(q_roots)
+                removable_seen = True
+            elif b3_nonzero:
+                removable_seen = True
+            else:
+                return "CERTIFIED_INVALID", "ACTUAL_ZERO_SPEED_CUSP", "GENUINE_BASE_GEOMETRIC_SINGULARITY", len(q_roots)
+        else:
+            # Interior stationary point t* in (0, 1)
+            if b2_nonzero:
+                # Even lowest derivative order m = 2 -> 180-degree tangent reversal cusp on base curve
+                return "CERTIFIED_INVALID", "ACTUAL_ZERO_SPEED_CUSP", "GENUINE_BASE_GEOMETRIC_SINGULARITY", len(q_roots)
+            if b3_nonzero:
+                # Odd lowest derivative order m = 3 -> continuous tangent, kappa_lim = 0 (e.g., B(t) = ((t-1/2)^3, 0))
+                removable_seen = True
+            else:
+                return "CERTIFIED_INVALID", "ACTUAL_ZERO_SPEED_CUSP", "GENUINE_BASE_GEOMETRIC_SINGULARITY", len(q_roots)
+
+    if removable_seen and all(cc == 0 for cc in c_pow):
+        return "CERTIFIED_VALID", "NONE", "REMOVABLE_PARAMETERIZATION_DEGENERACY", len(q_roots)
+    if removable_seen:
+        return "REGULAR_SPEED_WITH_REMOVABLE", "NONE", "REMOVABLE_PARAMETERIZATION_DEGENERACY", len(q_roots)
+    return "REGULAR_SPEED", "NONE", "NONE_REGULAR_SPEED", 0
+
+
+def certify_cubic_segment_bernstein_candidate(
+    p0: Tuple[Any, Any],
+    p1: Tuple[Any, Any],
+    p2: Tuple[Any, Any],
+    p3: Tuple[Any, Any],
+    d_q: Fraction,
+    candidate_library: str,
+    s_sign: int = -1,
+    epsilon_reg_q: Fraction = Fraction(1, 20),
+    max_depth: int = 20,
+    allow_exact_rational_fallback: bool = True,
 ) -> Dict[str, Any]:
-    """Executes an identical 113-bit interval regularity & cusp-polynomial certification kernel across
+    """Complete ADR-009 §5.1 & §5.2 Stage 2 Bernstein-basis tri-state offset verifier executed symmetrically
+    in the specified candidate interval library (`mpmath_iv`, `python_flint`, or `decimal_interval`).
+
+    Preserves 100% mathematical rigor:
+    - Exact dyadic float64 / outward-rounded Fraction conversion.
+    - Direct Bernstein construction of Q(t) (deg 4), C(t) (deg 2), P_exact(t) (deg 12), P_margin(t) (deg 12)
+      eliminating monomial Horner dependency blowup per ADR-009 §3.2(8)(b).
+    - ADR-009 §5.1 Step 2.1 stationary speed check + Step 2.2 concave sign gate (s*d*C <= 0) + Step 2.3 adaptive
+      De Casteljau midpoint subdivision with precision escalation (113 -> 170 -> 336 bits) and exact rational
+      Sturm/Bernstein fallback (ADR-009 §5.2 Step 2).
+    """
+    if candidate_library == "python_flint" and not HAS_FLINT:
+        return {"available": False}
+    if s_sign not in (-1, 1):
+        raise ValueError(f"s_sign must be -1 or +1, got {s_sign}")
+
+    d2_q = d_q * d_q
+    margin_factor_q = (Fraction(1) - epsilon_reg_q) ** 2
+
+    precision_ladder = (113, 170, 336)
+    escalation_trace: List[str] = []
+    max_depth_reached = 0
+    subdivisions_performed = 0
+    straddling_panels_encountered = 0
+    isolated_cusp_count = 0
+    stationary_status = "NONE_REGULAR_SPEED"
+    ia_elapsed_ms = 0.0
+    iso_elapsed_ms = 0.0
+
+    for tier_idx, prec_bits in enumerate(precision_ladder):
+        t_ia_start = time.perf_counter()
+        if candidate_library == "mpmath_iv":
+            iv.prec = prec_bits
+            mpmath.mp.prec = prec_bits
+        elif candidate_library == "python_flint":
+            flint.ctx.prec = prec_bits
+
+        tables = _get_bernstein_candidate_tables(candidate_library, prec_bits)
+        x0 = _coord_to_candidate_iv(p0[0], candidate_library, tables)
+        y0 = _coord_to_candidate_iv(p0[1], candidate_library, tables)
+        x1 = _coord_to_candidate_iv(p1[0], candidate_library, tables)
+        y1 = _coord_to_candidate_iv(p1[1], candidate_library, tables)
+        x2 = _coord_to_candidate_iv(p2[0], candidate_library, tables)
+        y2 = _coord_to_candidate_iv(p2[1], candidate_library, tables)
+        x3 = _coord_to_candidate_iv(p3[0], candidate_library, tables)
+        y3 = _coord_to_candidate_iv(p3[1], candidate_library, tables)
+        d2_iv = _coord_to_candidate_iv(d2_q, candidate_library, tables)
+        mf_iv = _coord_to_candidate_iv(margin_factor_q, candidate_library, tables)
+
+        one_third = tables["one_third"]
+        two_thirds = tables["two_thirds"]
+        three = tables["three"]
+        two = tables["two"]
+        zero_iv = tables["zero"]
+        w44 = tables["w44"]
+        w84 = tables["w84"]
+        welev = tables["welev"]
+
+        if candidate_library == "decimal_interval":
+            cf, cc = tables["cf"], tables["cc"]
+            dx0 = three.mul(x1.sub(x0, cf, cc), cf, cc)
+            dx1 = three.mul(x2.sub(x1, cf, cc), cf, cc)
+            dx2 = three.mul(x3.sub(x2, cf, cc), cf, cc)
+            dy0 = three.mul(y1.sub(y0, cf, cc), cf, cc)
+            dy1 = three.mul(y2.sub(y1, cf, cc), cf, cc)
+            dy2 = three.mul(y3.sub(y2, cf, cc), cf, cc)
+
+            q_b = [
+                dx0.sqr(cf, cc).add(dy0.sqr(cf, cc), cf, cc),
+                dx0.mul(dx1, cf, cc).add(dy0.mul(dy1, cf, cc), cf, cc),
+                one_third.mul(dx0.mul(dx2, cf, cc).add(dy0.mul(dy2, cf, cc), cf, cc), cf, cc).add(
+                    two_thirds.mul(dx1.sqr(cf, cc).add(dy1.sqr(cf, cc), cf, cc), cf, cc), cf, cc
+                ),
+                dx1.mul(dx2, cf, cc).add(dy1.mul(dy2, cf, cc), cf, cc),
+                dx2.sqr(cf, cc).add(dy2.sqr(cf, cc), cf, cc),
+            ]
+            c_b = [
+                two.mul(dx0.mul(dy1, cf, cc).sub(dy0.mul(dx1, cf, cc), cf, cc), cf, cc),
+                dx0.mul(dy2, cf, cc).sub(dy0.mul(dx2, cf, cc), cf, cc),
+                two.mul(dx1.mul(dy2, cf, cc).sub(dy1.mul(dx2, cf, cc), cf, cc), cf, cc),
+            ]
+            if s_sign == 1:
+                sc_b = c_b
+            else:
+                sc_b = [DecimalInterval(-c.hi, -c.lo) for c in c_b]
+        elif candidate_library == "mpmath_iv":
+            dx0, dx1, dx2 = three * (x1 - x0), three * (x2 - x1), three * (x3 - x2)
+            dy0, dy1, dy2 = three * (y1 - y0), three * (y2 - y1), three * (y3 - y2)
+            q_b = [
+                dx0**2 + dy0**2,
+                dx0 * dx1 + dy0 * dy1,
+                one_third * (dx0 * dx2 + dy0 * dy2) + two_thirds * (dx1**2 + dy1**2),
+                dx1 * dx2 + dy1 * dy2,
+                dx2**2 + dy2**2,
+            ]
+            c_b = [
+                two * (dx0 * dy1 - dy0 * dx1),
+                dx0 * dy2 - dy0 * dx2,
+                two * (dx1 * dy2 - dy1 * dx2),
+            ]
+            sc_b = c_b if s_sign == 1 else [-c for c in c_b]
+        else:
+            dx0, dx1, dx2 = three * (x1 - x0), three * (x2 - x1), three * (x3 - x2)
+            dy0, dy1, dy2 = three * (y1 - y0), three * (y2 - y1), three * (y3 - y2)
+            q_b = [
+                dx0 * dx0 + dy0 * dy0,
+                dx0 * dx1 + dy0 * dy1,
+                one_third * (dx0 * dx2 + dy0 * dy2) + two_thirds * (dx1 * dx1 + dy1 * dy1),
+                dx1 * dx2 + dy1 * dy2,
+                dx2 * dx2 + dy2 * dy2,
+            ]
+            c_b = [
+                two * (dx0 * dy1 - dy0 * dx1),
+                dx0 * dy2 - dy0 * dx2,
+                two * (dx1 * dy2 - dy1 * dx2),
+            ]
+            sc_b = c_b if s_sign == 1 else [-c for c in c_b]
+
+        q_pos_d0, _, _ = _bernstein_sign_predicates(q_b, candidate_library, tables)
+        _, _, sc_le0_d0 = _bernstein_sign_predicates(sc_b, candidate_library, tables)
+        ia_elapsed_ms += (time.perf_counter() - t_ia_start) * 1000.0
+
+        # Step 2.1 + Step 2.2 Depth-0 Fast Certificate: Q(t) > 0 AND s*d*C(t) <= 0 => f(t) >= 1 > eps_reg
+        if q_pos_d0 and sc_le0_d0:
+            escalation_trace.append(f"{prec_bits}-bit:convex-sign-gate-certified-d0")
+            return {
+                "available": True,
+                "verificationOutcome": "CERTIFIED_VALID",
+                "failureCategory": "NONE",
+                "stationaryStatus": stationary_status,
+                "maxDepthReached": max_depth_reached,
+                "subdivisionsPerformed": subdivisions_performed,
+                "straddlingPanelsFound": straddling_panels_encountered,
+                "isolatedCuspCount": isolated_cusp_count,
+                "workingPrecisionBits": prec_bits,
+                "escalationTrace": escalation_trace,
+                "intervalArithmeticMs": ia_elapsed_ms,
+                "rootIsolationMs": iso_elapsed_ms,
+            }
+
+        # Step 2.1: If Q(t) does not certify strictly positive at depth 0, subdivide Q(t) via De Casteljau
+        if not q_pos_d0:
+            t_iso_q0 = time.perf_counter()
+            q_stack: List[Tuple[List[Any], int]] = [(q_b, 0)]
+            q_unresolved = False
+            while q_stack:
+                qb_cur, depth = q_stack.pop()
+                if depth > max_depth_reached:
+                    max_depth_reached = depth
+                qp, _, _ = _bernstein_sign_predicates(qb_cur, candidate_library, tables)
+                if qp:
+                    continue
+                straddling_panels_encountered += 1
+                if depth >= max_depth:
+                    q_unresolved = True
+                    break
+                subdivisions_performed += 1
+                ql, qr = _de_casteljau_mid_candidate(qb_cur, candidate_library, tables)
+                q_stack.append((qr, depth + 1))
+                q_stack.append((ql, depth + 1))
+            iso_elapsed_ms += (time.perf_counter() - t_iso_q0) * 1000.0
+
+            if q_unresolved:
+                if tier_idx < len(precision_ladder) - 1:
+                    escalation_trace.append(f"{prec_bits}-bit:q-unresolved-escalate")
+                    continue
+                if allow_exact_rational_fallback:
+                    t_iso_ex = time.perf_counter()
+                    p0_q = (_to_exact_fraction(p0[0]), _to_exact_fraction(p0[1]))
+                    p1_q = (_to_exact_fraction(p1[0]), _to_exact_fraction(p1[1]))
+                    p2_q = (_to_exact_fraction(p2[0]), _to_exact_fraction(p2[1]))
+                    p3_q = (_to_exact_fraction(p3[0]), _to_exact_fraction(p3[1]))
+                    q_pow, c_pow, _ = _cubic_segment_to_exact_p_cusp_and_q_c(p0_q, p1_q, p2_q, p3_q, d_q)
+                    st_out, st_cat, st_status, st_cnt = _classify_stationary_roots_exact_jet(
+                        p0_q, p1_q, p2_q, p3_q, q_pow, c_pow, d_q, s_sign, epsilon_reg_q
+                    )
+                    iso_elapsed_ms += (time.perf_counter() - t_iso_ex) * 1000.0
+                    stationary_status = st_status
+                    if st_out in ("CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"):
+                        escalation_trace.append(f"{prec_bits}-bit:exact-jet-{st_status}")
+                        return {
+                            "available": True,
+                            "verificationOutcome": st_out,
+                            "failureCategory": st_cat,
+                            "stationaryStatus": stationary_status,
+                            "maxDepthReached": max_depth_reached,
+                            "subdivisionsPerformed": subdivisions_performed,
+                            "straddlingPanelsFound": straddling_panels_encountered,
+                            "isolatedCuspCount": st_cnt if st_out == "CERTIFIED_INVALID" else 0,
+                            "workingPrecisionBits": prec_bits,
+                            "escalationTrace": escalation_trace,
+                            "intervalArithmeticMs": ia_elapsed_ms,
+                            "rootIsolationMs": iso_elapsed_ms,
+                        }
+                else:
+                    escalation_trace.append(f"{prec_bits}-bit:q-inconclusive")
+                    return {
+                        "available": True,
+                        "verificationOutcome": "INCONCLUSIVE",
+                        "failureCategory": "INCONCLUSIVE_VERIFICATION",
+                        "stationaryStatus": "UNRESOLVED",
+                        "maxDepthReached": max_depth_reached,
+                        "subdivisionsPerformed": subdivisions_performed,
+                        "straddlingPanelsFound": straddling_panels_encountered,
+                        "isolatedCuspCount": 0,
+                        "workingPrecisionBits": prec_bits,
+                        "escalationTrace": escalation_trace,
+                        "intervalArithmeticMs": ia_elapsed_ms,
+                        "rootIsolationMs": iso_elapsed_ms,
+                    }
+
+            if sc_le0_d0:
+                escalation_trace.append(f"{prec_bits}-bit:q-certified-convex-gate")
+                return {
+                    "available": True,
+                    "verificationOutcome": "CERTIFIED_VALID",
+                    "failureCategory": "NONE",
+                    "stationaryStatus": stationary_status,
+                    "maxDepthReached": max_depth_reached,
+                    "subdivisionsPerformed": subdivisions_performed,
+                    "straddlingPanelsFound": straddling_panels_encountered,
+                    "isolatedCuspCount": 0,
+                    "workingPrecisionBits": prec_bits,
+                    "escalationTrace": escalation_trace,
+                    "intervalArithmeticMs": ia_elapsed_ms,
+                    "rootIsolationMs": iso_elapsed_ms,
+                }
+
+        # Step 2.3: Construct exact degree-12 Bernstein enclosures of P_exact = Q^3 - d^2*C^2 and P_margin = (1-eps)^2*Q^3 - d^2*C^2
+        t_ia2_start = time.perf_counter()
+        if candidate_library == "decimal_interval":
+            cf, cc = tables["cf"], tables["cc"]
+            q2_b: List[Any] = []
+            for row in w44:
+                acc = zero_iv
+                for i, j, w in row:
+                    prod = q_b[i].sqr(cf, cc) if i == j else q_b[i].mul(q_b[j], cf, cc)
+                    acc = acc.add(w.mul(prod, cf, cc), cf, cc)
+                q2_b.append(acc)
+            q3_b: List[Any] = []
+            for row in w84:
+                acc = zero_iv
+                for i, j, w in row:
+                    acc = acc.add(w.mul(q2_b[i].mul(q_b[j], cf, cc), cf, cc), cf, cc)
+                q3_b.append(acc)
+            c2_4 = [
+                c_b[0].sqr(cf, cc),
+                c_b[0].mul(c_b[1], cf, cc),
+                one_third.mul(c_b[0].mul(c_b[2], cf, cc), cf, cc).add(
+                    two_thirds.mul(c_b[1].sqr(cf, cc), cf, cc), cf, cc
+                ),
+                c_b[1].mul(c_b[2], cf, cc),
+                c_b[2].sqr(cf, cc),
+            ]
+            p_exact_b: List[Any] = []
+            p_margin_b: List[Any] = []
+            for k in range(13):
+                c2_k = zero_iv
+                for i, w in welev[k]:
+                    c2_k = c2_k.add(w.mul(c2_4[i], cf, cc), cf, cc)
+                d2_c2_k = d2_iv.mul(c2_k, cf, cc)
+                p_exact_b.append(q3_b[k].sub(d2_c2_k, cf, cc))
+                p_margin_b.append(mf_iv.mul(q3_b[k], cf, cc).sub(d2_c2_k, cf, cc))
+        elif candidate_library == "mpmath_iv":
+            q2_b = []
+            for row in w44:
+                acc = zero_iv
+                for i, j, w in row:
+                    acc = acc + w * (q_b[i] ** 2 if i == j else q_b[i] * q_b[j])
+                q2_b.append(acc)
+            q3_b = []
+            for row in w84:
+                acc = zero_iv
+                for i, j, w in row:
+                    acc = acc + w * q2_b[i] * q_b[j]
+                q3_b.append(acc)
+            c2_4 = [
+                c_b[0] ** 2,
+                c_b[0] * c_b[1],
+                one_third * (c_b[0] * c_b[2]) + two_thirds * (c_b[1] ** 2),
+                c_b[1] * c_b[2],
+                c_b[2] ** 2,
+            ]
+            p_exact_b = []
+            p_margin_b = []
+            for k in range(13):
+                c2_k = zero_iv
+                for i, w in welev[k]:
+                    c2_k = c2_k + w * c2_4[i]
+                d2_c2_k = d2_iv * c2_k
+                p_exact_b.append(q3_b[k] - d2_c2_k)
+                p_margin_b.append(mf_iv * q3_b[k] - d2_c2_k)
+        else:
+            q2_b = [sum((w * q_b[i] * q_b[j] for i, j, w in row), zero_iv) for row in w44]
+            q3_b = [sum((w * q2_b[i] * q_b[j] for i, j, w in row), zero_iv) for row in w84]
+            c2_4 = [
+                c_b[0] * c_b[0],
+                c_b[0] * c_b[1],
+                one_third * (c_b[0] * c_b[2]) + two_thirds * (c_b[1] * c_b[1]),
+                c_b[1] * c_b[2],
+                c_b[2] * c_b[2],
+            ]
+            p_exact_b = []
+            p_margin_b = []
+            for k in range(13):
+                c2_k = sum((w * c2_4[i] for i, w in welev[k]), zero_iv)
+                d2_c2_k = d2_iv * c2_k
+                p_exact_b.append(q3_b[k] - d2_c2_k)
+                p_margin_b.append(mf_iv * q3_b[k] - d2_c2_k)
+
+        pm_pos_d0, _, _ = _bernstein_sign_predicates(p_margin_b, candidate_library, tables)
+        ia_elapsed_ms += (time.perf_counter() - t_ia2_start) * 1000.0
+
+        # Depth-0 Regularity Margin Certificate: min P_margin > 0 => f(t) > eps_reg everywhere on [0, 1]
+        if pm_pos_d0:
+            escalation_trace.append(f"{prec_bits}-bit:bernstein-p-margin-certified-d0")
+            return {
+                "available": True,
+                "verificationOutcome": "CERTIFIED_VALID",
+                "failureCategory": "NONE",
+                "stationaryStatus": stationary_status,
+                "maxDepthReached": max_depth_reached,
+                "subdivisionsPerformed": subdivisions_performed,
+                "straddlingPanelsFound": straddling_panels_encountered,
+                "isolatedCuspCount": 0,
+                "workingPrecisionBits": prec_bits,
+                "escalationTrace": escalation_trace,
+                "intervalArithmeticMs": ia_elapsed_ms,
+                "rootIsolationMs": iso_elapsed_ms,
+            }
+
+        # Adaptive De Casteljau subdivision on concave/straddling sub-intervals
+        t_iso_p0 = time.perf_counter()
+        work_stack: List[Tuple[List[Any], List[Any], List[Any], int, Fraction, Fraction]] = [
+            (sc_b, p_exact_b, p_margin_b, 0, Fraction(0), Fraction(1))
+        ]
+        tangent_reversal_found = False
+        margin_violation_found = False
+        unresolved_p_exact: List[Tuple[Fraction, Fraction]] = []
+        unresolved_p_margin: List[Tuple[Fraction, Fraction]] = []
+
+        while work_stack:
+            sc_cur, pe_cur, pm_cur, depth, t_a, t_b = work_stack.pop()
+            if depth > max_depth_reached:
+                max_depth_reached = depth
+            sc_pos, _, sc_le0 = _bernstein_sign_predicates(sc_cur, candidate_library, tables)
+            if sc_le0:
+                continue  # Convex sub-interval: f(t) >= 1 > eps_reg
+            pm_pos, pm_neg, _ = _bernstein_sign_predicates(pm_cur, candidate_library, tables)
+            if pm_pos:
+                continue  # Regularity margin strictly satisfied on sub-interval
+            pe_pos, pe_neg, _ = _bernstein_sign_predicates(pe_cur, candidate_library, tables)
+            if sc_pos and pe_neg:
+                tangent_reversal_found = True
+                isolated_cusp_count += 1
+                break
+            if sc_pos and pe_pos and pm_neg:
+                margin_violation_found = True
+                continue  # 0 < f(t) < eps_reg certified on sub-interval; keep checking rest for reversal/cusp
+
+            straddling_panels_encountered += 1
+            if depth < max_depth:
+                subdivisions_performed += 1
+                mid_t = (t_a + t_b) / Fraction(2)
+                sc_l, sc_r = _de_casteljau_mid_candidate(sc_cur, candidate_library, tables)
+                pe_l, pe_r = _de_casteljau_mid_candidate(pe_cur, candidate_library, tables)
+                pm_l, pm_r = _de_casteljau_mid_candidate(pm_cur, candidate_library, tables)
+                work_stack.append((sc_r, pe_r, pm_r, depth + 1, mid_t, t_b))
+                work_stack.append((sc_l, pe_l, pm_l, depth + 1, t_a, mid_t))
+            else:
+                if not pe_pos:
+                    unresolved_p_exact.append((t_a, t_b))
+                else:
+                    unresolved_p_margin.append((t_a, t_b))
+
+        iso_elapsed_ms += (time.perf_counter() - t_iso_p0) * 1000.0
+
+        if tangent_reversal_found:
+            escalation_trace.append(f"{prec_bits}-bit:tangent-reversal-certified")
+            return {
+                "available": True,
+                "verificationOutcome": "CERTIFIED_INVALID",
+                "failureCategory": "TANGENT_REVERSAL",
+                "stationaryStatus": stationary_status,
+                "maxDepthReached": max_depth_reached,
+                "subdivisionsPerformed": subdivisions_performed,
+                "straddlingPanelsFound": straddling_panels_encountered,
+                "isolatedCuspCount": isolated_cusp_count,
+                "workingPrecisionBits": prec_bits,
+                "escalationTrace": escalation_trace,
+                "intervalArithmeticMs": ia_elapsed_ms,
+                "rootIsolationMs": iso_elapsed_ms,
+            }
+
+        # If all P_exact panels are strictly positive (no cusp/reversal possible) AND a margin violation is proven,
+        # classify as REGULARITY_MARGIN_VIOLATION even if another panel transversely crosses f = eps_reg!
+        if not unresolved_p_exact and margin_violation_found:
+            escalation_trace.append(f"{prec_bits}-bit:regularity-margin-violation-certified")
+            return {
+                "available": True,
+                "verificationOutcome": "CERTIFIED_INVALID",
+                "failureCategory": "REGULARITY_MARGIN_VIOLATION",
+                "stationaryStatus": stationary_status,
+                "maxDepthReached": max_depth_reached,
+                "subdivisionsPerformed": subdivisions_performed,
+                "straddlingPanelsFound": straddling_panels_encountered,
+                "isolatedCuspCount": 0,
+                "workingPrecisionBits": prec_bits,
+                "escalationTrace": escalation_trace,
+                "intervalArithmeticMs": ia_elapsed_ms,
+                "rootIsolationMs": iso_elapsed_ms,
+            }
+
+        if not unresolved_p_exact and not unresolved_p_margin:
+            escalation_trace.append(f"{prec_bits}-bit:subdivided-certified-valid")
+            return {
+                "available": True,
+                "verificationOutcome": "CERTIFIED_VALID",
+                "failureCategory": "NONE",
+                "stationaryStatus": stationary_status,
+                "maxDepthReached": max_depth_reached,
+                "subdivisionsPerformed": subdivisions_performed,
+                "straddlingPanelsFound": straddling_panels_encountered,
+                "isolatedCuspCount": 0,
+                "workingPrecisionBits": prec_bits,
+                "escalationTrace": escalation_trace,
+                "intervalArithmeticMs": ia_elapsed_ms,
+                "rootIsolationMs": iso_elapsed_ms,
+            }
+
+        # Escalate working precision on unresolved panels (ADR-009 §5.2 Step 1)
+        if tier_idx < len(precision_ladder) - 1:
+            escalation_trace.append(f"{prec_bits}-bit:unresolved-escalate")
+            continue
+
+        # ADR-009 §5.2 Step 2: Exact rational Sturm/Bernstein algebraic check at 336-bit ceiling
+        if allow_exact_rational_fallback and max_depth >= 12:
+            t_iso_ex2 = time.perf_counter()
+            p0_q = (_to_exact_fraction(p0[0]), _to_exact_fraction(p0[1]))
+            p1_q = (_to_exact_fraction(p1[0]), _to_exact_fraction(p1[1]))
+            p2_q = (_to_exact_fraction(p2[0]), _to_exact_fraction(p2[1]))
+            p3_q = (_to_exact_fraction(p3[0]), _to_exact_fraction(p3[1]))
+            q_pow, c_pow, p_exact_pow = _cubic_segment_to_exact_p_cusp_and_q_c(p0_q, p1_q, p2_q, p3_q, d_q)
+            q2_pow = [Fraction(0)] * 9
+            for i in range(5):
+                for j in range(5):
+                    q2_pow[i + j] += q_pow[i] * q_pow[j]
+            q3_pow = [Fraction(0)] * 13
+            for i in range(9):
+                for j in range(5):
+                    q3_pow[i + j] += q2_pow[i] * q_pow[j]
+            c2_pow = [Fraction(0)] * 7
+            for i in range(4):
+                for j in range(4):
+                    c2_pow[i + j] += c_pow[i] * c_pow[j]
+            p_margin_pow = [margin_factor_q * q3_pow[i] - (d2_q * c2_pow[i] if i < 7 else Fraction(0)) for i in range(13)]
+
+            pe_roots = isolate_polynomial_roots_on_unit_interval(p_exact_pow)
+            c_roots = isolate_polynomial_roots_on_unit_interval(c_pow)
+            # Build sorted exact rational sample checkpoints spanning [0, 1] and between all roots
+            crit_pts: List[Fraction] = [Fraction(0), Fraction(1)]
+            for r in pe_roots + c_roots:
+                crit_pts.append(Fraction(r["tLowerRational"]))
+                crit_pts.append(Fraction(r["tUpperRational"]))
+            crit_pts = sorted(set(crit_pts))
+            check_pts: List[Fraction] = list(crit_pts)
+            for idx_pt in range(len(crit_pts) - 1):
+                check_pts.append((crit_pts[idx_pt] + crit_pts[idx_pt + 1]) / Fraction(2))
+
+            has_reversal_ex = False
+            has_cusp_ex = False
+            for pt in check_pts:
+                sc_val = Fraction(s_sign) * eval_polynomial_exact(c_pow, pt)
+                if sc_val > 0 and eval_polynomial_exact(p_exact_pow, pt) < 0:
+                    has_reversal_ex = True
+                    break
+            if not has_reversal_ex:
+                for r in pe_roots:
+                    mid_r = (Fraction(r["tLowerRational"]) + Fraction(r["tUpperRational"])) / Fraction(2)
+                    if Fraction(s_sign) * eval_polynomial_exact(c_pow, mid_r) > 0:
+                        has_cusp_ex = True
+                        break
+
+            iso_elapsed_ms += (time.perf_counter() - t_iso_ex2) * 1000.0
+            if has_reversal_ex:
+                escalation_trace.append("336-bit:exact-rational-tangent-reversal")
+                return {
+                    "available": True,
+                    "verificationOutcome": "CERTIFIED_INVALID",
+                    "failureCategory": "TANGENT_REVERSAL",
+                    "stationaryStatus": stationary_status,
+                    "maxDepthReached": max_depth_reached,
+                    "subdivisionsPerformed": subdivisions_performed,
+                    "straddlingPanelsFound": straddling_panels_encountered,
+                    "isolatedCuspCount": max(1, len(pe_roots)),
+                    "workingPrecisionBits": prec_bits,
+                    "escalationTrace": escalation_trace,
+                    "intervalArithmeticMs": ia_elapsed_ms,
+                    "rootIsolationMs": iso_elapsed_ms,
+                }
+            if has_cusp_ex:
+                escalation_trace.append("336-bit:exact-rational-zero-speed-cusp")
+                return {
+                    "available": True,
+                    "verificationOutcome": "CERTIFIED_INVALID",
+                    "failureCategory": "ACTUAL_ZERO_SPEED_CUSP",
+                    "stationaryStatus": stationary_status,
+                    "maxDepthReached": max_depth_reached,
+                    "subdivisionsPerformed": subdivisions_performed,
+                    "straddlingPanelsFound": straddling_panels_encountered,
+                    "isolatedCuspCount": max(1, len(pe_roots)),
+                    "workingPrecisionBits": prec_bits,
+                    "escalationTrace": escalation_trace,
+                    "intervalArithmeticMs": ia_elapsed_ms,
+                    "rootIsolationMs": iso_elapsed_ms,
+                }
+
+            # Check P_margin on concave side exactly
+            pm_roots = isolate_polynomial_roots_on_unit_interval(p_margin_pow)
+            m_pts: List[Fraction] = list(check_pts)
+            for r in pm_roots:
+                m_pts.append(Fraction(r["tLowerRational"]))
+                m_pts.append(Fraction(r["tUpperRational"]))
+            m_pts = sorted(set(m_pts))
+            for idx_pt in range(len(m_pts) - 1):
+                m_pts.append((m_pts[idx_pt] + m_pts[idx_pt + 1]) / Fraction(2))
+            has_margin_ex = any(
+                Fraction(s_sign) * eval_polynomial_exact(c_pow, pt) > 0 and eval_polynomial_exact(p_margin_pow, pt) < 0
+                for pt in m_pts
+            )
+            if has_margin_ex or margin_violation_found:
+                escalation_trace.append("336-bit:exact-rational-margin-violation")
+                return {
+                    "available": True,
+                    "verificationOutcome": "CERTIFIED_INVALID",
+                    "failureCategory": "REGULARITY_MARGIN_VIOLATION",
+                    "stationaryStatus": stationary_status,
+                    "maxDepthReached": max_depth_reached,
+                    "subdivisionsPerformed": subdivisions_performed,
+                    "straddlingPanelsFound": straddling_panels_encountered,
+                    "isolatedCuspCount": 0,
+                    "workingPrecisionBits": prec_bits,
+                    "escalationTrace": escalation_trace,
+                    "intervalArithmeticMs": ia_elapsed_ms,
+                    "rootIsolationMs": iso_elapsed_ms,
+                }
+
+        escalation_trace.append(f"{prec_bits}-bit:fail-closed-inconclusive")
+        return {
+            "available": True,
+            "verificationOutcome": "INCONCLUSIVE",
+            "failureCategory": "INCONCLUSIVE_VERIFICATION",
+            "stationaryStatus": stationary_status,
+            "maxDepthReached": max_depth_reached,
+            "subdivisionsPerformed": subdivisions_performed,
+            "straddlingPanelsFound": straddling_panels_encountered,
+            "isolatedCuspCount": 0,
+            "workingPrecisionBits": prec_bits,
+            "escalationTrace": escalation_trace,
+            "intervalArithmeticMs": ia_elapsed_ms,
+            "rootIsolationMs": iso_elapsed_ms,
+        }
+
+    return {
+        "available": True,
+        "verificationOutcome": "INCONCLUSIVE",
+        "failureCategory": "INCONCLUSIVE_VERIFICATION",
+        "stationaryStatus": stationary_status,
+        "maxDepthReached": max_depth_reached,
+        "subdivisionsPerformed": subdivisions_performed,
+        "straddlingPanelsFound": straddling_panels_encountered,
+        "isolatedCuspCount": 0,
+        "workingPrecisionBits": 336,
+        "escalationTrace": escalation_trace,
+        "intervalArithmeticMs": ia_elapsed_ms,
+        "rootIsolationMs": iso_elapsed_ms,
+    }
+
+
+def _contour_outward_offset_sign(contour: Dict[str, Any]) -> int:
+    """Determines the canonical outward seam-allowance sign s in {-1, +1} from the closed contour's
+    signed polygon winding (CCW exterior -> s = -1 per ADR-009 §4.1; CW exterior -> s = +1).
+    """
+    pts = [seg["p0"] for seg in contour.get("segments", []) if "p0" in seg]
+    if len(pts) < 3:
+        return -1
+    area2 = 0.0
+    n = len(pts)
+    for idx in range(n):
+        x0, y0 = pts[idx]
+        x1, y1 = pts[(idx + 1) % n]
+        area2 += x0 * y1 - x1 * y0
+    return -1 if area2 >= 0.0 else 1
+
+
+def _evaluate_contour_cusp_panels_with_candidate(
+    raw_beziers: List[Tuple[Tuple[Any, Any], Tuple[Any, Any], Tuple[Any, Any], Tuple[Any, Any]]],
+    candidate_library: str,
+    d_q: Fraction = Fraction(3, 2),
+    s_sign: int = -1,
+    epsilon_reg_q: Fraction = Fraction(1, 20),
+    max_depth: int = 20,
+) -> Dict[str, Any]:
+    """Executes the symmetric ADR-009 §5.1 / §5.2 Stage 2 Bernstein-basis tri-state offset verifier across
     every cubic Bezier segment of a garment contour using the specified candidate interval library.
     Measures phase timings cleanly: backend_init, interval_arithmetic, root_isolation, certification.
     """
@@ -2263,66 +3192,66 @@ def _evaluate_contour_cusp_panels_with_candidate(
     if candidate_library == "mpmath_iv":
         iv.prec = 113
         mpmath.mp.prec = 113
-        ctx_floor = ctx_ceil = None
     elif candidate_library == "python_flint":
         if not HAS_FLINT:
             return {"available": False}
         flint.ctx.prec = 113
-        ctx_floor = ctx_ceil = None
-    else:
-        ctx_floor = decimal.Context(prec=35, rounding=decimal.ROUND_FLOOR)
-        ctx_ceil = decimal.Context(prec=35, rounding=decimal.ROUND_CEILING)
+    _ = _get_bernstein_candidate_tables(candidate_library, 113)
     backend_init_ms = (time.perf_counter() - t_init_0) * 1000.0
 
-    t_ia_0 = time.perf_counter()
-    straddling_segments: List[Tuple[List[Fraction], Fraction, Fraction]] = []
-    min_q_pos_all = True
-    for q_c, _c_c, p_cusp in prepared_beziers:
-        for k in range(panels):
-            ta = Fraction(k, panels)
-            tb = Fraction(k + 1, panels)
-            q_lo, _q_hi = _eval_poly_horner_candidate_interval(q_c, ta, tb, candidate_library)
-            if q_lo <= 0:
-                min_q_pos_all = False
-            p_lo, p_hi = _eval_poly_horner_candidate_interval(p_cusp, ta, tb, candidate_library)
-            if p_lo <= 0 <= p_hi:
-                straddling_segments.append((p_cusp, ta, tb))
-    interval_arith_ms = (time.perf_counter() - t_ia_0) * 1000.0
+    interval_arith_ms = 0.0
+    root_isolation_ms = 0.0
+    straddling_total = 0
+    isolated_cusp_total = 0
+    subdivisions_total = 0
+    max_depth_seen = 0
+    segment_outcomes: List[str] = []
+    segment_categories: List[str] = []
 
-    t_iso_0 = time.perf_counter()
-    isolated_cusp_count = 0
-    for p_cusp, ta, tb in straddling_segments:
-        # Refine straddling panel via 12-step candidate interval bisection check
-        lo, hi = ta, tb
-        for _ in range(12):
-            mid = (lo + hi) / Fraction(2)
-            l_lo, l_hi = _eval_poly_horner_candidate_interval(p_cusp, lo, mid, candidate_library)
-            r_lo, r_hi = _eval_poly_horner_candidate_interval(p_cusp, mid, hi, candidate_library)
-            if l_lo <= 0 <= l_hi:
-                hi = mid
-            elif r_lo <= 0 <= r_hi:
-                lo = mid
-            else:
-                break
-        final_lo, final_hi = _eval_poly_horner_candidate_interval(p_cusp, lo, hi, candidate_library)
-        if final_lo <= 0 <= final_hi:
-            isolated_cusp_count += 1
-    root_isolation_ms = (time.perf_counter() - t_iso_0) * 1000.0
+    for p0, p1, p2, p3 in raw_beziers:
+        seg_res = certify_cubic_segment_bernstein_candidate(
+            p0,
+            p1,
+            p2,
+            p3,
+            d_q=d_q,
+            candidate_library=candidate_library,
+            s_sign=s_sign,
+            epsilon_reg_q=epsilon_reg_q,
+            max_depth=max_depth,
+        )
+        interval_arith_ms += seg_res["intervalArithmeticMs"]
+        root_isolation_ms += seg_res["rootIsolationMs"]
+        straddling_total += seg_res["straddlingPanelsFound"]
+        isolated_cusp_total += seg_res["isolatedCuspCount"]
+        subdivisions_total += seg_res["subdivisionsPerformed"]
+        if seg_res["maxDepthReached"] > max_depth_seen:
+            max_depth_seen = seg_res["maxDepthReached"]
+        segment_outcomes.append(seg_res["verificationOutcome"])
+        segment_categories.append(seg_res["failureCategory"])
 
     t_cert_0 = time.perf_counter()
-    outcome = (
-        "CERTIFIED_REGULAR_ON_CORPUS_OFFSET"
-        if (min_q_pos_all and isolated_cusp_count == 0)
-        else "CUSP_OR_BOUNDARY_DETECTED"
-    )
+    if any(o == "CERTIFIED_INVALID" for o in segment_outcomes):
+        outcome = "CERTIFIED_INVALID"
+        primary_failure = next(c for o, c in zip(segment_outcomes, segment_categories) if o == "CERTIFIED_INVALID")
+    elif any(o == "INCONCLUSIVE" for o in segment_outcomes):
+        outcome = "INCONCLUSIVE"
+        primary_failure = "INCONCLUSIVE_VERIFICATION"
+    else:
+        outcome = "CERTIFIED_VALID"
+        primary_failure = "NONE"
     cert_ms = (time.perf_counter() - t_cert_0) * 1000.0
 
     return {
         "available": True,
         "outcome": outcome,
-        "cubicBezierSegmentsEvaluated": len(prepared_beziers),
-        "straddlingPanelsFound": len(straddling_segments),
-        "isolatedCuspCount": isolated_cusp_count,
+        "failureCategory": primary_failure,
+        "offsetSignS": s_sign,
+        "cubicBezierSegmentsEvaluated": len(raw_beziers),
+        "straddlingPanelsFound": straddling_total,
+        "subdivisionsPerformed": subdivisions_total,
+        "maxSubdivisionDepthReached": max_depth_seen,
+        "isolatedCuspCount": isolated_cusp_total,
         "phaseTimingsMs": {
             "backendInitMs": round(backend_init_ms, 6),
             "intervalArithmeticMs": round(interval_arith_ms, 6),
@@ -2333,10 +3262,20 @@ def _evaluate_contour_cusp_panels_with_candidate(
     }
 
 
-def benchmark_63_canonical_garment_contours(contours_path: Any) -> Dict[str, Any]:
+def _compute_percentile_ms(sorted_vals: List[float], quantile: float) -> float:
+    idx = min(len(sorted_vals) - 1, max(0, int(math.ceil(quantile * len(sorted_vals))) - 1))
+    return sorted_vals[idx]
+
+
+def benchmark_63_canonical_garment_contours(
+    contours_path: Any,
+    repetitions: int = 5,
+    warmup_runs: int = 1,
+) -> Dict[str, Any]:
     """Executes the ADR-009 §7.2 benchmark across all 63 real canonical garment contours drafted from
     Patroner's bodice, sleeve, and skirt blocks, timing ALL 3 candidates (`mpmath.iv`, `python-flint arb`,
-    `DecimalInterval`) directly with full per-contour provenance and phase timing breakdowns (PKG-M00-04 / I-04).
+    `DecimalInterval`) symmetrically via the exact ADR-009 §5.1/§5.2 Stage 2 Bernstein-basis tri-state
+    certifier with cold-start + steady-state multi-repetition statistics and full phase breakdowns.
     """
     import hashlib
     import json
@@ -2353,122 +3292,215 @@ def benchmark_63_canonical_garment_contours(contours_path: Any) -> Dict[str, Any
         raise ValueError(f"ADR-009 §7.2 requires exactly 63 canonical garment contours, found {len(contours)}")
 
     d_q = Fraction(3, 2)  # 1.5 cm canonical seam allowance
-    per_contour_records: List[Dict[str, Any]] = []
-    samples_by_cand: Dict[str, List[float]] = {
-        "mpmathIvFraction": [],
-        "pythonFlintArbFmpq": [],
-        "decimalIntervalFraction": [],
-    }
-    phase_sums: Dict[str, Dict[str, float]] = {
-        k: {
-            "preprocessingMs": 0.0,
-            "backendInitMs": 0.0,
-            "intervalArithmeticMs": 0.0,
-            "rootIsolationMs": 0.0,
-            "certificationMs": 0.0,
-            "serializationMs": 0.0,
-        }
-        for k in samples_by_cand
-    }
-
+    epsilon_reg_q = Fraction(1, 20)  # 0.05 regularity safety margin (ADR-009 §4.4)
     cand_map = (
         ("mpmathIvFraction", "mpmath_iv"),
         ("pythonFlintArbFmpq", "python_flint"),
         ("decimalIntervalFraction", "decimal_interval"),
     )
 
-    for contour in contours:
-        t_prep_0 = time.perf_counter()
-        prepared_beziers: List[Tuple[List[Fraction], List[Fraction], List[Fraction]]] = []
-        for seg in contour["segments"]:
-            if seg["type"] == "bezier":
-                p0 = (Fraction(seg["p0"][0]), Fraction(seg["p0"][1]))
-                p1 = (Fraction(seg["cp1"][0]), Fraction(seg["cp1"][1]))
-                p2 = (Fraction(seg["cp2"][0]), Fraction(seg["cp2"][1]))
-                p3 = (Fraction(seg["p3"][0]), Fraction(seg["p3"][1]))
-                prepared_beziers.append(_cubic_segment_to_exact_p_cusp_and_q_c(p0, p1, p2, p3, d_q))
-        prep_ms = (time.perf_counter() - t_prep_0) * 1000.0
-
-        contour_cand_results: Dict[str, Any] = {}
-        for out_key, lib_id in cand_map:
-            res = _evaluate_contour_cusp_panels_with_candidate(prepared_beziers, lib_id, panels=8)
-            t_ser_0 = time.perf_counter()
-            _ = json.dumps(res)
-            ser_ms = (time.perf_counter() - t_ser_0) * 1000.0
-
-            if res.get("available"):
-                pt = res["phaseTimingsMs"]
-                end_to_end_ms = prep_ms + pt["candidateKernelTotalMs"] + ser_ms
-                samples_by_cand[out_key].append(end_to_end_ms)
-                phase_sums[out_key]["preprocessingMs"] += prep_ms
-                phase_sums[out_key]["backendInitMs"] += pt["backendInitMs"]
-                phase_sums[out_key]["intervalArithmeticMs"] += pt["intervalArithmeticMs"]
-                phase_sums[out_key]["rootIsolationMs"] += pt["rootIsolationMs"]
-                phase_sums[out_key]["certificationMs"] += pt["certificationMs"]
-                phase_sums[out_key]["serializationMs"] += ser_ms
-                contour_cand_results[out_key] = {
-                    "outcome": res["outcome"],
-                    "endToEndMs": round(end_to_end_ms, 4),
-                    "candidateKernelMs": round(pt["candidateKernelTotalMs"], 4),
-                }
-            else:
-                contour_cand_results[out_key] = {"available": False}
-
-        per_contour_records.append(
-            {
-                "contourId": contour["contourId"],
-                "sourceModule": contour["sourceModule"],
-                "size": contour["size"],
-                "pieceCode": contour["pieceCode"],
-                "variant": contour["variant"],
-                "segmentCount": contour["segmentCount"],
-                "cubicBezierCount": contour["cubicBezierCount"],
-                "contourInputSha256": contour["contourInputSha256"],
-                "preprocessingMs": round(prep_ms, 4),
-                "candidateResults": contour_cand_results,
+    def _run_single_pass() -> Tuple[Dict[str, List[float]], Dict[str, Dict[str, float]], List[Dict[str, Any]]]:
+        pass_samples: Dict[str, List[float]] = {k: [] for k, _ in cand_map}
+        pass_phases: Dict[str, Dict[str, float]] = {
+            k: {
+                "preprocessingMs": 0.0,
+                "backendInitMs": 0.0,
+                "intervalArithmeticMs": 0.0,
+                "rootIsolationMs": 0.0,
+                "certificationMs": 0.0,
+                "serializationMs": 0.0,
             }
-        )
-
-    def _summarize_63(key: str) -> Dict[str, Any]:
-        s = samples_by_cand[key]
-        if not s:
-            return {"available": False}
-        s_sorted = sorted(s)
-        p95_val = compute_p95_from_samples_ms(s)
-        med = statistics.median(s_sorted)
-        ps = phase_sums[key]
-        return {
-            "available": True,
-            "contoursEvaluated": len(s),
-            "medianMs": round(med, 4),
-            "p95Ms": round(p95_val, 4),
-            "maxMs": round(s_sorted[-1], 4),
-            "samplesMs": [round(x, 6) for x in s],
-            "p95TargetMaxMs": 5.0,
-            "withinP95Target5Ms": bool(p95_val <= 5.0),
-            "latencyBudgetMaxMs": 50.0,
-            "withinLatencyBudget": bool(p95_val <= 50.0),
-            "phaseBreakdownTotalMs": {k: round(v, 4) for k, v in ps.items()},
-            "phaseBreakdownMeanMsPerContour": {k: round(v / len(s), 6) for k, v in ps.items()},
+            for k, _ in cand_map
         }
+        pass_records: List[Dict[str, Any]] = []
 
-    candidates_summary = {
-        "mpmathIvFraction": _summarize_63("mpmathIvFraction"),
-        "pythonFlintArbFmpq": _summarize_63("pythonFlintArbFmpq"),
-        "decimalIntervalFraction": _summarize_63("decimalIntervalFraction"),
-    }
+        for contour in contours:
+            t_prep_0 = time.perf_counter()
+            s_sign = _contour_outward_offset_sign(contour)
+            raw_beziers: List[Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float], Tuple[float, float]]] = []
+            for seg in contour["segments"]:
+                if seg["type"] == "bezier":
+                    raw_beziers.append(
+                        (
+                            (seg["p0"][0], seg["p0"][1]),
+                            (seg["cp1"][0], seg["cp1"][1]),
+                            (seg["cp2"][0], seg["cp2"][1]),
+                            (seg["p3"][0], seg["p3"][1]),
+                        )
+                    )
+            prep_ms = (time.perf_counter() - t_prep_0) * 1000.0
+
+            contour_cand_results: Dict[str, Any] = {}
+            for out_key, lib_id in cand_map:
+                res = _evaluate_contour_cusp_panels_with_candidate(
+                    raw_beziers,
+                    lib_id,
+                    d_q=d_q,
+                    s_sign=s_sign,
+                    epsilon_reg_q=epsilon_reg_q,
+                    max_depth=20,
+                )
+                t_ser_0 = time.perf_counter()
+                _ = json.dumps(res)
+                ser_ms = (time.perf_counter() - t_ser_0) * 1000.0
+
+                if res.get("available"):
+                    pt = res["phaseTimingsMs"]
+                    end_to_end_ms = prep_ms + pt["candidateKernelTotalMs"] + ser_ms
+                    pass_samples[out_key].append(end_to_end_ms)
+                    pass_phases[out_key]["preprocessingMs"] += prep_ms
+                    pass_phases[out_key]["backendInitMs"] += pt["backendInitMs"]
+                    pass_phases[out_key]["intervalArithmeticMs"] += pt["intervalArithmeticMs"]
+                    pass_phases[out_key]["rootIsolationMs"] += pt["rootIsolationMs"]
+                    pass_phases[out_key]["certificationMs"] += pt["certificationMs"]
+                    pass_phases[out_key]["serializationMs"] += ser_ms
+                    contour_cand_results[out_key] = {
+                        "outcome": res["outcome"],
+                        "failureCategory": res["failureCategory"],
+                        "offsetSignS": s_sign,
+                        "maxSubdivisionDepthReached": res["maxSubdivisionDepthReached"],
+                        "endToEndMs": round(end_to_end_ms, 4),
+                        "candidateKernelMs": round(pt["candidateKernelTotalMs"], 4),
+                    }
+                else:
+                    contour_cand_results[out_key] = {"available": False}
+
+            pass_records.append(
+                {
+                    "contourId": contour["contourId"],
+                    "sourceModule": contour["sourceModule"],
+                    "size": contour["size"],
+                    "pieceCode": contour["pieceCode"],
+                    "variant": contour["variant"],
+                    "segmentCount": contour["segmentCount"],
+                    "cubicBezierCount": contour["cubicBezierCount"],
+                    "outwardOffsetSignS": s_sign,
+                    "contourInputSha256": contour["contourInputSha256"],
+                    "preprocessingMs": round(prep_ms, 4),
+                    "candidateResults": contour_cand_results,
+                }
+            )
+        return pass_samples, pass_phases, pass_records
+
+    # 1. Cold-start measurement (first pass, clearing precomputed tables first to capture true cold init)
+    _BERNSTEIN_CANDIDATE_TABLES_CACHE.clear()
+    cold_samples, cold_phases, _ = _run_single_pass()
+
+    # 2. Explicit warm-up passes
+    for _ in range(max(0, warmup_runs)):
+        _run_single_pass()
+
+    # 3. Steady-state measured repetitions
+    num_reps = max(1, repetitions)
+    rep_samples_all: Dict[str, List[List[float]]] = {k: [] for k, _ in cand_map}
+    rep_phases_all: Dict[str, List[Dict[str, float]]] = {k: [] for k, _ in cand_map}
+    last_records: List[Dict[str, Any]] = []
+    for _ in range(num_reps):
+        ps, pp, pr = _run_single_pass()
+        for k, _ in cand_map:
+            rep_samples_all[k].append(ps[k])
+            rep_phases_all[k].append(pp[k])
+        last_records = pr
+
+    def _summarize_samples(
+        samples: List[float],
+        phase_totals: Dict[str, float],
+        rep_p95s: Optional[List[float]] = None,
+        pooled_samples: Optional[List[float]] = None,
+    ) -> Dict[str, Any]:
+        if not samples:
+            return {"available": False}
+        s_sorted = sorted(samples)
+        p50 = _compute_percentile_ms(s_sorted, 0.50)
+        p90 = _compute_percentile_ms(s_sorted, 0.90)
+        p95 = compute_p95_from_samples_ms(samples)
+        p99 = _compute_percentile_ms(s_sorted, 0.99)
+        summary: Dict[str, Any] = {
+            "available": True,
+            "contoursEvaluated": len(samples),
+            "medianMs": round(p50, 4),
+            "p90Ms": round(p90, 4),
+            "p95Ms": round(p95, 4),
+            "p99Ms": round(p99, 4),
+            "maxMs": round(s_sorted[-1], 4),
+            "samplesMs": [round(x, 6) for x in samples],
+            "p95TargetMaxMs": 5.0,
+            "withinP95Target5Ms": bool(p95 <= 5.0),
+            "latencyBudgetMaxMs": 50.0,
+            "withinLatencyBudget": bool(p95 <= 50.0),
+            "phaseBreakdownTotalMs": {k: round(v, 4) for k, v in phase_totals.items()},
+            "phaseBreakdownMeanMsPerContour": {k: round(v / len(samples), 6) for k, v in phase_totals.items()},
+        }
+        if rep_p95s is not None:
+            summary["repetitionP95sMs"] = [round(x, 4) for x in rep_p95s]
+        if pooled_samples is not None:
+            ps_sorted = sorted(pooled_samples)
+            summary["pooledRepetitionsSummary"] = {
+                "totalSamples": len(ps_sorted),
+                "p50Ms": round(_compute_percentile_ms(ps_sorted, 0.50), 4),
+                "p90Ms": round(_compute_percentile_ms(ps_sorted, 0.90), 4),
+                "p95Ms": round(_compute_percentile_ms(ps_sorted, 0.95), 4),
+                "p99Ms": round(_compute_percentile_ms(ps_sorted, 0.99), 4),
+                "maxMs": round(ps_sorted[-1], 4),
+            }
+        return summary
+
+    cold_start_summary: Dict[str, Any] = {}
+    candidates_summary: Dict[str, Any] = {}
+    for k, _ in cand_map:
+        cold_start_summary[k] = _summarize_samples(cold_samples[k], cold_phases[k])
+        if rep_samples_all[k] and rep_samples_all[k][0]:
+            per_contour_medians = [
+                statistics.median(rep[idx] for rep in rep_samples_all[k]) for idx in range(len(contours))
+            ]
+            rep_p95s = [compute_p95_from_samples_ms(rep) for rep in rep_samples_all[k]]
+            pooled = [x for rep in rep_samples_all[k] for x in rep]
+            mean_phases = {
+                pk: statistics.mean(rp[pk] for rp in rep_phases_all[k]) for pk in rep_phases_all[k][0]
+            }
+            candidates_summary[k] = _summarize_samples(
+                per_contour_medians,
+                mean_phases,
+                rep_p95s=rep_p95s,
+                pooled_samples=pooled,
+            )
+            # Update per-contour records with steady-state median endToEndMs
+            for idx in range(len(contours)):
+                last_records[idx]["candidateResults"][k]["steadyStateMedianEndToEndMs"] = round(
+                    per_contour_medians[idx], 4
+                )
+        else:
+            candidates_summary[k] = {"available": False}
+
     eval_5ms = evaluate_three_candidates_p95_latency({"candidates": candidates_summary}, threshold_ms=5.0)
+    cold_eval_5ms = evaluate_three_candidates_p95_latency({"candidates": cold_start_summary}, threshold_ms=5.0)
     return {
         "benchmarkName": "ADR-009 §7.2 63 Canonical Garment Contours End-to-End Benchmark",
+        "algorithm": "ADR-009 §5.1/§5.2 Stage 2 Direct Bernstein-Basis Tri-State Offset Certification (113->170->336 bit)",
+        "normativeThresholdClassification": (
+            "PRODUCTION_ADOPTION_TARGET_AND_DECISION_TRIGGER "
+            "(ADR-009 §7.2 Decision 4: <5 ms per contour guides DEC-13 Stage 2 adoption vs C/PyO3 acceleration; "
+            "M00.4 library qualification runtime budget target is <=50 ms per curve)"
+        ),
+        "measurementProtocol": {
+            "coldStartRuns": 1,
+            "warmupRuns": max(0, warmup_runs),
+            "steadyStateMeasuredRepetitions": num_reps,
+            "zeroCrossContourCaching": True,
+            "zeroContoursSkipped": True,
+        },
         "corpusPath": str(path_obj),
         "corpusFileSha256": corpus_file_sha256,
         "corpusSha256": corpus.get("corpusSha256"),
         "contourCount": len(contours),
         "offsetDistanceCm": 1.5,
+        "regularityMarginEpsilon": 0.05,
         "missingBlocksDisclosure": corpus.get("missingBlocksDisclosure", []),
+        "coldStartSummary": cold_start_summary,
+        "coldStartLatencyEvaluation5Ms": cold_eval_5ms,
         "candidates": candidates_summary,
         "latencyQualificationEvaluation5Ms": eval_5ms,
-        "perContourRecords": per_contour_records,
+        "perContourRecords": last_records,
     }
 
 
