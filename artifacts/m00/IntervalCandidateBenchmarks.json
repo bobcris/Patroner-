@@ -10,10 +10,10 @@
     "pythonHashSeed": "0"
   },
   "fullPopulation200kChecksRuntimeMs": {
-    "mpmathIvFractionMs": 4651.77,
-    "pythonFlintArbFmpqMs": 1944.34,
-    "decimalIntervalFractionMs": 2678.33,
-    "totalSuiteMs": 9287.79
+    "mpmathIvFractionMs": 4483.2,
+    "pythonFlintArbFmpqMs": 1811.64,
+    "decimalIntervalFractionMs": 2400.83,
+    "totalSuiteMs": 8708.68
   },
   "perCurveLatencyBenchmarks": {
     "metadata": {
@@ -39,30 +39,30 @@
     "sharedRationalPreprocessing": {
       "available": true,
       "iterations": 20,
-      "medianMs": 0.2763,
-      "p95Ms": 0.3273,
-      "maxMs": 0.3864,
+      "medianMs": 0.2679,
+      "p95Ms": 0.2848,
+      "maxMs": 0.3016,
       "samplesMs": [
-        0.316089,
-        0.291964,
-        0.280985,
-        0.290288,
-        0.327268,
-        0.276586,
-        0.279216,
-        0.265555,
-        0.271002,
-        0.386361,
-        0.274444,
-        0.285075,
-        0.276016,
-        0.271632,
-        0.266714,
-        0.271825,
-        0.270537,
-        0.30305,
-        0.267267,
-        0.268075
+        0.301585,
+        0.282666,
+        0.28484,
+        0.269011,
+        0.270188,
+        0.264751,
+        0.272391,
+        0.262679,
+        0.264328,
+        0.269745,
+        0.265509,
+        0.265301,
+        0.265137,
+        0.269081,
+        0.264177,
+        0.265182,
+        0.261962,
+        0.273857,
+        0.267646,
+        0.268127
       ],
       "p95TargetMaxMs": 5.0,
       "withinP95Target5Ms": true,
@@ -73,30 +73,30 @@
       "mpmathIvFraction": {
         "available": true,
         "iterations": 20,
-        "medianMs": 0.1684,
-        "p95Ms": 0.1886,
-        "maxMs": 0.2533,
+        "medianMs": 0.1612,
+        "p95Ms": 0.1773,
+        "maxMs": 0.2314,
         "samplesMs": [
-          0.25325,
-          0.178222,
-          0.171692,
-          0.183448,
-          0.167641,
-          0.172754,
-          0.169262,
-          0.164675,
-          0.163374,
-          0.171414,
-          0.164738,
-          0.16218,
-          0.188572,
-          0.16412,
-          0.165583,
-          0.167706,
-          0.162702,
-          0.167512,
-          0.172599,
-          0.169041
+          0.231385,
+          0.177257,
+          0.162092,
+          0.160464,
+          0.161234,
+          0.156045,
+          0.158976,
+          0.165855,
+          0.160463,
+          0.161199,
+          0.161572,
+          0.159476,
+          0.155376,
+          0.162766,
+          0.157528,
+          0.157225,
+          0.165209,
+          0.162431,
+          0.159914,
+          0.162933
         ],
         "p95TargetMaxMs": 5.0,
         "withinP95Target5Ms": true,
@@ -106,30 +106,30 @@
       "pythonFlintArbFmpq": {
         "available": true,
         "iterations": 20,
-        "medianMs": 0.0091,
-        "p95Ms": 0.0138,
-        "maxMs": 0.0617,
+        "medianMs": 0.009,
+        "p95Ms": 0.0115,
+        "maxMs": 0.0601,
         "samplesMs": [
-          0.061707,
-          0.01113,
-          0.009652,
-          0.009059,
-          0.009468,
-          0.009005,
-          0.008791,
+          0.060082,
+          0.011507,
+          0.009866,
+          0.009161,
+          0.009561,
+          0.009326,
+          0.008968,
+          0.008938,
+          0.008966,
           0.009026,
-          0.009162,
-          0.008959,
-          0.009146,
-          0.009067,
-          0.008814,
-          0.008873,
-          0.009068,
-          0.008855,
-          0.009358,
-          0.013834,
-          0.00907,
-          0.008947
+          0.009074,
+          0.009157,
+          0.00892,
+          0.009002,
+          0.008961,
+          0.0091,
+          0.008864,
+          0.008937,
+          0.009062,
+          0.008929
         ],
         "p95TargetMaxMs": 5.0,
         "withinP95Target5Ms": true,
@@ -139,30 +139,30 @@
       "decimalIntervalFraction": {
         "available": true,
         "iterations": 20,
-        "medianMs": 0.0427,
-        "p95Ms": 0.0501,
-        "maxMs": 0.0593,
+        "medianMs": 0.0431,
+        "p95Ms": 0.0476,
+        "maxMs": 0.0573,
         "samplesMs": [
-          0.059343,
-          0.046633,
-          0.044366,
-          0.043208,
-          0.043375,
-          0.042497,
+          0.057255,
+          0.04738,
+          0.045167,
+          0.043524,
+          0.046843,
+          0.042835,
+          0.042466,
           0.042955,
-          0.04329,
-          0.042586,
-          0.042832,
-          0.050123,
-          0.042509,
-          0.042602,
-          0.042792,
-          0.042672,
-          0.042438,
-          0.042547,
-          0.042272,
-          0.04258,
-          0.042453
+          0.043206,
+          0.042852,
+          0.042658,
+          0.043299,
+          0.043466,
+          0.042813,
+          0.042959,
+          0.043169,
+          0.047637,
+          0.042922,
+          0.042169,
+          0.042245
         ],
         "p95TargetMaxMs": 5.0,
         "withinP95Target5Ms": true,
@@ -182,21 +182,21 @@
     "candidateResults": {
       "mpmathIvFraction": {
         "present": true,
-        "p95Ms": 0.188572,
+        "p95Ms": 0.177257,
         "thresholdMs": 5.0,
         "passed": true,
         "reason": "OK"
       },
       "pythonFlintArbFmpq": {
         "present": true,
-        "p95Ms": 0.013834,
+        "p95Ms": 0.011507,
         "thresholdMs": 5.0,
         "passed": true,
         "reason": "OK"
       },
       "decimalIntervalFraction": {
         "present": true,
-        "p95Ms": 0.050123,
+        "p95Ms": 0.047637,
         "thresholdMs": 5.0,
         "passed": true,
         "reason": "OK"
@@ -223,277 +223,277 @@
       "mpmathIvFraction": {
         "available": true,
         "contoursEvaluated": 63,
-        "medianMs": 30.7884,
-        "p95Ms": 49.2475,
-        "maxMs": 54.6284,
+        "medianMs": 33.4344,
+        "p95Ms": 47.1573,
+        "maxMs": 49.9883,
         "samplesMs": [
-          37.039612,
-          37.934861,
-          47.977458,
-          49.083279,
-          40.928478,
-          43.896039,
-          38.567872,
-          38.701713,
-          36.804453,
-          38.821337,
-          40.83181,
-          41.433097,
-          37.000242,
-          36.398086,
-          37.083506,
-          39.573571,
-          41.181438,
-          47.744824,
-          42.10366,
-          43.37453,
-          44.819403,
-          48.291223,
-          48.867589,
-          52.969111,
-          40.03028,
-          54.628371,
-          43.030374,
-          44.276619,
-          49.529007,
-          49.247492,
-          29.144836,
-          28.663512,
-          29.063941,
-          29.304715,
-          29.364363,
-          29.595772,
-          28.872385,
-          27.985968,
-          27.851211,
-          29.028712,
-          28.314083,
-          30.788366,
-          33.445286,
-          27.943559,
-          29.059015,
-          27.960495,
-          28.493238,
-          27.631844,
-          9.30709,
-          8.78728,
-          9.259179,
-          9.658328,
-          10.027996,
-          10.255308,
-          11.474628,
-          8.770056,
-          10.123765,
-          10.32546,
-          9.084761,
-          8.839575,
-          9.065175,
-          9.529762,
-          10.589174
+          35.636095,
+          36.184608,
+          36.9753,
+          40.018217,
+          41.496106,
+          41.605431,
+          34.668729,
+          36.346862,
+          38.14721,
+          38.712008,
+          41.246857,
+          41.29521,
+          34.318753,
+          34.652476,
+          36.504956,
+          39.189112,
+          39.431622,
+          42.154533,
+          38.887094,
+          45.373695,
+          41.179353,
+          44.500539,
+          47.157297,
+          48.449441,
+          38.741769,
+          38.33863,
+          46.833172,
+          44.833215,
+          47.934687,
+          49.988305,
+          30.729857,
+          29.20282,
+          28.241358,
+          33.434414,
+          29.288978,
+          28.878897,
+          29.004614,
+          30.352411,
+          28.679952,
+          28.814111,
+          29.206568,
+          38.100148,
+          32.373132,
+          27.779815,
+          28.090353,
+          28.43052,
+          27.830155,
+          27.215582,
+          12.263351,
+          9.943961,
+          10.969477,
+          10.529675,
+          9.828067,
+          10.252355,
+          10.576099,
+          10.739176,
+          9.910615,
+          9.430083,
+          10.731925,
+          9.45554,
+          9.494859,
+          9.978212,
+          10.656486
         ],
         "p95TargetMaxMs": 5.0,
         "withinP95Target5Ms": false,
         "latencyBudgetMaxMs": 50.0,
         "withinLatencyBudget": true,
         "phaseBreakdownTotalMs": {
-          "preprocessingMs": 61.9364,
-          "backendInitMs": 0.5835,
-          "intervalArithmeticMs": 376.3575,
-          "rootIsolationMs": 1519.2117,
-          "certificationMs": 0.0336,
-          "serializationMs": 1.6555
+          "preprocessingMs": 61.4573,
+          "backendInitMs": 0.6289,
+          "intervalArithmeticMs": 382.6394,
+          "rootIsolationMs": 1464.8031,
+          "certificationMs": 0.0203,
+          "serializationMs": 1.6658
         },
         "phaseBreakdownMeanMsPerContour": {
-          "preprocessingMs": 0.983117,
-          "backendInitMs": 0.009263,
-          "intervalArithmeticMs": 5.973929,
-          "rootIsolationMs": 24.114471,
-          "certificationMs": 0.000533,
-          "serializationMs": 0.026277
+          "preprocessingMs": 0.975513,
+          "backendInitMs": 0.009983,
+          "intervalArithmeticMs": 6.073641,
+          "rootIsolationMs": 23.250844,
+          "certificationMs": 0.000322,
+          "serializationMs": 0.026441
         }
       },
       "pythonFlintArbFmpq": {
         "available": true,
         "contoursEvaluated": 63,
-        "medianMs": 5.8672,
-        "p95Ms": 7.7284,
-        "maxMs": 8.1793,
+        "medianMs": 5.3188,
+        "p95Ms": 6.783,
+        "maxMs": 7.6194,
         "samplesMs": [
-          5.644301,
-          6.552284,
-          6.416818,
-          6.268961,
-          6.240421,
-          6.962285,
-          6.44433,
-          6.392087,
-          6.204053,
-          6.53776,
-          6.535803,
-          6.47427,
-          5.730729,
-          5.867176,
-          5.970419,
-          6.150887,
-          6.269246,
-          6.455917,
-          6.850287,
-          7.51555,
-          7.309019,
-          6.956537,
-          7.728413,
-          8.036018,
-          6.445216,
-          6.305218,
-          7.441785,
-          8.179253,
-          7.272306,
-          8.006732,
-          5.366238,
-          5.028118,
-          5.102168,
-          6.227008,
-          5.982559,
-          5.447949,
-          5.806091,
-          5.206597,
-          5.621741,
-          5.901569,
-          5.246715,
-          5.78202,
-          5.215232,
-          5.473614,
-          5.124659,
-          4.963977,
-          5.109547,
-          5.241859,
-          1.843703,
-          1.828859,
-          1.814005,
-          2.048986,
-          1.837501,
-          1.949324,
-          1.867314,
-          1.898701,
-          1.946683,
-          1.961609,
-          1.84905,
-          1.932249,
-          1.927402,
-          1.826529,
-          6.24399
+          5.285097,
+          5.882559,
+          5.901734,
+          5.588604,
+          6.264302,
+          6.179312,
+          5.343369,
+          5.412172,
+          5.570633,
+          5.867199,
+          5.969079,
+          6.053618,
+          5.238184,
+          5.406699,
+          5.479416,
+          5.740611,
+          5.863441,
+          5.964918,
+          5.799064,
+          5.914114,
+          6.43683,
+          6.598153,
+          6.78301,
+          7.064779,
+          5.832977,
+          5.781297,
+          6.439824,
+          6.464694,
+          7.619438,
+          7.282207,
+          4.985624,
+          4.896912,
+          4.804515,
+          4.84054,
+          5.700646,
+          5.506098,
+          5.31876,
+          4.81477,
+          5.167976,
+          4.964045,
+          5.306959,
+          6.087617,
+          5.124594,
+          4.770274,
+          4.638814,
+          4.795878,
+          4.664224,
+          4.950309,
+          1.989168,
+          1.936238,
+          1.924372,
+          2.288393,
+          2.032275,
+          1.818818,
+          2.320259,
+          3.433696,
+          1.858162,
+          2.079394,
+          2.026334,
+          2.211953,
+          2.210446,
+          1.882499,
+          1.891219
         ],
         "p95TargetMaxMs": 5.0,
         "withinP95Target5Ms": false,
         "latencyBudgetMaxMs": 50.0,
         "withinLatencyBudget": true,
         "phaseBreakdownTotalMs": {
-          "preprocessingMs": 61.9364,
-          "backendInitMs": 0.3761,
-          "intervalArithmeticMs": 63.1738,
-          "rootIsolationMs": 205.2982,
-          "certificationMs": 0.0129,
-          "serializationMs": 0.9902
+          "preprocessingMs": 61.4573,
+          "backendInitMs": 0.4684,
+          "intervalArithmeticMs": 56.7121,
+          "rootIsolationMs": 184.6664,
+          "certificationMs": 0.0124,
+          "serializationMs": 0.9526
         },
         "phaseBreakdownMeanMsPerContour": {
-          "preprocessingMs": 0.983117,
-          "backendInitMs": 0.005971,
-          "intervalArithmeticMs": 1.002759,
-          "rootIsolationMs": 3.258702,
-          "certificationMs": 0.000204,
-          "serializationMs": 0.015718
+          "preprocessingMs": 0.975513,
+          "backendInitMs": 0.007435,
+          "intervalArithmeticMs": 0.900191,
+          "rootIsolationMs": 2.931212,
+          "certificationMs": 0.000196,
+          "serializationMs": 0.015121
         }
       },
       "decimalIntervalFraction": {
         "available": true,
         "contoursEvaluated": 63,
-        "medianMs": 9.936,
-        "p95Ms": 14.5944,
-        "maxMs": 16.5725,
+        "medianMs": 9.3855,
+        "p95Ms": 14.1752,
+        "maxMs": 15.9664,
         "samplesMs": [
-          10.092992,
-          11.248486,
-          13.262778,
-          11.590446,
-          12.010103,
-          13.242196,
-          10.79475,
-          10.504441,
-          11.103654,
-          11.573526,
-          12.235459,
-          12.156264,
-          9.936011,
-          10.296611,
-          10.60525,
-          11.158366,
-          12.064974,
-          16.572472,
-          12.830451,
-          13.723314,
-          13.05314,
-          12.772624,
-          14.174544,
-          14.594444,
-          11.37768,
-          12.038207,
-          12.586116,
-          13.271268,
-          14.746189,
-          15.034778,
-          8.731767,
-          8.228295,
-          9.023622,
-          9.164082,
-          9.441411,
-          8.940423,
-          8.188815,
-          8.38429,
-          8.567627,
-          8.963091,
-          10.102909,
-          10.262686,
-          8.958333,
-          9.139529,
-          8.620591,
-          8.760011,
-          9.092998,
-          8.226432,
-          2.710633,
-          2.773049,
-          2.779756,
-          2.775724,
-          3.250507,
-          3.022329,
-          2.738113,
-          2.931318,
-          3.011447,
-          2.776127,
-          2.80473,
-          2.802714,
-          2.767202,
-          2.851934,
-          2.949005
+          10.901391,
+          10.730236,
+          11.054548,
+          11.51015,
+          12.562143,
+          12.006155,
+          10.222928,
+          10.347641,
+          10.869699,
+          11.497105,
+          11.728703,
+          11.890326,
+          10.133803,
+          10.333569,
+          10.690073,
+          11.871086,
+          12.215883,
+          15.966361,
+          11.423164,
+          11.538469,
+          11.940391,
+          12.900722,
+          13.858757,
+          14.770442,
+          11.387606,
+          12.728377,
+          12.87994,
+          13.067345,
+          14.454271,
+          14.175239,
+          9.064536,
+          8.719548,
+          8.783483,
+          9.385516,
+          8.955096,
+          8.636509,
+          8.461549,
+          8.863707,
+          9.016132,
+          8.846409,
+          8.576667,
+          10.06859,
+          9.270256,
+          8.880515,
+          8.449549,
+          8.805581,
+          8.858778,
+          8.370345,
+          2.893436,
+          3.101566,
+          3.054251,
+          3.021278,
+          3.044015,
+          3.225695,
+          2.977803,
+          3.069071,
+          3.017033,
+          3.034022,
+          3.54843,
+          3.648239,
+          3.33,
+          3.042987,
+          3.264172
         ],
         "p95TargetMaxMs": 5.0,
         "withinP95Target5Ms": false,
         "latencyBudgetMaxMs": 50.0,
         "withinLatencyBudget": true,
         "phaseBreakdownTotalMs": {
-          "preprocessingMs": 61.9364,
-          "backendInitMs": 0.3642,
-          "intervalArithmeticMs": 101.7897,
-          "rootIsolationMs": 409.2314,
-          "certificationMs": 0.0146,
-          "serializationMs": 1.0568
+          "preprocessingMs": 61.4573,
+          "backendInitMs": 0.3855,
+          "intervalArithmeticMs": 100.0139,
+          "rootIsolationMs": 406.0388,
+          "certificationMs": 0.0138,
+          "serializationMs": 1.0319
         },
         "phaseBreakdownMeanMsPerContour": {
-          "preprocessingMs": 0.983117,
-          "backendInitMs": 0.005781,
-          "intervalArithmeticMs": 1.615709,
-          "rootIsolationMs": 6.495736,
-          "certificationMs": 0.000231,
-          "serializationMs": 0.016775
+          "preprocessingMs": 0.975513,
+          "backendInitMs": 0.006119,
+          "intervalArithmeticMs": 1.587523,
+          "rootIsolationMs": 6.44506,
+          "certificationMs": 0.00022,
+          "serializationMs": 0.01638
         }
       }
     },
@@ -508,30 +508,30 @@
       "candidateResults": {
         "mpmathIvFraction": {
           "present": true,
-          "p95Ms": 49.247492,
+          "p95Ms": 47.157297,
           "thresholdMs": 5.0,
           "passed": false,
           "reason": "P95_EXCEEDS_THRESHOLD"
         },
         "pythonFlintArbFmpq": {
           "present": true,
-          "p95Ms": 7.728413,
+          "p95Ms": 6.78301,
           "thresholdMs": 5.0,
           "passed": false,
           "reason": "P95_EXCEEDS_THRESHOLD"
         },
         "decimalIntervalFraction": {
           "present": true,
-          "p95Ms": 14.594444,
+          "p95Ms": 14.175239,
           "thresholdMs": 5.0,
           "passed": false,
           "reason": "P95_EXCEEDS_THRESHOLD"
         }
       },
       "failures": [
-        "mpmathIvFraction: P95_EXCEEDS_THRESHOLD (49.247492 ms > 5.0 ms)",
-        "pythonFlintArbFmpq: P95_EXCEEDS_THRESHOLD (7.728413 ms > 5.0 ms)",
-        "decimalIntervalFraction: P95_EXCEEDS_THRESHOLD (14.594444 ms > 5.0 ms)"
+        "mpmathIvFraction: P95_EXCEEDS_THRESHOLD (47.157297 ms > 5.0 ms)",
+        "pythonFlintArbFmpq: P95_EXCEEDS_THRESHOLD (6.783010 ms > 5.0 ms)",
+        "decimalIntervalFraction: P95_EXCEEDS_THRESHOLD (14.175239 ms > 5.0 ms)"
       ]
     },
     "perContourRecords": [
@@ -544,22 +544,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "dedaa9e09814a7aec711261cc6c03499e9435ed84821481595587f5d549da232",
-        "preprocessingMs": 0.927,
+        "preprocessingMs": 0.9109,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 37.0396,
-            "candidateKernelMs": 36.0742
+            "endToEndMs": 35.6361,
+            "candidateKernelMs": 34.6881
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.6443,
-            "candidateKernelMs": 4.7016
+            "endToEndMs": 5.2851,
+            "candidateKernelMs": 4.358
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.093,
-            "candidateKernelMs": 9.1543
+            "endToEndMs": 10.9014,
+            "candidateKernelMs": 9.9723
           }
         }
       },
@@ -572,22 +572,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "bcaae4a8530064795dd84be1f1526be8a4f302d570aa3e28aa4b7885d6a39394",
-        "preprocessingMs": 0.9023,
+        "preprocessingMs": 1.0289,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 37.9349,
-            "candidateKernelMs": 37.0014
+            "endToEndMs": 36.1846,
+            "candidateKernelMs": 35.1297
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.5523,
-            "candidateKernelMs": 5.6275
+            "endToEndMs": 5.8826,
+            "candidateKernelMs": 4.8347
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.2485,
-            "candidateKernelMs": 10.3276
+            "endToEndMs": 10.7302,
+            "candidateKernelMs": 9.6864
           }
         }
       },
@@ -600,22 +600,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "696df293dfde27b15cdd47222e92c0ad488e578d6acb81a761978e320fd38674",
-        "preprocessingMs": 0.9851,
+        "preprocessingMs": 0.9368,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 47.9775,
-            "candidateKernelMs": 46.9608
+            "endToEndMs": 36.9753,
+            "candidateKernelMs": 35.9975
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.4168,
-            "candidateKernelMs": 5.414
+            "endToEndMs": 5.9017,
+            "candidateKernelMs": 4.953
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 13.2628,
-            "candidateKernelMs": 12.2454
+            "endToEndMs": 11.0545,
+            "candidateKernelMs": 10.1019
           }
         }
       },
@@ -628,22 +628,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "1c2c833d3fac280bd6cdfce1cfee1a08473601e49ef41972feac977e3e467293",
-        "preprocessingMs": 0.9191,
+        "preprocessingMs": 0.888,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 49.0833,
-            "candidateKernelMs": 48.1341
+            "endToEndMs": 40.0182,
+            "candidateKernelMs": 39.1049
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.269,
-            "candidateKernelMs": 5.3343
+            "endToEndMs": 5.5886,
+            "candidateKernelMs": 4.6888
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.5904,
-            "candidateKernelMs": 10.6557
+            "endToEndMs": 11.5102,
+            "candidateKernelMs": 10.6072
           }
         }
       },
@@ -656,22 +656,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "e10f6f8bd76dab7eb4fe6dcd3e5c3b89423b592f06dea0d73a3bd0d02a00e46b",
-        "preprocessingMs": 0.9053,
+        "preprocessingMs": 0.8866,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 40.9285,
-            "candidateKernelMs": 39.9916
+            "endToEndMs": 41.4961,
+            "candidateKernelMs": 40.5803
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.2404,
-            "candidateKernelMs": 5.3225
+            "endToEndMs": 6.2643,
+            "candidateKernelMs": 5.3592
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.0101,
-            "candidateKernelMs": 11.0905
+            "endToEndMs": 12.5621,
+            "candidateKernelMs": 11.6158
           }
         }
       },
@@ -684,22 +684,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "eaf0e2c7dc31253278c3f498c5fa120f9a2dcac99e884c99b90b235ff5259e2b",
-        "preprocessingMs": 0.8613,
+        "preprocessingMs": 0.8924,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 43.896,
-            "candidateKernelMs": 43.0021
+            "endToEndMs": 41.6054,
+            "candidateKernelMs": 40.6865
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.9623,
-            "candidateKernelMs": 6.0794
+            "endToEndMs": 6.1793,
+            "candidateKernelMs": 5.2707
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 13.2422,
-            "candidateKernelMs": 12.3522
+            "endToEndMs": 12.0062,
+            "candidateKernelMs": 11.1007
           }
         }
       },
@@ -712,22 +712,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "db9a812540e06e90db22124629e0985ce89d85b945bc5b5e7c3e74a22522f82a",
-        "preprocessingMs": 1.0911,
+        "preprocessingMs": 1.039,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 38.5679,
-            "candidateKernelMs": 37.4451
+            "endToEndMs": 34.6687,
+            "candidateKernelMs": 33.6008
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.4443,
-            "candidateKernelMs": 5.3277
+            "endToEndMs": 5.3434,
+            "candidateKernelMs": 4.2936
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.7947,
-            "candidateKernelMs": 9.6731
+            "endToEndMs": 10.2229,
+            "candidateKernelMs": 9.1733
           }
         }
       },
@@ -740,22 +740,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "af008b8f26df1040f32f0fb5cc956deb7e6fd1a9b9d581d36cb72d457213aed6",
-        "preprocessingMs": 1.1352,
+        "preprocessingMs": 0.8666,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 38.7017,
-            "candidateKernelMs": 37.5266
+            "endToEndMs": 36.3469,
+            "candidateKernelMs": 35.4485
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.3921,
-            "candidateKernelMs": 5.2358
+            "endToEndMs": 5.4122,
+            "candidateKernelMs": 4.533
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.5044,
-            "candidateKernelMs": 9.3559
+            "endToEndMs": 10.3476,
+            "candidateKernelMs": 9.4704
           }
         }
       },
@@ -768,22 +768,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "f13928eef09210b660b8e0f6e5894ddf77ea04408e1af32fcc11abad72459491",
-        "preprocessingMs": 0.8907,
+        "preprocessingMs": 0.8741,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 36.8045,
-            "candidateKernelMs": 35.8725
+            "endToEndMs": 38.1472,
+            "candidateKernelMs": 37.2418
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.2041,
-            "candidateKernelMs": 5.2994
+            "endToEndMs": 5.5706,
+            "candidateKernelMs": 4.6795
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.1037,
-            "candidateKernelMs": 10.1912
+            "endToEndMs": 10.8697,
+            "candidateKernelMs": 9.977
           }
         }
       },
@@ -796,22 +796,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "a387ecc6bd5f70ec6927ea18ca892e8873ca69def22a07d8a0090e25ba360c6d",
-        "preprocessingMs": 0.8983,
+        "preprocessingMs": 0.8836,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 38.8213,
-            "candidateKernelMs": 37.8972
+            "endToEndMs": 38.712,
+            "candidateKernelMs": 37.8034
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.5378,
-            "candidateKernelMs": 5.6237
+            "endToEndMs": 5.8672,
+            "candidateKernelMs": 4.9658
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.5735,
-            "candidateKernelMs": 10.6595
+            "endToEndMs": 11.4971,
+            "candidateKernelMs": 10.5992
           }
         }
       },
@@ -824,22 +824,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "77f03cc149696fa4d75c2a6b79727792843c0cfe7004945434f23ab984740fd1",
-        "preprocessingMs": 0.9129,
+        "preprocessingMs": 0.8919,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 40.8318,
-            "candidateKernelMs": 39.8883
+            "endToEndMs": 41.2469,
+            "candidateKernelMs": 40.3249
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.5358,
-            "candidateKernelMs": 5.6037
+            "endToEndMs": 5.9691,
+            "candidateKernelMs": 5.0644
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.2355,
-            "candidateKernelMs": 11.3018
+            "endToEndMs": 11.7287,
+            "candidateKernelMs": 10.8235
           }
         }
       },
@@ -852,22 +852,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "0224fc30de78d837f20f37b588c4f1af5f0186274efac676671b1b92be765cc6",
-        "preprocessingMs": 0.8812,
+        "preprocessingMs": 0.8424,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 41.4331,
-            "candidateKernelMs": 40.527
+            "endToEndMs": 41.2952,
+            "candidateKernelMs": 40.4298
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.4743,
-            "candidateKernelMs": 5.5801
+            "endToEndMs": 6.0536,
+            "candidateKernelMs": 5.195
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.1563,
-            "candidateKernelMs": 11.2614
+            "endToEndMs": 11.8903,
+            "candidateKernelMs": 11.0332
           }
         }
       },
@@ -880,22 +880,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "f8ec7fce794612f1a8cab442c8622ea24d7a8267980828deed87b65c9243442f",
-        "preprocessingMs": 0.8983,
+        "preprocessingMs": 0.9634,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 37.0002,
-            "candidateKernelMs": 36.076
+            "endToEndMs": 34.3188,
+            "candidateKernelMs": 33.33
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.7307,
-            "candidateKernelMs": 4.8195
+            "endToEndMs": 5.2382,
+            "candidateKernelMs": 4.2634
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.936,
-            "candidateKernelMs": 9.0266
+            "endToEndMs": 10.1338,
+            "candidateKernelMs": 9.1595
           }
         }
       },
@@ -908,22 +908,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "f1e822d05ea56cd30081af729845dc54d5f8f2e926bf8aa08a388d0c69efdf1f",
-        "preprocessingMs": 0.9424,
+        "preprocessingMs": 0.8738,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 36.3981,
-            "candidateKernelMs": 35.4273
+            "endToEndMs": 34.6525,
+            "candidateKernelMs": 33.7639
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.8672,
-            "candidateKernelMs": 4.9133
+            "endToEndMs": 5.4067,
+            "candidateKernelMs": 4.5207
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.2966,
-            "candidateKernelMs": 9.3387
+            "endToEndMs": 10.3336,
+            "candidateKernelMs": 9.449
           }
         }
       },
@@ -936,22 +936,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "46567e94a667e08ead153ca3f8da395c970a9fdb50fc2202791cb8a4927cd6f4",
-        "preprocessingMs": 0.8873,
+        "preprocessingMs": 0.8662,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 37.0835,
-            "candidateKernelMs": 36.168
+            "endToEndMs": 36.505,
+            "candidateKernelMs": 35.6083
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.9704,
-            "candidateKernelMs": 5.0709
+            "endToEndMs": 5.4794,
+            "candidateKernelMs": 4.6015
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.6052,
-            "candidateKernelMs": 9.7064
+            "endToEndMs": 10.6901,
+            "candidateKernelMs": 9.8118
           }
         }
       },
@@ -964,22 +964,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "b503173da5fd7ec1142a23622c6fc442607b54379cc1bec5ef54bc19e1887085",
-        "preprocessingMs": 0.9331,
+        "preprocessingMs": 1.0544,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 39.5736,
-            "candidateKernelMs": 38.6125
+            "endToEndMs": 39.1891,
+            "candidateKernelMs": 38.1141
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.1509,
-            "candidateKernelMs": 5.2049
+            "endToEndMs": 5.7406,
+            "candidateKernelMs": 4.6703
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.1584,
-            "candidateKernelMs": 10.2129
+            "endToEndMs": 11.8711,
+            "candidateKernelMs": 10.7839
           }
         }
       },
@@ -992,22 +992,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "016e357e8693504133ed5698a36bfbbdd341a1f792f09e7fa4db59b311d3ee81",
-        "preprocessingMs": 0.9562,
+        "preprocessingMs": 0.9087,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 41.1814,
-            "candidateKernelMs": 40.1989
+            "endToEndMs": 39.4316,
+            "candidateKernelMs": 38.4931
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.2692,
-            "candidateKernelMs": 5.3002
+            "endToEndMs": 5.8634,
+            "candidateKernelMs": 4.9421
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.065,
-            "candidateKernelMs": 11.0913
+            "endToEndMs": 12.2159,
+            "candidateKernelMs": 11.2931
           }
         }
       },
@@ -1020,22 +1020,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "4af157635bfc70e981ca3017bcdbe2c7fa88592f770fd722aa9ae06791e059b2",
-        "preprocessingMs": 0.8594,
+        "preprocessingMs": 0.8723,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 47.7448,
-            "candidateKernelMs": 46.8567
+            "endToEndMs": 42.1545,
+            "candidateKernelMs": 41.2564
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.4559,
-            "candidateKernelMs": 5.5778
+            "endToEndMs": 5.9649,
+            "candidateKernelMs": 5.0808
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 16.5725,
-            "candidateKernelMs": 15.6809
+            "endToEndMs": 15.9664,
+            "candidateKernelMs": 15.0611
           }
         }
       },
@@ -1048,22 +1048,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "530c9d5444531cef7ae0257463054da79fa9206cb3b03ac0667d3ff47db79a4c",
-        "preprocessingMs": 0.9597,
+        "preprocessingMs": 0.9259,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 42.1037,
-            "candidateKernelMs": 41.1146
+            "endToEndMs": 38.8871,
+            "candidateKernelMs": 37.9433
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.8503,
-            "candidateKernelMs": 5.8675
+            "endToEndMs": 5.7991,
+            "candidateKernelMs": 4.8623
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.8305,
-            "candidateKernelMs": 11.8432
+            "endToEndMs": 11.4232,
+            "candidateKernelMs": 10.486
           }
         }
       },
@@ -1076,22 +1076,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "099adcce3bea2dddd25bfeceff917357611f39dab090a0e87c35c3fe8340dc5e",
-        "preprocessingMs": 1.1117,
+        "preprocessingMs": 0.9146,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 43.3745,
-            "candidateKernelMs": 42.233
+            "endToEndMs": 45.3737,
+            "candidateKernelMs": 44.4274
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 7.5156,
-            "candidateKernelMs": 6.3801
+            "endToEndMs": 5.9141,
+            "candidateKernelMs": 4.9875
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 13.7233,
-            "candidateKernelMs": 12.5828
+            "endToEndMs": 11.5385,
+            "candidateKernelMs": 10.6133
           }
         }
       },
@@ -1104,22 +1104,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "d6c99cf3d34bb0a32e90d082460549b2ab8d610a11a2e8218f07930ac0b4ea79",
-        "preprocessingMs": 1.0788,
+        "preprocessingMs": 0.9223,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 44.8194,
-            "candidateKernelMs": 43.71
+            "endToEndMs": 41.1794,
+            "candidateKernelMs": 40.2366
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 7.309,
-            "candidateKernelMs": 6.2137
+            "endToEndMs": 6.4368,
+            "candidateKernelMs": 5.5007
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 13.0531,
-            "candidateKernelMs": 11.9557
+            "endToEndMs": 11.9404,
+            "candidateKernelMs": 11.0074
           }
         }
       },
@@ -1132,22 +1132,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "98a074a64d2d3cf8e2d984477a9a9cf2f2603dd4a589209764b5ddd66d434318",
-        "preprocessingMs": 0.9203,
+        "preprocessingMs": 0.9095,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 48.2912,
-            "candidateKernelMs": 47.339
+            "endToEndMs": 44.5005,
+            "candidateKernelMs": 43.5648
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.9565,
-            "candidateKernelMs": 6.023
+            "endToEndMs": 6.5982,
+            "candidateKernelMs": 5.6753
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.7726,
-            "candidateKernelMs": 11.8387
+            "endToEndMs": 12.9007,
+            "candidateKernelMs": 11.9798
           }
         }
       },
@@ -1160,22 +1160,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "36d155352ad24cd744dd196aab9101760a0a8dd61fb1363e179b272fb6c0a55e",
-        "preprocessingMs": 1.0038,
+        "preprocessingMs": 0.9057,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 48.8676,
-            "candidateKernelMs": 47.8332
+            "endToEndMs": 47.1573,
+            "candidateKernelMs": 46.2273
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 7.7284,
-            "candidateKernelMs": 6.7064
+            "endToEndMs": 6.783,
+            "candidateKernelMs": 5.8637
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 14.1745,
-            "candidateKernelMs": 13.1555
+            "endToEndMs": 13.8588,
+            "candidateKernelMs": 12.9349
           }
         }
       },
@@ -1188,22 +1188,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "a8b017c52d440eb52f511335aa639a2c7121b2e4ce7a94227d53fe18b224fd59",
-        "preprocessingMs": 0.9177,
+        "preprocessingMs": 0.9694,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 52.9691,
-            "candidateKernelMs": 52.0187
+            "endToEndMs": 48.4494,
+            "candidateKernelMs": 47.4608
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.036,
-            "candidateKernelMs": 7.1014
+            "endToEndMs": 7.0648,
+            "candidateKernelMs": 6.0845
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 14.5944,
-            "candidateKernelMs": 13.6541
+            "endToEndMs": 14.7704,
+            "candidateKernelMs": 13.7709
           }
         }
       },
@@ -1216,22 +1216,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "7e7dca52d5309f018897f353c84985653f32166a2b120c7eac403094ab6c2190",
-        "preprocessingMs": 0.9602,
+        "preprocessingMs": 0.9321,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 40.0303,
-            "candidateKernelMs": 39.0388
+            "endToEndMs": 38.7418,
+            "candidateKernelMs": 37.7907
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.4452,
-            "candidateKernelMs": 5.4714
+            "endToEndMs": 5.833,
+            "candidateKernelMs": 4.8889
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.3777,
-            "candidateKernelMs": 10.404
+            "endToEndMs": 11.3876,
+            "candidateKernelMs": 10.444
           }
         }
       },
@@ -1244,22 +1244,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "590fa2e4e448f69a24448c5d5205d926c841788e5747389740cd622664373c9e",
-        "preprocessingMs": 0.9282,
+        "preprocessingMs": 0.8851,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 54.6284,
-            "candidateKernelMs": 53.6683
+            "endToEndMs": 38.3386,
+            "candidateKernelMs": 37.4351
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.3052,
-            "candidateKernelMs": 5.3627
+            "endToEndMs": 5.7813,
+            "candidateKernelMs": 4.8846
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.0382,
-            "candidateKernelMs": 11.0908
+            "endToEndMs": 12.7284,
+            "candidateKernelMs": 11.804
           }
         }
       },
@@ -1272,22 +1272,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "c7928d2134fa5e90297e2261b8263df61cc3c08c7dfaadbebc3dac1fed85b7ee",
-        "preprocessingMs": 1.2054,
+        "preprocessingMs": 0.9513,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 43.0304,
-            "candidateKernelMs": 41.7943
+            "endToEndMs": 46.8332,
+            "candidateKernelMs": 45.8475
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 7.4418,
-            "candidateKernelMs": 6.2163
+            "endToEndMs": 6.4398,
+            "candidateKernelMs": 5.4748
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 12.5861,
-            "candidateKernelMs": 11.3593
+            "endToEndMs": 12.8799,
+            "candidateKernelMs": 11.9009
           }
         }
       },
@@ -1300,22 +1300,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "d9e3ab7390332a4b4cca2cb4611fb2deab5611a663f3b12c8c90e78942fb3ffe",
-        "preprocessingMs": 1.0538,
+        "preprocessingMs": 0.9385,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 44.2766,
-            "candidateKernelMs": 43.1909
+            "endToEndMs": 44.8332,
+            "candidateKernelMs": 43.8627
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.1793,
-            "candidateKernelMs": 7.1009
+            "endToEndMs": 6.4647,
+            "candidateKernelMs": 5.5075
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 13.2713,
-            "candidateKernelMs": 12.1893
+            "endToEndMs": 13.0673,
+            "candidateKernelMs": 12.1048
           }
         }
       },
@@ -1328,22 +1328,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "3f24d3402041309af2a76ab3a5e577aa1551535bd3c5111d7fe44820cb57d960",
-        "preprocessingMs": 0.9174,
+        "preprocessingMs": 0.937,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 49.529,
-            "candidateKernelMs": 48.5773
+            "endToEndMs": 47.9347,
+            "candidateKernelMs": 46.9673
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 7.2723,
-            "candidateKernelMs": 6.3407
+            "endToEndMs": 7.6194,
+            "candidateKernelMs": 6.656
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 14.7462,
-            "candidateKernelMs": 13.7938
+            "endToEndMs": 14.4543,
+            "candidateKernelMs": 13.4856
           }
         }
       },
@@ -1356,22 +1356,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 2,
         "contourInputSha256": "410b1da63e236df0e874a1c1f1d4531975804ae50cd5df22e845885f0ef8a049",
-        "preprocessingMs": 0.9197,
+        "preprocessingMs": 0.919,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 49.2475,
-            "candidateKernelMs": 48.2947
+            "endToEndMs": 49.9883,
+            "candidateKernelMs": 49.0381
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.0067,
-            "candidateKernelMs": 7.0611
+            "endToEndMs": 7.2822,
+            "candidateKernelMs": 6.344
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 15.0348,
-            "candidateKernelMs": 14.0841
+            "endToEndMs": 14.1752,
+            "candidateKernelMs": 13.2378
           }
         }
       },
@@ -1384,22 +1384,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "aaa628db043c05e632f9f52f42bf68b88b25a3dcdd02567d261986225a8a039b",
-        "preprocessingMs": 1.3438,
+        "preprocessingMs": 1.3764,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.1448,
-            "candidateKernelMs": 27.7679
+            "endToEndMs": 30.7299,
+            "candidateKernelMs": 29.3182
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.3662,
-            "candidateKernelMs": 4.007
+            "endToEndMs": 4.9856,
+            "candidateKernelMs": 3.5956
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.7318,
-            "candidateKernelMs": 7.3743
+            "endToEndMs": 9.0645,
+            "candidateKernelMs": 7.6736
           }
         }
       },
@@ -1412,22 +1412,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "100833ca85620820e1d8d4c26d850d47f6d52c3bf81350ada47b5a808577d03b",
-        "preprocessingMs": 1.2846,
+        "preprocessingMs": 1.3597,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.6635,
-            "candidateKernelMs": 27.351
+            "endToEndMs": 29.2028,
+            "candidateKernelMs": 27.8141
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.0281,
-            "candidateKernelMs": 3.7301
+            "endToEndMs": 4.8969,
+            "candidateKernelMs": 3.5231
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.2283,
-            "candidateKernelMs": 6.9327
+            "endToEndMs": 8.7195,
+            "candidateKernelMs": 7.3459
           }
         }
       },
@@ -1440,22 +1440,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "c8015a9a3263e17a8c0466ac37f99daab4593f400546ca4c1751a749e2d5f8e3",
-        "preprocessingMs": 1.3441,
+        "preprocessingMs": 1.373,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.0639,
-            "candidateKernelMs": 27.6902
+            "endToEndMs": 28.2414,
+            "candidateKernelMs": 26.85
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.1022,
-            "candidateKernelMs": 3.7432
+            "endToEndMs": 4.8045,
+            "candidateKernelMs": 3.4167
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.0236,
-            "candidateKernelMs": 7.6643
+            "endToEndMs": 8.7835,
+            "candidateKernelMs": 7.3957
           }
         }
       },
@@ -1468,22 +1468,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "bd8e8e38a74936c6c70fb0834c309b8af8e5b25403132760d8040ba7882d291a",
-        "preprocessingMs": 1.4152,
+        "preprocessingMs": 1.3626,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.3047,
-            "candidateKernelMs": 27.8651
+            "endToEndMs": 33.4344,
+            "candidateKernelMs": 32.0409
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.227,
-            "candidateKernelMs": 4.7873
+            "endToEndMs": 4.8405,
+            "candidateKernelMs": 3.4617
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.1641,
-            "candidateKernelMs": 7.7273
+            "endToEndMs": 9.3855,
+            "candidateKernelMs": 7.9998
           }
         }
       },
@@ -1496,22 +1496,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "93e533ea782e2cf2190e4c808adf3a173f6e45bf394f1f8ed0710f9b41275118",
-        "preprocessingMs": 1.9753,
+        "preprocessingMs": 1.3865,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.3644,
-            "candidateKernelMs": 27.3593
+            "endToEndMs": 29.289,
+            "candidateKernelMs": 27.8726
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.9826,
-            "candidateKernelMs": 3.9886
+            "endToEndMs": 5.7006,
+            "candidateKernelMs": 4.2988
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.4414,
-            "candidateKernelMs": 7.4511
+            "endToEndMs": 8.9551,
+            "candidateKernelMs": 7.5552
           }
         }
       },
@@ -1524,22 +1524,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "5985939b03ccd0f7bc60a4e58a367b2ce7aae1c1a7df249ba2a88d2dc95648f3",
-        "preprocessingMs": 1.7048,
+        "preprocessingMs": 1.327,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.5958,
-            "candidateKernelMs": 27.8701
+            "endToEndMs": 28.8789,
+            "candidateKernelMs": 27.522
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.4479,
-            "candidateKernelMs": 3.7318
+            "endToEndMs": 5.5061,
+            "candidateKernelMs": 4.1578
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.9404,
-            "candidateKernelMs": 7.2224
+            "endToEndMs": 8.6365,
+            "candidateKernelMs": 7.2951
           }
         }
       },
@@ -1552,22 +1552,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "2b6c2008c7a669a1d0f40bf4fa9a4a08a1cb3b35708691b6444113f63bc5f6b2",
-        "preprocessingMs": 1.3132,
+        "preprocessingMs": 1.3176,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.8724,
-            "candidateKernelMs": 27.5306
+            "endToEndMs": 29.0046,
+            "candidateKernelMs": 27.659
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.8061,
-            "candidateKernelMs": 4.4769
+            "endToEndMs": 5.3188,
+            "candidateKernelMs": 3.9811
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.1888,
-            "candidateKernelMs": 6.8642
+            "endToEndMs": 8.4615,
+            "candidateKernelMs": 7.1297
           }
         }
       },
@@ -1580,22 +1580,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "9005c6f63c210b44a655c10e231c6ac844209204de48db5a29ead594b40e962a",
-        "preprocessingMs": 1.3619,
+        "preprocessingMs": 1.3739,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 27.986,
-            "candidateKernelMs": 26.6059
+            "endToEndMs": 30.3524,
+            "candidateKernelMs": 28.9128
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.2066,
-            "candidateKernelMs": 3.8304
+            "endToEndMs": 4.8148,
+            "candidateKernelMs": 3.4269
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.3843,
-            "candidateKernelMs": 7.0112
+            "endToEndMs": 8.8637,
+            "candidateKernelMs": 7.4765
           }
         }
       },
@@ -1608,22 +1608,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "175ec55fdf817587c5c9a8a6a8014a6b3f6a5641b7c5ec081c5de00823e5f29c",
-        "preprocessingMs": 1.3306,
+        "preprocessingMs": 1.6721,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 27.8512,
-            "candidateKernelMs": 26.4953
+            "endToEndMs": 28.68,
+            "candidateKernelMs": 26.9791
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.6217,
-            "candidateKernelMs": 4.2718
+            "endToEndMs": 5.168,
+            "candidateKernelMs": 3.481
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.5676,
-            "candidateKernelMs": 7.2232
+            "endToEndMs": 9.0161,
+            "candidateKernelMs": 7.3313
           }
         }
       },
@@ -1636,22 +1636,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "08dc5da1821e67d112f2dcfe9662141faa581ed6de850b8f9046f3aafde40cc6",
-        "preprocessingMs": 1.6786,
+        "preprocessingMs": 1.4054,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.0287,
-            "candidateKernelMs": 27.3239
+            "endToEndMs": 28.8141,
+            "candidateKernelMs": 27.3805
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.9016,
-            "candidateKernelMs": 4.2027
+            "endToEndMs": 4.964,
+            "candidateKernelMs": 3.5438
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.9631,
-            "candidateKernelMs": 7.2713
+            "endToEndMs": 8.8464,
+            "candidateKernelMs": 7.425
           }
         }
       },
@@ -1664,22 +1664,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "595ca587a9282945aca1a407f04b6d1a7f92f31254867624616a27bfe6fdaaf0",
-        "preprocessingMs": 1.3358,
+        "preprocessingMs": 1.3589,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.3141,
-            "candidateKernelMs": 26.9491
+            "endToEndMs": 29.2066,
+            "candidateKernelMs": 27.8136
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.2467,
-            "candidateKernelMs": 3.8963
+            "endToEndMs": 5.307,
+            "candidateKernelMs": 3.9201
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.1029,
-            "candidateKernelMs": 8.7332
+            "endToEndMs": 8.5767,
+            "candidateKernelMs": 7.2007
           }
         }
       },
@@ -1692,22 +1692,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "7987281fe691e20b02cf8967f06ea76ba1025279d5fa79141e5e2aba3f7ceb3d",
-        "preprocessingMs": 1.4175,
+        "preprocessingMs": 2.2634,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 30.7884,
-            "candidateKernelMs": 29.3398
+            "endToEndMs": 38.1001,
+            "candidateKernelMs": 35.8056
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.782,
-            "candidateKernelMs": 4.3412
+            "endToEndMs": 6.0876,
+            "candidateKernelMs": 3.807
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.2627,
-            "candidateKernelMs": 8.8192
+            "endToEndMs": 10.0686,
+            "candidateKernelMs": 7.7878
           }
         }
       },
@@ -1720,22 +1720,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "4856d93bd76e5e647917f225434927261b2a4bdae86512cb95110eccf36ff8b1",
-        "preprocessingMs": 1.3234,
+        "preprocessingMs": 1.3778,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 33.4453,
-            "candidateKernelMs": 32.0931
+            "endToEndMs": 32.3731,
+            "candidateKernelMs": 30.964
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.2152,
-            "candidateKernelMs": 3.8692
+            "endToEndMs": 5.1246,
+            "candidateKernelMs": 3.7276
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.9583,
-            "candidateKernelMs": 7.6224
+            "endToEndMs": 9.2703,
+            "candidateKernelMs": 7.8746
           }
         }
       },
@@ -1748,22 +1748,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "920f468dbfc220cc4bef53078ad919fb753d8fe02796d66deaa35f1991499726",
-        "preprocessingMs": 1.3434,
+        "preprocessingMs": 1.3249,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 27.9436,
-            "candidateKernelMs": 26.5764
+            "endToEndMs": 27.7798,
+            "candidateKernelMs": 26.4301
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.4736,
-            "candidateKernelMs": 4.1123
+            "endToEndMs": 4.7703,
+            "candidateKernelMs": 3.432
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.1395,
-            "candidateKernelMs": 7.7707
+            "endToEndMs": 8.8805,
+            "candidateKernelMs": 7.5396
           }
         }
       },
@@ -1776,22 +1776,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "0a8301020bee548a1336f60a3e4c89f33679968f7e2b0d0346a592da1a48e1ac",
-        "preprocessingMs": 1.4306,
+        "preprocessingMs": 1.3138,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 29.059,
-            "candidateKernelMs": 27.6012
+            "endToEndMs": 28.0904,
+            "candidateKernelMs": 26.749
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.1247,
-            "candidateKernelMs": 3.6811
+            "endToEndMs": 4.6388,
+            "candidateKernelMs": 3.3129
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.6206,
-            "candidateKernelMs": 7.1763
+            "endToEndMs": 8.4495,
+            "candidateKernelMs": 7.1239
           }
         }
       },
@@ -1804,22 +1804,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "d77cce6856863a98f3b1da60671514d9ced8ed5c59f4de37375786a835686b22",
-        "preprocessingMs": 1.3359,
+        "preprocessingMs": 1.4156,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 27.9605,
-            "candidateKernelMs": 26.6025
+            "endToEndMs": 28.4305,
+            "candidateKernelMs": 26.9822
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 4.964,
-            "candidateKernelMs": 3.6159
+            "endToEndMs": 4.7959,
+            "candidateKernelMs": 3.3659
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.76,
-            "candidateKernelMs": 7.4114
+            "endToEndMs": 8.8056,
+            "candidateKernelMs": 7.374
           }
         }
       },
@@ -1832,22 +1832,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "c494acff43a082d1615bb9980ead51d3463bfcc3ca03c587aabfde01e62f36b9",
-        "preprocessingMs": 1.3704,
+        "preprocessingMs": 1.3119,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 28.4932,
-            "candidateKernelMs": 27.0957
+            "endToEndMs": 27.8302,
+            "candidateKernelMs": 26.4956
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.1095,
-            "candidateKernelMs": 3.7256
+            "endToEndMs": 4.6642,
+            "candidateKernelMs": 3.3396
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.093,
-            "candidateKernelMs": 7.7011
+            "endToEndMs": 8.8588,
+            "candidateKernelMs": 7.5328
           }
         }
       },
@@ -1860,22 +1860,22 @@
         "segmentCount": 5,
         "cubicBezierCount": 3,
         "contourInputSha256": "d51a74d65627f34ac9ae320874f27c249114b6799dae56bc29ad6aaa7b3639e6",
-        "preprocessingMs": 1.3854,
+        "preprocessingMs": 1.327,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 27.6318,
-            "candidateKernelMs": 26.2202
+            "endToEndMs": 27.2156,
+            "candidateKernelMs": 25.8695
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 5.2419,
-            "candidateKernelMs": 3.8386
+            "endToEndMs": 4.9503,
+            "candidateKernelMs": 3.6073
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.2264,
-            "candidateKernelMs": 6.8303
+            "endToEndMs": 8.3703,
+            "candidateKernelMs": 7.0313
           }
         }
       },
@@ -1888,22 +1888,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "53e938eb3262122d6036ef697a8444463cf2f231bfabefe1cf98cd61a043798b",
-        "preprocessingMs": 0.4882,
+        "preprocessingMs": 0.477,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.3071,
-            "candidateKernelMs": 8.8044
+            "endToEndMs": 12.2634,
+            "candidateKernelMs": 11.7555
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8437,
-            "candidateKernelMs": 1.3459
+            "endToEndMs": 1.9892,
+            "candidateKernelMs": 1.4975
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.7106,
-            "candidateKernelMs": 2.2134
+            "endToEndMs": 2.8934,
+            "candidateKernelMs": 2.4037
           }
         }
       },
@@ -1916,22 +1916,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "06b8d70acaf5feea1699c6fc235cc770558aeee079438a99d79b3ed8ca75db00",
-        "preprocessingMs": 0.4796,
+        "preprocessingMs": 0.4941,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.7873,
-            "candidateKernelMs": 8.2963
+            "endToEndMs": 9.944,
+            "candidateKernelMs": 9.4262
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8289,
-            "candidateKernelMs": 1.3397
+            "endToEndMs": 1.9362,
+            "candidateKernelMs": 1.4315
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.773,
-            "candidateKernelMs": 2.2839
+            "endToEndMs": 3.1016,
+            "candidateKernelMs": 2.5951
           }
         }
       },
@@ -1944,22 +1944,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "2e148006acfad1c305c2b0d6c8a695de809cd0514264f63fe5c810e937f7c9df",
-        "preprocessingMs": 0.4724,
+        "preprocessingMs": 0.4909,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.2592,
-            "candidateKernelMs": 8.7715
+            "endToEndMs": 10.9695,
+            "candidateKernelMs": 10.4496
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.814,
-            "candidateKernelMs": 1.3269
+            "endToEndMs": 1.9244,
+            "candidateKernelMs": 1.4227
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.7798,
-            "candidateKernelMs": 2.2968
+            "endToEndMs": 3.0543,
+            "candidateKernelMs": 2.5534
           }
         }
       },
@@ -1972,22 +1972,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "bd4f9657615c2c6eda673564144ca95f31deb46b887034c6c93ef0664714a102",
-        "preprocessingMs": 0.4701,
+        "preprocessingMs": 0.7049,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.6583,
-            "candidateKernelMs": 9.1732
+            "endToEndMs": 10.5297,
+            "candidateKernelMs": 9.7976
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.049,
-            "candidateKernelMs": 1.5679
+            "endToEndMs": 2.2884,
+            "candidateKernelMs": 1.5705
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.7757,
-            "candidateKernelMs": 2.2957
+            "endToEndMs": 3.0213,
+            "candidateKernelMs": 2.3064
           }
         }
       },
@@ -2000,22 +2000,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "72ec8529d16e12e94ef6cd5db6acfdd7299ecf91d58e49e5126949500832c391",
-        "preprocessingMs": 0.4785,
+        "preprocessingMs": 0.5379,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.028,
-            "candidateKernelMs": 9.5343
+            "endToEndMs": 9.8281,
+            "candidateKernelMs": 9.2735
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8375,
-            "candidateKernelMs": 1.3489
+            "endToEndMs": 2.0323,
+            "candidateKernelMs": 1.4822
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.2505,
-            "candidateKernelMs": 2.7619
+            "endToEndMs": 3.044,
+            "candidateKernelMs": 2.496
           }
         }
       },
@@ -2028,22 +2028,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "7fc63920331c7f048958053f86f67fdae113d9ba4c49eb09e43e40a68be0ef8b",
-        "preprocessingMs": 0.5857,
+        "preprocessingMs": 0.5011,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.2553,
-            "candidateKernelMs": 9.6494
+            "endToEndMs": 10.2524,
+            "candidateKernelMs": 9.7334
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.9493,
-            "candidateKernelMs": 1.3534
+            "endToEndMs": 1.8188,
+            "candidateKernelMs": 1.3078
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.0223,
-            "candidateKernelMs": 2.4273
+            "endToEndMs": 3.2257,
+            "candidateKernelMs": 2.7147
           }
         }
       },
@@ -2056,22 +2056,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "2c6f8ab43ad5c54d848edddde86411e7b2f75d50ceba085e7a2d0e612b53344c",
-        "preprocessingMs": 0.4775,
+        "preprocessingMs": 0.5608,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 11.4746,
-            "candidateKernelMs": 10.9726
+            "endToEndMs": 10.5761,
+            "candidateKernelMs": 9.9896
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8673,
-            "candidateKernelMs": 1.3796
+            "endToEndMs": 2.3203,
+            "candidateKernelMs": 1.7443
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.7381,
-            "candidateKernelMs": 2.2502
+            "endToEndMs": 2.9778,
+            "candidateKernelMs": 2.4068
           }
         }
       },
@@ -2084,22 +2084,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "eb6f1ee908e1b36fff723bb672f1d2c704aad98ed96b26def451864c0e984b15",
-        "preprocessingMs": 0.4818,
+        "preprocessingMs": 0.5929,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.7701,
-            "candidateKernelMs": 8.2769
+            "endToEndMs": 10.7392,
+            "candidateKernelMs": 10.1261
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8987,
-            "candidateKernelMs": 1.4067
+            "endToEndMs": 3.4337,
+            "candidateKernelMs": 2.8125
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.9313,
-            "candidateKernelMs": 2.4392
+            "endToEndMs": 3.0691,
+            "candidateKernelMs": 2.4649
           }
         }
       },
@@ -2112,22 +2112,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "c9273ac906d55479587f0f391e97ee5f0b3cb154704a05ceb21566923655b29e",
-        "preprocessingMs": 0.5456,
+        "preprocessingMs": 0.542,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.1238,
-            "candidateKernelMs": 9.5644
+            "endToEndMs": 9.9106,
+            "candidateKernelMs": 9.3552
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.9467,
-            "candidateKernelMs": 1.3913
+            "endToEndMs": 1.8582,
+            "candidateKernelMs": 1.306
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 3.0114,
-            "candidateKernelMs": 2.4563
+            "endToEndMs": 3.017,
+            "candidateKernelMs": 2.4653
           }
         }
       },
@@ -2140,22 +2140,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "e439f825168f22bc4bff258ab31d022636bf95780d8a2184375ad52d429dbd44",
-        "preprocessingMs": 0.5054,
+        "preprocessingMs": 0.506,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.3255,
-            "candidateKernelMs": 9.7965
+            "endToEndMs": 9.4301,
+            "candidateKernelMs": 8.904
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.9616,
-            "candidateKernelMs": 1.4451
+            "endToEndMs": 2.0794,
+            "candidateKernelMs": 1.5633
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.7761,
-            "candidateKernelMs": 2.2612
+            "endToEndMs": 3.034,
+            "candidateKernelMs": 2.5176
           }
         }
       },
@@ -2168,22 +2168,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "a25927e6670c1dad9b1007564f49f6e9734175899ae0fa14f9171f18c0fb1dc4",
-        "preprocessingMs": 0.4775,
+        "preprocessingMs": 0.5313,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.0848,
-            "candidateKernelMs": 8.5951
+            "endToEndMs": 10.7319,
+            "candidateKernelMs": 10.1779
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8491,
-            "candidateKernelMs": 1.3609
+            "endToEndMs": 2.0263,
+            "candidateKernelMs": 1.4843
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.8047,
-            "candidateKernelMs": 2.3168
+            "endToEndMs": 3.5484,
+            "candidateKernelMs": 2.9918
           }
         }
       },
@@ -2196,22 +2196,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "13231bf8ae6e65d78b54806122625a323ff989f9058bc4a3344f343814403ab6",
-        "preprocessingMs": 0.5849,
+        "preprocessingMs": 0.5626,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 8.8396,
-            "candidateKernelMs": 8.2435
+            "endToEndMs": 9.4555,
+            "candidateKernelMs": 8.8789
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.9322,
-            "candidateKernelMs": 1.338
+            "endToEndMs": 2.212,
+            "candidateKernelMs": 1.6038
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.8027,
-            "candidateKernelMs": 2.209
+            "endToEndMs": 3.6482,
+            "candidateKernelMs": 3.0743
           }
         }
       },
@@ -2224,22 +2224,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "898167243f90b606d1c6751b3ad96acf23359d9fb7f148bfb41d04b24805b2ae",
-        "preprocessingMs": 0.4758,
+        "preprocessingMs": 0.7582,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.0652,
-            "candidateKernelMs": 8.5655
+            "endToEndMs": 9.4949,
+            "candidateKernelMs": 8.7176
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.9274,
-            "candidateKernelMs": 1.4421
+            "endToEndMs": 2.2104,
+            "candidateKernelMs": 1.4417
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.7672,
-            "candidateKernelMs": 2.2809
+            "endToEndMs": 3.33,
+            "candidateKernelMs": 2.5612
           }
         }
       },
@@ -2252,22 +2252,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "227c9eac9acdbee0386db9de61568e5826498a94b045fcd68215567e563181ef",
-        "preprocessingMs": 0.4786,
+        "preprocessingMs": 0.4846,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 9.5298,
-            "candidateKernelMs": 9.0373
+            "endToEndMs": 9.9782,
+            "candidateKernelMs": 9.4801
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 1.8265,
-            "candidateKernelMs": 1.3388
+            "endToEndMs": 1.8825,
+            "candidateKernelMs": 1.3875
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.8519,
-            "candidateKernelMs": 2.3636
+            "endToEndMs": 3.043,
+            "candidateKernelMs": 2.5485
           }
         }
       },
@@ -2280,22 +2280,22 @@
         "segmentCount": 9,
         "cubicBezierCount": 1,
         "contourInputSha256": "3664ffac1f23dbcb83e70a3b81eb4dc94b8873a1ec28efa8f770d9a4c1d6678e",
-        "preprocessingMs": 0.477,
+        "preprocessingMs": 0.4749,
         "candidateResults": {
           "mpmathIvFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 10.5892,
-            "candidateKernelMs": 10.0949
+            "endToEndMs": 10.6565,
+            "candidateKernelMs": 10.1642
           },
           "pythonFlintArbFmpq": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 6.244,
-            "candidateKernelMs": 5.7444
+            "endToEndMs": 1.8912,
+            "candidateKernelMs": 1.4005
           },
           "decimalIntervalFraction": {
             "outcome": "CUSP_OR_BOUNDARY_DETECTED",
-            "endToEndMs": 2.949,
-            "candidateKernelMs": 2.4604
+            "endToEndMs": 3.2642,
+            "candidateKernelMs": 2.771
           }
         }
       }

@@ -69,7 +69,7 @@
     "ciWorkflowVerified": true
   },
   "sourceInputsProvenance": {
-    "sourceInputsDigest": "1fe1b14929ef744afe56bc6235ef4d12b83c421b005ff6df515ff2aae89af2ff",
+    "sourceInputsDigest": "123824083f62da5ce64058fa4ed83197907c6cb6647dce69fa1f8f99c042782d",
     "filesCount": 35,
     "missingFiles": [],
     "allSourceInputsPresent": true,
@@ -126,8 +126,8 @@
       },
       {
         "path": "scripts/m00_export_canonical_63_contours.ts",
-        "sha256": "de7c542cba60becdc2ee9766a237ec02c90ee3c2005df5cb00d0035e6797fadf",
-        "bytes": 10360
+        "sha256": "3effd2d8f9aed24fdad41bb911c17eb2ec1adc4b9c7b47c1eec940558b4516cc",
+        "bytes": 10425
       },
       {
         "path": "scripts/m00_export_canonical_pieces.ts",
@@ -501,7 +501,7 @@
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "48f3149ad515f34d4aaee217f1808f1f29431138aabeda14de2e300d97e5083e",
+      "sha256": "09229a927cc9db07186162edf5a3c94fda8b1fa04fe9d75e0560ec06f713c267",
       "bytes": "4896",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     }
