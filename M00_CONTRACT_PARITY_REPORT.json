@@ -1,13 +1,13 @@
 {
   "deliverable": "M00_CONTRACT_PARITY_REPORT.json",
-  "checkpoint": "16",
-  "packageId": "PKG-M00-02",
-  "remediatedFinding": "FINDING-CONTRACTS-01",
+  "checkpoint": "PKG-M00-04",
+  "packageId": "PKG-M00-04",
+  "remediatedFinding": "FINDING-CONTRACTS-01 / I-06",
   "schemasLockReport": {
     "milestoneId": "M00.1",
     "artifactName": "SchemasLockReport.json",
     "schemaPath": "packages/contracts/schemas/canonical_contracts.schema.json",
-    "schemaSha256": "35952f090564f3916e48896d0f11154ffd9ba061539826a8480636b0627834a6",
+    "schemaSha256": "ce150c21338472cb5fb4e597e05cb3fde23c90da3868ed5b010be1a37b2a3af9",
     "draftVersion": "https://json-schema.org/draft/2020-12/schema",
     "canonicalCoordinateFrame": {
       "geometryUnit": "cm",
@@ -35,6 +35,14 @@
       "ENDPOINT_TANGENTIAL_DEGENERACY",
       "COLLAPSED_ZERO_LENGTH_CURVE"
     ],
+    "stationaryParameterizationStatuses": [
+      "NONE_REGULAR_SPEED",
+      "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+      "GENUINE_BASE_GEOMETRIC_SINGULARITY",
+      "ENDPOINT_TANGENTIAL_DEGENERACY",
+      "COLLAPSED_ZERO_LENGTH_CURVE",
+      "UNRESOLVED"
+    ],
     "offsetFailureCategories": [
       "NONE",
       "REGULARITY_MARGIN_VIOLATION",
@@ -44,6 +52,7 @@
       "GLOBAL_CONTOUR_SELF_INTERSECTION",
       "INCONCLUSIVE_VERIFICATION"
     ],
+    "adr009EnumReconciliationNote": "StationaryParameterizationStatus includes ADR-009 \u00a75.3 UNRESOLVED alongside the \u00a74.2 5-way taxonomy states (ENDPOINT_TANGENTIAL_DEGENERACY, COLLAPSED_ZERO_LENGTH_CURVE) in both Pydantic v2 and JSON Schema Draft 2020-12.",
     "entitiesVerifiedCount": 12,
     "entityParityResults": [
       {
@@ -190,6 +199,73 @@
         "bothRejected": true
       }
     ],
+    "contradictoryCertificationStateCount": 8,
+    "contradictoryCertificationStateResults": [
+      {
+        "caseId": "CONTRA-01-VALID-WITH-NON-NONE-FAILURE",
+        "entity": "OffsetValidationRecord",
+        "reason": "CERTIFIED_VALID with non-NONE failure_category must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-02-VALID-WITH-ZERO-SPEED-CUSP",
+        "entity": "OffsetValidationRecord",
+        "reason": "CERTIFIED_VALID with has_zero_speed_cusp_on_domain=True must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-03-VALID-WITH-TANGENT-REVERSAL",
+        "entity": "OffsetValidationRecord",
+        "reason": "CERTIFIED_VALID with has_tangent_reversal_on_domain=True must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-04-VALID-WITH-SPEED-FACTOR-BELOW-EPS",
+        "entity": "OffsetValidationRecord",
+        "reason": "CERTIFIED_VALID with min_offset_speed_factor_interval below epsilon must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-05-INVALID-WITH-NONE-FAILURE",
+        "entity": "OffsetValidationRecord",
+        "reason": "CERTIFIED_INVALID with failure_category=NONE must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-06-INVALID-WITH-PRODUCTION-READY-TRUE",
+        "entity": "OffsetValidationRecord",
+        "reason": "CERTIFIED_INVALID with is_production_ready=True must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-07-INCONCLUSIVE-WITH-NON-INCONCLUSIVE-FAILURE",
+        "entity": "OffsetValidationRecord",
+        "reason": "INCONCLUSIVE with failure_category!=INCONCLUSIVE_VERIFICATION must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-08-INCONCLUSIVE-WITH-PRODUCTION-READY-TRUE",
+        "entity": "OffsetValidationRecord",
+        "reason": "INCONCLUSIVE with is_production_ready=True must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      }
+    ],
     "semanticInvariantChecks": [
       {
         "caseId": "SEM-01-INCONCLUSIVE-PRODUCTION-READY-FORBIDDEN",
@@ -220,6 +296,12 @@
         "description": "ADR-009 \u00a75.3: OffsetClassificationReport must reject gridErrorCm > certifiedIntervalErrorCm",
         "pydanticSemanticValidatorRejected": true,
         "errorMessage": "Value error, OffsetClassificationReport violation: gridErrorCm cannot exceed certifiedIntervalErrorCm"
+      },
+      {
+        "caseId": "SEM-06-NUMERICAL-RECORD-PARAM-ENCLOSURE-WITHOUT-PROPAGATION",
+        "description": "ADR-009 \u00a72.5: non-null parameter_enclosure with NONE_DIRECT_ENCLOSURE must be rejected",
+        "pydanticSemanticValidatorRejected": true,
+        "errorMessage": "Value error, ADR-009 \u00a72.5 violation: non-null parameter_enclosure requires METHOD_B1_VALIDATED_DERIVATIVE or METHOD_B2_DIRECT_INTERVAL_IMAGE"
       }
     ],
     "allPassed": true

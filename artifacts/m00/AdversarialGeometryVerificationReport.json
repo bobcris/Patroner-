@@ -89,6 +89,7 @@
         "segment_id": "AG-01-ccw-circle",
         "piece_id": "sanity-circle",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 1.5,
         "regularity_margin_epsilon": 0.05,
@@ -107,8 +108,18 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 3.614495014129166e-05,
+        "max_certified_radial_error_cm": 3.614495014129166e-05,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:analytic_circle_exact_iv"
+        ],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "CERTIFIED_VALID",
         "active_classifications_on_domain": [
           "CERTIFIED_VALID"
@@ -171,6 +182,7 @@
         "segment_id": "AG-02-ccw-circle",
         "piece_id": "sanity-circle",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 10.0,
         "regularity_margin_epsilon": 0.05,
@@ -194,8 +206,20 @@
         ],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": 0.0,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NOT_EVALUATED",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:analytic_circle_exact_iv"
+        ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "detected_failure_categories": [
+          "ACTUAL_ZERO_SPEED_CUSP"
+        ],
         "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
         "active_classifications_on_domain": [
           "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
@@ -258,6 +282,7 @@
         "segment_id": "AG-03-ccw-circle",
         "piece_id": "sanity-circle",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 12.0,
         "regularity_margin_epsilon": 0.05,
@@ -276,8 +301,20 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 8.504694150892155e-06,
+        "max_certified_radial_error_cm": 8.504694150892155e-06,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NOT_EVALUATED",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:analytic_circle_exact_iv"
+        ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "TANGENT_REVERSAL",
+        "detected_failure_categories": [
+          "TANGENT_REVERSAL"
+        ],
         "canonical_offset_classification": "TANGENT_REVERSAL",
         "active_classifications_on_domain": [
           "TANGENT_REVERSAL"
@@ -340,6 +377,7 @@
         "segment_id": "AG-04-ccw-circle",
         "piece_id": "sanity-circle",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": -1,
         "offset_distance_cm": 1.5,
         "regularity_margin_epsilon": 0.05,
@@ -358,8 +396,18 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 4.8901991367629886e-05,
+        "max_certified_radial_error_cm": 4.8901991367629886e-05,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:analytic_circle_exact_iv"
+        ],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "CERTIFIED_VALID",
         "active_classifications_on_domain": [
           "CERTIFIED_VALID"
@@ -415,6 +463,7 @@
         "segment_id": "AG-05-inflection",
         "piece_id": "AG-05",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": -1,
         "offset_distance_cm": 0.5,
         "regularity_margin_epsilon": 0.05,
@@ -433,8 +482,18 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0016152683502845633,
+        "max_certified_radial_error_cm": 0.0016152683502845633,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:entered=128:resolved=128:unresolved=0:maxDepth=0:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+        ],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "CERTIFIED_VALID",
         "active_classifications_on_domain": [
           "CERTIFIED_VALID"
@@ -465,17 +524,17 @@
         {
           "tLower": 0.40714846122409654,
           "tUpper": 0.40714846122500603,
-          "deltaT": 9.094900000000001e-13,
+          "deltaT": 9.094947017729282e-13,
           "maxSpeedOnBracket": 9.157713940445747,
-          "deltaPosCm": 8.328849251696003e-12,
+          "deltaPosCm": 8.328892309187492e-12,
           "multiplicityOrOrder": "transverse-simple (m=1)"
         },
         {
           "tLower": 0.592851538774994,
-          "tUpper": 0.5928515387759036,
-          "deltaT": 9.095000000000001e-13,
-          "maxSpeedOnBracket": 9.15771394044575,
-          "deltaPosCm": 8.32894082883541e-12,
+          "tUpper": 0.5928515387759035,
+          "deltaT": 9.094947017729282e-13,
+          "maxSpeedOnBracket": 9.157713940445747,
+          "deltaPosCm": 8.328892309187492e-12,
           "multiplicityOrOrder": "transverse-simple (m=1)"
         }
       ],
@@ -483,6 +542,7 @@
         "segment_id": "AG-06-high-curvature-concave",
         "piece_id": "AG-06",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 2.0,
         "regularity_margin_epsilon": 0.05,
@@ -510,14 +570,29 @@
         ],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": 0.0,
+        "max_subdivision_depth_reached": 14,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NOT_EVALUATED",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:entered=128:resolved=292:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+        ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "TANGENT_REVERSAL",
+        "detected_failure_categories": [
+          "ACTUAL_ZERO_SPEED_CUSP",
+          "TANGENT_REVERSAL"
+        ],
         "canonical_offset_classification": "TANGENT_REVERSAL",
         "active_classifications_on_domain": [
           "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
           "TANGENT_REVERSAL"
         ],
-        "working_precision_bits": 113,
+        "working_precision_bits": 336,
         "is_production_ready": false
       },
       "passed": true
@@ -550,16 +625,17 @@
         "segment_id": "AG-06-high-curvature-concave",
         "piece_id": "AG-07",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 1.3333333333333333,
         "regularity_margin_epsilon": 0.05,
         "min_base_speed_squared_interval": [
           64.0,
-          64.00000000052387
+          64.00000000000001
         ],
         "min_offset_speed_factor_interval": [
-          -1.925929944387236e-34,
-          1.2278178473808905e-11
+          -1.4287342391028437e-101,
+          1.7039395552773855e-28
         ],
         "has_zero_speed_cusp_on_domain": true,
         "has_tangent_reversal_on_domain": false,
@@ -573,13 +649,27 @@
         ],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": 0.0,
+        "max_subdivision_depth_reached": 14,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NOT_EVALUATED",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:entered=128:resolved=226:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+        ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "detected_failure_categories": [
+          "ACTUAL_ZERO_SPEED_CUSP"
+        ],
         "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
         "active_classifications_on_domain": [
           "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
         ],
-        "working_precision_bits": 113,
+        "working_precision_bits": 336,
         "is_production_ready": false
       },
       "passed": true
@@ -600,8 +690,8 @@
       "failureCategory": "LOCAL_OFFSET_SELF_INTERSECTION",
       "selfIntersectionCertificate": {
         "scope": "LOCAL",
-        "segmentIdA": "AG-06-high-curvature-concave",
-        "segmentIdB": "AG-06-high-curvature-concave",
+        "segmentIdA": "AG-08-swallowtail-self-intersection",
+        "segmentIdB": "AG-08-swallowtail-self-intersection",
         "t1Bracket": [
           0.3136610018750175,
           0.31366100187501755
@@ -625,16 +715,17 @@
         "segment_id": "AG-08-swallowtail-self-intersection",
         "piece_id": "AG-08",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 2.0,
         "regularity_margin_epsilon": 0.05,
         "min_base_speed_squared_interval": [
           64.0,
-          64.0
+          64.140625
         ],
         "min_offset_speed_factor_interval": [
           -0.5,
-          -0.5
+          -0.4950696963040887
         ],
         "has_zero_speed_cusp_on_domain": true,
         "has_tangent_reversal_on_domain": true,
@@ -647,14 +738,14 @@
           ],
           [
             0.592851538774994,
-            0.5928515387759036
+            0.5928515387759035
           ]
         ],
         "isolated_self_intersections": [
           {
             "scope": "LOCAL",
-            "segmentIdA": "AG-06-high-curvature-concave",
-            "segmentIdB": "AG-06-high-curvature-concave",
+            "segmentIdA": "AG-08-swallowtail-self-intersection",
+            "segmentIdB": "AG-08-swallowtail-self-intersection",
             "t1Bracket": [
               0.3136610018750175,
               0.31366100187501755
@@ -671,15 +762,31 @@
           }
         ],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": 0.0,
+        "max_subdivision_depth_reached": 14,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "DETECTED",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:entered=128:resolved=292:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+        ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "LOCAL_OFFSET_SELF_INTERSECTION",
+        "detected_failure_categories": [
+          "LOCAL_OFFSET_SELF_INTERSECTION",
+          "ACTUAL_ZERO_SPEED_CUSP",
+          "TANGENT_REVERSAL"
+        ],
         "canonical_offset_classification": "LOCAL_SELF_INTERSECTION",
         "active_classifications_on_domain": [
           "LOCAL_SELF_INTERSECTION",
           "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
           "TANGENT_REVERSAL"
         ],
-        "working_precision_bits": 113,
+        "working_precision_bits": 336,
         "is_production_ready": false
       },
       "passed": true
@@ -714,6 +821,7 @@
         "segment_id": "AG-09-true-zero-speed-cusp",
         "piece_id": "AG-09",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": -1,
         "offset_distance_cm": 1.5,
         "regularity_margin_epsilon": 0.05,
@@ -737,8 +845,16 @@
         ],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": null,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
         "active_classifications_on_domain": [
           "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
@@ -800,6 +916,7 @@
         "segment_id": "AG-10a-collinear-endpoint",
         "piece_id": "AG-10",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": -1,
         "offset_distance_cm": 1.5,
         "regularity_margin_epsilon": 0.05,
@@ -818,8 +935,16 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": null,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "CERTIFIED_VALID",
         "active_classifications_on_domain": [
           "CERTIFIED_VALID"
@@ -831,6 +956,7 @@
         "segment_id": "AG-10b-noncollinear-singular-endpoint",
         "piece_id": "AG-10",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": -1,
         "offset_distance_cm": 1.5,
         "regularity_margin_epsilon": 0.05,
@@ -854,8 +980,16 @@
         ],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": null,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
         "active_classifications_on_domain": [
           "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
@@ -895,6 +1029,7 @@
         "segment_id": "AG-11-removable-parameterization-degeneracy",
         "piece_id": "AG-11",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 1.5,
         "regularity_margin_epsilon": 0.05,
@@ -913,8 +1048,16 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": null,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "CERTIFIED_VALID",
         "active_classifications_on_domain": [
           "CERTIFIED_VALID"
@@ -948,6 +1091,7 @@
         "segment_id": "AG-12-coincident-interior-cp",
         "piece_id": "AG-12",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 0.5,
         "regularity_margin_epsilon": 0.05,
@@ -966,8 +1110,18 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0012564126718080904,
+        "max_certified_radial_error_cm": 0.0012564126718080904,
+        "max_subdivision_depth_reached": 1,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:entered=128:resolved=162:unresolved=0:maxDepth=1:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+        ],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "CERTIFIED_VALID",
         "active_classifications_on_domain": [
           "CERTIFIED_VALID"
@@ -993,8 +1147,8 @@
       "qMaxExact": 36001200.0116,
       "speedSquaredRatioMaxOverMin": 3103551725.14,
       "maxSpeedOnRootBracketCmPerUnit": 5529.700000151403,
-      "bracketDeltaT": 7.275957614183426e-13,
-      "bracketDeltaPosCm": 4.02338628202517e-09,
+      "bracketDeltaT": 7.275957614183432e-13,
+      "bracketDeltaPosCm": 4.023386282025173e-09,
       "escalatedToC1Cert": true,
       "passed": true
     },
@@ -1071,8 +1225,26 @@
           7.329179606750063
         ]
       ],
-      "globalSelfIntersectionsDetected": 1,
+      "globalSelfIntersectionsDetected": 3,
       "globalIntersections": [
+        {
+          "scope": "GLOBAL",
+          "segmentIdA": "AG-15-pocket-left-wall",
+          "segmentIdB": "AG-15-pocket-bottom",
+          "t1Bracket": [
+            0.7312632551605232,
+            0.7312632551605233
+          ],
+          "t2Bracket": [
+            0.8016284752606271,
+            0.8016284752606272
+          ],
+          "intersectionPointCm": {
+            "x": 1.5,
+            "y": 2.732814680463619
+          },
+          "residualDistanceCm": 2.5839061653313495e-33
+        },
         {
           "scope": "GLOBAL",
           "segmentIdA": "AG-15-pocket-left-wall",
@@ -1090,10 +1262,43 @@
             "y": 1.6458980337503153
           },
           "residualDistanceCm": 2.2542432048121533e-33
+        },
+        {
+          "scope": "GLOBAL",
+          "segmentIdA": "AG-15-pocket-bottom",
+          "segmentIdB": "AG-15-pocket-right-wall",
+          "t1Bracket": [
+            0.6599814642148346,
+            0.6599814642148347
+          ],
+          "t2Bracket": [
+            0.18507352241421318,
+            0.1850735224142132
+          ],
+          "intersectionPointCm": {
+            "x": 1.1031386462574866,
+            "y": 2.439620741235342
+          },
+          "residualDistanceCm": 1.634205748519734e-33
         }
       ],
       "krawczykStatus": "CERTIFIED_EXISTENCE_AND_UNIQUENESS",
       "krawczykCertificates": [
+        {
+          "segmentIdA": "AG-15-pocket-left-wall",
+          "segmentIdB": "AG-15-pocket-bottom",
+          "t1Bracket": [
+            0.7312632551605232,
+            0.7312632551605233
+          ],
+          "t2Bracket": [
+            0.8016284752606271,
+            0.8016284752606272
+          ],
+          "krawczykNormInf": 1.471109084466465e-18,
+          "krawczykContainmentVerified": true,
+          "existenceAndUniquenessCertified": true
+        },
         {
           "segmentIdA": "AG-15-pocket-left-wall",
           "segmentIdB": "AG-15-pocket-right-wall",
@@ -1105,7 +1310,22 @@
             0.05278640450004206,
             0.052786404500042065
           ],
-          "krawczykNormInf": 3.1441169980169526e-18,
+          "krawczykNormInf": 3.144116998016953e-18,
+          "krawczykContainmentVerified": true,
+          "existenceAndUniquenessCertified": true
+        },
+        {
+          "segmentIdA": "AG-15-pocket-bottom",
+          "segmentIdB": "AG-15-pocket-right-wall",
+          "t1Bracket": [
+            0.6599814642148346,
+            0.6599814642148347
+          ],
+          "t2Bracket": [
+            0.18507352241421318,
+            0.1850735224142132
+          ],
+          "krawczykNormInf": 1.3466123505137393e-18,
           "krawczykContainmentVerified": true,
           "existenceAndUniquenessCertified": true
         }
@@ -1134,17 +1354,17 @@
         {
           "tLower": 0.4999999499996193,
           "tUpper": 0.49999995000052877,
-          "deltaT": 9.094700000000001e-13,
+          "deltaT": 9.094947017729282e-13,
           "maxSpeedOnBracket": 21.000000000000032,
-          "deltaPosCm": 1.909887000000003e-11,
+          "deltaPosCm": 1.9099388737231522e-11,
           "multiplicityOrOrder": "wilkinson-cluster-root-1"
         },
         {
-          "tLower": 0.5000000499994711,
+          "tLower": 0.5000000499994712,
           "tUpper": 0.5000000500003807,
-          "deltaT": 9.095000000000001e-13,
+          "deltaT": 9.094947017729282e-13,
           "maxSpeedOnBracket": 21.000000000000032,
-          "deltaPosCm": 1.9099500000000032e-11,
+          "deltaPosCm": 1.9099388737231522e-11,
           "multiplicityOrOrder": "wilkinson-cluster-root-2"
         }
       ],
@@ -1210,6 +1430,7 @@
         "segment_id": "bodice-front-armscye",
         "piece_id": "bodice-front-01",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": -1,
         "offset_distance_cm": 1.5,
         "regularity_margin_epsilon": 0.05,
@@ -1228,8 +1449,18 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0041903459575791105,
+        "max_certified_radial_error_cm": 0.0041903459575791105,
+        "max_subdivision_depth_reached": 2,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:entered=128:resolved=219:unresolved=0:maxDepth=2:bernsteinConvexFastCert=True:bernsteinMarginFastCert=False"
+        ],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "CERTIFIED_VALID",
         "active_classifications_on_domain": [
           "CERTIFIED_VALID"
@@ -1258,6 +1489,7 @@
         "segment_id": "ADR009-S6-09-regularity-margin-violation",
         "piece_id": "ADR009-S6-09",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 1.3066666666666666,
         "regularity_margin_epsilon": 0.05,
@@ -1276,13 +1508,27 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": 0.0,
+        "max_subdivision_depth_reached": 14,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NOT_EVALUATED",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:entered=128:resolved=194:unresolved=2:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=2:resolved=28:unresolved=2:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=2:resolved=28:unresolved=2:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+        ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "REGULARITY_MARGIN_VIOLATION",
+        "detected_failure_categories": [
+          "REGULARITY_MARGIN_VIOLATION"
+        ],
         "canonical_offset_classification": "REGULARITY_MARGIN_VIOLATION",
         "active_classifications_on_domain": [
           "REGULARITY_MARGIN_VIOLATION"
         ],
-        "working_precision_bits": 113,
+        "working_precision_bits": 336,
         "is_production_ready": false
       },
       "passed": true
@@ -1368,6 +1614,7 @@
         "segment_id": "ADR009-S6-16-boundary-straddle",
         "piece_id": "ADR009-S6-16",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 1.277,
         "regularity_margin_epsilon": 0.05,
@@ -1386,13 +1633,32 @@
         "isolated_cusp_roots_t": [],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": 0.0,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NOT_EVALUATED",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "escalation_trace": [
+          "prec=113bit:entered=1:resolved=0:unresolved=1:maxDepth=0:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=1:resolved=0:unresolved=1:maxDepth=0:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=1:resolved=0:unresolved=1:maxDepth=0:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+        ],
         "verification_outcome": "INCONCLUSIVE",
         "failure_category": "INCONCLUSIVE_VERIFICATION",
+        "detected_failure_categories": [
+          "INCONCLUSIVE_VERIFICATION"
+        ],
         "canonical_offset_classification": "INCONCLUSIVE",
         "active_classifications_on_domain": [
           "INCONCLUSIVE"
         ],
-        "working_precision_bits": 113,
+        "working_precision_bits": 336,
         "is_production_ready": false
       },
       "passed": true
@@ -1421,6 +1687,7 @@
         "segment_id": "ADR009-S4-CASE5-collapsed-zero-length",
         "piece_id": "ADR009-CASE5",
         "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
         "offset_direction_sign_s": 1,
         "offset_distance_cm": 1.5,
         "regularity_margin_epsilon": 0.05,
@@ -1444,8 +1711,16 @@
         ],
         "isolated_self_intersections": [],
         "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": null,
+        "max_subdivision_depth_reached": 0,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NONE",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
+        "detected_failure_categories": [],
         "canonical_offset_classification": "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
         "active_classifications_on_domain": [
           "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP"
@@ -1453,6 +1728,96 @@
         "working_precision_bits": 113,
         "is_production_ready": false
       },
+      "passed": true
+    },
+    {
+      "caseId": "ADR009-S6-11b",
+      "adr009Section6Item": "11b",
+      "title": "S-Curve Inflection Point With Concave Super-Critical Region (d*kappa_max ~= 1.15 > 1)",
+      "canonicalOffsetClassification": "TANGENT_REVERSAL",
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "verificationOutcome": "CERTIFIED_INVALID",
+      "failureCategory": "TANGENT_REVERSAL",
+      "C_at_0_5": 0.0,
+      "isolatedCuspRootsCount": 2,
+      "minOffsetSpeedFactorInterval": [
+        -0.20256482302355272,
+        -0.1873414300825954
+      ],
+      "offsetValidationRecord": {
+        "segment_id": "ADR009-S6-11b-scurve-inflection-concave-cusp",
+        "piece_id": "ADR009-S6-11b",
+        "contour_orientation": "CCW_EXTERIOR",
+        "coordinate_convention": "CARTESIAN_RH_CCW",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 1.66,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": [
+          100.0,
+          100.11766105890274
+        ],
+        "min_offset_speed_factor_interval": [
+          -0.20256482302355272,
+          -0.1873414300825954
+        ],
+        "has_zero_speed_cusp_on_domain": true,
+        "has_tangent_reversal_on_domain": true,
+        "stationary_parameterization_status": "NONE_REGULAR_SPEED",
+        "base_curve_singularity_classification": "REGULAR_BASE_CURVE",
+        "isolated_cusp_roots_t": [
+          [
+            0.7624307132509784,
+            0.7624307132518879
+          ],
+          [
+            0.8546102609952868,
+            0.8546102609961963
+          ]
+        ],
+        "isolated_self_intersections": [],
+        "max_geometric_deviation_bound_cm": 0.0,
+        "max_certified_radial_error_cm": 0.0,
+        "max_subdivision_depth_reached": 14,
+        "primary_span_coverage_ratio": 1.0,
+        "local_self_intersection_status": "NOT_EVALUATED",
+        "global_contour_self_intersection_status": "NOT_EVALUATED",
+        "unresolved_intervals": [],
+        "escalation_trace": [
+          "prec=113bit:entered=128:resolved=675:unresolved=9:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=9:resolved=104:unresolved=9:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=9:resolved=107:unresolved=8:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+        ],
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": "TANGENT_REVERSAL",
+        "detected_failure_categories": [
+          "ACTUAL_ZERO_SPEED_CUSP",
+          "TANGENT_REVERSAL"
+        ],
+        "canonical_offset_classification": "TANGENT_REVERSAL",
+        "active_classifications_on_domain": [
+          "ACTUAL_OFFSET_SINGULARITY / ZERO_SPEED_CUSP",
+          "TANGENT_REVERSAL"
+        ],
+        "working_precision_bits": 336,
+        "is_production_ready": false
+      },
+      "passed": true
+    },
+    {
+      "caseId": "ADR009-S6-15",
+      "adr009Section6Item": 15,
+      "title": "Method B1 Steep-Parameterization Rejection (||B'|| >= 50 cm/t, r_param=1e-4 Rejected vs 1e-6 Accepted)",
+      "canonicalOffsetClassification": "CERTIFIED_VALID",
+      "baseCurveSingularityClassification": "REGULAR_BASE_CURVE",
+      "toleranceTauCm": 0.0001,
+      "unrefinedParamHalfWidth": 0.0001,
+      "unrefinedMaxSpeedCmPerT": 50.0000000144,
+      "unrefinedOutputBoundCm": 0.0050000000024400006,
+      "unrefinedRejectedByMethodB1": true,
+      "refinedParamHalfWidth": 1e-06,
+      "refinedMaxSpeedCmPerT": 50.00000000000144,
+      "refinedOutputBoundCm": 5.000000100000144e-05,
+      "refinedAcceptedByMethodB1": true,
       "passed": true
     }
   ],

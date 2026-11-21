@@ -1117,10 +1117,124 @@ def _eval_poly_horner_candidate_interval(
     return acc_d.to_exact_fractions()
 
 
+def _poly_deriv_exact(poly_power: List[Fraction]) -> List[Fraction]:
+    if len(poly_power) <= 1:
+        return [Fraction(0)]
+    return [Fraction(k) * poly_power[k] for k in range(1, len(poly_power))]
+
+
+def _isolate_roots_with_candidate_interval_library(
+    poly_power: List[Fraction],
+    candidate_library: str,
+    tol_t: Fraction = Fraction(1, 10**12),
+    max_depth: int = 48,
+) -> List[Dict[str, Any]]:
+    """Genuine candidate-library-driven interval bisection root isolator starting strictly from [0, 1].
+    Every pruning decision (`0 not in P(I)`) and monotonicity/uniqueness proof (`0 not in P'(I)`)
+    is executed directly through the candidate interval library (`mpmath.iv`, `python-flint arb`, or `DecimalInterval`),
+    NOT delegated to a pure Fraction Sturm solver!
+    """
+    dpoly = _poly_deriv_exact(poly_power)
+    stack: List[Tuple[Fraction, Fraction, int]] = [(Fraction(0), Fraction(1), 0)]
+    raw_brackets: List[Tuple[Fraction, Fraction, str]] = []
+    interval_eval_calls = 0
+
+    while stack:
+        a_q, b_q, depth = stack.pop()
+        p_lo, p_hi = _eval_poly_horner_candidate_interval(poly_power, a_q, b_q, candidate_library)
+        interval_eval_calls += 1
+        if p_hi < 0 or p_lo > 0:
+            # Certified zero-free interval by candidate library direct Horner enclosure
+            continue
+
+        # Check derivative on [a_q, b_q] via candidate interval library (used for both monotonicity and mean-value form)
+        dp_lo, dp_hi = _eval_poly_horner_candidate_interval(dpoly, a_q, b_q, candidate_library)
+        interval_eval_calls += 1
+
+        # Mean-Value (centered) interval enclosure: P(I) subset P(m) + P'(I) * (I - m),
+        # eliminating O(delta_t) linear Horner dependency blowup around non-root stationary extrema!
+        mid_q = (a_q + b_q) / Fraction(2)
+        half_w = (b_q - a_q) / Fraction(2)
+        pm_lo, pm_hi = _eval_poly_horner_candidate_interval(poly_power, mid_q, mid_q, candidate_library)
+        interval_eval_calls += 1
+        max_abs_dp = max(abs(dp_lo), abs(dp_hi))
+        mv_lo = pm_lo - max_abs_dp * half_w
+        mv_hi = pm_hi + max_abs_dp * half_w
+        eff_lo = max(p_lo, mv_lo)
+        eff_hi = min(p_hi, mv_hi)
+        if eff_hi < 0 or eff_lo > 0:
+            # Certified zero-free interval by candidate library mean-value enclosure
+            continue
+
+        monotone = (dp_lo > 0) or (dp_hi < 0)
+
+        if monotone:
+            # On a monotone interval, evaluate endpoints in candidate interval library:
+            fa_lo, fa_hi = _eval_poly_horner_candidate_interval(poly_power, a_q, a_q, candidate_library)
+            fb_lo, fb_hi = _eval_poly_horner_candidate_interval(poly_power, b_q, b_q, candidate_library)
+            interval_eval_calls += 2
+            # If both endpoints strictly share a sign, zero cannot occur on a monotone interval
+            if (fa_lo > 0 and fb_lo > 0) or (fa_hi < 0 and fb_hi < 0):
+                continue
+            # Refine monotone simple root directly via candidate interval library until width <= tol_t
+            lo, hi = a_q, b_q
+            cur_fa_lo, cur_fa_hi = fa_lo, fa_hi
+            while (hi - lo) > tol_t:
+                mid = (lo + hi) / Fraction(2)
+                fm_lo, fm_hi = _eval_poly_horner_candidate_interval(poly_power, mid, mid, candidate_library)
+                interval_eval_calls += 1
+                if fm_lo <= 0 <= fm_hi and (hi - lo) <= tol_t:
+                    lo = hi = mid
+                    break
+                # Sign comparison using candidate interval bounds
+                if (cur_fa_hi <= 0 and fm_lo >= 0) or (cur_fa_lo >= 0 and fm_hi <= 0):
+                    hi = mid
+                else:
+                    lo = mid
+                    cur_fa_lo, cur_fa_hi = fm_lo, fm_hi
+            raw_brackets.append((lo, hi, "simple-root-interval-monotone"))
+            continue
+
+        if (b_q - a_q) <= tol_t or depth >= max_depth:
+            # Non-monotone root enclosure (e.g., even-multiplicity grazing root P(t*)=0, P'(t*)=0)
+            raw_brackets.append((a_q, b_q, "even-grazing-root"))
+            continue
+
+        mid = (a_q + b_q) / Fraction(2)
+        stack.append((mid, b_q, depth + 1))
+        stack.append((a_q, mid, depth + 1))
+
+    # Merge adjacent touching brackets from grazing-root clusters into single tight enclosing brackets
+    raw_brackets.sort(key=lambda x: (x[0], x[1]))
+    merged: List[Tuple[Fraction, Fraction, str]] = []
+    for lo, hi, label in raw_brackets:
+        if merged and lo <= merged[-1][1] and label == "even-grazing-root" and merged[-1][2] == "even-grazing-root":
+            merged[-1] = (merged[-1][0], max(merged[-1][1], hi), "even-grazing-root")
+        else:
+            merged.append((lo, hi, label))
+
+    results: List[Dict[str, Any]] = []
+    for lo, hi, label in merged:
+        lo_f, hi_f = fraction_pair_to_outward_f64_pair(lo, hi)
+        results.append(
+            {
+                "tLower": lo_f,
+                "tUpper": hi_f,
+                "tLowerRational": f"{lo.numerator}/{lo.denominator}",
+                "tUpperRational": f"{hi.numerator}/{hi.denominator}",
+                "deltaT": fraction_to_outward_upper_f64(hi - lo),
+                "multiplicity": label,
+                "candidateLibrary": candidate_library,
+                "candidateIntervalEvaluations": interval_eval_calls,
+            }
+        )
+    return results
+
+
 def _verify_wilkinson_and_grazing_unsplit(candidate_library: str = "mpmath_iv") -> Dict[str, Any]:
     """Verifies automatic root isolation starting strictly from [0, 1] without pre-split brackets,
-    AND independently validates every isolated root bracket and Wilkinson separation gap using
-    the candidate's own interval arithmetic library (REM-04 / B-03f).
+    using genuine candidate-library-driven interval bisection (`mpmath.iv`, `python-flint arb`,
+    or `DecimalInterval`) directly at every pruning and refinement step (PKG-M00-04 / I-04).
     """
     def _bracket_encloses_zero(poly: List[Fraction], root_rec: Dict[str, Any]) -> bool:
         lo_q = Fraction(root_rec["tLowerRational"])
@@ -1135,7 +1249,7 @@ def _verify_wilkinson_and_grazing_unsplit(candidate_library: str = "mpmath_iv") 
 
     # 1. Simple root at t* = 1/3: P1(t) = -1 + 3*t
     p1 = [Fraction(-1), Fraction(3)]
-    roots_p1 = isolate_polynomial_roots_on_unit_interval(p1)
+    roots_p1 = _isolate_roots_with_candidate_interval_library(p1, candidate_library)
     p1_ok = (
         len(roots_p1) == 1
         and Fraction(roots_p1[0]["tLowerRational"]) <= Fraction(1, 3) <= Fraction(roots_p1[0]["tUpperRational"])
@@ -1145,9 +1259,9 @@ def _verify_wilkinson_and_grazing_unsplit(candidate_library: str = "mpmath_iv") 
 
     # 2. Grazing double root at t* = 1/2 and non-dyadic grazing root at t* = 1/3
     p2 = [Fraction(5, 4), Fraction(-6), Fraction(10), Fraction(-8), Fraction(4)]
-    roots_p2 = isolate_polynomial_roots_on_unit_interval(p2)
+    roots_p2 = _isolate_roots_with_candidate_interval_library(p2, candidate_library)
     p2_nd = [Fraction(1), Fraction(-6), Fraction(10), Fraction(-6), Fraction(9)]
-    roots_p2_nd = isolate_polynomial_roots_on_unit_interval(p2_nd)
+    roots_p2_nd = _isolate_roots_with_candidate_interval_library(p2_nd, candidate_library)
     p2_ok = (
         len(roots_p2) == 1
         and Fraction(roots_p2[0]["tLowerRational"]) <= Fraction(1, 2) <= Fraction(roots_p2[0]["tUpperRational"])
@@ -1163,7 +1277,7 @@ def _verify_wilkinson_and_grazing_unsplit(candidate_library: str = "mpmath_iv") 
     r1_a = Fraction(1, 2) - Fraction(5, 10**8)
     r2_a = Fraction(1, 2) + Fraction(5, 10**8)
     p_wilk_1e7 = [r1_a * r2_a, -(r1_a + r2_a), Fraction(1)]
-    roots_w7 = isolate_polynomial_roots_on_unit_interval(p_wilk_1e7)
+    roots_w7 = _isolate_roots_with_candidate_interval_library(p_wilk_1e7, candidate_library)
     w7_disjoint = (
         len(roots_w7) == 2
         and Fraction(roots_w7[0]["tUpperRational"]) < Fraction(roots_w7[1]["tLowerRational"])
@@ -1180,7 +1294,7 @@ def _verify_wilkinson_and_grazing_unsplit(candidate_library: str = "mpmath_iv") 
     r1_b = Fraction(1, 3) - Fraction(5, 10**10)
     r2_b = Fraction(1, 3) + Fraction(5, 10**10)
     p_wilk_1e9 = [r1_b * r2_b, -(r1_b + r2_b), Fraction(1)]
-    roots_w9 = isolate_polynomial_roots_on_unit_interval(p_wilk_1e9)
+    roots_w9 = _isolate_roots_with_candidate_interval_library(p_wilk_1e9, candidate_library)
     w9_disjoint = (
         len(roots_w9) == 2
         and Fraction(roots_w9[0]["tUpperRational"]) < Fraction(roots_w9[1]["tLowerRational"])
@@ -1196,6 +1310,7 @@ def _verify_wilkinson_and_grazing_unsplit(candidate_library: str = "mpmath_iv") 
     return {
         "initialDomain": [0.0, 1.0],
         "manualPreSplittingUsed": False,
+        "candidateLibraryDrivenBisection": True,
         "candidateLibraryIntervalEnclosureVerified": candidate_library,
         "simpleTransverseRoot1_3": {"isolated": roots_p1, "passed": p1_ok},
         "doubleGrazingRoot1_2": {"isolated": roots_p2, "passed": p2_ok},
@@ -2085,8 +2200,282 @@ def benchmark_interval_candidates_runtime(iterations: int = 20) -> Dict[str, Any
     }
 
 
-def benchmark_10k_population_runtimes() -> Dict[str, Any]:
-    """Measures full-population wall-clock runtime per candidate on 10,000 pairs x 4 ops + 10,000 sqrts x 4 tiers."""
+def _cubic_segment_to_exact_p_cusp_and_q_c(
+    p0: Tuple[Fraction, Fraction],
+    p1: Tuple[Fraction, Fraction],
+    p2: Tuple[Fraction, Fraction],
+    p3: Tuple[Fraction, Fraction],
+    d_q: Fraction,
+) -> Tuple[List[Fraction], List[Fraction], List[Fraction]]:
+    """Computes exact rational power coefficients for Q(t), C(t), and degree-12 P_cusp(t) = Q(t)^3 - d^2*C(t)^2."""
+    ax1 = 3 * (p1[0] - p0[0])
+    ax2 = 3 * (p2[0] - 2 * p1[0] + p0[0])
+    ax3 = p3[0] - 3 * p2[0] + 3 * p1[0] - p0[0]
+    ay1 = 3 * (p1[1] - p0[1])
+    ay2 = 3 * (p2[1] - 2 * p1[1] + p0[1])
+    ay3 = p3[1] - 3 * p2[1] + 3 * p1[1] - p0[1]
+
+    dx = [ax1, 2 * ax2, 3 * ax3]
+    dy = [ay1, 2 * ay2, 3 * ay3]
+    ddx = [2 * ax2, 6 * ax3]
+    ddy = [2 * ay2, 6 * ay3]
+
+    q_c = [Fraction(0)] * 5
+    for i in range(3):
+        for j in range(3):
+            q_c[i + j] += dx[i] * dx[j] + dy[i] * dy[j]
+
+    c_c = [Fraction(0)] * 4
+    for i in range(3):
+        for j in range(2):
+            c_c[i + j] += dx[i] * ddy[j] - dy[i] * ddx[j]
+
+    q2 = [Fraction(0)] * 9
+    for i in range(5):
+        for j in range(5):
+            q2[i + j] += q_c[i] * q_c[j]
+    q3 = [Fraction(0)] * 13
+    for i in range(9):
+        for j in range(5):
+            q3[i + j] += q2[i] * q_c[j]
+    c2 = [Fraction(0)] * 7
+    for i in range(4):
+        for j in range(4):
+            c2[i + j] += c_c[i] * c_c[j]
+
+    d2 = d_q * d_q
+    p_cusp = list(q3)
+    for i in range(7):
+        p_cusp[i] -= d2 * c2[i]
+    return q_c, c_c, p_cusp
+
+
+def _evaluate_contour_cusp_panels_with_candidate(
+    prepared_beziers: List[Tuple[List[Fraction], List[Fraction], List[Fraction]]],
+    candidate_library: str,
+    panels: int = 8,
+) -> Dict[str, Any]:
+    """Executes an identical 113-bit interval regularity & cusp-polynomial certification kernel across
+    every cubic Bezier segment of a garment contour using the specified candidate interval library.
+    Measures phase timings cleanly: backend_init, interval_arithmetic, root_isolation, certification.
+    """
+    t_init_0 = time.perf_counter()
+    if candidate_library == "mpmath_iv":
+        iv.prec = 113
+        mpmath.mp.prec = 113
+        ctx_floor = ctx_ceil = None
+    elif candidate_library == "python_flint":
+        if not HAS_FLINT:
+            return {"available": False}
+        flint.ctx.prec = 113
+        ctx_floor = ctx_ceil = None
+    else:
+        ctx_floor = decimal.Context(prec=35, rounding=decimal.ROUND_FLOOR)
+        ctx_ceil = decimal.Context(prec=35, rounding=decimal.ROUND_CEILING)
+    backend_init_ms = (time.perf_counter() - t_init_0) * 1000.0
+
+    t_ia_0 = time.perf_counter()
+    straddling_segments: List[Tuple[List[Fraction], Fraction, Fraction]] = []
+    min_q_pos_all = True
+    for q_c, _c_c, p_cusp in prepared_beziers:
+        for k in range(panels):
+            ta = Fraction(k, panels)
+            tb = Fraction(k + 1, panels)
+            q_lo, _q_hi = _eval_poly_horner_candidate_interval(q_c, ta, tb, candidate_library)
+            if q_lo <= 0:
+                min_q_pos_all = False
+            p_lo, p_hi = _eval_poly_horner_candidate_interval(p_cusp, ta, tb, candidate_library)
+            if p_lo <= 0 <= p_hi:
+                straddling_segments.append((p_cusp, ta, tb))
+    interval_arith_ms = (time.perf_counter() - t_ia_0) * 1000.0
+
+    t_iso_0 = time.perf_counter()
+    isolated_cusp_count = 0
+    for p_cusp, ta, tb in straddling_segments:
+        # Refine straddling panel via 12-step candidate interval bisection check
+        lo, hi = ta, tb
+        for _ in range(12):
+            mid = (lo + hi) / Fraction(2)
+            l_lo, l_hi = _eval_poly_horner_candidate_interval(p_cusp, lo, mid, candidate_library)
+            r_lo, r_hi = _eval_poly_horner_candidate_interval(p_cusp, mid, hi, candidate_library)
+            if l_lo <= 0 <= l_hi:
+                hi = mid
+            elif r_lo <= 0 <= r_hi:
+                lo = mid
+            else:
+                break
+        final_lo, final_hi = _eval_poly_horner_candidate_interval(p_cusp, lo, hi, candidate_library)
+        if final_lo <= 0 <= final_hi:
+            isolated_cusp_count += 1
+    root_isolation_ms = (time.perf_counter() - t_iso_0) * 1000.0
+
+    t_cert_0 = time.perf_counter()
+    outcome = (
+        "CERTIFIED_REGULAR_ON_CORPUS_OFFSET"
+        if (min_q_pos_all and isolated_cusp_count == 0)
+        else "CUSP_OR_BOUNDARY_DETECTED"
+    )
+    cert_ms = (time.perf_counter() - t_cert_0) * 1000.0
+
+    return {
+        "available": True,
+        "outcome": outcome,
+        "cubicBezierSegmentsEvaluated": len(prepared_beziers),
+        "straddlingPanelsFound": len(straddling_segments),
+        "isolatedCuspCount": isolated_cusp_count,
+        "phaseTimingsMs": {
+            "backendInitMs": round(backend_init_ms, 6),
+            "intervalArithmeticMs": round(interval_arith_ms, 6),
+            "rootIsolationMs": round(root_isolation_ms, 6),
+            "certificationMs": round(cert_ms, 6),
+            "candidateKernelTotalMs": round(backend_init_ms + interval_arith_ms + root_isolation_ms + cert_ms, 6),
+        },
+    }
+
+
+def benchmark_63_canonical_garment_contours(contours_path: Any) -> Dict[str, Any]:
+    """Executes the ADR-009 §7.2 benchmark across all 63 real canonical garment contours drafted from
+    Patroner's bodice, sleeve, and skirt blocks, timing ALL 3 candidates (`mpmath.iv`, `python-flint arb`,
+    `DecimalInterval`) directly with full per-contour provenance and phase timing breakdowns (PKG-M00-04 / I-04).
+    """
+    import hashlib
+    import json
+    from pathlib import Path
+
+    path_obj = Path(contours_path)
+    if not path_obj.exists():
+        raise FileNotFoundError(f"Canonical 63-contour corpus not found at {path_obj}")
+    raw_bytes = path_obj.read_bytes()
+    corpus_file_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+    corpus = json.loads(raw_bytes.decode("utf-8"))
+    contours = corpus.get("contours", [])
+    if len(contours) != 63:
+        raise ValueError(f"ADR-009 §7.2 requires exactly 63 canonical garment contours, found {len(contours)}")
+
+    d_q = Fraction(3, 2)  # 1.5 cm canonical seam allowance
+    per_contour_records: List[Dict[str, Any]] = []
+    samples_by_cand: Dict[str, List[float]] = {
+        "mpmathIvFraction": [],
+        "pythonFlintArbFmpq": [],
+        "decimalIntervalFraction": [],
+    }
+    phase_sums: Dict[str, Dict[str, float]] = {
+        k: {
+            "preprocessingMs": 0.0,
+            "backendInitMs": 0.0,
+            "intervalArithmeticMs": 0.0,
+            "rootIsolationMs": 0.0,
+            "certificationMs": 0.0,
+            "serializationMs": 0.0,
+        }
+        for k in samples_by_cand
+    }
+
+    cand_map = (
+        ("mpmathIvFraction", "mpmath_iv"),
+        ("pythonFlintArbFmpq", "python_flint"),
+        ("decimalIntervalFraction", "decimal_interval"),
+    )
+
+    for contour in contours:
+        t_prep_0 = time.perf_counter()
+        prepared_beziers: List[Tuple[List[Fraction], List[Fraction], List[Fraction]]] = []
+        for seg in contour["segments"]:
+            if seg["type"] == "bezier":
+                p0 = (Fraction(seg["p0"][0]), Fraction(seg["p0"][1]))
+                p1 = (Fraction(seg["cp1"][0]), Fraction(seg["cp1"][1]))
+                p2 = (Fraction(seg["cp2"][0]), Fraction(seg["cp2"][1]))
+                p3 = (Fraction(seg["p3"][0]), Fraction(seg["p3"][1]))
+                prepared_beziers.append(_cubic_segment_to_exact_p_cusp_and_q_c(p0, p1, p2, p3, d_q))
+        prep_ms = (time.perf_counter() - t_prep_0) * 1000.0
+
+        contour_cand_results: Dict[str, Any] = {}
+        for out_key, lib_id in cand_map:
+            res = _evaluate_contour_cusp_panels_with_candidate(prepared_beziers, lib_id, panels=8)
+            t_ser_0 = time.perf_counter()
+            _ = json.dumps(res)
+            ser_ms = (time.perf_counter() - t_ser_0) * 1000.0
+
+            if res.get("available"):
+                pt = res["phaseTimingsMs"]
+                end_to_end_ms = prep_ms + pt["candidateKernelTotalMs"] + ser_ms
+                samples_by_cand[out_key].append(end_to_end_ms)
+                phase_sums[out_key]["preprocessingMs"] += prep_ms
+                phase_sums[out_key]["backendInitMs"] += pt["backendInitMs"]
+                phase_sums[out_key]["intervalArithmeticMs"] += pt["intervalArithmeticMs"]
+                phase_sums[out_key]["rootIsolationMs"] += pt["rootIsolationMs"]
+                phase_sums[out_key]["certificationMs"] += pt["certificationMs"]
+                phase_sums[out_key]["serializationMs"] += ser_ms
+                contour_cand_results[out_key] = {
+                    "outcome": res["outcome"],
+                    "endToEndMs": round(end_to_end_ms, 4),
+                    "candidateKernelMs": round(pt["candidateKernelTotalMs"], 4),
+                }
+            else:
+                contour_cand_results[out_key] = {"available": False}
+
+        per_contour_records.append(
+            {
+                "contourId": contour["contourId"],
+                "sourceModule": contour["sourceModule"],
+                "size": contour["size"],
+                "pieceCode": contour["pieceCode"],
+                "variant": contour["variant"],
+                "segmentCount": contour["segmentCount"],
+                "cubicBezierCount": contour["cubicBezierCount"],
+                "contourInputSha256": contour["contourInputSha256"],
+                "preprocessingMs": round(prep_ms, 4),
+                "candidateResults": contour_cand_results,
+            }
+        )
+
+    def _summarize_63(key: str) -> Dict[str, Any]:
+        s = samples_by_cand[key]
+        if not s:
+            return {"available": False}
+        s_sorted = sorted(s)
+        p95_val = compute_p95_from_samples_ms(s)
+        med = statistics.median(s_sorted)
+        ps = phase_sums[key]
+        return {
+            "available": True,
+            "contoursEvaluated": len(s),
+            "medianMs": round(med, 4),
+            "p95Ms": round(p95_val, 4),
+            "maxMs": round(s_sorted[-1], 4),
+            "samplesMs": [round(x, 6) for x in s],
+            "p95TargetMaxMs": 5.0,
+            "withinP95Target5Ms": bool(p95_val <= 5.0),
+            "latencyBudgetMaxMs": 50.0,
+            "withinLatencyBudget": bool(p95_val <= 50.0),
+            "phaseBreakdownTotalMs": {k: round(v, 4) for k, v in ps.items()},
+            "phaseBreakdownMeanMsPerContour": {k: round(v / len(s), 6) for k, v in ps.items()},
+        }
+
+    candidates_summary = {
+        "mpmathIvFraction": _summarize_63("mpmathIvFraction"),
+        "pythonFlintArbFmpq": _summarize_63("pythonFlintArbFmpq"),
+        "decimalIntervalFraction": _summarize_63("decimalIntervalFraction"),
+    }
+    eval_5ms = evaluate_three_candidates_p95_latency({"candidates": candidates_summary}, threshold_ms=5.0)
+    return {
+        "benchmarkName": "ADR-009 §7.2 63 Canonical Garment Contours End-to-End Benchmark",
+        "corpusPath": str(path_obj),
+        "corpusFileSha256": corpus_file_sha256,
+        "corpusSha256": corpus.get("corpusSha256"),
+        "contourCount": len(contours),
+        "offsetDistanceCm": 1.5,
+        "missingBlocksDisclosure": corpus.get("missingBlocksDisclosure", []),
+        "candidates": candidates_summary,
+        "latencyQualificationEvaluation5Ms": eval_5ms,
+        "perContourRecords": per_contour_records,
+    }
+
+
+def benchmark_10k_population_runtimes(canonical_63_contours_path: Optional[Any] = None) -> Dict[str, Any]:
+    """Measures full-population wall-clock runtime per candidate on 10,000 pairs x 4 ops + 10,000 sqrts x 4 tiers,
+    per-curve Horner microbenchmark, AND the full ADR-009 §7.2 63 canonical garment contours benchmark.
+    """
     t_start = time.perf_counter()
     t0 = time.perf_counter()
     _ = evaluate_candidate_mpmath_iv()
@@ -2110,7 +2499,7 @@ def benchmark_10k_population_runtimes() -> Dict[str, Any]:
             "pythonImplementation": platform.python_implementation(),
             "platform": platform.platform(),
             "machine": platform.machine(),
-            "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "0"),
+            "pythonHashSeed": os.environ.get("PYTHONHASHSEED", "UNSET"),
         },
         "fullPopulation200kChecksRuntimeMs": {
             "mpmathIvFractionMs": round(mp_ms, 2),
@@ -2121,6 +2510,10 @@ def benchmark_10k_population_runtimes() -> Dict[str, Any]:
         "perCurveLatencyBenchmarks": per_curve,
     }
     payload["latencyQualificationEvaluation"] = evaluate_three_candidates_p95_latency(payload, threshold_ms=5.0)
+    if canonical_63_contours_path is not None:
+        payload["canonical63GarmentContoursBenchmark"] = benchmark_63_canonical_garment_contours(
+            canonical_63_contours_path
+        )
     return payload
 
 
@@ -2129,21 +2522,47 @@ def evaluate_qualification_conjunction(
     secondary: Dict[str, Any],
     tertiary: Dict[str, Any],
 ) -> bool:
-    """Strict conjunctive qualification gate (REM-04 / B-05): ALL mandatory criteria across ALL 3 candidates
-    must pass — no silent omission of dyadic conversion, Bernstein containment (>=1,000 checks on {5,9,12}),
-    domain traps, grazing/Wilkinson isolation, or candidate qualificationStatus.
+    """Strict fail-closed conjunctive qualification gate (PKG-M00-04 / I-04):
+    Rejects ANY incomplete population (<200,000 checks, !=4 precision tiers, <10,000 pairs/sqrts),
+    missing Bernstein stress degrees {5, 9, 12} or <1,000 checks, missing 53/113-bit hex enclosures,
+    missing candidate-library-driven bisection, domain traps, or failed qualificationStatus.
     """
+    required_tiers = {53, 113, 170, 336}
+
     def _candidate_ok(cand: Dict[str, Any], expected_status: str) -> bool:
         traps = cand.get("domainTrapsVerified", {})
         iso = cand.get("unsplitRootIsolationFromUnitInterval", {})
         bern_total = int(cand.get("bernsteinContainmentChecksTotal", 0))
         bern_passed = int(cand.get("bernsteinContainmentChecksPassed", 0))
         bern_degrees = set(cand.get("bernsteinDegreesVerified", []))
+        checks_total = int(cand.get("outwardRoundingChecksTotal", 0))
+        checks_passed = int(cand.get("outwardRoundingChecksPassed", 0))
+        tiers = cand.get("precisionTierBreakdown", [])
+        tier_bits = {
+            int(t.get("precisionBits", t.get("equivalentBinaryBits", -1)))
+            for t in tiers
+            if isinstance(t, dict)
+        }
+        all_tiers_clean = (
+            len(tiers) == 4
+            and tier_bits == required_tiers
+            and all(
+                t.get("allOutwardEnclosedInExactRational") is True
+                and int(t.get("operationsVerified", 0)) == 50000
+                and int(t.get("operationsPassed", 0)) == 50000
+                for t in tiers
+            )
+        )
         return bool(
             cand.get("availableInEnvironment") is True
             and cand.get("dyadicFloat64ExactConversionVerified") is True
             and cand.get("outwardDirectedRoundingVerified") is True
+            and checks_total >= 200000
+            and checks_passed == checks_total
             and cand.get("outwardRoundingFailuresCount") == 0
+            and int(cand.get("intervalPairPopulationSize", 0)) >= 10000
+            and int(cand.get("sqrtPopulationSize", 0)) >= 10000
+            and all_tiers_clean
             and bern_total >= 1000
             and bern_passed == bern_total
             and {5, 9, 12}.issubset(bern_degrees)
@@ -2152,12 +2571,26 @@ def evaluate_qualification_conjunction(
             and cand.get("grazingTangencyNoFalseNegative") is True
             and cand.get("wilkinsonClusterSeparationVerified") is True
             and iso.get("allPassed") is True
+            and iso.get("candidateLibraryDrivenBisection") is True
             and cand.get("qualificationStatus") == expected_status
         )
+
+    primary_hex_enclosures = primary.get("sampleIntervalEnclosures", [])
+    hex_tiers_present = {
+        int(rec.get("precisionBits", -1))
+        for rec in primary_hex_enclosures
+        if isinstance(rec, dict)
+        and rec.get("strictlyEnclosedInFraction") is True
+        and isinstance(rec.get("lowerEndpointHex"), str)
+        and rec["lowerEndpointHex"].startswith("0x1.")
+        and isinstance(rec.get("upperEndpointHex"), str)
+        and rec["upperEndpointHex"].startswith("0x1.")
+    }
 
     return bool(
         _candidate_ok(primary, "QUALIFIED_PRIMARY")
         and primary.get("nonDyadicRationalEnclosureVerified") is True
+        and {53, 113}.issubset(hex_tiers_present)
         and primary.get("mpmathIvSemanticAudit", {}).get("allSemanticAuditsPassed") is True
         and _candidate_ok(secondary, "QUALIFIED_SECONDARY_RESERVE")
         and _candidate_ok(tertiary, "QUALIFIED_TERTIARY_FALLBACK")

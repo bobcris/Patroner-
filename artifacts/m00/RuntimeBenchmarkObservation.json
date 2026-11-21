@@ -1,20 +1,24 @@
 {
   "artifactName": "RuntimeBenchmarkObservation.json",
   "nonDeterministicRuntimeObservation": true,
-  "packageId": "PKG-M00-02",
-  "checkpoint": "16",
+  "packageId": "PKG-M00-04",
   "hostObservation": {
     "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
     "machine": "x86_64",
     "pythonVersion": "3.12.16"
   },
+  "twoSubprocessReplayPids": {
+    "run1Pid": 971,
+    "run2Pid": 1065,
+    "distinctSubprocessesExecuted": true
+  },
   "intervalCandidateBenchmarksDigest": {
     "artifact": "IntervalCandidateBenchmarks.json",
     "path": "artifacts/m00/IntervalCandidateBenchmarks.json",
-    "sha256": "e5db26898e75fd7c77423ded4d8b934ba4f31be9e706c8c7b652dad1006fe434",
-    "bytes": "5124"
+    "sha256": "3a951b8841d2f4775be54f6e654f659185df8db07b3660954e4df971b93b883a",
+    "bytes": "74900"
   },
-  "latencyQualificationEvaluation": {
+  "synthetic10kLatencyQualificationEvaluation": {
     "allThreeCandidatesVerifiedUnder5MsP95": true,
     "thresholdMs": 5.0,
     "requiredCandidates": [
@@ -25,26 +29,63 @@
     "candidateResults": {
       "mpmathIvFraction": {
         "present": true,
-        "p95Ms": 0.173984,
+        "p95Ms": 0.188572,
         "thresholdMs": 5.0,
         "passed": true,
         "reason": "OK"
       },
       "pythonFlintArbFmpq": {
         "present": true,
-        "p95Ms": 0.010953,
+        "p95Ms": 0.013834,
         "thresholdMs": 5.0,
         "passed": true,
         "reason": "OK"
       },
       "decimalIntervalFraction": {
         "present": true,
-        "p95Ms": 0.049007,
+        "p95Ms": 0.050123,
         "thresholdMs": 5.0,
         "passed": true,
         "reason": "OK"
       }
     },
     "failures": []
+  },
+  "canonical63ContourLatencyQualificationEvaluation": {
+    "allThreeCandidatesVerifiedUnder5MsP95": false,
+    "thresholdMs": 5.0,
+    "requiredCandidates": [
+      "mpmathIvFraction",
+      "pythonFlintArbFmpq",
+      "decimalIntervalFraction"
+    ],
+    "candidateResults": {
+      "mpmathIvFraction": {
+        "present": true,
+        "p95Ms": 49.247492,
+        "thresholdMs": 5.0,
+        "passed": false,
+        "reason": "P95_EXCEEDS_THRESHOLD"
+      },
+      "pythonFlintArbFmpq": {
+        "present": true,
+        "p95Ms": 7.728413,
+        "thresholdMs": 5.0,
+        "passed": false,
+        "reason": "P95_EXCEEDS_THRESHOLD"
+      },
+      "decimalIntervalFraction": {
+        "present": true,
+        "p95Ms": 14.594444,
+        "thresholdMs": 5.0,
+        "passed": false,
+        "reason": "P95_EXCEEDS_THRESHOLD"
+      }
+    },
+    "failures": [
+      "mpmathIvFraction: P95_EXCEEDS_THRESHOLD (49.247492 ms > 5.0 ms)",
+      "pythonFlintArbFmpq: P95_EXCEEDS_THRESHOLD (7.728413 ms > 5.0 ms)",
+      "decimalIntervalFraction: P95_EXCEEDS_THRESHOLD (14.594444 ms > 5.0 ms)"
+    ]
   }
 }

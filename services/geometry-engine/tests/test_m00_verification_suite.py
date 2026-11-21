@@ -177,15 +177,20 @@ def test_m00_4_krawczyk_existence_uniqueness_and_unresolved_fail_closed() -> Non
     assert g_res["canonicalOffsetClassification"] == CanonicalOffsetClassification.GLOBAL_SELF_INTERSECTION.value
     assert len(g_res["globalIntersections"]) >= 1
     assert len(g_res["krawczykCertificates"]) == len(g_res["globalIntersections"])
+    seg_map = {seg0.segment_id: seg0, seg1.segment_id: seg1, seg2.segment_id: seg2}
+    assert any(
+        c["segmentIdA"] == seg0.segment_id and c["segmentIdB"] == seg2.segment_id
+        for c in g_res["globalIntersections"]
+    )
     for cert, kproof in zip(g_res["globalIntersections"], g_res["krawczykCertificates"]):
         assert kproof["krawczykContainmentVerified"] is True
         assert kproof["existenceAndUniquenessCertified"] is True
         assert kproof["krawczykNormInf"] < 1.0
-        # Independently verify O_0(t1_mid) approx == O_2(t2_mid) from the curve equations
+        # Independently verify O_a(t1_mid) approx == O_b(t2_mid) from the curve equations
         t1_mid = 0.5 * (cert["t1Bracket"][0] + cert["t1Bracket"][1])
         t2_mid = 0.5 * (cert["t2Bracket"][0] + cert["t2Bracket"][1])
-        o_a = seg0.eval_kinematics_float(t1_mid, +1, 1.5)["O"]
-        o_b = seg2.eval_kinematics_float(t2_mid, +1, 1.5)["O"]
+        o_a = seg_map[cert["segmentIdA"]].eval_kinematics_float(t1_mid, +1, 1.5)["O"]
+        o_b = seg_map[cert["segmentIdB"]].eval_kinematics_float(t2_mid, +1, 1.5)["O"]
         dist = ((o_a[0] - o_b[0]) ** 2 + (o_a[1] - o_b[1]) ** 2) ** 0.5
         assert dist <= 1e-6
 
@@ -215,7 +220,7 @@ def test_m00_4_all_17_adversarial_geometry_families() -> None:
 def test_m00_4_adr009_section6_complete_suite_and_negative_guards() -> None:
     sec6 = execute_adr009_section6_complete_suite()
     assert sec6["allPassed"] is True
-    assert sec6["additionalSection6CasesCount"] == 6
+    assert sec6["additionalSection6CasesCount"] == 8
 
     # Negative guard: short-span bypass (2% coverage < 85%) must raise ValueError
     c = ExactCubicBezier2D.from_floats("guard-test", (0.0, 0.0), (3.0, 1.0), (7.0, 1.0), (10.0, 0.0))

@@ -233,6 +233,7 @@
           1.0
         ],
         "manualPreSplittingUsed": false,
+        "candidateLibraryDrivenBisection": true,
         "candidateLibraryIntervalEnclosureVerified": "mpmath_iv",
         "simpleTransverseRoot1_3": {
           "isolated": [
@@ -242,8 +243,9 @@
               "tLowerRational": "366503875925/1099511627776",
               "tUpperRational": "183251937963/549755813888",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "mpmath_iv",
+              "candidateIntervalEvaluations": 45
             }
           ],
           "passed": true
@@ -251,13 +253,14 @@
         "doubleGrazingRoot1_2": {
           "isolated": [
             {
-              "tLower": 0.5,
-              "tUpper": 0.5,
-              "tLowerRational": "1/2",
-              "tUpperRational": "1/2",
-              "deltaT": 0.0,
+              "tLower": 0.4999999999990905,
+              "tUpper": 0.500000000001819,
+              "tLowerRational": "549755813887/1099511627776",
+              "tUpperRational": "274877906945/549755813888",
+              "deltaT": 2.7284841053187847e-12,
               "multiplicity": "even-grazing-root",
-              "exactMultiplicity": 2
+              "candidateLibrary": "mpmath_iv",
+              "candidateIntervalEvaluations": 781
             }
           ],
           "passed": true
@@ -270,8 +273,9 @@
               "tLowerRational": "8589933733/17179869184",
               "tUpperRational": "549755758913/1099511627776",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "mpmath_iv",
+              "candidateIntervalEvaluations": 335
             },
             {
               "tLower": 0.5000000499994712,
@@ -279,8 +283,9 @@
               "tLowerRational": "549755868863/1099511627776",
               "tUpperRational": "8589935451/17179869184",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "mpmath_iv",
+              "candidateIntervalEvaluations": 335
             }
           ],
           "disjoint": true
@@ -293,8 +298,9 @@
               "tLowerRational": "366503875375/1099511627776",
               "tUpperRational": "22906492211/68719476736",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "mpmath_iv",
+              "candidateIntervalEvaluations": 270
             },
             {
               "tLower": 0.33333333383325225,
@@ -302,8 +308,9 @@
               "tLowerRational": "366503876475/1099511627776",
               "tUpperRational": "91625969119/274877906944",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "mpmath_iv",
+              "candidateIntervalEvaluations": 270
             }
           ],
           "disjoint": true
@@ -445,6 +452,7 @@
           1.0
         ],
         "manualPreSplittingUsed": false,
+        "candidateLibraryDrivenBisection": true,
         "candidateLibraryIntervalEnclosureVerified": "python_flint",
         "simpleTransverseRoot1_3": {
           "isolated": [
@@ -454,8 +462,9 @@
               "tLowerRational": "366503875925/1099511627776",
               "tUpperRational": "183251937963/549755813888",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "python_flint",
+              "candidateIntervalEvaluations": 45
             }
           ],
           "passed": true
@@ -463,13 +472,14 @@
         "doubleGrazingRoot1_2": {
           "isolated": [
             {
-              "tLower": 0.5,
-              "tUpper": 0.5,
-              "tLowerRational": "1/2",
-              "tUpperRational": "1/2",
-              "deltaT": 0.0,
+              "tLower": 0.499999999998181,
+              "tUpper": 0.500000000001819,
+              "tLowerRational": "274877906943/549755813888",
+              "tUpperRational": "274877906945/549755813888",
+              "deltaT": 3.637978807091713e-12,
               "multiplicity": "even-grazing-root",
-              "exactMultiplicity": 2
+              "candidateLibrary": "python_flint",
+              "candidateIntervalEvaluations": 837
             }
           ],
           "passed": true
@@ -482,8 +492,9 @@
               "tLowerRational": "8589933733/17179869184",
               "tUpperRational": "549755758913/1099511627776",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "python_flint",
+              "candidateIntervalEvaluations": 335
             },
             {
               "tLower": 0.5000000499994712,
@@ -491,8 +502,9 @@
               "tLowerRational": "549755868863/1099511627776",
               "tUpperRational": "8589935451/17179869184",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "python_flint",
+              "candidateIntervalEvaluations": 335
             }
           ],
           "disjoint": true
@@ -505,8 +517,9 @@
               "tLowerRational": "366503875375/1099511627776",
               "tUpperRational": "22906492211/68719476736",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "python_flint",
+              "candidateIntervalEvaluations": 270
             },
             {
               "tLower": 0.33333333383325225,
@@ -514,8 +527,9 @@
               "tLowerRational": "366503876475/1099511627776",
               "tUpperRational": "91625969119/274877906944",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "python_flint",
+              "candidateIntervalEvaluations": 270
             }
           ],
           "disjoint": true
@@ -661,6 +675,7 @@
           1.0
         ],
         "manualPreSplittingUsed": false,
+        "candidateLibraryDrivenBisection": true,
         "candidateLibraryIntervalEnclosureVerified": "decimal_interval",
         "simpleTransverseRoot1_3": {
           "isolated": [
@@ -670,8 +685,9 @@
               "tLowerRational": "366503875925/1099511627776",
               "tUpperRational": "183251937963/549755813888",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "decimal_interval",
+              "candidateIntervalEvaluations": 45
             }
           ],
           "passed": true
@@ -679,13 +695,14 @@
         "doubleGrazingRoot1_2": {
           "isolated": [
             {
-              "tLower": 0.5,
-              "tUpper": 0.5,
-              "tLowerRational": "1/2",
-              "tUpperRational": "1/2",
-              "deltaT": 0.0,
+              "tLower": 0.4999999999990905,
+              "tUpper": 0.500000000001819,
+              "tLowerRational": "549755813887/1099511627776",
+              "tUpperRational": "274877906945/549755813888",
+              "deltaT": 2.7284841053187847e-12,
               "multiplicity": "even-grazing-root",
-              "exactMultiplicity": 2
+              "candidateLibrary": "decimal_interval",
+              "candidateIntervalEvaluations": 781
             }
           ],
           "passed": true
@@ -698,8 +715,9 @@
               "tLowerRational": "8589933733/17179869184",
               "tUpperRational": "549755758913/1099511627776",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "decimal_interval",
+              "candidateIntervalEvaluations": 335
             },
             {
               "tLower": 0.5000000499994712,
@@ -707,8 +725,9 @@
               "tLowerRational": "549755868863/1099511627776",
               "tUpperRational": "8589935451/17179869184",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "decimal_interval",
+              "candidateIntervalEvaluations": 335
             }
           ],
           "disjoint": true
@@ -721,8 +740,9 @@
               "tLowerRational": "366503875375/1099511627776",
               "tUpperRational": "22906492211/68719476736",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "decimal_interval",
+              "candidateIntervalEvaluations": 270
             },
             {
               "tLower": 0.33333333383325225,
@@ -730,8 +750,9 @@
               "tLowerRational": "366503876475/1099511627776",
               "tUpperRational": "91625969119/274877906944",
               "deltaT": 9.094947017729282e-13,
-              "multiplicity": "simple-transverse-root",
-              "exactMultiplicity": 1
+              "multiplicity": "simple-root-interval-monotone",
+              "candidateLibrary": "decimal_interval",
+              "candidateIntervalEvaluations": 270
             }
           ],
           "disjoint": true

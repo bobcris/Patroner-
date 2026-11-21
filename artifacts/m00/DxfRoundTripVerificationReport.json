@@ -1,6 +1,7 @@
 {
   "milestoneId": "M00.7",
   "artifactName": "DxfRoundTripVerificationReport.json",
+  "parserAuthority": "UNIFIED_STRICT_PARSE_DXF_AAMA_STRICT",
   "sectionsRecovered": [
     "HEADER",
     "TABLES",
@@ -34,6 +35,11 @@
   ],
   "missingLayers": [],
   "missingTableLayers": [],
+  "hasEofMarker": true,
+  "unterminatedPolylinesCount": 0,
+  "emptyPolylinesCount": 0,
+  "structuralErrors": [],
+  "isStructurallyValid": true,
   "cutPolylinesRecovered": 1,
   "sewPolylinesRecovered": 1,
   "cutVertexCountExpected": 4,

@@ -1,6 +1,6 @@
 {
   "artifactName": "ProductionSeamParityReport.json",
-  "packageId": "PKG-M00-02",
+  "packageId": "PKG-M00-04",
   "governingDecision": "DEC-11 (Two-Tier Seam Tolerance: Tier 1 CAD <= 0.05 cm; Tier 2 Physical <= 0.20 cm)",
   "sourceDraftingModules": [
     "src/engine/drafting/bodice-block.ts",
@@ -19,7 +19,7 @@
   "dec11Tier1CadToleranceCm": 0.05,
   "dec11Tier2PhysicalToleranceCm": 0.2,
   "serializationAssuranceMetadata": {
-    "certificationAuthority": "METHOD_C1_CERT_EXACT_RATIONAL_SUM_OUTWARD_F64",
+    "certificationAuthority": "METHOD_C1_CERT_ADAPTIVE_EXACT_RATIONAL_SUM_OUTWARD_F64",
     "diagnosticOnlyFields": [
       "tsEdgeACm",
       "tsEdgeBCm",
@@ -50,7 +50,7 @@
             20.085380255300123
           ],
           "pythonMidpointDeltaCm": 0.004420639681391947,
-          "pythonWorstCaseIntervalDeltaCm": 0.004420639681390833,
+          "pythonWorstCaseIntervalDeltaCm": 0.004420639681393009,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -74,11 +74,11 @@
             11.99693294138131
           ],
           "pythonC1CertEdgeBIntervalCm": [
-            11.997683109667465,
-            11.997683109667467
+            11.997683109667467,
+            11.997683109667468
           ],
           "pythonMidpointDeltaCm": 0.0007501682861565939,
-          "pythonWorstCaseIntervalDeltaCm": 0.0007501682861565624,
+          "pythonWorstCaseIntervalDeltaCm": 0.0007501682861573181,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -98,15 +98,15 @@
           "tsEdgeBCm": 68.9792,
           "tsCadDeltaCm": 0,
           "pythonC1CertEdgeAIntervalCm": [
-            68.97918733784974,
-            68.97919081633701
+            68.97916126932182,
+            68.97921690043209
           ],
           "pythonC1CertEdgeBIntervalCm": [
-            68.97918733784974,
-            68.97919081633701
+            68.97916126932182,
+            68.97921690043209
           ],
           "pythonMidpointDeltaCm": 0.0,
-          "pythonWorstCaseIntervalDeltaCm": 3.4784872500186114e-06,
+          "pythonWorstCaseIntervalDeltaCm": 5.5631110256894004e-05,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -134,7 +134,7 @@
             47.378831771161266
           ],
           "pythonMidpointDeltaCm": 0.0024494694278303086,
-          "pythonWorstCaseIntervalDeltaCm": 0.002449469427840105,
+          "pythonWorstCaseIntervalDeltaCm": 0.0024494694278393418,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -177,15 +177,15 @@
           "tsEdgeBCm": 19.59,
           "tsCadDeltaCm": 0,
           "pythonC1CertEdgeAIntervalCm": [
-            19.59234799609276,
-            19.592347996092762
+            19.592347996092762,
+            19.592347996092766
           ],
           "pythonC1CertEdgeBIntervalCm": [
             19.587559827604863,
             19.587559827604867
           ],
           "pythonMidpointDeltaCm": 0.0047881684878987585,
-          "pythonWorstCaseIntervalDeltaCm": 0.004788168487893475,
+          "pythonWorstCaseIntervalDeltaCm": 0.004788168487895656,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -209,11 +209,11 @@
             12.7021887877641
           ],
           "pythonC1CertEdgeBIntervalCm": [
-            12.701747911212848,
-            12.70174791121285
+            12.70174791121285,
+            12.701747911212852
           ],
-          "pythonMidpointDeltaCm": 0.000440876551252245,
-          "pythonWorstCaseIntervalDeltaCm": 0.00044087655124928096,
+          "pythonMidpointDeltaCm": 0.0004408765512486923,
+          "pythonWorstCaseIntervalDeltaCm": 0.00044087655124810417,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -233,15 +233,15 @@
           "tsEdgeBCm": 68.965,
           "tsCadDeltaCm": 0,
           "pythonC1CertEdgeAIntervalCm": [
-            68.9649554643436,
-            68.96495883837353
+            68.9649301818175,
+            68.96498413797114
           ],
           "pythonC1CertEdgeBIntervalCm": [
-            68.9649554643436,
-            68.96495883837353
+            68.9649301818175,
+            68.96498413797114
           ],
           "pythonMidpointDeltaCm": 0.0,
-          "pythonWorstCaseIntervalDeltaCm": 3.374029918561818e-06,
+          "pythonWorstCaseIntervalDeltaCm": 5.395615363658457e-05,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -265,11 +265,11 @@
             49.54844094419117
           ],
           "pythonC1CertEdgeBIntervalCm": [
-            49.55488270594533,
-            49.55488270594534
+            49.554882705945325,
+            49.55488270594533
           ],
           "pythonMidpointDeltaCm": 0.00644176175416078,
-          "pythonWorstCaseIntervalDeltaCm": 0.0064417617541641424,
+          "pythonWorstCaseIntervalDeltaCm": 0.006441761754160269,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -312,15 +312,15 @@
           "tsEdgeBCm": 19.09,
           "tsCadDeltaCm": 0,
           "pythonC1CertEdgeAIntervalCm": [
-            19.085083180326983,
-            19.085083180326986
+            19.08508318032698,
+            19.085083180326983
           ],
           "pythonC1CertEdgeBIntervalCm": [
             19.089853325785402,
             19.089853325785406
           ],
           "pythonMidpointDeltaCm": 0.004770145458422803,
-          "pythonWorstCaseIntervalDeltaCm": 0.00477014545841728,
+          "pythonWorstCaseIntervalDeltaCm": 0.004770145458420182,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -340,15 +340,15 @@
           "tsEdgeBCm": 13.5,
           "tsCadDeltaCm": 0,
           "pythonC1CertEdgeAIntervalCm": [
-            13.498003556081914,
-            13.498003556081915
+            13.498003556081912,
+            13.498003556081914
           ],
           "pythonC1CertEdgeBIntervalCm": [
             13.496017931226973,
             13.496017931226975
           ],
-          "pythonMidpointDeltaCm": 0.0019856248549423583,
-          "pythonWorstCaseIntervalDeltaCm": 0.0019856248549405577,
+          "pythonMidpointDeltaCm": 0.0019856248549388056,
+          "pythonWorstCaseIntervalDeltaCm": 0.0019856248549389964,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -368,15 +368,15 @@
           "tsEdgeBCm": 68.9521,
           "tsCadDeltaCm": 0,
           "pythonC1CertEdgeAIntervalCm": [
-            68.95210352507014,
-            68.95210680823375
+            68.95207892676927,
+            68.95213142522408
           ],
           "pythonC1CertEdgeBIntervalCm": [
-            68.95210352507014,
-            68.95210680823375
+            68.95207892676927,
+            68.95213142522408
           ],
           "pythonMidpointDeltaCm": 0.0,
-          "pythonWorstCaseIntervalDeltaCm": 3.28316358733744e-06,
+          "pythonWorstCaseIntervalDeltaCm": 5.249845478986152e-05,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",
@@ -396,15 +396,15 @@
           "tsEdgeBCm": 50.19,
           "tsCadDeltaCm": 0,
           "pythonC1CertEdgeAIntervalCm": [
-            50.19346969477204,
-            50.19346969477205
+            50.19346969477205,
+            50.193469694772055
           ],
           "pythonC1CertEdgeBIntervalCm": [
             50.19349459840388,
             50.19349459840389
           ],
           "pythonMidpointDeltaCm": 2.490363183937916e-05,
-          "pythonWorstCaseIntervalDeltaCm": 2.4903631837086485e-05,
+          "pythonWorstCaseIntervalDeltaCm": 2.4903631837090374e-05,
           "diagnosticFields": [
             "tsEdgeACm",
             "tsEdgeBCm",

@@ -39,6 +39,7 @@ from patroner_geometry.qualification import (  # noqa: E402
     fraction_pair_to_outward_f64_pair,
     fraction_to_outward_upper_f64,
 )
+from patroner_geometry.sub_oracles import parse_dxf_aama_strict  # noqa: E402
 
 ARTIFACTS_DIR = REPO_ROOT / "artifacts" / "m00"
 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -46,172 +47,31 @@ REQUIRED_LAYERS = {"1", "2", "4", "7", "8", "11"}
 
 
 def parse_dxf_aama_multi_piece(dxf_text: str) -> Dict[str, Any]:
-    raw_lines = [ln.strip() for ln in dxf_text.strip().splitlines()]
-    pairs = [(raw_lines[i], raw_lines[i + 1]) for i in range(0, len(raw_lines) - 1, 2)]
-
-    sections_found: List[str] = []
-    acad_ver = ""
-    ins_units = ""
-    table_layers = set()
-    entity_layers = set()
-    cut_polylines: List[List[Tuple[float, float]]] = []
-    sew_polylines: List[List[Tuple[float, float]]] = []
-    internal_polylines: List[List[Tuple[float, float]]] = []
-    grain_lines: List[Tuple[Tuple[float, float], Tuple[float, float]]] = []
-    notch_lines: List[Tuple[Tuple[float, float], Tuple[float, float]]] = []
-    drill_points: List[Tuple[float, float]] = []
-    texts: List[str] = []
-
-    current_section: str | None = None
-    poly_layer: str | None = None
-    poly_pts: List[Tuple[float, float]] = []
-
-    i = 0
-    while i < len(pairs):
-        code, val = pairs[i]
-        if code == "0" and val == "SECTION" and i + 1 < len(pairs) and pairs[i + 1][0] == "2":
-            current_section = pairs[i + 1][1]
-            sections_found.append(current_section)
-            i += 2
-            continue
-        if code == "0" and val == "ENDSEC":
-            current_section = None
-            i += 1
-            continue
-
-        if current_section == "HEADER":
-            if code == "9" and val == "$ACADVER" and i + 1 < len(pairs):
-                acad_ver = pairs[i + 1][1]
-            elif code == "9" and val == "$INSUNITS" and i + 1 < len(pairs):
-                ins_units = pairs[i + 1][1]
-            i += 1
-            continue
-
-        if current_section == "TABLES":
-            if code == "0" and val == "LAYER":
-                i += 1
-                while i < len(pairs) and pairs[i][0] != "0":
-                    if pairs[i][0] == "2":
-                        table_layers.add(pairs[i][1])
-                    i += 1
-                continue
-            i += 1
-            continue
-
-        if current_section == "ENTITIES":
-            if code == "0" and val == "POLYLINE":
-                layer = "0"
-                i += 1
-                while i < len(pairs) and pairs[i][0] != "0":
-                    if pairs[i][0] == "8":
-                        layer = pairs[i][1]
-                    i += 1
-                entity_layers.add(layer)
-                poly_layer = layer
-                poly_pts = []
-                continue
-            if code == "0" and val == "VERTEX" and poly_layer is not None:
-                vx, vy = 0.0, 0.0
-                i += 1
-                while i < len(pairs) and pairs[i][0] != "0":
-                    if pairs[i][0] == "10":
-                        vx = float(pairs[i][1])
-                    elif pairs[i][0] == "20":
-                        vy = float(pairs[i][1])
-                    i += 1
-                poly_pts.append((vx, vy))
-                continue
-            if code == "0" and val == "SEQEND" and poly_layer is not None:
-                if poly_layer == "1":
-                    cut_polylines.append(poly_pts)
-                elif poly_layer == "8":
-                    sew_polylines.append(poly_pts)
-                elif poly_layer == "11":
-                    internal_polylines.append(poly_pts)
-                poly_layer = None
-                poly_pts = []
-                i += 1
-                continue
-            if code == "0" and val == "LINE":
-                layer = "0"
-                x1 = y1 = x2 = y2 = 0.0
-                i += 1
-                while i < len(pairs) and pairs[i][0] != "0":
-                    c, v = pairs[i]
-                    if c == "8":
-                        layer = v
-                    elif c == "10":
-                        x1 = float(v)
-                    elif c == "20":
-                        y1 = float(v)
-                    elif c == "11":
-                        x2 = float(v)
-                    elif c == "21":
-                        y2 = float(v)
-                    i += 1
-                entity_layers.add(layer)
-                if layer == "7":
-                    grain_lines.append(((x1, y1), (x2, y2)))
-                elif layer == "4":
-                    notch_lines.append(((x1, y1), (x2, y2)))
-                continue
-            if code == "0" and val == "POINT":
-                layer = "0"
-                px = py = 0.0
-                i += 1
-                while i < len(pairs) and pairs[i][0] != "0":
-                    c, v = pairs[i]
-                    if c == "8":
-                        layer = v
-                    elif c == "10":
-                        px = float(v)
-                    elif c == "20":
-                        py = float(v)
-                    i += 1
-                entity_layers.add(layer)
-                if layer == "2":
-                    drill_points.append((px, py))
-                continue
-            if code == "0" and val == "TEXT":
-                layer = "0"
-                tval = ""
-                i += 1
-                while i < len(pairs) and pairs[i][0] != "0":
-                    c, v = pairs[i]
-                    if c == "8":
-                        layer = v
-                    elif c == "1":
-                        tval = v
-                    i += 1
-                entity_layers.add(layer)
-                texts.append(tval)
-                continue
-        i += 1
-
-    return {
-        "sectionsRecovered": sections_found,
-        "acadVersionHeader": acad_ver,
-        "insUnitsHeader": ins_units,
-        "tableLayersDefined": sorted(table_layers),
-        "entityLayersFound": sorted(entity_layers),
-        "cutPolylines": cut_polylines,
-        "sewPolylines": sew_polylines,
-        "internalPolylines": internal_polylines,
-        "grainLines": grain_lines,
-        "notchLines": notch_lines,
-        "drillPoints": drill_points,
-        "texts": texts,
-        "sha256Digest": hashlib.sha256(dxf_text.encode("utf-8")).hexdigest(),
-    }
+    """Unified strict DXF-AAMA multi-piece parser delegating directly to `parse_dxf_aama_strict`."""
+    return parse_dxf_aama_strict(dxf_text)
 
 
-def _segment_c1_cert_arc_length(seg: Dict[str, Any]) -> Tuple[Fraction, Fraction]:
-    """Computes exact rational enclosing (lower_bound_cm, upper_bound_cm) arc length on a line or cubic Bezier segment."""
+def _segment_c1_cert_arc_length(
+    seg: Dict[str, Any],
+    target_half_width_cm: float = 1e-4,
+    min_depth: int = 6,
+    max_depth: int = 12,
+) -> Tuple[Fraction, Fraction]:
+    """Computes exact rational enclosing (lower_bound_cm, upper_bound_cm) arc length on a line or cubic Bezier segment.
+
+    - Line segments: exact Fraction coordinate conversion -> pinned 113-bit mpmath.iv sqrt (no str() decimal round-trip).
+    - Cubic segments: adaptive tolerance-driven Method C1-Cert subdivision up to `max_depth`, failing closed if
+      `certifiedHalfWidthCm > target_half_width_cm`.
+    """
     if seg["type"] == "line":
+        mpmath.mp.prec = 113
         iv.prec = 113
-        dx = iv.mpf(str(seg["p3"]["x"])) - iv.mpf(str(seg["p0"]["x"]))
-        dy = iv.mpf(str(seg["p3"]["y"])) - iv.mpf(str(seg["p0"]["y"]))
-        dist_iv = iv.sqrt((dx ** 2) + (dy ** 2))
+        dx_q = Fraction(float(seg["p3"]["x"])) - Fraction(float(seg["p0"]["x"]))
+        dy_q = Fraction(float(seg["p3"]["y"])) - Fraction(float(seg["p0"]["y"]))
+        dist_sq_q = dx_q * dx_q + dy_q * dy_q
+        if dist_sq_q == 0:
+            return Fraction(0), Fraction(0)
+        dist_iv = iv.sqrt(iv.mpf(dist_sq_q.numerator) / iv.mpf(dist_sq_q.denominator))
         return mpf_to_exact_fraction(dist_iv.a), mpf_to_exact_fraction(dist_iv.b)
 
     curve = ExactCubicBezier2D.from_floats(
@@ -221,8 +81,17 @@ def _segment_c1_cert_arc_length(seg: Dict[str, Any]) -> Tuple[Fraction, Fraction
         (seg["cp2"]["x"], seg["cp2"]["y"]),
         (seg["p3"]["x"], seg["p3"]["y"]),
     )
-    enc = method_c1_cert_arc_length_enclosure(curve, subdivision_depth=8)
-    return Fraction(enc["lowerChordBoundRational"]), Fraction(enc["upperControlPolygonBoundRational"])
+    last_enc: Dict[str, Any] | None = None
+    for depth in range(min_depth, max_depth + 1):
+        enc = method_c1_cert_arc_length_enclosure(curve, subdivision_depth=depth)
+        last_enc = enc
+        if enc["certifiedHalfWidthCm"] <= target_half_width_cm and enc["nonStrictInequalityHolds"]:
+            return Fraction(enc["lowerChordBoundRational"]), Fraction(enc["upperControlPolygonBoundRational"])
+
+    raise RuntimeError(
+        f"Adaptive Method C1-Cert arc-length enclosure failed to reach target half-width {target_half_width_cm} cm "
+        f"on segment {seg['id']} by max_depth={max_depth}: last={last_enc}"
+    )
 
 
 def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -267,7 +136,8 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
                         max_err = max(max_err, math.hypot(x1 - x2, y1 - y2))
 
         size_dxf_ok = (
-            parsed["sectionsRecovered"] == ["HEADER", "TABLES", "ENTITIES"]
+            parsed["isStructurallyValid"]
+            and parsed["sectionsRecovered"] == ["HEADER", "TABLES", "ENTITIES"]
             and parsed["acadVersionHeader"] == "AC1009"
             and parsed["insUnitsHeader"] == "5"
             and len(missing_table) == 0
@@ -285,6 +155,12 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
                 "sizeLabel": size_label,
                 "exportId": combined["exportId"],
                 "pieceCodes": combined["pieceCodes"],
+                "parserAuthority": "UNIFIED_STRICT_PARSE_DXF_AAMA_STRICT",
+                "isStructurallyValid": parsed["isStructurallyValid"],
+                "hasEofMarker": parsed["hasEofMarker"],
+                "unterminatedPolylinesCount": parsed["unterminatedPolylinesCount"],
+                "emptyPolylinesCount": parsed["emptyPolylinesCount"],
+                "structuralErrors": parsed["structuralErrors"],
                 "sectionsRecovered": parsed["sectionsRecovered"],
                 "acadVersionHeader": parsed["acadVersionHeader"],
                 "insUnitsHeader": parsed["insUnitsHeader"],
@@ -312,10 +188,12 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         # Seam Parity Verification via Python Method C1-Cert on actual drafted curves
         py_paired_checks: List[Dict[str, Any]] = []
         for check in bundle["seamAudit"]["pairedSeamChecks"]:
-            a_lo_q = sum((_segment_c1_cert_arc_length(s)[0] for s in check["edgeASegments"]), Fraction(0))
-            a_hi_q = sum((_segment_c1_cert_arc_length(s)[1] for s in check["edgeASegments"]), Fraction(0))
-            b_lo_q = sum((_segment_c1_cert_arc_length(s)[0] for s in check["edgeBSegments"]), Fraction(0))
-            b_hi_q = sum((_segment_c1_cert_arc_length(s)[1] for s in check["edgeBSegments"]), Fraction(0))
+            a_pairs = [_segment_c1_cert_arc_length(s) for s in check["edgeASegments"]]
+            b_pairs = [_segment_c1_cert_arc_length(s) for s in check["edgeBSegments"]]
+            a_lo_q = sum((p[0] for p in a_pairs), Fraction(0))
+            a_hi_q = sum((p[1] for p in a_pairs), Fraction(0))
+            b_lo_q = sum((p[0] for p in b_pairs), Fraction(0))
+            b_hi_q = sum((p[1] for p in b_pairs), Fraction(0))
             a_lo, a_hi = fraction_pair_to_outward_f64_pair(a_lo_q, a_hi_q)
             b_lo, b_hi = fraction_pair_to_outward_f64_pair(b_lo_q, b_hi_q)
 
@@ -366,7 +244,7 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     dxf_report = {
         "artifactName": "ProductionDxfRoundTripReport.json",
-        "packageId": "PKG-M00-02",
+        "packageId": "PKG-M00-04",
         "sourceDraftingModules": exported["draftedModulesUsed"],
         "missingDependenciesForVerticalSlice1": exported["missingDependencies"],
         "toleranceMaxCm": 0.001,
@@ -383,14 +261,14 @@ def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     seam_report = {
         "artifactName": "ProductionSeamParityReport.json",
-        "packageId": "PKG-M00-02",
+        "packageId": "PKG-M00-04",
         "governingDecision": "DEC-11 (Two-Tier Seam Tolerance: Tier 1 CAD <= 0.05 cm; Tier 2 Physical <= 0.20 cm)",
         "sourceDraftingModules": exported["draftedModulesUsed"],
         "missingDependenciesForVerticalSlice1": exported["missingDependencies"],
         "dec11Tier1CadToleranceCm": 0.05,
         "dec11Tier2PhysicalToleranceCm": 0.20,
         "serializationAssuranceMetadata": {
-            "certificationAuthority": "METHOD_C1_CERT_EXACT_RATIONAL_SUM_OUTWARD_F64",
+            "certificationAuthority": "METHOD_C1_CERT_ADAPTIVE_EXACT_RATIONAL_SUM_OUTWARD_F64",
             "diagnosticOnlyFields": ["tsEdgeACm", "tsEdgeBCm", "tsCadDeltaCm", "pythonMidpointDeltaCm"],
             "certificationBearingFields": [
                 "pythonC1CertEdgeAIntervalCm",

@@ -64,3 +64,26 @@ Per `plan/05_WORKLOAD_DEPENDENCY_GRAPH.md`, `plan/16_UNIFIED_EXECUTION_SCHEDULE.
 2. **`Gate Auth-2` & `DEC-13 Stage 2` Opening:** Required to authorize `M01` and `M02` production implementation.
 3. **Governance Conflicts `C-01`–`C-10` Resolution** (e.g., `B1`–`B4` benchmark authority clarification, `M02` vs legacy `P1-3` retirement policy, `M00.8` Class B sleeve ease resolution timing under `M02b`, and external CAD verification scope under `M05`).
 4. **Repository Git / Release Governance:** All Git commits, merges, tags, and deployments remain exclusively Owner-directed.
+
+---
+
+## 4. PKG-M00-04 Errata & Authoritative Roadmap Reconciliation (Appended `2026-11-21`)
+
+> **Preservation Notice:** Sections 1–3 above are preserved verbatim as the historical `PKG-M00-03` Stage 2 preparation artifact. The following errata correct inaccuracies identified during Checkpoint I (`Finding I-08`) against the authoritative `plan/05_WORKLOAD_DEPENDENCY_GRAPH.md` and `plan/16_UNIFIED_EXECUTION_SCHEDULE.md`. This errata section does **not** alter any governance gate state or authorize any blocked workload.
+
+1. **Correction to `M01` Scope (Lines 34, 51, 56):**
+   - *Prior text:* Described `M01` as `"Authoritative Python Geometry Kernel — Tier-1 Production Solvers"`.
+   - *Authoritative `plan/05` (§3, line 122) & `plan/16` (§2, line 58):* **`M01`** is **Platform Foundation, Contracts & Dual-Engine Proxy (`M01.1`–`M01.5`)** — covering monorepo scaffolding, Next.js 15 BFF/Strangler proxy, FastAPI service shell, PostgreSQL 16 + S3/GCS content store (`DEC-04`), async task queue/workflow orchestrator (`DEC-05`), and RBAC/Auth. The Tier-1 production deterministic 2D geometry & pattern engine belongs to **`M02`**, not `M01`.
+2. **Correction to `M02` Sub-Workload Scope (Lines 35, 57):**
+   - *Prior text:* Listed `M02` only as `M02a`–`M02e`.
+   - *Authoritative `plan/05` (§1, §3, line 123) & `plan/16` (§2, line 59):* **`M02`** spans **`M02a`–`M02h`** (Deterministic 2D Fashion & Geometry Engine: `C1-Fast` + `C1-Cert` escalation, Bodice/Sleeve `M02b`/Skirt/Trouser blocks, `M02c` offsets, `M02d` grading, `M02e`–`M02g` geometry/seam certification & grading completeness, and `M02h` 2D NFP nesting/marker engine governed by `DEC-06`).
+3. **Correction to `M03` Gate Topology (Lines 36, 59):**
+   - *Prior text:* Grouped `M03` with `M04`–`M10` as blocked behind `Gate Auth-3` / `Gate Auth-4`.
+   - *Authoritative `plan/05` (§1 diagram, §3 line 124) & `plan/16` (§1 diagram, §2 line 60):* **`M03` (Material Physics & Fabric Digital Twin Library, `M03.1`–`M03.4`)** unlocks in parallel with `M01` and `M02` at **`Gate Auth-2`** (requiring `DEC-03 Stage 1` and `M00.1` contracts), feeding `M06` prior to `Gate Auth-3`. (`M03` remains **BLOCKED / NOT STARTED** while `Gate Auth-2` is CLOSED.)
+4. **Reconciliation of `M11` Status (Line 23):**
+   - *Prior text:* Declared unconditionally `"M11 | DOES NOT EXIST"`.
+   - *Authoritative Reconciliation:* `plan/05_WORKLOAD_DEPENDENCY_GRAPH.md` (§1 line 96, §3 line 132) explicitly defines **`M11` (Commercial Ecosystem & Multi-Tenant Scale, `M11.1`–`M11.4`)** as a post-`Gate Auth-4` expansion workload, whereas `plan/16_UNIFIED_EXECUTION_SCHEDULE.md` (line 6) scopes the `2026-11-16`–`2027-03-31` delivery window strictly to **`M00`–`M10`** (`"strictly NO M11"`). Thus `M11` exists in the `R2.1.2-R1` dependency graph (`plan/05`) as post-pilot expansion and is excluded from the `2027-03-31` execution schedule (`plan/16`).
+5. **Canonical Conflict ID Reference (Line 65):**
+   - *Prior text:* Referred informally to `"Governance Conflicts C-01–C-10"`.
+   - *Authoritative Reference:* The canonical conflict IDs are **`CONFLICT-D1` through `CONFLICT-D10`** as recorded verbatim in `docs/evidence/M00_GOVERNANCE_AND_SPEC_CONFLICT_REGISTER.md` and compiled for Owner decision in `docs/evidence/pkg_m00_04/I08_GOVERNANCE_ADJUDICATION_DOSSIER.md`. All ten remain **`PENDING OWNER ADJUDICATION`**.
+

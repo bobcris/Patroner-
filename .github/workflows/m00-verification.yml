@@ -22,7 +22,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22 (required by Workstream B DXF/seam & C0-Legacy TS subprocesses)
+      - name: Setup Node.js 22 (required by Workstream B DXF/seam, 63-contour corpus & C0-Legacy TS subprocesses)
         uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -46,27 +46,30 @@ jobs:
       - name: Sync locked geometry-engine dependencies
         run: uv sync --directory services/geometry-engine --locked --all-extras --python 3.12.16
 
-      - name: Assert Python 3.12.x runtime in locked environment
+      - name: Assert Python 3.12.x runtime and PYTHONHASHSEED=0 in locked environment
         run: |
-          uv run --directory services/geometry-engine --locked --python 3.12.16 python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
+          uv run --directory services/geometry-engine --locked --python 3.12.16 python -c "import os, sys; assert sys.version_info[:2] == (3, 12), sys.version; assert os.environ.get('PYTHONHASHSEED') == '0'"
 
-      - name: Enforce ADR-009 §5.4/§7.1 AST oracle independence boundary
+      - name: Enforce ADR-009 §5.4/§7.1 & ADR-001 AST oracle independence boundary
         run: uv run --directory services/geometry-engine --locked --python 3.12.16 python ../../scripts/check_oracle_independence.py
 
       - name: Run full pytest M00 verification suite under Python 3.12
         run: uv run --directory services/geometry-engine --locked --python 3.12.16 pytest -v
 
+      - name: Export ADR-009 §7.2 63 canonical garment contours corpus
+        run: npx --yes tsx scripts/m00_export_canonical_63_contours.ts
+
       - name: Execute Workstream B standalone DXF-AAMA & DEC-11 seam parity harness
         run: uv run --directory services/geometry-engine --locked --python 3.12.16 python ../../scripts/m00_verify_production_dxf_and_seams.py
 
-      - name: Execute deterministic M00 evidence generator twice (PYTHONHASHSEED=0)
-        run: |
-          uv run --directory services/geometry-engine --locked --python 3.12.16 python ../../scripts/m00_execute_all.py
-          uv run --directory services/geometry-engine --locked --python 3.12.16 python ../../scripts/m00_execute_all.py
+      - name: Execute deterministic M00 evidence generator (PYTHONHASHSEED=0)
+        run: uv run --directory services/geometry-engine --locked --python 3.12.16 python ../../scripts/m00_execute_all.py
 
-      - name: Verify every SHA-256 entry in M00_ARTIFACT_HASH_VERIFICATION.json against disk
-        run: |
-          uv run --directory services/geometry-engine --locked --python 3.12.16 python -c "import hashlib, json; from pathlib import Path; root = Path('../..').resolve(); doc = json.loads((root / 'M00_ARTIFACT_HASH_VERIFICATION.json').read_text(encoding='utf-8')); entries = doc.get('allAuditedFiles', []); assert entries; [(_ for _ in ()).throw(AssertionError(f'Hash mismatch for {e[\"path\"]}')) for e in entries if hashlib.sha256((root / e['path']).read_bytes()).hexdigest() != e['sha256']]; print(f'Verified {len(entries)} artifact SHA-256 digests cleanly.')"
+      - name: Verify true two-subprocess isolated bit-exact reproducibility
+        run: uv run --directory services/geometry-engine --locked --python 3.12.16 python ../../scripts/verify_m00_reproducibility.py
+
+      - name: Independently verify every SHA-256 entry in M00_ARTIFACT_HASH_VERIFICATION.json
+        run: uv run --directory services/geometry-engine --locked --python 3.12.16 python ../../scripts/verify_m00_manifest.py
 
       - name: Enforce strict deterministic diff gate (no || true; wall-clock observations isolated)
         run: |

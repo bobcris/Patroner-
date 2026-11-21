@@ -1,0 +1,8938 @@
+{
+  "artifactName": "CanonicalGarmentContours63.json",
+  "governingADR": "ADR-009 (R2.1.2-R1 §7.2)",
+  "packageId": "PKG-M00-04",
+  "contourCount": 63,
+  "totalSegments": 495,
+  "totalCubicBeziers": 129,
+  "totalLineSegments": 366,
+  "compositionBreakdown": {
+    "bodiceFront": 18,
+    "bodiceBack": 12,
+    "sleeve": 18,
+    "skirtFront": 9,
+    "skirtBack": 6
+  },
+  "draftedModulesUsed": [
+    "src/engine/drafting/bodice-block.ts",
+    "src/engine/drafting/sleeve-block.ts",
+    "src/engine/drafting/skirt-block.ts"
+  ],
+  "missingBlocksDisclosure": [
+    {
+      "module": "src/engine/drafting/trouser-block.ts",
+      "status": "BLOCKED_MISSING_TROUSER_BLOCK",
+      "note": "Trouser block module is not implemented in the current repository; zero synthetic trouser contours were fabricated."
+    }
+  ],
+  "contours": [
+    {
+      "contourId": "BOD-F-WAIST-XS",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "XS",
+      "variant": "dartStyle=waist,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            7.7
+          ],
+          "p3": [
+            0,
+            41
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            41
+          ],
+          "p3": [
+            2.5,
+            41
+          ]
+        },
+        {
+          "id": "fb-waist-mid",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            41
+          ],
+          "p3": [
+            6.94,
+            41
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.94,
+            41
+          ],
+          "p3": [
+            10.06,
+            41
+          ]
+        },
+        {
+          "id": "fb-waist-side",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            10.06,
+            41
+          ],
+          "p3": [
+            20.13,
+            39.49
+          ]
+        },
+        {
+          "id": "fb-side-seam",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            20.13,
+            39.49
+          ],
+          "p3": [
+            22.13,
+            19.5
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            22.13,
+            19.5
+          ],
+          "cp1": [
+            16.75,
+            16.77
+          ],
+          "cp2": [
+            17.49,
+            8.64
+          ],
+          "p3": [
+            17.98,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            17.98,
+            4.6
+          ],
+          "p3": [
+            6.9,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.9,
+            0
+          ],
+          "cp1": [
+            6.9,
+            4.24
+          ],
+          "cp2": [
+            2.76,
+            7.7
+          ],
+          "p3": [
+            0,
+            7.7
+          ]
+        }
+      ],
+      "contourInputSha256": "dedaa9e09814a7aec711261cc6c03499e9435ed84821481595587f5d549da232"
+    },
+    {
+      "contourId": "BOD-F-WAIST-S",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "S",
+      "variant": "dartStyle=waist,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            7.9
+          ],
+          "p3": [
+            0,
+            41.5
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            41.5
+          ],
+          "p3": [
+            2.5,
+            41.5
+          ]
+        },
+        {
+          "id": "fb-waist-mid",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            41.5
+          ],
+          "p3": [
+            7.19,
+            41.5
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.19,
+            41.5
+          ],
+          "p3": [
+            10.31,
+            41.5
+          ]
+        },
+        {
+          "id": "fb-waist-side",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            10.31,
+            41.5
+          ],
+          "p3": [
+            21.13,
+            39.99
+          ]
+        },
+        {
+          "id": "fb-side-seam",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21.13,
+            39.99
+          ],
+          "p3": [
+            23.13,
+            20
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            23.13,
+            20
+          ],
+          "cp1": [
+            17.25,
+            17.2
+          ],
+          "cp2": [
+            18.01,
+            8.8
+          ],
+          "p3": [
+            18.51,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            18.51,
+            4.6
+          ],
+          "p3": [
+            7.1,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.1,
+            0
+          ],
+          "cp1": [
+            7.1,
+            4.35
+          ],
+          "cp2": [
+            2.84,
+            7.9
+          ],
+          "p3": [
+            0,
+            7.9
+          ]
+        }
+      ],
+      "contourInputSha256": "bcaae4a8530064795dd84be1f1526be8a4f302d570aa3e28aa4b7885d6a39394"
+    },
+    {
+      "contourId": "BOD-F-WAIST-M",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "M",
+      "variant": "dartStyle=waist,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            8.1
+          ],
+          "p3": [
+            0,
+            42
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42
+          ],
+          "p3": [
+            2.5,
+            42
+          ]
+        },
+        {
+          "id": "fb-waist-mid",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42
+          ],
+          "p3": [
+            7.69,
+            42
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.69,
+            42
+          ],
+          "p3": [
+            10.81,
+            42
+          ]
+        },
+        {
+          "id": "fb-waist-side",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            10.81,
+            42
+          ],
+          "p3": [
+            22.63,
+            40.49
+          ]
+        },
+        {
+          "id": "fb-side-seam",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            22.63,
+            40.49
+          ],
+          "p3": [
+            24.63,
+            21
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            24.63,
+            21
+          ],
+          "cp1": [
+            18,
+            18.06
+          ],
+          "cp2": [
+            18.68,
+            9.13
+          ],
+          "p3": [
+            19.14,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            19.14,
+            4.6
+          ],
+          "p3": [
+            7.3,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.3,
+            0
+          ],
+          "cp1": [
+            7.3,
+            4.46
+          ],
+          "cp2": [
+            2.92,
+            8.1
+          ],
+          "p3": [
+            0,
+            8.1
+          ]
+        }
+      ],
+      "contourInputSha256": "696df293dfde27b15cdd47222e92c0ad488e578d6acb81a761978e320fd38674"
+    },
+    {
+      "contourId": "BOD-F-WAIST-L",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "L",
+      "variant": "dartStyle=waist,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            8.4
+          ],
+          "p3": [
+            0,
+            42.8
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42.8
+          ],
+          "p3": [
+            2.5,
+            42.8
+          ]
+        },
+        {
+          "id": "fb-waist-mid",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42.8
+          ],
+          "p3": [
+            8.19,
+            42.8
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.19,
+            42.8
+          ],
+          "p3": [
+            11.31,
+            42.8
+          ]
+        },
+        {
+          "id": "fb-waist-side",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            11.31,
+            42.8
+          ],
+          "p3": [
+            24.63,
+            41.19
+          ]
+        },
+        {
+          "id": "fb-side-seam",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            24.63,
+            41.19
+          ],
+          "p3": [
+            26.63,
+            22
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            26.63,
+            22
+          ],
+          "cp1": [
+            18.75,
+            18.92
+          ],
+          "cp2": [
+            19.42,
+            9.45
+          ],
+          "p3": [
+            19.87,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            19.87,
+            4.6
+          ],
+          "p3": [
+            7.6,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.6,
+            0
+          ],
+          "cp1": [
+            7.6,
+            4.62
+          ],
+          "cp2": [
+            3.04,
+            8.4
+          ],
+          "p3": [
+            0,
+            8.4
+          ]
+        }
+      ],
+      "contourInputSha256": "1c2c833d3fac280bd6cdfce1cfee1a08473601e49ef41972feac977e3e467293"
+    },
+    {
+      "contourId": "BOD-F-WAIST-XL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "XL",
+      "variant": "dartStyle=waist,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            8.7
+          ],
+          "p3": [
+            0,
+            43.6
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            43.6
+          ],
+          "p3": [
+            2.5,
+            43.6
+          ]
+        },
+        {
+          "id": "fb-waist-mid",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            43.6
+          ],
+          "p3": [
+            8.69,
+            43.6
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.69,
+            43.6
+          ],
+          "p3": [
+            11.81,
+            43.6
+          ]
+        },
+        {
+          "id": "fb-waist-side",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            11.81,
+            43.6
+          ],
+          "p3": [
+            26.63,
+            41.98
+          ]
+        },
+        {
+          "id": "fb-side-seam",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            26.63,
+            41.98
+          ],
+          "p3": [
+            28.63,
+            23
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            28.63,
+            23
+          ],
+          "cp1": [
+            19.5,
+            19.78
+          ],
+          "cp2": [
+            20.15,
+            9.77
+          ],
+          "p3": [
+            20.59,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.59,
+            4.6
+          ],
+          "p3": [
+            7.9,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.9,
+            0
+          ],
+          "cp1": [
+            7.9,
+            4.79
+          ],
+          "cp2": [
+            3.16,
+            8.7
+          ],
+          "p3": [
+            0,
+            8.7
+          ]
+        }
+      ],
+      "contourInputSha256": "e10f6f8bd76dab7eb4fe6dcd3e5c3b89423b592f06dea0d73a3bd0d02a00e46b"
+    },
+    {
+      "contourId": "BOD-F-WAIST-XXL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "XXL",
+      "variant": "dartStyle=waist,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            9.1
+          ],
+          "p3": [
+            0,
+            44.4
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            44.4
+          ],
+          "p3": [
+            2.5,
+            44.4
+          ]
+        },
+        {
+          "id": "fb-waist-mid",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            44.4
+          ],
+          "p3": [
+            9.44,
+            44.4
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.44,
+            44.4
+          ],
+          "p3": [
+            12.56,
+            44.4
+          ]
+        },
+        {
+          "id": "fb-waist-side",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            12.56,
+            44.4
+          ],
+          "p3": [
+            29.13,
+            42.58
+          ]
+        },
+        {
+          "id": "fb-side-seam",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            29.13,
+            42.58
+          ],
+          "p3": [
+            31.13,
+            24.5
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            31.13,
+            24.5
+          ],
+          "cp1": [
+            20.35,
+            21.07
+          ],
+          "cp2": [
+            21.05,
+            10.27
+          ],
+          "p3": [
+            21.52,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            21.52,
+            4.6
+          ],
+          "p3": [
+            8.3,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.3,
+            0
+          ],
+          "cp1": [
+            8.3,
+            5
+          ],
+          "cp2": [
+            3.32,
+            9.1
+          ],
+          "p3": [
+            0,
+            9.1
+          ]
+        }
+      ],
+      "contourInputSha256": "eaf0e2c7dc31253278c3f498c5fa120f9a2dcac99e884c99b90b235ff5259e2b"
+    },
+    {
+      "contourId": "BOD-F-SIDE-BUST-XS",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "XS",
+      "variant": "dartStyle=side-bust,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            7.7
+          ],
+          "p3": [
+            0,
+            41
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            41
+          ],
+          "p3": [
+            2.5,
+            41
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            41
+          ],
+          "p3": [
+            17.26,
+            40.97
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            17.26,
+            40.97
+          ],
+          "p3": [
+            20.9813,
+            28.4512
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            20.9813,
+            28.4512
+          ],
+          "p3": [
+            21.43,
+            26.5
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21.43,
+            26.5
+          ],
+          "p3": [
+            22.13,
+            19.5
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            22.13,
+            19.5
+          ],
+          "cp1": [
+            16.75,
+            16.77
+          ],
+          "cp2": [
+            17.49,
+            8.64
+          ],
+          "p3": [
+            17.98,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            17.98,
+            4.6
+          ],
+          "p3": [
+            6.9,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.9,
+            0
+          ],
+          "cp1": [
+            6.9,
+            4.24
+          ],
+          "cp2": [
+            2.76,
+            7.7
+          ],
+          "p3": [
+            0,
+            7.7
+          ]
+        }
+      ],
+      "contourInputSha256": "db9a812540e06e90db22124629e0985ce89d85b945bc5b5e7c3e74a22522f82a"
+    },
+    {
+      "contourId": "BOD-F-SIDE-BUST-S",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "S",
+      "variant": "dartStyle=side-bust,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            7.9
+          ],
+          "p3": [
+            0,
+            41.5
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            41.5
+          ],
+          "p3": [
+            2.5,
+            41.5
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            41.5
+          ],
+          "p3": [
+            18.24,
+            41.61
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            18.24,
+            41.61
+          ],
+          "p3": [
+            21.9643,
+            29.0899
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21.9643,
+            29.0899
+          ],
+          "p3": [
+            22.43,
+            27
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            22.43,
+            27
+          ],
+          "p3": [
+            23.13,
+            20
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            23.13,
+            20
+          ],
+          "cp1": [
+            17.25,
+            17.2
+          ],
+          "cp2": [
+            18.01,
+            8.8
+          ],
+          "p3": [
+            18.51,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            18.51,
+            4.6
+          ],
+          "p3": [
+            7.1,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.1,
+            0
+          ],
+          "cp1": [
+            7.1,
+            4.35
+          ],
+          "cp2": [
+            2.84,
+            7.9
+          ],
+          "p3": [
+            0,
+            7.9
+          ]
+        }
+      ],
+      "contourInputSha256": "af008b8f26df1040f32f0fb5cc956deb7e6fd1a9b9d581d36cb72d457213aed6"
+    },
+    {
+      "contourId": "BOD-F-SIDE-BUST-M",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "M",
+      "variant": "dartStyle=side-bust,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            8.1
+          ],
+          "p3": [
+            0,
+            42
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42
+          ],
+          "p3": [
+            2.5,
+            42
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42
+          ],
+          "p3": [
+            19.72,
+            42.34
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            19.72,
+            42.34
+          ],
+          "p3": [
+            23.4519,
+            30.1677
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.4519,
+            30.1677
+          ],
+          "p3": [
+            23.93,
+            27.82
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.93,
+            27.82
+          ],
+          "p3": [
+            24.63,
+            21
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            24.63,
+            21
+          ],
+          "cp1": [
+            18,
+            18.06
+          ],
+          "cp2": [
+            18.68,
+            9.13
+          ],
+          "p3": [
+            19.14,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            19.14,
+            4.6
+          ],
+          "p3": [
+            7.3,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.3,
+            0
+          ],
+          "cp1": [
+            7.3,
+            4.46
+          ],
+          "cp2": [
+            2.92,
+            8.1
+          ],
+          "p3": [
+            0,
+            8.1
+          ]
+        }
+      ],
+      "contourInputSha256": "f13928eef09210b660b8e0f6e5894ddf77ea04408e1af32fcc11abad72459491"
+    },
+    {
+      "contourId": "BOD-F-SIDE-BUST-L",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "L",
+      "variant": "dartStyle=side-bust,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            8.4
+          ],
+          "p3": [
+            0,
+            42.8
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42.8
+          ],
+          "p3": [
+            2.5,
+            42.8
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42.8
+          ],
+          "p3": [
+            21.71,
+            43.36
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21.71,
+            43.36
+          ],
+          "p3": [
+            25.4278,
+            31.3802
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.4278,
+            31.3802
+          ],
+          "p3": [
+            25.93,
+            28.71
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.93,
+            28.71
+          ],
+          "p3": [
+            26.63,
+            22
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            26.63,
+            22
+          ],
+          "cp1": [
+            18.75,
+            18.92
+          ],
+          "cp2": [
+            19.42,
+            9.45
+          ],
+          "p3": [
+            19.87,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            19.87,
+            4.6
+          ],
+          "p3": [
+            7.6,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.6,
+            0
+          ],
+          "cp1": [
+            7.6,
+            4.62
+          ],
+          "cp2": [
+            3.04,
+            8.4
+          ],
+          "p3": [
+            0,
+            8.4
+          ]
+        }
+      ],
+      "contourInputSha256": "a387ecc6bd5f70ec6927ea18ca892e8873ca69def22a07d8a0090e25ba360c6d"
+    },
+    {
+      "contourId": "BOD-F-SIDE-BUST-XL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "XL",
+      "variant": "dartStyle=side-bust,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            8.7
+          ],
+          "p3": [
+            0,
+            43.6
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            43.6
+          ],
+          "p3": [
+            2.5,
+            43.6
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            43.6
+          ],
+          "p3": [
+            23.67,
+            44.48
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.67,
+            44.48
+          ],
+          "p3": [
+            27.3961,
+            32.6422
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.3961,
+            32.6422
+          ],
+          "p3": [
+            27.93,
+            29.64
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.93,
+            29.64
+          ],
+          "p3": [
+            28.63,
+            23
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            28.63,
+            23
+          ],
+          "cp1": [
+            19.5,
+            19.78
+          ],
+          "cp2": [
+            20.15,
+            9.77
+          ],
+          "p3": [
+            20.59,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.59,
+            4.6
+          ],
+          "p3": [
+            7.9,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.9,
+            0
+          ],
+          "cp1": [
+            7.9,
+            4.79
+          ],
+          "cp2": [
+            3.16,
+            8.7
+          ],
+          "p3": [
+            0,
+            8.7
+          ]
+        }
+      ],
+      "contourInputSha256": "77f03cc149696fa4d75c2a6b79727792843c0cfe7004945434f23ab984740fd1"
+    },
+    {
+      "contourId": "BOD-F-SIDE-BUST-XXL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "XXL",
+      "variant": "dartStyle=side-bust,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            9.1
+          ],
+          "p3": [
+            0,
+            44.4
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            44.4
+          ],
+          "p3": [
+            2.5,
+            44.4
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            44.4
+          ],
+          "p3": [
+            26.16,
+            45.56
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            26.16,
+            45.56
+          ],
+          "p3": [
+            29.8727,
+            34.3363
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            29.8727,
+            34.3363
+          ],
+          "p3": [
+            30.43,
+            30.83
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            30.43,
+            30.83
+          ],
+          "p3": [
+            31.13,
+            24.5
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            31.13,
+            24.5
+          ],
+          "cp1": [
+            20.35,
+            21.07
+          ],
+          "cp2": [
+            21.05,
+            10.27
+          ],
+          "p3": [
+            21.52,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            21.52,
+            4.6
+          ],
+          "p3": [
+            8.3,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.3,
+            0
+          ],
+          "cp1": [
+            8.3,
+            5
+          ],
+          "cp2": [
+            3.32,
+            9.1
+          ],
+          "p3": [
+            0,
+            9.1
+          ]
+        }
+      ],
+      "contourInputSha256": "0224fc30de78d837f20f37b588c4f1af5f0186274efac676671b1b92be765cc6"
+    },
+    {
+      "contourId": "BOD-F-FRENCH-XS",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "XS",
+      "variant": "dartStyle=french,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            7.7
+          ],
+          "p3": [
+            0,
+            41
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            41
+          ],
+          "p3": [
+            2.5,
+            41
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            41
+          ],
+          "p3": [
+            17.54,
+            41.05
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            17.54,
+            41.05
+          ],
+          "p3": [
+            18.97,
+            36.2414
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            18.97,
+            36.2414
+          ],
+          "p3": [
+            20.63,
+            34.5
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            20.63,
+            34.5
+          ],
+          "p3": [
+            22.13,
+            19.5
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            22.13,
+            19.5
+          ],
+          "cp1": [
+            16.75,
+            16.77
+          ],
+          "cp2": [
+            17.49,
+            8.64
+          ],
+          "p3": [
+            17.98,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            17.98,
+            4.6
+          ],
+          "p3": [
+            6.9,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.9,
+            0
+          ],
+          "cp1": [
+            6.9,
+            4.24
+          ],
+          "cp2": [
+            2.76,
+            7.7
+          ],
+          "p3": [
+            0,
+            7.7
+          ]
+        }
+      ],
+      "contourInputSha256": "f8ec7fce794612f1a8cab442c8622ea24d7a8267980828deed87b65c9243442f"
+    },
+    {
+      "contourId": "BOD-F-FRENCH-S",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "S",
+      "variant": "dartStyle=french,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            7.9
+          ],
+          "p3": [
+            0,
+            41.5
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            41.5
+          ],
+          "p3": [
+            2.5,
+            41.5
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            41.5
+          ],
+          "p3": [
+            18.52,
+            41.68
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            18.52,
+            41.68
+          ],
+          "p3": [
+            19.9466,
+            36.8682
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            19.9466,
+            36.8682
+          ],
+          "p3": [
+            21.63,
+            35
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21.63,
+            35
+          ],
+          "p3": [
+            23.13,
+            20
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            23.13,
+            20
+          ],
+          "cp1": [
+            17.25,
+            17.2
+          ],
+          "cp2": [
+            18.01,
+            8.8
+          ],
+          "p3": [
+            18.51,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            18.51,
+            4.6
+          ],
+          "p3": [
+            7.1,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.1,
+            0
+          ],
+          "cp1": [
+            7.1,
+            4.35
+          ],
+          "cp2": [
+            2.84,
+            7.9
+          ],
+          "p3": [
+            0,
+            7.9
+          ]
+        }
+      ],
+      "contourInputSha256": "f1e822d05ea56cd30081af729845dc54d5f8f2e926bf8aa08a388d0c69efdf1f"
+    },
+    {
+      "contourId": "BOD-F-FRENCH-M",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "M",
+      "variant": "dartStyle=french,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            8.1
+          ],
+          "p3": [
+            0,
+            42
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42
+          ],
+          "p3": [
+            2.5,
+            42
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42
+          ],
+          "p3": [
+            19.99,
+            42.4
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            19.99,
+            42.4
+          ],
+          "p3": [
+            21.4241,
+            37.7104
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21.4241,
+            37.7104
+          ],
+          "p3": [
+            23.13,
+            35.61
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.13,
+            35.61
+          ],
+          "p3": [
+            24.63,
+            21
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            24.63,
+            21
+          ],
+          "cp1": [
+            18,
+            18.06
+          ],
+          "cp2": [
+            18.68,
+            9.13
+          ],
+          "p3": [
+            19.14,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            19.14,
+            4.6
+          ],
+          "p3": [
+            7.3,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.3,
+            0
+          ],
+          "cp1": [
+            7.3,
+            4.46
+          ],
+          "cp2": [
+            2.92,
+            8.1
+          ],
+          "p3": [
+            0,
+            8.1
+          ]
+        }
+      ],
+      "contourInputSha256": "46567e94a667e08ead153ca3f8da395c970a9fdb50fc2202791cb8a4927cd6f4"
+    },
+    {
+      "contourId": "BOD-F-FRENCH-L",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "L",
+      "variant": "dartStyle=french,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            8.4
+          ],
+          "p3": [
+            0,
+            42.8
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42.8
+          ],
+          "p3": [
+            2.5,
+            42.8
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42.8
+          ],
+          "p3": [
+            21.96,
+            43.39
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21.96,
+            43.39
+          ],
+          "p3": [
+            23.3906,
+            38.791
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.3906,
+            38.791
+          ],
+          "p3": [
+            25.13,
+            36.39
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.13,
+            36.39
+          ],
+          "p3": [
+            26.63,
+            22
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            26.63,
+            22
+          ],
+          "cp1": [
+            18.75,
+            18.92
+          ],
+          "cp2": [
+            19.42,
+            9.45
+          ],
+          "p3": [
+            19.87,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            19.87,
+            4.6
+          ],
+          "p3": [
+            7.6,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.6,
+            0
+          ],
+          "cp1": [
+            7.6,
+            4.62
+          ],
+          "cp2": [
+            3.04,
+            8.4
+          ],
+          "p3": [
+            0,
+            8.4
+          ]
+        }
+      ],
+      "contourInputSha256": "b503173da5fd7ec1142a23622c6fc442607b54379cc1bec5ef54bc19e1887085"
+    },
+    {
+      "contourId": "BOD-F-FRENCH-XL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "XL",
+      "variant": "dartStyle=french,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            8.7
+          ],
+          "p3": [
+            0,
+            43.6
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            43.6
+          ],
+          "p3": [
+            2.5,
+            43.6
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            43.6
+          ],
+          "p3": [
+            23.91,
+            44.5
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.91,
+            44.5
+          ],
+          "p3": [
+            25.3451,
+            39.9522
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.3451,
+            39.9522
+          ],
+          "p3": [
+            27.13,
+            37.24
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.13,
+            37.24
+          ],
+          "p3": [
+            28.63,
+            23
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            28.63,
+            23
+          ],
+          "cp1": [
+            19.5,
+            19.78
+          ],
+          "cp2": [
+            20.15,
+            9.77
+          ],
+          "p3": [
+            20.59,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.59,
+            4.6
+          ],
+          "p3": [
+            7.9,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.9,
+            0
+          ],
+          "cp1": [
+            7.9,
+            4.79
+          ],
+          "cp2": [
+            3.16,
+            8.7
+          ],
+          "p3": [
+            0,
+            8.7
+          ]
+        }
+      ],
+      "contourInputSha256": "016e357e8693504133ed5698a36bfbbdd341a1f792f09e7fa4db59b311d3ee81"
+    },
+    {
+      "contourId": "BOD-F-FRENCH-XXL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-F-01",
+      "pieceName": "Front Bodice Panel",
+      "size": "XXL",
+      "variant": "dartStyle=french,ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "fb-cf-fold",
+          "type": "line",
+          "seamId": "fb-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            9.1
+          ],
+          "p3": [
+            0,
+            44.4
+          ]
+        },
+        {
+          "id": "fb-waist-square",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            44.4
+          ],
+          "p3": [
+            2.5,
+            44.4
+          ]
+        },
+        {
+          "id": "fb-waist-line",
+          "type": "line",
+          "seamId": "fb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            44.4
+          ],
+          "p3": [
+            26.39,
+            45.56
+          ]
+        },
+        {
+          "id": "fb-side-lower",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            26.39,
+            45.56
+          ],
+          "p3": [
+            27.8191,
+            41.2414
+          ]
+        },
+        {
+          "id": "fb-dart-cap",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.8191,
+            41.2414
+          ],
+          "p3": [
+            29.63,
+            38.06
+          ]
+        },
+        {
+          "id": "fb-side-upper",
+          "type": "line",
+          "seamId": "fb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            29.63,
+            38.06
+          ],
+          "p3": [
+            31.13,
+            24.5
+          ]
+        },
+        {
+          "id": "fb-armhole",
+          "type": "bezier",
+          "seamId": "fb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            31.13,
+            24.5
+          ],
+          "cp1": [
+            20.35,
+            21.07
+          ],
+          "cp2": [
+            21.05,
+            10.27
+          ],
+          "p3": [
+            21.52,
+            4.6
+          ]
+        },
+        {
+          "id": "fb-shoulder",
+          "type": "line",
+          "seamId": "fb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            21.52,
+            4.6
+          ],
+          "p3": [
+            8.3,
+            0
+          ]
+        },
+        {
+          "id": "fb-neck-curve",
+          "type": "bezier",
+          "seamId": "fb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.3,
+            0
+          ],
+          "cp1": [
+            8.3,
+            5
+          ],
+          "cp2": [
+            3.32,
+            9.1
+          ],
+          "p3": [
+            0,
+            9.1
+          ]
+        }
+      ],
+      "contourInputSha256": "4af157635bfc70e981ca3017bcdbe2c7fa88592f770fd722aa9ae06791e059b2"
+    },
+    {
+      "contourId": "BOD-B-CLASSIC-XS",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "XS",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            39.5
+          ],
+          "p3": [
+            2.5,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            39.5
+          ],
+          "p3": [
+            5.81,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            5.81,
+            39.5
+          ],
+          "p3": [
+            8.59,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.59,
+            39.5
+          ],
+          "p3": [
+            18.78,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            18.78,
+            39.5
+          ],
+          "p3": [
+            20.63,
+            19.5
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.63,
+            19.5
+          ],
+          "cp1": [
+            17.5,
+            16.77
+          ],
+          "cp2": [
+            18.01,
+            7.75
+          ],
+          "p3": [
+            18.28,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            18.28,
+            3.8
+          ],
+          "p3": [
+            6.9,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.9,
+            0
+          ],
+          "cp1": [
+            3.45,
+            0.6
+          ],
+          "cp2": [
+            2.42,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "530c9d5444531cef7ae0257463054da79fa9206cb3b03ac0667d3ff47db79a4c"
+    },
+    {
+      "contourId": "BOD-B-CLASSIC-S",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "S",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            40
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            40
+          ],
+          "p3": [
+            2.5,
+            40
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            40
+          ],
+          "p3": [
+            6.26,
+            40
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.26,
+            40
+          ],
+          "p3": [
+            9.04,
+            40
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.04,
+            40
+          ],
+          "p3": [
+            19.78,
+            40
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            19.78,
+            40
+          ],
+          "p3": [
+            21.63,
+            20
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            21.63,
+            20
+          ],
+          "cp1": [
+            18,
+            17.2
+          ],
+          "cp2": [
+            18.52,
+            7.9
+          ],
+          "p3": [
+            18.8,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            18.8,
+            3.8
+          ],
+          "p3": [
+            7.1,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.1,
+            0
+          ],
+          "cp1": [
+            3.55,
+            0.6
+          ],
+          "cp2": [
+            2.48,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "099adcce3bea2dddd25bfeceff917357611f39dab090a0e87c35c3fe8340dc5e"
+    },
+    {
+      "contourId": "BOD-B-CLASSIC-M",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "M",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            40.5
+          ],
+          "p3": [
+            2.5,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            40.5
+          ],
+          "p3": [
+            6.94,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.94,
+            40.5
+          ],
+          "p3": [
+            9.72,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.72,
+            40.5
+          ],
+          "p3": [
+            21.28,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21.28,
+            40.5
+          ],
+          "p3": [
+            23.13,
+            21
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            23.13,
+            21
+          ],
+          "cp1": [
+            18.75,
+            18.06
+          ],
+          "cp2": [
+            19.19,
+            8.2
+          ],
+          "p3": [
+            19.42,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            19.42,
+            3.8
+          ],
+          "p3": [
+            7.3,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.3,
+            0
+          ],
+          "cp1": [
+            3.65,
+            0.6
+          ],
+          "cp2": [
+            2.55,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "d6c99cf3d34bb0a32e90d082460549b2ab8d610a11a2e8218f07930ac0b4ea79"
+    },
+    {
+      "contourId": "BOD-B-CLASSIC-L",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "L",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            41.2
+          ],
+          "p3": [
+            2.5,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            41.2
+          ],
+          "p3": [
+            7.83,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.83,
+            41.2
+          ],
+          "p3": [
+            10.61,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            10.61,
+            41.2
+          ],
+          "p3": [
+            23.28,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.28,
+            41.2
+          ],
+          "p3": [
+            25.13,
+            22
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            25.13,
+            22
+          ],
+          "cp1": [
+            19.5,
+            18.92
+          ],
+          "cp2": [
+            19.92,
+            8.5
+          ],
+          "p3": [
+            20.14,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.14,
+            3.8
+          ],
+          "p3": [
+            7.6,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.6,
+            0
+          ],
+          "cp1": [
+            3.8,
+            0.6
+          ],
+          "cp2": [
+            2.66,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "98a074a64d2d3cf8e2d984477a9a9cf2f2603dd4a589209764b5ddd66d434318"
+    },
+    {
+      "contourId": "BOD-B-CLASSIC-XL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "XL",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            42
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42
+          ],
+          "p3": [
+            2.5,
+            42
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42
+          ],
+          "p3": [
+            8.74,
+            42
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.74,
+            42
+          ],
+          "p3": [
+            11.52,
+            42
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            11.52,
+            42
+          ],
+          "p3": [
+            25.28,
+            42
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.28,
+            42
+          ],
+          "p3": [
+            27.13,
+            23
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            27.13,
+            23
+          ],
+          "cp1": [
+            20.25,
+            19.78
+          ],
+          "cp2": [
+            20.64,
+            8.8
+          ],
+          "p3": [
+            20.85,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.85,
+            3.8
+          ],
+          "p3": [
+            7.9,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.9,
+            0
+          ],
+          "cp1": [
+            3.95,
+            0.6
+          ],
+          "cp2": [
+            2.77,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "36d155352ad24cd744dd196aab9101760a0a8dd61fb1363e179b272fb6c0a55e"
+    },
+    {
+      "contourId": "BOD-B-CLASSIC-XXL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "XXL",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42.6
+          ],
+          "p3": [
+            2.5,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42.6
+          ],
+          "p3": [
+            9.86,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.86,
+            42.6
+          ],
+          "p3": [
+            12.64,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            12.64,
+            42.6
+          ],
+          "p3": [
+            27.78,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.78,
+            42.6
+          ],
+          "p3": [
+            29.63,
+            24.5
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            29.63,
+            24.5
+          ],
+          "cp1": [
+            21.1,
+            21.07
+          ],
+          "cp2": [
+            21.54,
+            9.25
+          ],
+          "p3": [
+            21.77,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            21.77,
+            3.8
+          ],
+          "p3": [
+            8.3,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.3,
+            0
+          ],
+          "cp1": [
+            4.15,
+            0.6
+          ],
+          "cp2": [
+            2.91,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "a8b017c52d440eb52f511335aa639a2c7121b2e4ce7a94227d53fe18b224fd59"
+    },
+    {
+      "contourId": "BOD-B-FITTED-XS",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "XS",
+      "variant": "ease=fitted",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            39.5
+          ],
+          "p3": [
+            2.5,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            39.5
+          ],
+          "p3": [
+            5.68,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            5.68,
+            39.5
+          ],
+          "p3": [
+            8.38,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.38,
+            39.5
+          ],
+          "p3": [
+            18.33,
+            39.5
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            18.33,
+            39.5
+          ],
+          "p3": [
+            20.13,
+            19.5
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.13,
+            19.5
+          ],
+          "cp1": [
+            17.5,
+            16.77
+          ],
+          "cp2": [
+            18.01,
+            7.75
+          ],
+          "p3": [
+            18.28,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            18.28,
+            3.8
+          ],
+          "p3": [
+            6.9,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.9,
+            0
+          ],
+          "cp1": [
+            3.45,
+            0.6
+          ],
+          "cp2": [
+            2.42,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "7e7dca52d5309f018897f353c84985653f32166a2b120c7eac403094ab6c2190"
+    },
+    {
+      "contourId": "BOD-B-FITTED-S",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "S",
+      "variant": "ease=fitted",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            40
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            40
+          ],
+          "p3": [
+            2.5,
+            40
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            40
+          ],
+          "p3": [
+            6.13,
+            40
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.13,
+            40
+          ],
+          "p3": [
+            8.83,
+            40
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.83,
+            40
+          ],
+          "p3": [
+            19.33,
+            40
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            19.33,
+            40
+          ],
+          "p3": [
+            21.13,
+            20
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            21.13,
+            20
+          ],
+          "cp1": [
+            18,
+            17.2
+          ],
+          "cp2": [
+            18.52,
+            7.9
+          ],
+          "p3": [
+            18.8,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            18.8,
+            3.8
+          ],
+          "p3": [
+            7.1,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.1,
+            0
+          ],
+          "cp1": [
+            3.55,
+            0.6
+          ],
+          "cp2": [
+            2.48,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "590fa2e4e448f69a24448c5d5205d926c841788e5747389740cd622664373c9e"
+    },
+    {
+      "contourId": "BOD-B-FITTED-M",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "M",
+      "variant": "ease=fitted",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            40.5
+          ],
+          "p3": [
+            2.5,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            40.5
+          ],
+          "p3": [
+            6.81,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.81,
+            40.5
+          ],
+          "p3": [
+            9.51,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.51,
+            40.5
+          ],
+          "p3": [
+            20.83,
+            40.5
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            20.83,
+            40.5
+          ],
+          "p3": [
+            22.63,
+            21
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            22.63,
+            21
+          ],
+          "cp1": [
+            18.75,
+            18.06
+          ],
+          "cp2": [
+            19.19,
+            8.2
+          ],
+          "p3": [
+            19.42,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            19.42,
+            3.8
+          ],
+          "p3": [
+            7.3,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.3,
+            0
+          ],
+          "cp1": [
+            3.65,
+            0.6
+          ],
+          "cp2": [
+            2.55,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "c7928d2134fa5e90297e2261b8263df61cc3c08c7dfaadbebc3dac1fed85b7ee"
+    },
+    {
+      "contourId": "BOD-B-FITTED-L",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "L",
+      "variant": "ease=fitted",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            41.2
+          ],
+          "p3": [
+            2.5,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            41.2
+          ],
+          "p3": [
+            7.71,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.71,
+            41.2
+          ],
+          "p3": [
+            10.41,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            10.41,
+            41.2
+          ],
+          "p3": [
+            22.83,
+            41.2
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            22.83,
+            41.2
+          ],
+          "p3": [
+            24.63,
+            22
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            24.63,
+            22
+          ],
+          "cp1": [
+            19.5,
+            18.92
+          ],
+          "cp2": [
+            19.92,
+            8.5
+          ],
+          "p3": [
+            20.14,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.14,
+            3.8
+          ],
+          "p3": [
+            7.6,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.6,
+            0
+          ],
+          "cp1": [
+            3.8,
+            0.6
+          ],
+          "cp2": [
+            2.66,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "d9e3ab7390332a4b4cca2cb4611fb2deab5611a663f3b12c8c90e78942fb3ffe"
+    },
+    {
+      "contourId": "BOD-B-FITTED-XL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "XL",
+      "variant": "ease=fitted",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            42
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42
+          ],
+          "p3": [
+            2.5,
+            42
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42
+          ],
+          "p3": [
+            8.61,
+            42
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.61,
+            42
+          ],
+          "p3": [
+            11.31,
+            42
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            11.31,
+            42
+          ],
+          "p3": [
+            24.83,
+            42
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            24.83,
+            42
+          ],
+          "p3": [
+            26.63,
+            23
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            26.63,
+            23
+          ],
+          "cp1": [
+            20.25,
+            19.78
+          ],
+          "cp2": [
+            20.64,
+            8.8
+          ],
+          "p3": [
+            20.85,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.85,
+            3.8
+          ],
+          "p3": [
+            7.9,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.9,
+            0
+          ],
+          "cp1": [
+            3.95,
+            0.6
+          ],
+          "cp2": [
+            2.77,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "3f24d3402041309af2a76ab3a5e577aa1551535bd3c5111d7fe44820cb57d960"
+    },
+    {
+      "contourId": "BOD-B-FITTED-XXL",
+      "sourceModule": "src/engine/drafting/bodice-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "BOD-B-01",
+      "pieceName": "Back Bodice Panel",
+      "size": "XXL",
+      "variant": "ease=fitted",
+      "segmentCount": 9,
+      "cubicBezierCount": 2,
+      "lineSegmentCount": 7,
+      "segments": [
+        {
+          "id": "bb-center-back",
+          "type": "line",
+          "seamId": "bb-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            1.5
+          ],
+          "p3": [
+            0,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-waist-square",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            42.6
+          ],
+          "p3": [
+            2.5,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-waist-mid",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            2.5,
+            42.6
+          ],
+          "p3": [
+            9.73,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-dart-cap",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.73,
+            42.6
+          ],
+          "p3": [
+            12.43,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-waist-side",
+          "type": "line",
+          "seamId": "bb-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            12.43,
+            42.6
+          ],
+          "p3": [
+            27.33,
+            42.6
+          ]
+        },
+        {
+          "id": "bb-side-seam",
+          "type": "line",
+          "seamId": "bb-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.33,
+            42.6
+          ],
+          "p3": [
+            29.13,
+            24.5
+          ]
+        },
+        {
+          "id": "bb-armhole",
+          "type": "bezier",
+          "seamId": "bb-armhole",
+          "seamAllowanceCm": 1,
+          "p0": [
+            29.13,
+            24.5
+          ],
+          "cp1": [
+            21.1,
+            21.07
+          ],
+          "cp2": [
+            21.54,
+            9.25
+          ],
+          "p3": [
+            21.77,
+            3.8
+          ]
+        },
+        {
+          "id": "bb-shoulder",
+          "type": "line",
+          "seamId": "bb-shoulder",
+          "seamAllowanceCm": 1,
+          "p0": [
+            21.77,
+            3.8
+          ],
+          "p3": [
+            8.3,
+            0
+          ]
+        },
+        {
+          "id": "bb-neck-curve",
+          "type": "bezier",
+          "seamId": "bb-neck",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.3,
+            0
+          ],
+          "cp1": [
+            4.15,
+            0.6
+          ],
+          "cp2": [
+            2.91,
+            1.5
+          ],
+          "p3": [
+            0,
+            1.5
+          ]
+        }
+      ],
+      "contourInputSha256": "410b1da63e236df0e874a1c1f1d4531975804ae50cd5df22e845885f0ef8a049"
+    },
+    {
+      "contourId": "SLV-CLASSIC-XS",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "XS",
+      "variant": "sleeveEaseStrategy=classic",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            4.83,
+            0
+          ],
+          "cp2": [
+            10.86,
+            7.8
+          ],
+          "p3": [
+            15.08,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            15.08,
+            10
+          ],
+          "p3": [
+            9.12,
+            57
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            9.12,
+            57
+          ],
+          "cp1": [
+            3.65,
+            57.66
+          ],
+          "cp2": [
+            -3.95,
+            57.66
+          ],
+          "p3": [
+            -9.88,
+            57.11
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -9.88,
+            57.11
+          ],
+          "p3": [
+            -14.92,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -14.92,
+            10
+          ],
+          "cp1": [
+            -10.15,
+            7.5
+          ],
+          "cp2": [
+            -5.22,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "aaa628db043c05e632f9f52f42bf68b88b25a3dcdd02567d261986225a8a039b"
+    },
+    {
+      "contourId": "SLV-CLASSIC-S",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "S",
+      "variant": "sleeveEaseStrategy=classic",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            5.08,
+            0
+          ],
+          "cp2": [
+            11.43,
+            7.8
+          ],
+          "p3": [
+            15.87,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            15.87,
+            10
+          ],
+          "p3": [
+            9.36,
+            58
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            9.36,
+            58
+          ],
+          "cp1": [
+            3.74,
+            58.66
+          ],
+          "cp2": [
+            -4.06,
+            58.66
+          ],
+          "p3": [
+            -10.14,
+            58.13
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -10.14,
+            58.13
+          ],
+          "p3": [
+            -15.63,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -15.63,
+            10
+          ],
+          "cp1": [
+            -10.63,
+            7.5
+          ],
+          "cp2": [
+            -5.47,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "100833ca85620820e1d8d4c26d850d47f6d52c3bf81350ada47b5a808577d03b"
+    },
+    {
+      "contourId": "SLV-CLASSIC-M",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "M",
+      "variant": "sleeveEaseStrategy=classic",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            5.41,
+            0
+          ],
+          "cp2": [
+            12.18,
+            8.16
+          ],
+          "p3": [
+            16.92,
+            10.46
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            16.92,
+            10.46
+          ],
+          "p3": [
+            9.84,
+            59.5
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            9.84,
+            59.5
+          ],
+          "cp1": [
+            3.94,
+            60.18
+          ],
+          "cp2": [
+            -4.26,
+            60.18
+          ],
+          "p3": [
+            -10.66,
+            59.66
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -10.66,
+            59.66
+          ],
+          "p3": [
+            -16.58,
+            10.46
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -16.58,
+            10.46
+          ],
+          "cp1": [
+            -11.27,
+            7.85
+          ],
+          "cp2": [
+            -5.8,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "c8015a9a3263e17a8c0466ac37f99daab4593f400546ca4c1751a749e2d5f8e3"
+    },
+    {
+      "contourId": "SLV-CLASSIC-L",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "L",
+      "variant": "sleeveEaseStrategy=classic",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            5.84,
+            0
+          ],
+          "cp2": [
+            13.13,
+            8.99
+          ],
+          "p3": [
+            18.24,
+            11.53
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            18.24,
+            11.53
+          ],
+          "p3": [
+            10.32,
+            61
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            10.32,
+            61
+          ],
+          "cp1": [
+            4.13,
+            61.7
+          ],
+          "cp2": [
+            -4.47,
+            61.7
+          ],
+          "p3": [
+            -11.18,
+            61.2
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -11.18,
+            61.2
+          ],
+          "p3": [
+            -17.76,
+            11.53
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -17.76,
+            11.53
+          ],
+          "cp1": [
+            -12.08,
+            8.65
+          ],
+          "cp2": [
+            -6.22,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "bd8e8e38a74936c6c70fb0834c309b8af8e5b25403132760d8040ba7882d291a"
+    },
+    {
+      "contourId": "SLV-CLASSIC-XL",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "XL",
+      "variant": "sleeveEaseStrategy=classic",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            6.34,
+            0
+          ],
+          "cp2": [
+            14.26,
+            9.84
+          ],
+          "p3": [
+            19.8,
+            12.62
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            19.8,
+            12.62
+          ],
+          "p3": [
+            10.8,
+            62
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            10.8,
+            62
+          ],
+          "cp1": [
+            4.32,
+            62.73
+          ],
+          "cp2": [
+            -4.68,
+            62.73
+          ],
+          "p3": [
+            -11.7,
+            62.25
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -11.7,
+            62.25
+          ],
+          "p3": [
+            -19.2,
+            12.62
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -19.2,
+            12.62
+          ],
+          "cp1": [
+            -13.06,
+            9.46
+          ],
+          "cp2": [
+            -6.72,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "93e533ea782e2cf2190e4c808adf3a173f6e45bf394f1f8ed0710f9b41275118"
+    },
+    {
+      "contourId": "SLV-CLASSIC-XXL",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "XXL",
+      "variant": "sleeveEaseStrategy=classic",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            6.91,
+            0
+          ],
+          "cp2": [
+            15.55,
+            11.07
+          ],
+          "p3": [
+            21.6,
+            14.19
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21.6,
+            14.19
+          ],
+          "p3": [
+            11.52,
+            63
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            11.52,
+            63
+          ],
+          "cp1": [
+            4.61,
+            63.76
+          ],
+          "cp2": [
+            -4.99,
+            63.76
+          ],
+          "p3": [
+            -12.48,
+            63.31
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -12.48,
+            63.31
+          ],
+          "p3": [
+            -20.9,
+            14.19
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -20.9,
+            14.19
+          ],
+          "cp1": [
+            -14.21,
+            10.64
+          ],
+          "cp2": [
+            -7.31,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "5985939b03ccd0f7bc60a4e58a367b2ce7aae1c1a7df249ba2a88d2dc95648f3"
+    },
+    {
+      "contourId": "SLV-TAILORED-XS",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "XS",
+      "variant": "sleeveEaseStrategy=tailored",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            4.98,
+            0
+          ],
+          "cp2": [
+            11.2,
+            7.8
+          ],
+          "p3": [
+            15.55,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            15.55,
+            10
+          ],
+          "p3": [
+            9.36,
+            57
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            9.36,
+            57
+          ],
+          "cp1": [
+            3.74,
+            57.66
+          ],
+          "cp2": [
+            -4.06,
+            57.66
+          ],
+          "p3": [
+            -10.14,
+            57.11
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -10.14,
+            57.11
+          ],
+          "p3": [
+            -15.45,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -15.45,
+            10
+          ],
+          "cp1": [
+            -10.51,
+            7.5
+          ],
+          "cp2": [
+            -5.41,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "2b6c2008c7a669a1d0f40bf4fa9a4a08a1cb3b35708691b6444113f63bc5f6b2"
+    },
+    {
+      "contourId": "SLV-TAILORED-S",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "S",
+      "variant": "sleeveEaseStrategy=tailored",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            5.23,
+            0
+          ],
+          "cp2": [
+            11.77,
+            7.94
+          ],
+          "p3": [
+            16.35,
+            10.18
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            16.35,
+            10.18
+          ],
+          "p3": [
+            9.6,
+            58
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            9.6,
+            58
+          ],
+          "cp1": [
+            3.84,
+            58.66
+          ],
+          "cp2": [
+            -4.16,
+            58.66
+          ],
+          "p3": [
+            -10.4,
+            58.13
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -10.4,
+            58.13
+          ],
+          "p3": [
+            -16.15,
+            10.18
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -16.15,
+            10.18
+          ],
+          "cp1": [
+            -10.98,
+            7.63
+          ],
+          "cp2": [
+            -5.65,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "9005c6f63c210b44a655c10e231c6ac844209204de48db5a29ead594b40e962a"
+    },
+    {
+      "contourId": "SLV-TAILORED-M",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "M",
+      "variant": "sleeveEaseStrategy=tailored",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            5.57,
+            0
+          ],
+          "cp2": [
+            12.53,
+            8.63
+          ],
+          "p3": [
+            17.4,
+            11.06
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            17.4,
+            11.06
+          ],
+          "p3": [
+            10.08,
+            59.5
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            10.08,
+            59.5
+          ],
+          "cp1": [
+            4.03,
+            60.18
+          ],
+          "cp2": [
+            -4.37,
+            60.18
+          ],
+          "p3": [
+            -10.92,
+            59.66
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -10.92,
+            59.66
+          ],
+          "p3": [
+            -17.1,
+            11.06
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -17.1,
+            11.06
+          ],
+          "cp1": [
+            -11.63,
+            8.29
+          ],
+          "cp2": [
+            -5.99,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "175ec55fdf817587c5c9a8a6a8014a6b3f6a5641b7c5ec081c5de00823e5f29c"
+    },
+    {
+      "contourId": "SLV-TAILORED-L",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "L",
+      "variant": "sleeveEaseStrategy=tailored",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            5.99,
+            0
+          ],
+          "cp2": [
+            13.49,
+            9.46
+          ],
+          "p3": [
+            18.73,
+            12.13
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            18.73,
+            12.13
+          ],
+          "p3": [
+            10.56,
+            61
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            10.56,
+            61
+          ],
+          "cp1": [
+            4.22,
+            61.71
+          ],
+          "cp2": [
+            -4.58,
+            61.71
+          ],
+          "p3": [
+            -11.44,
+            61.21
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -11.44,
+            61.21
+          ],
+          "p3": [
+            -18.27,
+            12.13
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -18.27,
+            12.13
+          ],
+          "cp1": [
+            -12.42,
+            9.1
+          ],
+          "cp2": [
+            -6.39,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "08dc5da1821e67d112f2dcfe9662141faa581ed6de850b8f9046f3aafde40cc6"
+    },
+    {
+      "contourId": "SLV-TAILORED-XL",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "XL",
+      "variant": "sleeveEaseStrategy=tailored",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            6.49,
+            0
+          ],
+          "cp2": [
+            14.61,
+            10.31
+          ],
+          "p3": [
+            20.29,
+            13.22
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            20.29,
+            13.22
+          ],
+          "p3": [
+            11.04,
+            62
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            11.04,
+            62
+          ],
+          "cp1": [
+            4.42,
+            62.73
+          ],
+          "cp2": [
+            -4.78,
+            62.73
+          ],
+          "p3": [
+            -11.96,
+            62.26
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -11.96,
+            62.26
+          ],
+          "p3": [
+            -19.71,
+            13.22
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -19.71,
+            13.22
+          ],
+          "cp1": [
+            -13.4,
+            9.92
+          ],
+          "cp2": [
+            -6.9,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "595ca587a9282945aca1a407f04b6d1a7f92f31254867624616a27bfe6fdaaf0"
+    },
+    {
+      "contourId": "SLV-TAILORED-XXL",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "XXL",
+      "variant": "sleeveEaseStrategy=tailored",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            7.07,
+            0
+          ],
+          "cp2": [
+            15.9,
+            11.54
+          ],
+          "p3": [
+            22.09,
+            14.79
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            22.09,
+            14.79
+          ],
+          "p3": [
+            11.76,
+            63
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            11.76,
+            63
+          ],
+          "cp1": [
+            4.7,
+            63.76
+          ],
+          "cp2": [
+            -5.1,
+            63.76
+          ],
+          "p3": [
+            -12.74,
+            63.32
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -12.74,
+            63.32
+          ],
+          "p3": [
+            -21.41,
+            14.79
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -21.41,
+            14.79
+          ],
+          "cp1": [
+            -14.56,
+            11.09
+          ],
+          "cp2": [
+            -7.49,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "7987281fe691e20b02cf8967f06ea76ba1025279d5fa79141e5e2aba3f7ceb3d"
+    },
+    {
+      "contourId": "SLV-FITTED-XS",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "XS",
+      "variant": "sleeveEaseStrategy=fitted",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            4.64,
+            0
+          ],
+          "cp2": [
+            10.44,
+            7.8
+          ],
+          "p3": [
+            14.5,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            14.5,
+            10
+          ],
+          "p3": [
+            8.64,
+            57
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            8.64,
+            57
+          ],
+          "cp1": [
+            3.46,
+            57.65
+          ],
+          "cp2": [
+            -3.74,
+            57.65
+          ],
+          "p3": [
+            -9.36,
+            57.1
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -9.36,
+            57.1
+          ],
+          "p3": [
+            -14.3,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -14.3,
+            10
+          ],
+          "cp1": [
+            -9.72,
+            7.5
+          ],
+          "cp2": [
+            -5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "4856d93bd76e5e647917f225434927261b2a4bdae86512cb95110eccf36ff8b1"
+    },
+    {
+      "contourId": "SLV-FITTED-S",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "S",
+      "variant": "sleeveEaseStrategy=fitted",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            4.89,
+            0
+          ],
+          "cp2": [
+            11.01,
+            7.8
+          ],
+          "p3": [
+            15.29,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            15.29,
+            10
+          ],
+          "p3": [
+            8.88,
+            58
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            8.88,
+            58
+          ],
+          "cp1": [
+            3.55,
+            58.66
+          ],
+          "cp2": [
+            -3.85,
+            58.66
+          ],
+          "p3": [
+            -9.62,
+            58.13
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -9.62,
+            58.13
+          ],
+          "p3": [
+            -15.01,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -15.01,
+            10
+          ],
+          "cp1": [
+            -10.21,
+            7.5
+          ],
+          "cp2": [
+            -5.25,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "920f468dbfc220cc4bef53078ad919fb753d8fe02796d66deaa35f1991499726"
+    },
+    {
+      "contourId": "SLV-FITTED-M",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "M",
+      "variant": "sleeveEaseStrategy=fitted",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            5.23,
+            0
+          ],
+          "cp2": [
+            11.76,
+            7.8
+          ],
+          "p3": [
+            16.33,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            16.33,
+            10
+          ],
+          "p3": [
+            9.36,
+            59.5
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            9.36,
+            59.5
+          ],
+          "cp1": [
+            3.74,
+            60.18
+          ],
+          "cp2": [
+            -4.06,
+            60.18
+          ],
+          "p3": [
+            -10.14,
+            59.65
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -10.14,
+            59.65
+          ],
+          "p3": [
+            -15.97,
+            10
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -15.97,
+            10
+          ],
+          "cp1": [
+            -10.86,
+            7.5
+          ],
+          "cp2": [
+            -5.59,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "0a8301020bee548a1336f60a3e4c89f33679968f7e2b0d0346a592da1a48e1ac"
+    },
+    {
+      "contourId": "SLV-FITTED-L",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "L",
+      "variant": "sleeveEaseStrategy=fitted",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            5.64,
+            0
+          ],
+          "cp2": [
+            12.7,
+            8.53
+          ],
+          "p3": [
+            17.64,
+            10.93
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            17.64,
+            10.93
+          ],
+          "p3": [
+            9.84,
+            61
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            9.84,
+            61
+          ],
+          "cp1": [
+            3.94,
+            61.69
+          ],
+          "cp2": [
+            -4.26,
+            61.69
+          ],
+          "p3": [
+            -10.66,
+            61.18
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -10.66,
+            61.18
+          ],
+          "p3": [
+            -17.16,
+            10.93
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -17.16,
+            10.93
+          ],
+          "cp1": [
+            -11.67,
+            8.2
+          ],
+          "cp2": [
+            -6.01,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "d77cce6856863a98f3b1da60671514d9ced8ed5c59f4de37375786a835686b22"
+    },
+    {
+      "contourId": "SLV-FITTED-XL",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "XL",
+      "variant": "sleeveEaseStrategy=fitted",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            6.14,
+            0
+          ],
+          "cp2": [
+            13.82,
+            9.38
+          ],
+          "p3": [
+            19.2,
+            12.02
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            19.2,
+            12.02
+          ],
+          "p3": [
+            10.32,
+            62
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            10.32,
+            62
+          ],
+          "cp1": [
+            4.13,
+            62.71
+          ],
+          "cp2": [
+            -4.47,
+            62.71
+          ],
+          "p3": [
+            -11.18,
+            62.23
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -11.18,
+            62.23
+          ],
+          "p3": [
+            -18.6,
+            12.02
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -18.6,
+            12.02
+          ],
+          "cp1": [
+            -12.65,
+            9.02
+          ],
+          "cp2": [
+            -6.51,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "c494acff43a082d1615bb9980ead51d3463bfcc3ca03c587aabfde01e62f36b9"
+    },
+    {
+      "contourId": "SLV-FITTED-XXL",
+      "sourceModule": "src/engine/drafting/sleeve-block.ts",
+      "garmentCategory": "bodice",
+      "pieceCode": "SLV-01",
+      "pieceName": "One-Piece Fitted Sleeve",
+      "size": "XXL",
+      "variant": "sleeveEaseStrategy=fitted",
+      "segmentCount": 5,
+      "cubicBezierCount": 3,
+      "lineSegmentCount": 2,
+      "segments": [
+        {
+          "id": "sleeve-front-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            0,
+            0
+          ],
+          "cp1": [
+            6.72,
+            0
+          ],
+          "cp2": [
+            15.12,
+            10.6
+          ],
+          "p3": [
+            21,
+            13.59
+          ]
+        },
+        {
+          "id": "sleeve-front-inseam",
+          "type": "line",
+          "seamId": "sleeve-front-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            21,
+            13.59
+          ],
+          "p3": [
+            11.04,
+            63
+          ]
+        },
+        {
+          "id": "sleeve-wrist-hem",
+          "type": "bezier",
+          "seamId": "sleeve-hem",
+          "seamAllowanceCm": 2.5,
+          "p0": [
+            11.04,
+            63
+          ],
+          "cp1": [
+            4.42,
+            63.75
+          ],
+          "cp2": [
+            -4.78,
+            63.75
+          ],
+          "p3": [
+            -11.96,
+            63.3
+          ]
+        },
+        {
+          "id": "sleeve-back-inseam",
+          "type": "line",
+          "seamId": "sleeve-back-inseam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            -11.96,
+            63.3
+          ],
+          "p3": [
+            -20.3,
+            13.59
+          ]
+        },
+        {
+          "id": "sleeve-back-cap",
+          "type": "bezier",
+          "seamId": "sleeve-cap",
+          "seamAllowanceCm": 1,
+          "p0": [
+            -20.3,
+            13.59
+          ],
+          "cp1": [
+            -13.8,
+            10.19
+          ],
+          "cp2": [
+            -7.1,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "d51a74d65627f34ac9ae320874f27c249114b6799dae56bc29ad6aaa7b3639e6"
+    },
+    {
+      "contourId": "SK-F-CLASSIC-XS",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-01-F",
+      "pieceName": "Front Skirt Panel",
+      "size": "XS",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "fs-cf-fold",
+          "type": "line",
+          "seamId": "fs-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-square",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-curve",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            23.25,
+            68
+          ]
+        },
+        {
+          "id": "fs-side-lower",
+          "type": "line",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.25,
+            68
+          ],
+          "p3": [
+            23.25,
+            19.5
+          ]
+        },
+        {
+          "id": "fs-side-hip",
+          "type": "bezier",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.25,
+            19.5
+          ],
+          "cp1": [
+            23.55,
+            15.5
+          ],
+          "cp2": [
+            21.38,
+            5.36
+          ],
+          "p3": [
+            20.125,
+            -0.7
+          ]
+        },
+        {
+          "id": "fs-waist-side",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.125,
+            -0.7
+          ],
+          "p3": [
+            9.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-dart-cap",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.5,
+            -0.15
+          ],
+          "p3": [
+            7.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-waist-mid",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.5,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "fs-waist-square",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "53e938eb3262122d6036ef697a8444463cf2f231bfabefe1cf98cd61a043798b"
+    },
+    {
+      "contourId": "SK-F-CLASSIC-S",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-01-F",
+      "pieceName": "Front Skirt Panel",
+      "size": "S",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "fs-cf-fold",
+          "type": "line",
+          "seamId": "fs-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-square",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-curve",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            24.25,
+            68
+          ]
+        },
+        {
+          "id": "fs-side-lower",
+          "type": "line",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            24.25,
+            68
+          ],
+          "p3": [
+            24.25,
+            20
+          ]
+        },
+        {
+          "id": "fs-side-hip",
+          "type": "bezier",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            24.25,
+            20
+          ],
+          "cp1": [
+            24.55,
+            16
+          ],
+          "cp2": [
+            22.38,
+            5.51
+          ],
+          "p3": [
+            21.125,
+            -0.7
+          ]
+        },
+        {
+          "id": "fs-waist-side",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            21.125,
+            -0.7
+          ],
+          "p3": [
+            9.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-dart-cap",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.5,
+            -0.15
+          ],
+          "p3": [
+            7.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-waist-mid",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.5,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "fs-waist-square",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "06b8d70acaf5feea1699c6fc235cc770558aeee079438a99d79b3ed8ca75db00"
+    },
+    {
+      "contourId": "SK-F-CLASSIC-M",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-01-F",
+      "pieceName": "Front Skirt Panel",
+      "size": "M",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "fs-cf-fold",
+          "type": "line",
+          "seamId": "fs-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-square",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-curve",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            25.75,
+            68
+          ]
+        },
+        {
+          "id": "fs-side-lower",
+          "type": "line",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.75,
+            68
+          ],
+          "p3": [
+            25.75,
+            20.5
+          ]
+        },
+        {
+          "id": "fs-side-hip",
+          "type": "bezier",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.75,
+            20.5
+          ],
+          "cp1": [
+            26.05,
+            16.5
+          ],
+          "cp2": [
+            23.88,
+            5.66
+          ],
+          "p3": [
+            22.625,
+            -0.7
+          ]
+        },
+        {
+          "id": "fs-waist-side",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            22.625,
+            -0.7
+          ],
+          "p3": [
+            9.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-dart-cap",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.5,
+            -0.15
+          ],
+          "p3": [
+            7.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-waist-mid",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.5,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "fs-waist-square",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "2e148006acfad1c305c2b0d6c8a695de809cd0514264f63fe5c810e937f7c9df"
+    },
+    {
+      "contourId": "SK-F-CLASSIC-L",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-01-F",
+      "pieceName": "Front Skirt Panel",
+      "size": "L",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "fs-cf-fold",
+          "type": "line",
+          "seamId": "fs-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-square",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-curve",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            27.75,
+            68
+          ]
+        },
+        {
+          "id": "fs-side-lower",
+          "type": "line",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.75,
+            68
+          ],
+          "p3": [
+            27.75,
+            21
+          ]
+        },
+        {
+          "id": "fs-side-hip",
+          "type": "bezier",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.75,
+            21
+          ],
+          "cp1": [
+            28.05,
+            17
+          ],
+          "cp2": [
+            25.88,
+            5.81
+          ],
+          "p3": [
+            24.625,
+            -0.7
+          ]
+        },
+        {
+          "id": "fs-waist-side",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            24.625,
+            -0.7
+          ],
+          "p3": [
+            9.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-dart-cap",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.5,
+            -0.15
+          ],
+          "p3": [
+            7.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-waist-mid",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.5,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "fs-waist-square",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "bd4f9657615c2c6eda673564144ca95f31deb46b887034c6c93ef0664714a102"
+    },
+    {
+      "contourId": "SK-F-CLASSIC-XL",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-01-F",
+      "pieceName": "Front Skirt Panel",
+      "size": "XL",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "fs-cf-fold",
+          "type": "line",
+          "seamId": "fs-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-square",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-curve",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            29.75,
+            68
+          ]
+        },
+        {
+          "id": "fs-side-lower",
+          "type": "line",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            29.75,
+            68
+          ],
+          "p3": [
+            29.75,
+            21.5
+          ]
+        },
+        {
+          "id": "fs-side-hip",
+          "type": "bezier",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            29.75,
+            21.5
+          ],
+          "cp1": [
+            30.05,
+            17.5
+          ],
+          "cp2": [
+            27.88,
+            5.96
+          ],
+          "p3": [
+            26.625,
+            -0.7
+          ]
+        },
+        {
+          "id": "fs-waist-side",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            26.625,
+            -0.7
+          ],
+          "p3": [
+            9.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-dart-cap",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.5,
+            -0.15
+          ],
+          "p3": [
+            7.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-waist-mid",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.5,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "fs-waist-square",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "72ec8529d16e12e94ef6cd5db6acfdd7299ecf91d58e49e5126949500832c391"
+    },
+    {
+      "contourId": "SK-F-CLASSIC-XXL",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-01-F",
+      "pieceName": "Front Skirt Panel",
+      "size": "XXL",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "fs-cf-fold",
+          "type": "line",
+          "seamId": "fs-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-square",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-curve",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            32.25,
+            68
+          ]
+        },
+        {
+          "id": "fs-side-lower",
+          "type": "line",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            32.25,
+            68
+          ],
+          "p3": [
+            32.25,
+            22
+          ]
+        },
+        {
+          "id": "fs-side-hip",
+          "type": "bezier",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            32.25,
+            22
+          ],
+          "cp1": [
+            32.55,
+            18
+          ],
+          "cp2": [
+            30.38,
+            6.11
+          ],
+          "p3": [
+            29.125,
+            -0.7
+          ]
+        },
+        {
+          "id": "fs-waist-side",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            29.125,
+            -0.7
+          ],
+          "p3": [
+            9.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-dart-cap",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.5,
+            -0.15
+          ],
+          "p3": [
+            7.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-waist-mid",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.5,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "fs-waist-square",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "7fc63920331c7f048958053f86f67fdae113d9ba4c49eb09e43e40a68be0ef8b"
+    },
+    {
+      "contourId": "SK-F-FITTED-XS",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-01-F",
+      "pieceName": "Front Skirt Panel",
+      "size": "XS",
+      "variant": "ease=fitted",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "fs-cf-fold",
+          "type": "line",
+          "seamId": "fs-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-square",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-curve",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            23.25,
+            68
+          ]
+        },
+        {
+          "id": "fs-side-lower",
+          "type": "line",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.25,
+            68
+          ],
+          "p3": [
+            23.25,
+            19.5
+          ]
+        },
+        {
+          "id": "fs-side-hip",
+          "type": "bezier",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.25,
+            19.5
+          ],
+          "cp1": [
+            23.55,
+            15.5
+          ],
+          "cp2": [
+            21.38,
+            5.36
+          ],
+          "p3": [
+            20.125,
+            -0.7
+          ]
+        },
+        {
+          "id": "fs-waist-side",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.125,
+            -0.7
+          ],
+          "p3": [
+            9.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-dart-cap",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.5,
+            -0.15
+          ],
+          "p3": [
+            7.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-waist-mid",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.5,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "fs-waist-square",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "2c6f8ab43ad5c54d848edddde86411e7b2f75d50ceba085e7a2d0e612b53344c"
+    },
+    {
+      "contourId": "SK-F-FITTED-M",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-01-F",
+      "pieceName": "Front Skirt Panel",
+      "size": "M",
+      "variant": "ease=fitted",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "fs-cf-fold",
+          "type": "line",
+          "seamId": "fs-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-square",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-curve",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            25.75,
+            68
+          ]
+        },
+        {
+          "id": "fs-side-lower",
+          "type": "line",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.75,
+            68
+          ],
+          "p3": [
+            25.75,
+            20.5
+          ]
+        },
+        {
+          "id": "fs-side-hip",
+          "type": "bezier",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.75,
+            20.5
+          ],
+          "cp1": [
+            26.05,
+            16.5
+          ],
+          "cp2": [
+            23.88,
+            5.66
+          ],
+          "p3": [
+            22.625,
+            -0.7
+          ]
+        },
+        {
+          "id": "fs-waist-side",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            22.625,
+            -0.7
+          ],
+          "p3": [
+            9.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-dart-cap",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.5,
+            -0.15
+          ],
+          "p3": [
+            7.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-waist-mid",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.5,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "fs-waist-square",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "eb6f1ee908e1b36fff723bb672f1d2c704aad98ed96b26def451864c0e984b15"
+    },
+    {
+      "contourId": "SK-F-FITTED-XL",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-01-F",
+      "pieceName": "Front Skirt Panel",
+      "size": "XL",
+      "variant": "ease=fitted",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "fs-cf-fold",
+          "type": "line",
+          "seamId": "fs-center-front",
+          "seamAllowanceCm": 0,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-square",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "fs-hem-curve",
+          "type": "line",
+          "seamId": "fs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            29.75,
+            68
+          ]
+        },
+        {
+          "id": "fs-side-lower",
+          "type": "line",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            29.75,
+            68
+          ],
+          "p3": [
+            29.75,
+            21.5
+          ]
+        },
+        {
+          "id": "fs-side-hip",
+          "type": "bezier",
+          "seamId": "fs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            29.75,
+            21.5
+          ],
+          "cp1": [
+            30.05,
+            17.5
+          ],
+          "cp2": [
+            27.88,
+            5.96
+          ],
+          "p3": [
+            26.625,
+            -0.7
+          ]
+        },
+        {
+          "id": "fs-waist-side",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            26.625,
+            -0.7
+          ],
+          "p3": [
+            9.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-dart-cap",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.5,
+            -0.15
+          ],
+          "p3": [
+            7.5,
+            -0.15
+          ]
+        },
+        {
+          "id": "fs-waist-mid",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.5,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "fs-waist-square",
+          "type": "line",
+          "seamId": "fs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "c9273ac906d55479587f0f391e97ee5f0b3cb154704a05ceb21566923655b29e"
+    },
+    {
+      "contourId": "SK-B-CLASSIC-XS",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-02-B",
+      "pieceName": "Back Skirt Panel",
+      "size": "XS",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "bs-cb-seam",
+          "type": "line",
+          "seamId": "bs-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-square",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-curve",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            23.25,
+            68
+          ]
+        },
+        {
+          "id": "bs-side-lower",
+          "type": "line",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.25,
+            68
+          ],
+          "p3": [
+            23.25,
+            19.5
+          ]
+        },
+        {
+          "id": "bs-side-hip",
+          "type": "bezier",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            23.25,
+            19.5
+          ],
+          "cp1": [
+            23.55,
+            15.5
+          ],
+          "cp2": [
+            21.38,
+            5.36
+          ],
+          "p3": [
+            20.125,
+            -0.7
+          ]
+        },
+        {
+          "id": "bs-waist-side",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            20.125,
+            -0.7
+          ],
+          "p3": [
+            9.15,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-dart-cap",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.15,
+            -0.15
+          ],
+          "p3": [
+            6.15,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-waist-mid",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.15,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "bs-waist-square",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "e439f825168f22bc4bff258ab31d022636bf95780d8a2184375ad52d429dbd44"
+    },
+    {
+      "contourId": "SK-B-CLASSIC-S",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-02-B",
+      "pieceName": "Back Skirt Panel",
+      "size": "S",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "bs-cb-seam",
+          "type": "line",
+          "seamId": "bs-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-square",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-curve",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            24.25,
+            68
+          ]
+        },
+        {
+          "id": "bs-side-lower",
+          "type": "line",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            24.25,
+            68
+          ],
+          "p3": [
+            24.25,
+            20
+          ]
+        },
+        {
+          "id": "bs-side-hip",
+          "type": "bezier",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            24.25,
+            20
+          ],
+          "cp1": [
+            24.55,
+            16
+          ],
+          "cp2": [
+            22.38,
+            5.51
+          ],
+          "p3": [
+            21.125,
+            -0.7
+          ]
+        },
+        {
+          "id": "bs-waist-side",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            21.125,
+            -0.7
+          ],
+          "p3": [
+            9.6,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-dart-cap",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.6,
+            -0.15
+          ],
+          "p3": [
+            6.6,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-waist-mid",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            6.6,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "bs-waist-square",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "a25927e6670c1dad9b1007564f49f6e9734175899ae0fa14f9171f18c0fb1dc4"
+    },
+    {
+      "contourId": "SK-B-CLASSIC-M",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-02-B",
+      "pieceName": "Back Skirt Panel",
+      "size": "M",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "bs-cb-seam",
+          "type": "line",
+          "seamId": "bs-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-square",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-curve",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            25.75,
+            68
+          ]
+        },
+        {
+          "id": "bs-side-lower",
+          "type": "line",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.75,
+            68
+          ],
+          "p3": [
+            25.75,
+            20.5
+          ]
+        },
+        {
+          "id": "bs-side-hip",
+          "type": "bezier",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            25.75,
+            20.5
+          ],
+          "cp1": [
+            26.05,
+            16.5
+          ],
+          "cp2": [
+            23.88,
+            5.66
+          ],
+          "p3": [
+            22.625,
+            -0.7
+          ]
+        },
+        {
+          "id": "bs-waist-side",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            22.625,
+            -0.7
+          ],
+          "p3": [
+            10.275,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-dart-cap",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            10.275,
+            -0.15
+          ],
+          "p3": [
+            7.275,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-waist-mid",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            7.275,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "bs-waist-square",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "13231bf8ae6e65d78b54806122625a323ff989f9058bc4a3344f343814403ab6"
+    },
+    {
+      "contourId": "SK-B-CLASSIC-L",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-02-B",
+      "pieceName": "Back Skirt Panel",
+      "size": "L",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "bs-cb-seam",
+          "type": "line",
+          "seamId": "bs-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-square",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-curve",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            27.75,
+            68
+          ]
+        },
+        {
+          "id": "bs-side-lower",
+          "type": "line",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.75,
+            68
+          ],
+          "p3": [
+            27.75,
+            21
+          ]
+        },
+        {
+          "id": "bs-side-hip",
+          "type": "bezier",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            27.75,
+            21
+          ],
+          "cp1": [
+            28.05,
+            17
+          ],
+          "cp2": [
+            25.88,
+            5.81
+          ],
+          "p3": [
+            24.625,
+            -0.7
+          ]
+        },
+        {
+          "id": "bs-waist-side",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            24.625,
+            -0.7
+          ],
+          "p3": [
+            11.175,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-dart-cap",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            11.175,
+            -0.15
+          ],
+          "p3": [
+            8.175,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-waist-mid",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            8.175,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "bs-waist-square",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "898167243f90b606d1c6751b3ad96acf23359d9fb7f148bfb41d04b24805b2ae"
+    },
+    {
+      "contourId": "SK-B-CLASSIC-XL",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-02-B",
+      "pieceName": "Back Skirt Panel",
+      "size": "XL",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "bs-cb-seam",
+          "type": "line",
+          "seamId": "bs-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-square",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-curve",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            29.75,
+            68
+          ]
+        },
+        {
+          "id": "bs-side-lower",
+          "type": "line",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            29.75,
+            68
+          ],
+          "p3": [
+            29.75,
+            21.5
+          ]
+        },
+        {
+          "id": "bs-side-hip",
+          "type": "bezier",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            29.75,
+            21.5
+          ],
+          "cp1": [
+            30.05,
+            17.5
+          ],
+          "cp2": [
+            27.88,
+            5.96
+          ],
+          "p3": [
+            26.625,
+            -0.7
+          ]
+        },
+        {
+          "id": "bs-waist-side",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            26.625,
+            -0.7
+          ],
+          "p3": [
+            12.075000000000001,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-dart-cap",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            12.075000000000001,
+            -0.15
+          ],
+          "p3": [
+            9.075000000000001,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-waist-mid",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            9.075000000000001,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "bs-waist-square",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "227c9eac9acdbee0386db9de61568e5826498a94b045fcd68215567e563181ef"
+    },
+    {
+      "contourId": "SK-B-CLASSIC-XXL",
+      "sourceModule": "src/engine/drafting/skirt-block.ts",
+      "garmentCategory": "skirt",
+      "pieceCode": "SK-02-B",
+      "pieceName": "Back Skirt Panel",
+      "size": "XXL",
+      "variant": "ease=classic",
+      "segmentCount": 9,
+      "cubicBezierCount": 1,
+      "lineSegmentCount": 8,
+      "segments": [
+        {
+          "id": "bs-cb-seam",
+          "type": "line",
+          "seamId": "bs-center-back",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            0,
+            0
+          ],
+          "p3": [
+            0,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-square",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            0,
+            68
+          ],
+          "p3": [
+            4,
+            68
+          ]
+        },
+        {
+          "id": "bs-hem-curve",
+          "type": "line",
+          "seamId": "bs-hem",
+          "seamAllowanceCm": 3,
+          "p0": [
+            4,
+            68
+          ],
+          "p3": [
+            32.25,
+            68
+          ]
+        },
+        {
+          "id": "bs-side-lower",
+          "type": "line",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            32.25,
+            68
+          ],
+          "p3": [
+            32.25,
+            22
+          ]
+        },
+        {
+          "id": "bs-side-hip",
+          "type": "bezier",
+          "seamId": "bs-side-seam",
+          "seamAllowanceCm": 1.5,
+          "p0": [
+            32.25,
+            22
+          ],
+          "cp1": [
+            32.55,
+            18
+          ],
+          "cp2": [
+            30.38,
+            6.11
+          ],
+          "p3": [
+            29.125,
+            -0.7
+          ]
+        },
+        {
+          "id": "bs-waist-side",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            29.125,
+            -0.7
+          ],
+          "p3": [
+            13.200000000000001,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-dart-cap",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            13.200000000000001,
+            -0.15
+          ],
+          "p3": [
+            10.200000000000001,
+            -0.15
+          ]
+        },
+        {
+          "id": "bs-waist-mid",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            10.200000000000001,
+            -0.15
+          ],
+          "p3": [
+            3.5,
+            0
+          ]
+        },
+        {
+          "id": "bs-waist-square",
+          "type": "line",
+          "seamId": "bs-waist",
+          "seamAllowanceCm": 1,
+          "p0": [
+            3.5,
+            0
+          ],
+          "p3": [
+            0,
+            0
+          ]
+        }
+      ],
+      "contourInputSha256": "3664ffac1f23dbcb83e70a3b81eb4dc94b8873a1ec28efa8f770d9a4c1d6678e"
+    }
+  ],
+  "corpusSha256": "ab2d48c89b7bfb69cf4b5ffd289e5e720b48149b8c16371d6db285c8d6f75d2f"
+}

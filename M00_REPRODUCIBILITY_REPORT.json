@@ -1,85 +1,101 @@
 {
   "deliverable": "M00_REPRODUCIBILITY_REPORT.json",
-  "checkpoint": "16",
-  "packageId": "PKG-M00-03",
+  "checkpoint": "PKG-M00-04",
+  "packageId": "PKG-M00-04",
+  "replayMethod": "TWO_ISOLATED_OS_SUBPROCESSES",
+  "distinctSubprocessesExecuted": true,
   "pythonHashSeed": "0",
-  "sourceInputsDigest": "4b99969f54f2ccfd4d2fd6af4e47166ef2c8d74803fb5f0dc71f71676c89b40b",
+  "sourceInputsDigest": "1fe1b14929ef744afe56bc6235ef4d12b83c421b005ff6df515ff2aae89af2ff",
   "consecutiveRunsCompared": 2,
-  "deterministicArtifactsVerifiedCount": 10,
+  "deterministicArtifactsVerifiedCount": 11,
   "allMathematicalArtifactsBitExactAcrossRuns": true,
   "artifactRunComparisons": [
     {
-      "artifact": "SchemasLockReport.json",
-      "run1Sha256": "20c7b961d983d8b9c162384f1662a2c20cad9b4969f98919e6240a06ecdfcee6",
-      "run2Sha256": "20c7b961d983d8b9c162384f1662a2c20cad9b4969f98919e6240a06ecdfcee6",
-      "identicalAcrossRuns": true
-    },
-    {
-      "artifact": "IntervalLibraryQualificationReport.json",
-      "run1Sha256": "8e662f714a050da890c3e1d1fa4151bc7eeafdf7935754da08f041210e4bedb6",
-      "run2Sha256": "8e662f714a050da890c3e1d1fa4151bc7eeafdf7935754da08f041210e4bedb6",
-      "identicalAcrossRuns": true
-    },
-    {
       "artifact": "AdversarialGeometryVerificationReport.json",
-      "run1Sha256": "5bf5252f35b06e1134221fb12dbf345dbbc5495e34f7a1d88c738af3b7b26a0a",
-      "run2Sha256": "5bf5252f35b06e1134221fb12dbf345dbbc5495e34f7a1d88c738af3b7b26a0a",
-      "identicalAcrossRuns": true
-    },
-    {
-      "artifact": "ArcLengthVerificationReport.json",
-      "run1Sha256": "000ee51981cd07b8f32d19e7b6fa178edba8b23be190feac041525ed8963d106",
-      "run2Sha256": "000ee51981cd07b8f32d19e7b6fa178edba8b23be190feac041525ed8963d106",
-      "identicalAcrossRuns": true
-    },
-    {
-      "artifact": "TopologyVerificationReport.json",
-      "run1Sha256": "9781fb97a2857e9e7c251cfc08abf809d1e045151044d4a7fe58fad2000f0458",
-      "run2Sha256": "9781fb97a2857e9e7c251cfc08abf809d1e045151044d4a7fe58fad2000f0458",
-      "identicalAcrossRuns": true
-    },
-    {
-      "artifact": "DxfRoundTripVerificationReport.json",
-      "run1Sha256": "2096a79d5be4b5524b2f655a175823ee049562dd352f965f72e1d6f52a5075dc",
-      "run2Sha256": "2096a79d5be4b5524b2f655a175823ee049562dd352f965f72e1d6f52a5075dc",
+      "run1Sha256": "fe1061e160216ac334995fb8f892988079f16394b47570ff70d88c6836598630",
+      "run2Sha256": "fe1061e160216ac334995fb8f892988079f16394b47570ff70d88c6836598630",
+      "bytes": 69289,
       "identicalAcrossRuns": true
     },
     {
       "artifact": "AnthropometricVerificationReport.json",
-      "run1Sha256": "567153dccb58c9e3eb81379d8883679e87df5fdd75eab71be9b64714a8f00a15",
-      "run2Sha256": "567153dccb58c9e3eb81379d8883679e87df5fdd75eab71be9b64714a8f00a15",
+      "run1Sha256": "3b7dbdb10cb15c8aabb3032d1545b31fc0fd1a48671c2ee6092d791432bacba3",
+      "run2Sha256": "3b7dbdb10cb15c8aabb3032d1545b31fc0fd1a48671c2ee6092d791432bacba3",
+      "bytes": 10238,
       "identicalAcrossRuns": true
     },
     {
-      "artifact": "ProductionDxfRoundTripReport.json",
-      "run1Sha256": "7f2bd103da74f2e157fd50906bd7d048cd9477f89b04d4f99c4021173ba36ad0",
-      "run2Sha256": "7f2bd103da74f2e157fd50906bd7d048cd9477f89b04d4f99c4021173ba36ad0",
-      "identicalAcrossRuns": true
-    },
-    {
-      "artifact": "ProductionSeamParityReport.json",
-      "run1Sha256": "da6cb91bc3a31fb0f97be8c5499768c4a3aa9534165178005cfadf1e6943e35f",
-      "run2Sha256": "da6cb91bc3a31fb0f97be8c5499768c4a3aa9534165178005cfadf1e6943e35f",
+      "artifact": "ArcLengthVerificationReport.json",
+      "run1Sha256": "8eaf086be97f73bf62def931248f4eee0ff349cfe2ef59fb62f80891ef6117ee",
+      "run2Sha256": "8eaf086be97f73bf62def931248f4eee0ff349cfe2ef59fb62f80891ef6117ee",
+      "bytes": 16167,
       "identicalAcrossRuns": true
     },
     {
       "artifact": "BaselineDivergenceRegistry.json",
       "run1Sha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d",
       "run2Sha256": "7028b951d41cbc5f0c75ec13769118e4132d5278be19027fa7abc42d6da7d29d",
+      "bytes": 4987,
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "CanonicalGarmentContours63.json",
+      "run1Sha256": "c349969702d4b8a3072e2b821e35742a47982489abab06ae33ef83e26ff5ef04",
+      "run2Sha256": "c349969702d4b8a3072e2b821e35742a47982489abab06ae33ef83e26ff5ef04",
+      "bytes": 185574,
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "DxfRoundTripVerificationReport.json",
+      "run1Sha256": "b029f820e1b6f8ba5b024a8a6144672c4e539e123440c6acd24f78196a37eea9",
+      "run2Sha256": "b029f820e1b6f8ba5b024a8a6144672c4e539e123440c6acd24f78196a37eea9",
+      "bytes": 2050,
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "IntervalLibraryQualificationReport.json",
+      "run1Sha256": "5053224233f61dc776f896c457e9e92d09c024875d44543ab925aa21e240972c",
+      "run2Sha256": "5053224233f61dc776f896c457e9e92d09c024875d44543ab925aa21e240972c",
+      "bytes": 27578,
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "ProductionDxfRoundTripReport.json",
+      "run1Sha256": "c3a4513faab7c569cfc2f6677a638af7fcd8b5be9c483e3127559c099e15a8ce",
+      "run2Sha256": "c3a4513faab7c569cfc2f6677a638af7fcd8b5be9c483e3127559c099e15a8ce",
+      "bytes": 5514,
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "ProductionSeamParityReport.json",
+      "run1Sha256": "f4c4289667aeeb3fe2d59dcf2f14ce2bee1a10d3da45cd119fa6659bc79d70c4",
+      "run2Sha256": "f4c4289667aeeb3fe2d59dcf2f14ce2bee1a10d3da45cd119fa6659bc79d70c4",
+      "bytes": 15494,
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "SchemasLockReport.json",
+      "run1Sha256": "d259098d73e10f16e7d74e51f3907148a2befc9292446dc0b4506ff0d1b644c2",
+      "run2Sha256": "d259098d73e10f16e7d74e51f3907148a2befc9292446dc0b4506ff0d1b644c2",
+      "bytes": 11151,
+      "identicalAcrossRuns": true
+    },
+    {
+      "artifact": "TopologyVerificationReport.json",
+      "run1Sha256": "9781fb97a2857e9e7c251cfc08abf809d1e045151044d4a7fe58fad2000f0458",
+      "run2Sha256": "9781fb97a2857e9e7c251cfc08abf809d1e045151044d4a7fe58fad2000f0458",
+      "bytes": 1033,
       "identicalAcrossRuns": true
     }
   ],
   "runtimeBenchmarksArtifact": "artifacts/m00/IntervalCandidateBenchmarks.json",
   "runtimeObservationArtifact": "artifacts/m00/RuntimeBenchmarkObservation.json",
   "latencyQualificationPolicy": {
-    "wallClockTimestampsAndTimingValuesExcludedFromCanonicalJson": true,
+    "wallClockTimestampsTimingValuesAndTimingBooleansExcludedFromDeterministicManifests": true,
     "p95ThresholdMs": 5.0,
-    "allThreeCandidatesVerifiedUnder5MsP95": true,
-    "candidateP95StatusOnly": {
-      "mpmathIvFraction": true,
-      "pythonFlintArbFmpq": true,
-      "decimalIntervalFraction": true
-    },
+    "authoritativeLatencyObservationPath": "artifacts/m00/RuntimeBenchmarkObservation.json",
+    "canonical63ContourCorpusPath": "artifacts/m00/CanonicalGarmentContours63.json",
+    "canonical63ContourCorpusSha256": "c349969702d4b8a3072e2b821e35742a47982489abab06ae33ef83e26ff5ef04",
     "deterministicOperationCountsPerBenchmarkIteration": {
       "kernelName": "degree_12_horner_interval_evaluation",
       "identicalKernelAcrossAllThreeCandidates": true,

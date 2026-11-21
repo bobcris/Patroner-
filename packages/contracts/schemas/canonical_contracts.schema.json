@@ -76,13 +76,14 @@
     },
     "StationaryParameterizationStatus": {
       "type": "string",
-      "description": "ADR-009 §5.3 stationary_parameterization_status enum for OffsetValidationRecord.",
+      "description": "ADR-009 §5.3 & §4.2 stationary_parameterization_status enum for OffsetValidationRecord (includes UNRESOLVED alongside §4.2 5-way states).",
       "enum": [
         "NONE_REGULAR_SPEED",
         "REMOVABLE_PARAMETERIZATION_DEGENERACY",
         "GENUINE_BASE_GEOMETRIC_SINGULARITY",
         "ENDPOINT_TANGENTIAL_DEGENERACY",
-        "COLLAPSED_ZERO_LENGTH_CURVE"
+        "COLLAPSED_ZERO_LENGTH_CURVE",
+        "UNRESOLVED"
       ]
     },
     "OffsetFailureCategory": {
@@ -180,6 +181,107 @@
         "residualDistanceCm": { "type": "number", "minimum": 0.0, "maximum": 1e-6 }
       }
     },
+    "ParameterEnclosureRecord": {
+      "type": "object",
+      "required": ["t_lower", "t_upper", "t_mid", "r_param"],
+      "additionalProperties": false,
+      "properties": {
+        "t_lower": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "t_upper": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "t_mid": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "r_param": { "type": "number", "minimum": 0.0 },
+        "residual_interval_lower": { "type": ["number", "null"] },
+        "residual_interval_upper": { "type": ["number", "null"] }
+      }
+    },
+    "OutputPropagationRecord": {
+      "type": "object",
+      "required": [
+        "propagation_method",
+        "point_evaluation_rounding_bound_delta_eval",
+        "output_enclosure_radius_b_ref_x"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "propagation_method": {
+          "type": "string",
+          "enum": [
+            "NONE_DIRECT_ENCLOSURE",
+            "METHOD_B1_VALIDATED_DERIVATIVE",
+            "METHOD_B2_DIRECT_INTERVAL_IMAGE"
+          ]
+        },
+        "derivative_upper_bound_m": { "type": ["number", "null"], "minimum": 0.0 },
+        "point_evaluation_rounding_bound_delta_eval": { "type": "number", "minimum": 0.0 },
+        "output_enclosure_radius_b_ref_x": { "type": "number", "minimum": 0.0 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "propagation_method": { "const": "METHOD_B1_VALIDATED_DERIVATIVE" } },
+            "required": ["propagation_method"]
+          },
+          "then": {
+            "required": ["derivative_upper_bound_m"],
+            "properties": { "derivative_upper_bound_m": { "type": "number", "minimum": 0.0 } }
+          }
+        }
+      ]
+    },
+    "NumericalErrorComponents": {
+      "type": "object",
+      "required": [
+        "x_float64",
+        "x_ref",
+        "observed_discrepancy_e_obs",
+        "reference_enclosure_b_ref",
+        "implementation_to_exact_bound_b_cert",
+        "output_propagation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "x_float64": { "type": "number" },
+        "x_ref": { "type": "number" },
+        "observed_discrepancy_e_obs": { "type": "number", "minimum": 0.0 },
+        "reference_enclosure_b_ref": { "type": "number", "minimum": 0.0 },
+        "implementation_to_exact_bound_b_cert": { "type": "number", "minimum": 0.0 },
+        "heuristic_error_estimate": { "type": ["number", "null"], "minimum": 0.0 },
+        "parameter_enclosure": {
+          "anyOf": [{ "$ref": "#/$defs/ParameterEnclosureRecord" }, { "type": "null" }]
+        },
+        "output_propagation": { "$ref": "#/$defs/OutputPropagationRecord" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "parameter_enclosure": { "type": "object" } },
+            "required": ["parameter_enclosure"]
+          },
+          "then": {
+            "properties": {
+              "output_propagation": {
+                "properties": {
+                  "propagation_method": {
+                    "enum": ["METHOD_B1_VALIDATED_DERIVATIVE", "METHOD_B2_DIRECT_INTERVAL_IMAGE"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "NumericalReproducibilityManifest": {
+      "type": "object",
+      "required": ["python_version", "mpmath_version", "subdivision_depth_k", "input_fixture_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "python_version": { "type": "string", "minLength": 1 },
+        "mpmath_version": { "type": "string", "minLength": 1 },
+        "subdivision_depth_k": { "type": "integer", "minimum": 0 },
+        "input_fixture_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
     "NumericalVerificationRecord": {
       "type": "object",
       "description": "ADR-009 §2.5 Mandatory Numerical Verification Record separating parameter uncertainty delta_t from geometric error.",
@@ -194,7 +296,16 @@
         "propagation_method",
         "working_precision_bits",
         "adaptive_subdivision_panels",
-        "certified_within_tolerance"
+        "certified_within_tolerance",
+        "quantity_name",
+        "reference_method_and_version",
+        "precision_and_arithmetic_model",
+        "enclosure_or_remainder_method",
+        "assurance_classification",
+        "error_components",
+        "acceptance_tolerance_tau",
+        "verification_outcome",
+        "reproducibility_manifest"
       ],
       "additionalProperties": false,
       "properties": {
@@ -232,8 +343,47 @@
         },
         "working_precision_bits": { "type": "integer", "minimum": 53, "maximum": 336 },
         "adaptive_subdivision_panels": { "type": "integer", "minimum": 1 },
-        "certified_within_tolerance": { "type": "boolean" }
-      }
+        "certified_within_tolerance": { "type": "boolean" },
+        "quantity_name": { "type": "string", "minLength": 1 },
+        "reference_method_and_version": { "type": "string", "minLength": 1 },
+        "precision_and_arithmetic_model": { "type": "string", "minLength": 1 },
+        "enclosure_or_remainder_method": { "type": "string", "minLength": 1 },
+        "assurance_classification": {
+          "type": "string",
+          "enum": [
+            "CERTIFIED_ENCLOSURE",
+            "HIGH_PRECISION_NUMERICAL_REFERENCE",
+            "CONSERVATIVE_ENGINEERING_ESTIMATE"
+          ]
+        },
+        "error_components": { "$ref": "#/$defs/NumericalErrorComponents" },
+        "acceptance_tolerance_tau": { "type": "number", "exclusiveMinimum": 0.0 },
+        "verification_outcome": {
+          "type": "string",
+          "enum": ["CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"]
+        },
+        "reproducibility_manifest": { "$ref": "#/$defs/NumericalReproducibilityManifest" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "verification_outcome": { "const": "CERTIFIED_VALID" } },
+            "required": ["verification_outcome"]
+          },
+          "then": {
+            "properties": { "certified_within_tolerance": { "const": true } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "verification_outcome": { "enum": ["CERTIFIED_INVALID", "INCONCLUSIVE"] } },
+            "required": ["verification_outcome"]
+          },
+          "then": {
+            "properties": { "certified_within_tolerance": { "const": false } }
+          }
+        }
+      ]
     },
     "OffsetValidationRecord": {
       "type": "object",
@@ -242,6 +392,7 @@
         "segment_id",
         "piece_id",
         "contour_orientation",
+        "coordinate_convention",
         "offset_direction_sign_s",
         "offset_distance_cm",
         "regularity_margin_epsilon",
@@ -254,8 +405,16 @@
         "isolated_cusp_roots_t",
         "isolated_self_intersections",
         "max_geometric_deviation_bound_cm",
+        "max_certified_radial_error_cm",
+        "max_subdivision_depth_reached",
+        "primary_span_coverage_ratio",
+        "local_self_intersection_status",
+        "global_contour_self_intersection_status",
+        "unresolved_intervals",
+        "escalation_trace",
         "verification_outcome",
         "failure_category",
+        "detected_failure_categories",
         "canonical_offset_classification",
         "active_classifications_on_domain",
         "working_precision_bits",
@@ -266,12 +425,13 @@
         "segment_id": { "type": "string", "minLength": 1 },
         "piece_id": { "type": "string", "minLength": 1 },
         "contour_orientation": { "type": "string", "enum": ["CCW_EXTERIOR", "CW_CUTOUT"] },
+        "coordinate_convention": { "const": "CARTESIAN_RH_CCW" },
         "offset_direction_sign_s": { "type": "integer", "enum": [-1, 1] },
         "offset_distance_cm": { "type": "number", "minimum": 0.0 },
-        "regularity_margin_epsilon": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 0.5 },
+        "regularity_margin_epsilon": { "type": "number", "minimum": 0.05, "maximum": 0.5 },
         "min_base_speed_squared_interval": {
           "type": "array",
-          "prefixItems": [{ "type": "number" }, { "type": "number" }],
+          "prefixItems": [{ "type": "number", "minimum": 0.0 }, { "type": "number", "minimum": 0.0 }],
           "minItems": 2,
           "maxItems": 2
         },
@@ -299,11 +459,39 @@
           "items": { "$ref": "#/$defs/SelfIntersectionCertificate" }
         },
         "max_geometric_deviation_bound_cm": { "type": "number", "minimum": 0.0 },
+        "max_certified_radial_error_cm": { "type": ["number", "null"], "minimum": 0.0 },
+        "max_subdivision_depth_reached": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "primary_span_coverage_ratio": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "local_self_intersection_status": {
+          "type": "string",
+          "enum": ["NONE", "DETECTED", "UNRESOLVED", "NOT_EVALUATED"]
+        },
+        "global_contour_self_intersection_status": {
+          "type": "string",
+          "enum": ["NONE", "DETECTED", "UNRESOLVED", "NOT_EVALUATED"]
+        },
+        "unresolved_intervals": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [{ "type": "number" }, { "type": "number" }],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "escalation_trace": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "verification_outcome": {
           "type": "string",
           "enum": ["CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"]
         },
         "failure_category": { "$ref": "#/$defs/OffsetFailureCategory" },
+        "detected_failure_categories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OffsetFailureCategory" }
+        },
         "canonical_offset_classification": { "$ref": "#/$defs/CanonicalOffsetClassification" },
         "active_classifications_on_domain": {
           "type": "array",
@@ -312,7 +500,89 @@
         },
         "working_precision_bits": { "type": "integer", "minimum": 53, "maximum": 336 },
         "is_production_ready": { "type": "boolean" }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "verification_outcome": { "const": "CERTIFIED_VALID" } },
+            "required": ["verification_outcome"]
+          },
+          "then": {
+            "properties": {
+              "failure_category": { "const": "NONE" },
+              "canonical_offset_classification": { "const": "CERTIFIED_VALID" },
+              "active_classifications_on_domain": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": { "const": "CERTIFIED_VALID" }
+              },
+              "detected_failure_categories": {
+                "type": "array",
+                "items": { "const": "NONE" }
+              },
+              "unresolved_intervals": { "maxItems": 0 },
+              "has_zero_speed_cusp_on_domain": { "const": false },
+              "has_tangent_reversal_on_domain": { "const": false },
+              "min_offset_speed_factor_interval": {
+                "type": "array",
+                "prefixItems": [
+                  { "type": "number", "minimum": 0.05 },
+                  { "type": "number", "minimum": 0.05 }
+                ]
+              },
+              "local_self_intersection_status": { "enum": ["NONE", "NOT_EVALUATED"] },
+              "global_contour_self_intersection_status": { "enum": ["NONE", "NOT_EVALUATED"] }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verification_outcome": { "const": "CERTIFIED_VALID" },
+              "regularity_margin_epsilon": { "minimum": 0.1 }
+            },
+            "required": ["verification_outcome", "regularity_margin_epsilon"]
+          },
+          "then": {
+            "properties": {
+              "min_offset_speed_factor_interval": {
+                "prefixItems": [{ "minimum": 0.1 }, { "minimum": 0.1 }]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "verification_outcome": { "const": "CERTIFIED_INVALID" } },
+            "required": ["verification_outcome"]
+          },
+          "then": {
+            "properties": {
+              "failure_category": {
+                "not": { "enum": ["NONE", "INCONCLUSIVE_VERIFICATION"] }
+              },
+              "canonical_offset_classification": {
+                "not": { "enum": ["CERTIFIED_VALID", "INCONCLUSIVE"] }
+              },
+              "is_production_ready": { "const": false }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "verification_outcome": { "const": "INCONCLUSIVE" } },
+            "required": ["verification_outcome"]
+          },
+          "then": {
+            "properties": {
+              "failure_category": { "const": "INCONCLUSIVE_VERIFICATION" },
+              "canonical_offset_classification": { "const": "INCONCLUSIVE" },
+              "is_production_ready": { "const": false }
+            }
+          }
+        }
+      ]
     },
     "OffsetClassificationReport": {
       "type": "object",
@@ -373,7 +643,50 @@
           "enum": ["C1-Fast", "C1-Cert-53bit", "C1-Cert-113bit-Q", "C1-Cert-170bit-Q", "C1-Cert-336bit-Q"]
         },
         "isProductionReady": { "type": "boolean" }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "verificationOutcome": { "const": "CERTIFIED_VALID" } },
+            "required": ["verificationOutcome"]
+          },
+          "then": {
+            "properties": {
+              "failureCategory": { "const": "NONE" },
+              "canonicalOffsetClassification": { "const": "CERTIFIED_VALID" },
+              "hasZeroSpeedCuspOnDomain": { "const": false },
+              "hasTangentReversalOnDomain": { "const": false },
+              "minOffsetSpeedFactorF": { "minimum": 0.05 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "verificationOutcome": { "const": "CERTIFIED_INVALID" } },
+            "required": ["verificationOutcome"]
+          },
+          "then": {
+            "properties": {
+              "failureCategory": { "not": { "enum": ["NONE", "INCONCLUSIVE_VERIFICATION"] } },
+              "canonicalOffsetClassification": { "not": { "enum": ["CERTIFIED_VALID", "INCONCLUSIVE"] } },
+              "isProductionReady": { "const": false }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "verificationOutcome": { "const": "INCONCLUSIVE" } },
+            "required": ["verificationOutcome"]
+          },
+          "then": {
+            "properties": {
+              "failureCategory": { "const": "INCONCLUSIVE_VERIFICATION" },
+              "canonicalOffsetClassification": { "const": "INCONCLUSIVE" },
+              "isProductionReady": { "const": false }
+            }
+          }
+        }
+      ]
     },
     "GeometryWarning": {
       "type": "object",

@@ -35,6 +35,8 @@
         "profileId": "STD-XS",
         "seamPair": "Bodice Front Side <-> Bodice Back Side",
         "distinctControlPoints": true,
+        "chordAngleDiffDeg": 1e-06,
+        "distinctSlopeVectors": false,
         "edgeACm": 20.617353,
         "edgeBCm": 20.616208,
         "edgeAC1CertIntervalCm": [
@@ -67,18 +69,20 @@
         "profileId": "STD-XS",
         "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
         "distinctControlPoints": true,
+        "chordAngleDiffDeg": 4.157982,
+        "distinctSlopeVectors": true,
         "edgeACm": 11.8,
         "edgeBCm": 11.8,
         "edgeAC1CertIntervalCm": [
-          11.799999999999997,
-          11.799999999999999
+          11.799999999999999,
+          11.8
         ],
         "edgeBC1CertIntervalCm": [
           11.8,
           11.800000000000002
         ],
-        "worstCaseC1CertDeltaCm": 2.8531695488854617e-15,
-        "exactRationalWorstCaseDeltaCm": 2.8531695488854617e-15,
+        "worstCaseC1CertDeltaCm": 1.909829618968813e-15,
+        "exactRationalWorstCaseDeltaCm": 1.909829618968813e-15,
         "quadratureConverged": true,
         "quadraturePanelsUsed": 6,
         "targetEaseCm": 0.0,
@@ -99,6 +103,8 @@
         "profileId": "STD-XS",
         "seamPair": "Skirt Front Side Curve <-> Skirt Back Side Curve",
         "distinctControlPoints": true,
+        "chordAngleDiffDeg": 0.0,
+        "distinctSlopeVectors": false,
         "edgeACm": 66.138594,
         "edgeBCm": 66.13643,
         "edgeAC1CertIntervalCm": [
@@ -131,6 +137,8 @@
         "profileId": "STD-M",
         "seamPair": "Bodice Front Side <-> Bodice Back Side",
         "distinctControlPoints": true,
+        "chordAngleDiffDeg": 0.0,
+        "distinctSlopeVectors": false,
         "edgeACm": 21.102736,
         "edgeBCm": 21.101614,
         "edgeAC1CertIntervalCm": [
@@ -163,18 +171,20 @@
         "profileId": "STD-M",
         "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
         "distinctControlPoints": true,
+        "chordAngleDiffDeg": 3.791813,
+        "distinctSlopeVectors": true,
         "edgeACm": 12.8,
         "edgeBCm": 12.8,
         "edgeAC1CertIntervalCm": [
-          12.799999999999999,
-          12.8
+          12.8,
+          12.800000000000002
         ],
         "edgeBC1CertIntervalCm": [
           12.8,
           12.800000000000002
         ],
-        "worstCaseC1CertDeltaCm": 2.8531695488854617e-15,
-        "exactRationalWorstCaseDeltaCm": 2.8531695488854613e-15,
+        "worstCaseC1CertDeltaCm": 1.4019250711584483e-15,
+        "exactRationalWorstCaseDeltaCm": 1.4019250711584483e-15,
         "quadratureConverged": true,
         "quadraturePanelsUsed": 6,
         "targetEaseCm": 0.0,
@@ -195,6 +205,8 @@
         "profileId": "STD-M",
         "seamPair": "Skirt Front Side Curve <-> Skirt Back Side Curve",
         "distinctControlPoints": true,
+        "chordAngleDiffDeg": 0.0,
+        "distinctSlopeVectors": false,
         "edgeACm": 66.117865,
         "edgeBCm": 66.115728,
         "edgeAC1CertIntervalCm": [
@@ -227,6 +239,8 @@
         "profileId": "PLUS-XXL",
         "seamPair": "Bodice Front Side <-> Bodice Back Side",
         "distinctControlPoints": true,
+        "chordAngleDiffDeg": 0.0,
+        "distinctSlopeVectors": false,
         "edgeACm": 20.132686,
         "edgeBCm": 20.131516,
         "edgeAC1CertIntervalCm": [
@@ -259,6 +273,8 @@
         "profileId": "PLUS-XXL",
         "seamPair": "Bodice Front Shoulder <-> Bodice Back Shoulder",
         "distinctControlPoints": true,
+        "chordAngleDiffDeg": 3.432797,
+        "distinctSlopeVectors": true,
         "edgeACm": 14.0,
         "edgeBCm": 14.0,
         "edgeAC1CertIntervalCm": [
@@ -266,11 +282,11 @@
           14.000000000000002
         ],
         "edgeBC1CertIntervalCm": [
-          14.0,
-          14.000000000000002
+          13.999999999999998,
+          14.0
         ],
-        "worstCaseC1CertDeltaCm": 1.1062541600560283e-30,
-        "exactRationalWorstCaseDeltaCm": 1.1062541600560283e-30,
+        "worstCaseC1CertDeltaCm": 2.326638780025544e-15,
+        "exactRationalWorstCaseDeltaCm": 2.326638780025544e-15,
         "quadratureConverged": true,
         "quadraturePanelsUsed": 6,
         "targetEaseCm": 0.0,
@@ -291,6 +307,8 @@
         "profileId": "PLUS-XXL",
         "seamPair": "Skirt Front Side Curve <-> Skirt Back Side Curve",
         "distinctControlPoints": true,
+        "chordAngleDiffDeg": 0.0,
+        "distinctSlopeVectors": false,
         "edgeACm": 66.05993,
         "edgeBCm": 66.057876,
         "edgeAC1CertIntervalCm": [

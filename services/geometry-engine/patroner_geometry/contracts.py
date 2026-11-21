@@ -56,13 +56,19 @@ class BaseCurveSingularityClassification(str, Enum):
 
 
 class StationaryParameterizationStatus(str, Enum):
-    """ADR-009 §5.3 stationary_parameterization_status enum for OffsetValidationRecord."""
+    """ADR-009 §5.3 & §4.2 stationary_parameterization_status enum for OffsetValidationRecord.
+
+    Includes ADR-009 §5.3 `UNRESOLVED` alongside the §4.2 5-way taxonomy states
+    (`ENDPOINT_TANGENTIAL_DEGENERACY`, `COLLAPSED_ZERO_LENGTH_CURVE`); documented in
+    `SchemasLockReport.json` contract reconciliation notes.
+    """
 
     NONE_REGULAR_SPEED = "NONE_REGULAR_SPEED"
     REMOVABLE_PARAMETERIZATION_DEGENERACY = "REMOVABLE_PARAMETERIZATION_DEGENERACY"
     GENUINE_BASE_GEOMETRIC_SINGULARITY = "GENUINE_BASE_GEOMETRIC_SINGULARITY"
     ENDPOINT_TANGENTIAL_DEGENERACY = "ENDPOINT_TANGENTIAL_DEGENERACY"
     COLLAPSED_ZERO_LENGTH_CURVE = "COLLAPSED_ZERO_LENGTH_CURVE"
+    UNRESOLVED = "UNRESOLVED"
 
 
 class OffsetFailureCategory(str, Enum):
@@ -161,6 +167,102 @@ class SelfIntersectionCertificate(BaseModel):
     residualDistanceCm: float = Field(..., ge=0.0, le=1e-6)
 
 
+class ParameterEnclosureRecord(BaseModel):
+    """ADR-009 §2.5 parameter_enclosure sub-record."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    t_lower: float = Field(..., ge=0.0, le=1.0)
+    t_upper: float = Field(..., ge=0.0, le=1.0)
+    t_mid: float = Field(..., ge=0.0, le=1.0)
+    r_param: float = Field(..., ge=0.0)
+    residual_interval_lower: Optional[float] = None
+    residual_interval_upper: Optional[float] = None
+
+    @model_validator(mode="after")
+    def validate_param_enclosure(self) -> "ParameterEnclosureRecord":
+        if not (self.t_lower <= self.t_mid <= self.t_upper):
+            raise ValueError("parameter_enclosure requires t_lower <= t_mid <= t_upper")
+        if self.r_param + 1e-18 < 0.5 * (self.t_upper - self.t_lower):
+            raise ValueError("parameter_enclosure r_param must bound half-width (t_upper - t_lower)/2")
+        if (
+            self.residual_interval_lower is not None
+            and self.residual_interval_upper is not None
+            and self.residual_interval_upper < self.residual_interval_lower
+        ):
+            raise ValueError("residual_interval_upper must be >= residual_interval_lower")
+        return self
+
+
+class OutputPropagationRecord(BaseModel):
+    """ADR-009 §2.5 output_propagation sub-record."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    propagation_method: Literal[
+        "NONE_DIRECT_ENCLOSURE",
+        "METHOD_B1_VALIDATED_DERIVATIVE",
+        "METHOD_B2_DIRECT_INTERVAL_IMAGE",
+    ]
+    derivative_upper_bound_m: Optional[float] = Field(None, ge=0.0)
+    point_evaluation_rounding_bound_delta_eval: float = Field(0.0, ge=0.0)
+    output_enclosure_radius_b_ref_x: float = Field(..., ge=0.0)
+
+
+class NumericalErrorComponents(BaseModel):
+    """ADR-009 §2.5 error_components separating E_obs, B_ref, and B_cert = E_obs + B_ref."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    x_float64: float
+    x_ref: float
+    observed_discrepancy_e_obs: float = Field(..., ge=0.0)
+    reference_enclosure_b_ref: float = Field(..., ge=0.0)
+    implementation_to_exact_bound_b_cert: float = Field(..., ge=0.0)
+    heuristic_error_estimate: Optional[float] = Field(None, ge=0.0)
+    parameter_enclosure: Optional[ParameterEnclosureRecord] = None
+    output_propagation: OutputPropagationRecord
+
+    @model_validator(mode="after")
+    def validate_error_components(self) -> "NumericalErrorComponents":
+        # Triangle inequality: B_cert >= E_obs + B_ref
+        if self.implementation_to_exact_bound_b_cert + 1e-15 < (
+            self.observed_discrepancy_e_obs + self.reference_enclosure_b_ref
+        ):
+            raise ValueError(
+                "ADR-009 §2.5 violation: implementation_to_exact_bound_b_cert must be >= E_obs + B_ref"
+            )
+        if self.parameter_enclosure is not None:
+            if self.output_propagation.propagation_method == "NONE_DIRECT_ENCLOSURE":
+                raise ValueError(
+                    "ADR-009 §2.5 violation: non-null parameter_enclosure requires METHOD_B1_VALIDATED_DERIVATIVE "
+                    "or METHOD_B2_DIRECT_INTERVAL_IMAGE"
+                )
+            if abs(self.reference_enclosure_b_ref - self.output_propagation.output_enclosure_radius_b_ref_x) > 1e-15:
+                raise ValueError(
+                    "ADR-009 §2.5 violation: reference_enclosure_b_ref must equal output_enclosure_radius_b_ref_x"
+                )
+            if self.output_propagation.propagation_method == "METHOD_B1_VALIDATED_DERIVATIVE":
+                if self.output_propagation.derivative_upper_bound_m is None:
+                    raise ValueError("METHOD_B1_VALIDATED_DERIVATIVE requires derivative_upper_bound_m")
+                min_b_ref_x = (
+                    self.output_propagation.derivative_upper_bound_m * self.parameter_enclosure.r_param
+                    + self.output_propagation.point_evaluation_rounding_bound_delta_eval
+                )
+                if self.output_propagation.output_enclosure_radius_b_ref_x + 1e-15 < min_b_ref_x:
+                    raise ValueError(
+                        "ADR-009 §2.5 Method B1 violation: output_enclosure_radius_b_ref_x must bound M * r_param + delta_eval"
+                    )
+        return self
+
+
+class NumericalReproducibilityManifest(BaseModel):
+    """ADR-009 §2.5 reproducibility_manifest sub-record."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    python_version: str = Field(..., min_length=1)
+    mpmath_version: str = Field(..., min_length=1)
+    subdivision_depth_k: int = Field(..., ge=0)
+    input_fixture_sha256: str = Field(..., pattern=r"^[a-f0-9]{64}$")
+
+
 class NumericalVerificationRecord(BaseModel):
     """ADR-009 §2.5 Mandatory Numerical Verification Record separating parameter uncertainty from geometric error."""
 
@@ -186,6 +288,20 @@ class NumericalVerificationRecord(BaseModel):
     working_precision_bits: int = Field(..., ge=53, le=336)
     adaptive_subdivision_panels: int = Field(..., ge=1)
     certified_within_tolerance: bool
+    # Full ADR-009 §2.5 canonical fields
+    quantity_name: str = Field(..., min_length=1)
+    reference_method_and_version: str = Field(..., min_length=1)
+    precision_and_arithmetic_model: str = Field(..., min_length=1)
+    enclosure_or_remainder_method: str = Field(..., min_length=1)
+    assurance_classification: Literal[
+        "CERTIFIED_ENCLOSURE",
+        "HIGH_PRECISION_NUMERICAL_REFERENCE",
+        "CONSERVATIVE_ENGINEERING_ESTIMATE",
+    ]
+    error_components: NumericalErrorComponents
+    acceptance_tolerance_tau: float = Field(..., gt=0.0)
+    verification_outcome: Literal["CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"]
+    reproducibility_manifest: NumericalReproducibilityManifest
 
     @model_validator(mode="after")
     def validate_propagation_consistency(self) -> "NumericalVerificationRecord":
@@ -198,6 +314,18 @@ class NumericalVerificationRecord(BaseModel):
                 raise ValueError(
                     "Method B1 violation: propagated_position_error_cm must bound local_speed_upper_bound * dt"
                 )
+        if self.verification_outcome == "CERTIFIED_VALID":
+            if not self.certified_within_tolerance:
+                raise ValueError("CERTIFIED_VALID NumericalVerificationRecord requires certified_within_tolerance=True")
+            if self.error_components.implementation_to_exact_bound_b_cert > self.acceptance_tolerance_tau + 1e-15:
+                raise ValueError(
+                    "ADR-009 §2.5 violation: CERTIFIED_VALID requires B_cert <= acceptance_tolerance_tau"
+                )
+        else:
+            if self.certified_within_tolerance:
+                raise ValueError(
+                    f"{self.verification_outcome} NumericalVerificationRecord cannot set certified_within_tolerance=True"
+                )
         return self
 
 
@@ -208,9 +336,10 @@ class OffsetValidationRecord(BaseModel):
     segment_id: str = Field(..., min_length=1)
     piece_id: str = Field(..., min_length=1)
     contour_orientation: Literal["CCW_EXTERIOR", "CW_CUTOUT"]
+    coordinate_convention: Literal["CARTESIAN_RH_CCW"] = "CARTESIAN_RH_CCW"
     offset_direction_sign_s: Literal[-1, 1]
     offset_distance_cm: float = Field(..., ge=0.0)
-    regularity_margin_epsilon: float = Field(0.05, gt=0.0, le=0.5)
+    regularity_margin_epsilon: float = Field(0.05, ge=0.05, le=0.5)
     min_base_speed_squared_interval: Tuple[float, float]
     min_offset_speed_factor_interval: Tuple[float, float]
     has_zero_speed_cusp_on_domain: bool
@@ -220,8 +349,16 @@ class OffsetValidationRecord(BaseModel):
     isolated_cusp_roots_t: List[Tuple[float, float]] = Field(default_factory=list)
     isolated_self_intersections: List[SelfIntersectionCertificate] = Field(default_factory=list)
     max_geometric_deviation_bound_cm: float = Field(..., ge=0.0)
+    max_certified_radial_error_cm: Optional[float] = Field(None, ge=0.0)
+    max_subdivision_depth_reached: int = Field(0, ge=0, le=64)
+    primary_span_coverage_ratio: float = Field(1.0, ge=0.0, le=1.0)
+    local_self_intersection_status: Literal["NONE", "DETECTED", "UNRESOLVED", "NOT_EVALUATED"] = "NONE"
+    global_contour_self_intersection_status: Literal["NONE", "DETECTED", "UNRESOLVED", "NOT_EVALUATED"] = "NOT_EVALUATED"
+    unresolved_intervals: List[Tuple[float, float]] = Field(default_factory=list)
+    escalation_trace: List[str] = Field(default_factory=list)
     verification_outcome: Literal["CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"]
     failure_category: OffsetFailureCategory
+    detected_failure_categories: List[OffsetFailureCategory] = Field(default_factory=list)
     canonical_offset_classification: CanonicalOffsetClassification
     active_classifications_on_domain: List[CanonicalOffsetClassification] = Field(..., min_length=1)
     working_precision_bits: int = Field(..., ge=53, le=336)
@@ -231,16 +368,78 @@ class OffsetValidationRecord(BaseModel):
     def validate_adr009_invariants(self) -> "OffsetValidationRecord":
         q_lo, q_hi = self.min_base_speed_squared_interval
         f_lo, f_hi = self.min_offset_speed_factor_interval
+        if q_lo < 0.0:
+            raise ValueError("min_base_speed_squared_interval lower bound must be >= 0")
         if q_hi < q_lo:
             raise ValueError("min_base_speed_squared_interval upper bound < lower bound")
         if f_hi < f_lo:
             raise ValueError("min_offset_speed_factor_interval upper bound < lower bound")
-        if self.verification_outcome == "INCONCLUSIVE" and self.is_production_ready:
-            raise ValueError("INCONCLUSIVE verification outcome cannot set is_production_ready=True")
-        if self.verification_outcome == "CERTIFIED_INVALID" and self.is_production_ready:
-            raise ValueError("CERTIFIED_INVALID verification outcome cannot set is_production_ready=True")
-        if self.verification_outcome == "CERTIFIED_VALID" and self.failure_category != OffsetFailureCategory.NONE:
-            raise ValueError("CERTIFIED_VALID record must have failure_category == NONE")
+
+        # All 8 contradictory certification states enforced strictly fail-closed:
+        if self.verification_outcome == "CERTIFIED_VALID":
+            # State 1: CERTIFIED_VALID with non-NONE failure category or non-CERTIFIED_VALID classification
+            if self.failure_category != OffsetFailureCategory.NONE:
+                raise ValueError("CERTIFIED_VALID record must have failure_category == NONE")
+            if self.canonical_offset_classification != CanonicalOffsetClassification.CERTIFIED_VALID:
+                raise ValueError(
+                    "CERTIFIED_VALID record must have canonical_offset_classification == CERTIFIED_VALID"
+                )
+            if self.active_classifications_on_domain != [CanonicalOffsetClassification.CERTIFIED_VALID]:
+                raise ValueError(
+                    "CERTIFIED_VALID record must have active_classifications_on_domain == ['CERTIFIED_VALID']"
+                )
+            if any(fc != OffsetFailureCategory.NONE for fc in self.detected_failure_categories):
+                raise ValueError("CERTIFIED_VALID record cannot contain non-NONE detected_failure_categories")
+            if self.unresolved_intervals:
+                raise ValueError("CERTIFIED_VALID record cannot contain unresolved_intervals")
+            # State 2: CERTIFIED_VALID with has_zero_speed_cusp_on_domain=True
+            if self.has_zero_speed_cusp_on_domain:
+                raise ValueError("CERTIFIED_VALID record cannot have has_zero_speed_cusp_on_domain=True")
+            # State 3: CERTIFIED_VALID with has_tangent_reversal_on_domain=True
+            if self.has_tangent_reversal_on_domain:
+                raise ValueError("CERTIFIED_VALID record cannot have has_tangent_reversal_on_domain=True")
+            # State 4: CERTIFIED_VALID with min_offset_speed_factor_interval[0] < regularity_margin_epsilon
+            if f_lo < self.regularity_margin_epsilon - 1e-15:
+                raise ValueError(
+                    f"CERTIFIED_VALID record requires min_offset_speed_factor_interval[0] ({f_lo}) "
+                    f">= regularity_margin_epsilon ({self.regularity_margin_epsilon})"
+                )
+            if self.local_self_intersection_status in ("DETECTED", "UNRESOLVED"):
+                raise ValueError("CERTIFIED_VALID record cannot have local self-intersection DETECTED/UNRESOLVED")
+            if self.global_contour_self_intersection_status in ("DETECTED", "UNRESOLVED"):
+                raise ValueError("CERTIFIED_VALID record cannot have global self-intersection DETECTED/UNRESOLVED")
+
+        elif self.verification_outcome == "CERTIFIED_INVALID":
+            # State 5: CERTIFIED_INVALID with failure_category=NONE or INCONCLUSIVE_VERIFICATION
+            if self.failure_category in (
+                OffsetFailureCategory.NONE,
+                OffsetFailureCategory.INCONCLUSIVE_VERIFICATION,
+            ):
+                raise ValueError(
+                    "CERTIFIED_INVALID record must specify a concrete failure_category "
+                    "(not NONE or INCONCLUSIVE_VERIFICATION)"
+                )
+            if self.canonical_offset_classification in (
+                CanonicalOffsetClassification.CERTIFIED_VALID,
+                CanonicalOffsetClassification.INCONCLUSIVE,
+            ):
+                raise ValueError(
+                    "CERTIFIED_INVALID record cannot have canonical_offset_classification CERTIFIED_VALID or INCONCLUSIVE"
+                )
+            # State 6: CERTIFIED_INVALID with is_production_ready=True
+            if self.is_production_ready:
+                raise ValueError("CERTIFIED_INVALID verification outcome cannot set is_production_ready=True")
+
+        elif self.verification_outcome == "INCONCLUSIVE":
+            # State 7: INCONCLUSIVE with non-INCONCLUSIVE_VERIFICATION failure_category
+            if self.failure_category != OffsetFailureCategory.INCONCLUSIVE_VERIFICATION:
+                raise ValueError("INCONCLUSIVE record must have failure_category == INCONCLUSIVE_VERIFICATION")
+            if self.canonical_offset_classification != CanonicalOffsetClassification.INCONCLUSIVE:
+                raise ValueError("INCONCLUSIVE record must have canonical_offset_classification == INCONCLUSIVE")
+            # State 8: INCONCLUSIVE with is_production_ready=True
+            if self.is_production_ready:
+                raise ValueError("INCONCLUSIVE verification outcome cannot set is_production_ready=True")
+
         return self
 
 
@@ -275,16 +474,55 @@ class OffsetClassificationReport(BaseModel):
 
     @model_validator(mode="after")
     def validate_adr009_classification_invariants(self) -> "OffsetClassificationReport":
-        if self.verificationOutcome == "INCONCLUSIVE" and self.isProductionReady:
-            raise ValueError("INCONCLUSIVE OffsetClassificationReport cannot set isProductionReady=True")
-        if self.verificationOutcome == "CERTIFIED_INVALID" and self.isProductionReady:
-            raise ValueError("CERTIFIED_INVALID OffsetClassificationReport cannot set isProductionReady=True")
-        if self.verificationOutcome == "CERTIFIED_VALID" and self.failureCategory != OffsetFailureCategory.NONE:
-            raise ValueError("CERTIFIED_VALID OffsetClassificationReport must have failureCategory == NONE")
         if self.gridErrorCm > self.certifiedIntervalErrorCm + 1e-15:
             raise ValueError(
                 "OffsetClassificationReport violation: gridErrorCm cannot exceed certifiedIntervalErrorCm"
             )
+        if self.verificationOutcome == "CERTIFIED_VALID":
+            if self.failureCategory != OffsetFailureCategory.NONE:
+                raise ValueError("CERTIFIED_VALID OffsetClassificationReport must have failureCategory == NONE")
+            if self.canonicalOffsetClassification != CanonicalOffsetClassification.CERTIFIED_VALID:
+                raise ValueError(
+                    "CERTIFIED_VALID OffsetClassificationReport must have canonicalOffsetClassification == CERTIFIED_VALID"
+                )
+            if self.hasZeroSpeedCuspOnDomain:
+                raise ValueError("CERTIFIED_VALID OffsetClassificationReport cannot have hasZeroSpeedCuspOnDomain=True")
+            if self.hasTangentReversalOnDomain:
+                raise ValueError(
+                    "CERTIFIED_VALID OffsetClassificationReport cannot have hasTangentReversalOnDomain=True"
+                )
+            if self.minOffsetSpeedFactorF < 0.05 - 1e-15:
+                raise ValueError(
+                    "CERTIFIED_VALID OffsetClassificationReport requires minOffsetSpeedFactorF >= 0.05"
+                )
+        elif self.verificationOutcome == "CERTIFIED_INVALID":
+            if self.failureCategory in (
+                OffsetFailureCategory.NONE,
+                OffsetFailureCategory.INCONCLUSIVE_VERIFICATION,
+            ):
+                raise ValueError(
+                    "CERTIFIED_INVALID OffsetClassificationReport must specify a concrete failureCategory"
+                )
+            if self.canonicalOffsetClassification in (
+                CanonicalOffsetClassification.CERTIFIED_VALID,
+                CanonicalOffsetClassification.INCONCLUSIVE,
+            ):
+                raise ValueError(
+                    "CERTIFIED_INVALID OffsetClassificationReport cannot have CERTIFIED_VALID or INCONCLUSIVE classification"
+                )
+            if self.isProductionReady:
+                raise ValueError("CERTIFIED_INVALID OffsetClassificationReport cannot set isProductionReady=True")
+        elif self.verificationOutcome == "INCONCLUSIVE":
+            if self.failureCategory != OffsetFailureCategory.INCONCLUSIVE_VERIFICATION:
+                raise ValueError(
+                    "INCONCLUSIVE OffsetClassificationReport must have failureCategory == INCONCLUSIVE_VERIFICATION"
+                )
+            if self.canonicalOffsetClassification != CanonicalOffsetClassification.INCONCLUSIVE:
+                raise ValueError(
+                    "INCONCLUSIVE OffsetClassificationReport must have canonicalOffsetClassification == INCONCLUSIVE"
+                )
+            if self.isProductionReady:
+                raise ValueError("INCONCLUSIVE OffsetClassificationReport cannot set isProductionReady=True")
         return self
 
 
@@ -423,17 +661,53 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
         parameter_bracket_t=(0.4821933999995, 0.4821934000001),
         parameter_uncertainty_dt=6.0e-13,
         local_speed_upper_bound_cm_per_t=14.2,
-        propagated_position_error_cm=8.52e-12,
+        propagated_position_error_cm=8.7e-12,
         direct_geometric_error_bound_cm=2.1e-9,
         propagation_method="B1_FIRST_ORDER_UPPER_BOUND",
         working_precision_bits=113,
         adaptive_subdivision_panels=16,
         certified_within_tolerance=True,
+        quantity_name="inverse_arc_length_notch_position_cm",
+        reference_method_and_version="C1-Cert Method B1 + Method C1-Cert v2.1.2-R1",
+        precision_and_arithmetic_model="IEEE-754 binary128 (113-bit mpmath.iv) + exact Fraction",
+        enclosure_or_remainder_method="METHOD_B1_VALIDATED_DERIVATIVE",
+        assurance_classification="CERTIFIED_ENCLOSURE",
+        error_components=NumericalErrorComponents(
+            x_float64=4.12,
+            x_ref=4.12,
+            observed_discrepancy_e_obs=2.1e-9,
+            reference_enclosure_b_ref=8.7e-12,
+            implementation_to_exact_bound_b_cert=2.1087e-9,
+            heuristic_error_estimate=None,
+            parameter_enclosure=ParameterEnclosureRecord(
+                t_lower=0.4821933999995,
+                t_upper=0.4821934000001,
+                t_mid=0.4821933999998,
+                r_param=3.1e-13,
+                residual_interval_lower=-1.0e-12,
+                residual_interval_upper=1.0e-12,
+            ),
+            output_propagation=OutputPropagationRecord(
+                propagation_method="METHOD_B1_VALIDATED_DERIVATIVE",
+                derivative_upper_bound_m=14.2,
+                point_evaluation_rounding_bound_delta_eval=4.26e-12,
+                output_enclosure_radius_b_ref_x=8.7e-12,
+            ),
+        ),
+        acceptance_tolerance_tau=1.0e-6,
+        verification_outcome="CERTIFIED_VALID",
+        reproducibility_manifest=NumericalReproducibilityManifest(
+            python_version="3.12.16",
+            mpmath_version="1.4.1",
+            subdivision_depth_k=8,
+            input_fixture_sha256="a" * 64,
+        ),
     )
     sample_val_rec = OffsetValidationRecord(
         segment_id="seg-armscye-01",
         piece_id="bodice-front-01",
         contour_orientation="CCW_EXTERIOR",
+        coordinate_convention="CARTESIAN_RH_CCW",
         offset_direction_sign_s=-1,
         offset_distance_cm=1.5,
         regularity_margin_epsilon=0.05,
@@ -446,8 +720,16 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
         isolated_cusp_roots_t=[],
         isolated_self_intersections=[],
         max_geometric_deviation_bound_cm=0.00118,
+        max_certified_radial_error_cm=0.00118,
+        max_subdivision_depth_reached=4,
+        primary_span_coverage_ratio=1.0,
+        local_self_intersection_status="NONE",
+        global_contour_self_intersection_status="NONE",
+        unresolved_intervals=[],
+        escalation_trace=["113-bit Bernstein hull certified regular"],
         verification_outcome="CERTIFIED_VALID",
         failure_category=OffsetFailureCategory.NONE,
+        detected_failure_categories=[],
         canonical_offset_classification=CanonicalOffsetClassification.CERTIFIED_VALID,
         active_classifications_on_domain=[CanonicalOffsetClassification.CERTIFIED_VALID],
         working_precision_bits=113,
@@ -654,38 +936,132 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
         },
     ]
 
-    negative_results: List[Dict[str, Any]] = []
-    for neg in negative_cases:
-        def_name = neg["entity"]
-        model_cls = neg["model"]
-        bad_payload = neg["payload"]
-        sub_schema = {
-            "$schema": schema_doc["$schema"],
-            "$defs": schema_doc["$defs"],
-            "$ref": f"#/$defs/{def_name}",
-        }
-        js_rejected = False
-        try:
-            jsonschema.validate(instance=bad_payload, schema=sub_schema)
-        except jsonschema.ValidationError:
-            js_rejected = True
-
-        pyd_rejected = False
-        try:
-            model_cls.model_validate(bad_payload)
-        except ValidationError:
-            pyd_rejected = True
-
-        negative_results.append(
-            {
-                "caseId": neg["caseId"],
-                "entity": def_name,
-                "reason": neg["reason"],
-                "jsonSchemaRejected": js_rejected,
-                "pydanticV2Rejected": pyd_rejected,
-                "bothRejected": js_rejected and pyd_rejected,
+    def _run_dual_negative(cases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for neg in cases:
+            def_name = neg["entity"]
+            model_cls = neg["model"]
+            bad_payload = neg["payload"]
+            sub_schema = {
+                "$schema": schema_doc["$schema"],
+                "$defs": schema_doc["$defs"],
+                "$ref": f"#/$defs/{def_name}",
             }
-        )
+            js_rejected = False
+            try:
+                jsonschema.validate(instance=bad_payload, schema=sub_schema)
+            except jsonschema.ValidationError:
+                js_rejected = True
+
+            pyd_rejected = False
+            try:
+                model_cls.model_validate(bad_payload)
+            except ValidationError:
+                pyd_rejected = True
+
+            out.append(
+                {
+                    "caseId": neg["caseId"],
+                    "entity": def_name,
+                    "reason": neg["reason"],
+                    "jsonSchemaRejected": js_rejected,
+                    "pydanticV2Rejected": pyd_rejected,
+                    "bothRejected": js_rejected and pyd_rejected,
+                }
+            )
+        return out
+
+    negative_results = _run_dual_negative(negative_cases)
+
+    # All 8 contradictory certification states enforced identically in BOTH JSON Schema Draft 2020-12 and Pydantic v2
+    val_base = sample_val_rec.model_dump(mode="json")
+    contradictory_cases: List[Dict[str, Any]] = [
+        {
+            "caseId": "CONTRA-01-VALID-WITH-NON-NONE-FAILURE",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "failure_category": "TANGENT_REVERSAL"},
+            "reason": "CERTIFIED_VALID with non-NONE failure_category must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-02-VALID-WITH-ZERO-SPEED-CUSP",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "has_zero_speed_cusp_on_domain": True},
+            "reason": "CERTIFIED_VALID with has_zero_speed_cusp_on_domain=True must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-03-VALID-WITH-TANGENT-REVERSAL",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "has_tangent_reversal_on_domain": True},
+            "reason": "CERTIFIED_VALID with has_tangent_reversal_on_domain=True must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-04-VALID-WITH-SPEED-FACTOR-BELOW-EPS",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "min_offset_speed_factor_interval": [0.01, 0.02]},
+            "reason": "CERTIFIED_VALID with min_offset_speed_factor_interval below epsilon must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-05-INVALID-WITH-NONE-FAILURE",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {
+                **val_base,
+                "verification_outcome": "CERTIFIED_INVALID",
+                "failure_category": "NONE",
+                "canonical_offset_classification": "TANGENT_REVERSAL",
+                "active_classifications_on_domain": ["TANGENT_REVERSAL"],
+                "is_production_ready": False,
+            },
+            "reason": "CERTIFIED_INVALID with failure_category=NONE must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-06-INVALID-WITH-PRODUCTION-READY-TRUE",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {
+                **val_base,
+                "verification_outcome": "CERTIFIED_INVALID",
+                "failure_category": "TANGENT_REVERSAL",
+                "canonical_offset_classification": "TANGENT_REVERSAL",
+                "active_classifications_on_domain": ["TANGENT_REVERSAL"],
+                "is_production_ready": True,
+            },
+            "reason": "CERTIFIED_INVALID with is_production_ready=True must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-07-INCONCLUSIVE-WITH-NON-INCONCLUSIVE-FAILURE",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {
+                **val_base,
+                "verification_outcome": "INCONCLUSIVE",
+                "failure_category": "NONE",
+                "canonical_offset_classification": "INCONCLUSIVE",
+                "active_classifications_on_domain": ["INCONCLUSIVE"],
+                "is_production_ready": False,
+            },
+            "reason": "INCONCLUSIVE with failure_category!=INCONCLUSIVE_VERIFICATION must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-08-INCONCLUSIVE-WITH-PRODUCTION-READY-TRUE",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {
+                **val_base,
+                "verification_outcome": "INCONCLUSIVE",
+                "failure_category": "INCONCLUSIVE_VERIFICATION",
+                "canonical_offset_classification": "INCONCLUSIVE",
+                "active_classifications_on_domain": ["INCONCLUSIVE"],
+                "is_production_ready": True,
+            },
+            "reason": "INCONCLUSIVE with is_production_ready=True must be rejected by both validators",
+        },
+    ]
+    contradictory_results = _run_dual_negative(contradictory_cases)
 
     # Semantic invariant negative tests enforced by Pydantic v2 model validators
     semantic_invariant_checks: List[Dict[str, Any]] = []
@@ -712,7 +1088,7 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
         "ADR-009 §5.3: verification_outcome=INCONCLUSIVE must reject is_production_ready=True",
         lambda: OffsetValidationRecord.model_validate(
             {
-                **sample_val_rec.model_dump(mode="json"),
+                **val_base,
                 "verification_outcome": "INCONCLUSIVE",
                 "failure_category": "INCONCLUSIVE_VERIFICATION",
                 "canonical_offset_classification": "INCONCLUSIVE",
@@ -769,10 +1145,29 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
             }
         ),
     )
+    _expect_pydantic_error(
+        "SEM-06-NUMERICAL-RECORD-PARAM-ENCLOSURE-WITHOUT-PROPAGATION",
+        "ADR-009 §2.5: non-null parameter_enclosure with NONE_DIRECT_ENCLOSURE must be rejected",
+        lambda: NumericalVerificationRecord.model_validate(
+            {
+                **sample_num_rec.model_dump(mode="json"),
+                "error_components": {
+                    **sample_num_rec.error_components.model_dump(mode="json"),
+                    "output_propagation": {
+                        "propagation_method": "NONE_DIRECT_ENCLOSURE",
+                        "derivative_upper_bound_m": None,
+                        "point_evaluation_rounding_bound_delta_eval": 0.0,
+                        "output_enclosure_radius_b_ref_x": 8.52e-12,
+                    },
+                },
+            }
+        ),
+    )
 
     all_passed = (
         all(r["jsonSchemaDraft202012Valid"] and r["pydanticV2RoundTripValid"] for r in parity_results)
         and all(n["bothRejected"] for n in negative_results)
+        and all(c["bothRejected"] for c in contradictory_results)
         and all(s["pydanticSemanticValidatorRejected"] for s in semantic_invariant_checks)
     )
 
@@ -785,11 +1180,18 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
         "canonicalCoordinateFrame": sample_coord.model_dump(mode="json"),
         "canonicalOffsetClassifications": [c.value for c in CanonicalOffsetClassification],
         "baseCurveSingularityClassifications": [c.value for c in BaseCurveSingularityClassification],
+        "stationaryParameterizationStatuses": [c.value for c in StationaryParameterizationStatus],
         "offsetFailureCategories": [c.value for c in OffsetFailureCategory],
+        "adr009EnumReconciliationNote": (
+            "StationaryParameterizationStatus includes ADR-009 §5.3 UNRESOLVED alongside the §4.2 5-way taxonomy states "
+            "(ENDPOINT_TANGENTIAL_DEGENERACY, COLLAPSED_ZERO_LENGTH_CURVE) in both Pydantic v2 and JSON Schema Draft 2020-12."
+        ),
         "entitiesVerifiedCount": len(parity_results),
         "entityParityResults": parity_results,
         "negativeValidationCount": len(negative_results),
         "negativeValidationResults": negative_results,
+        "contradictoryCertificationStateCount": len(contradictory_results),
+        "contradictoryCertificationStateResults": contradictory_results,
         "semanticInvariantChecks": semantic_invariant_checks,
         "allPassed": all_passed,
     }

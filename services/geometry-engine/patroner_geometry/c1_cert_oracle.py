@@ -396,6 +396,33 @@ def classify_zero_speed_point_exact(
     }
 
 
+def _fraction_to_mpf(q: Fraction) -> mpmath.mpf:
+    """Converts an exact Fraction to mpmath.mpf at the active mpmath.mp.prec without decimal string conversion."""
+    return mpmath.mp.mpf(q.numerator) / mpmath.mp.mpf(q.denominator)
+
+
+def _fraction_to_iv(q: Fraction) -> Any:
+    """Converts an exact Fraction to an outwardly enclosing mpmath.iv.mpf at the active iv.prec."""
+    return iv.mpf(q.numerator) / iv.mpf(q.denominator)
+
+
+def _bernstein_restrict_exact(b_coeffs: List[Fraction], a_q: Fraction, b_q: Fraction) -> List[Fraction]:
+    """Restricts a Bernstein polynomial on [0, 1] to subinterval [a_q, b_q] exactly in Q via De Casteljau."""
+    if a_q == 0 and b_q == 1:
+        return list(b_coeffs)
+    # First restrict [0, 1] -> [a_q, 1]
+    if a_q > 0:
+        _, right_b = de_casteljau_subdivide_exact(b_coeffs, a_q)
+    else:
+        right_b = list(b_coeffs)
+    # Now map [a_q, b_q] as [0, (b_q - a_q)/(1 - a_q)] inside [a_q, 1]
+    if b_q < 1:
+        u_q = (b_q - a_q) / (Fraction(1) - a_q)
+        sub_b, _ = de_casteljau_subdivide_exact(right_b, u_q)
+        return sub_b
+    return right_b
+
+
 def refine_root_bracket_dual_criterion(
     f_eval: Callable[[mpmath.mpf], mpmath.mpf],
     speed_upper_bound_fn: Callable[[float, float], float],
@@ -407,10 +434,11 @@ def refine_root_bracket_dual_criterion(
 ) -> RootBracketCertificate:
     """Refines a root bracket [a, b] in 113-bit precision until BOTH:
     delta_t = b - a <= 1e-12  AND  Delta_pos([a, b]) = sup_{t in [a, b]} ||B'(t)|| * delta_t <= 1e-7 cm (Method B1).
+    Uses exact IEEE-754 Fraction -> mpmath.mpf conversion (no decimal str() truncation).
     """
     mpmath.mp.prec = 113
-    lo = mpmath.mpf(str(a_init))
-    hi = mpmath.mpf(str(b_init))
+    lo = _fraction_to_mpf(Fraction(a_init))
+    hi = _fraction_to_mpf(Fraction(b_init))
     flo = f_eval(lo)
     fhi = f_eval(hi)
 
@@ -552,7 +580,7 @@ def compute_offset_approximation_errors_cm(
     iv.prec = 113
     mpmath.mp.prec = 113
     e_cert = 0.0
-    d_iv = iv.mpf(str(d))
+    d_iv = _fraction_to_iv(Fraction(d))
     s_iv = iv.mpf(s_sign)
 
     ax_b_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[0]]
@@ -886,89 +914,18 @@ def certify_cubic_offset_on_unit_interval(
         )
 
     # Step 3: Regular base curve Q(t) > 0 everywhere on [0, 1].
-    # Perform complete-interval [0, 1] evaluation of Q(I_k) and f(I_k) = 1 - s*d*C(I_k)/Q(I_k)^(3/2)
-    iv.prec = 113
-    mpmath.mp.prec = 113
-    ax_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[0]]
-    ay_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[1]]
-    s_iv = iv.mpf(s_sign)
-    d_iv = iv.mpf(d_frac.numerator) / iv.mpf(d_frac.denominator)
-
-    def eval_Q_and_f_interval(a_q: Fraction, b_q: Fraction) -> Tuple[Tuple[float, float], Tuple[float, float]]:
-        t_lo_iv = iv.mpf(a_q.numerator) / iv.mpf(a_q.denominator)
-        t_hi_iv = iv.mpf(b_q.numerator) / iv.mpf(b_q.denominator)
-        t_iv = iv.mpf([t_lo_iv.a, t_hi_iv.b])
-
-        dx_iv = ax_iv[1] + t_iv * (2 * ax_iv[2] + 3 * ax_iv[3] * t_iv)
-        dy_iv = ay_iv[1] + t_iv * (2 * ay_iv[2] + 3 * ay_iv[3] * t_iv)
-        ddx_iv = 2 * ax_iv[2] + 6 * ax_iv[3] * t_iv
-        ddy_iv = 2 * ay_iv[2] + 6 * ay_iv[3] * t_iv
-
-        q_iv = (dx_iv ** 2) + (dy_iv ** 2)
-        c_iv = dx_iv * ddy_iv - dy_iv * ddx_iv
-        q_lo_f64, q_hi_f64 = iv_to_outward_f64_pair(q_iv)
-        if q_lo_f64 <= 0.0:
-            return (max(0.0, q_lo_f64), max(0.0, q_hi_f64)), (-math.inf, math.inf)
-        f_iv = 1 - (s_iv * d_iv * c_iv) / (q_iv * iv.sqrt(q_iv))
-        f_lo_f64, f_hi_f64 = iv_to_outward_f64_pair(f_iv)
-        return (max(0.0, q_lo_f64), max(0.0, q_hi_f64)), (f_lo_f64, f_hi_f64)
-
-    min_q_lo = math.inf
-    min_q_hi = math.inf
-    min_f_lo = math.inf
-    min_f_hi = math.inf
-    max_f_hi = -math.inf
-    straddles_eps = False
-    straddles_zero = False
-    unresolved_depth_exceeded = False
-
-    def analyze_panel(a_q: Fraction, b_q: Fraction, depth: int) -> None:
-        nonlocal min_q_lo, min_q_hi, min_f_lo, min_f_hi, max_f_hi
-        nonlocal straddles_eps, straddles_zero, unresolved_depth_exceeded
-        (q_lo, q_hi), (f_lo, f_hi) = eval_Q_and_f_interval(a_q, b_q)
-        # Critical boundary/positivity straddle that MUST resolve before certification
-        critical_straddle = (
-            (f_lo < epsilon_reg <= f_hi)
-            or (f_lo <= 0.0 <= f_hi)
-            or (q_lo <= 0.0)
-        )
-        needs_split = critical_straddle or ((f_hi - f_lo) > 0.02 and depth < 4)
-        if needs_split and depth < max_subdivision_depth:
-            mid_q = (a_q + b_q) / Fraction(2)
-            analyze_panel(a_q, mid_q, depth + 1)
-            analyze_panel(mid_q, b_q, depth + 1)
-            return
-
-        if critical_straddle:
-            unresolved_depth_exceeded = True
-        if q_lo < min_q_lo:
-            min_q_lo = q_lo
-        if q_hi < min_q_hi:
-            min_q_hi = q_hi
-        if f_lo < min_f_lo:
-            min_f_lo = f_lo
-        if f_hi < min_f_hi:
-            min_f_hi = f_hi
-        if f_hi > max_f_hi:
-            max_f_hi = f_hi
-        if f_lo < epsilon_reg <= f_hi:
-            straddles_eps = True
-        if f_lo <= 0.0 <= f_hi:
-            straddles_zero = True
-
-    span_width_q = span_hi_q - span_lo_q
-    for k in range(subdivision_panels):
-        pa_q = span_lo_q + Fraction(k, subdivision_panels) * span_width_q
-        pb_q = span_lo_q + Fraction(k + 1, subdivision_panels) * span_width_q
-        analyze_panel(pa_q, pb_q, 0)
-
-    min_q_hi = max(min_q_lo, min_q_hi)
-    min_f_hi = max(min_f_lo, min_f_hi)
-
-    # Isolate any cusp roots f(t*) = 0 on [0, 1] using exact algebraic solver on P_cusp(t) = Q(t)^3 - d^2 C(t)^2
-    # gated by the exact sign condition s * d * C(t*) > 0!
+    # ADR-009 §5.1–§5.2: Exact Bernstein convex-hull bounds + adaptive interval subdivision +
+    # automatic precision escalation ladder 113 -> 170 -> 336 bits for unresolved panels!
     q_coeffs = curve.Q_power_coeffs()
     c_coeffs = curve.C_power_coeffs()
+    q_bern_full = power_to_bernstein_exact(q_coeffs)
+    q_bern_span = _bernstein_restrict_exact(q_bern_full, span_lo_q, span_hi_q)
+    sdc_coeffs = [Fraction(s_sign) * d_frac * c for c in c_coeffs]
+    sdc_bern_full = power_to_bernstein_exact(sdc_coeffs)
+    sdc_bern_span = _bernstein_restrict_exact(sdc_bern_full, span_lo_q, span_hi_q)
+
+    # Exact degree-12 cusp polynomial P_exact(t) = Q(t)^3 - d^2 C(t)^2 and
+    # margin polynomial P_margin(t) = (1 - eps)^2 Q(t)^3 - d^2 C(t)^2
     q2_coeffs = [Fraction(0)] * 9
     for i in range(5):
         for j in range(5):
@@ -982,11 +939,152 @@ def certify_cubic_offset_on_unit_interval(
         for j in range(4):
             c2_coeffs[i + j] += c_coeffs[i] * c_coeffs[j]
 
-    p_cusp_coeffs = list(q3_coeffs)
     d2_frac = d_frac * d_frac
+    p_cusp_coeffs = list(q3_coeffs)
     for i in range(7):
         p_cusp_coeffs[i] -= d2_frac * c2_coeffs[i]
 
+    one_minus_eps_sq = (Fraction(1) - eps_frac) ** 2
+    p_margin_coeffs = [one_minus_eps_sq * q3 for q3 in q3_coeffs]
+    for i in range(7):
+        p_margin_coeffs[i] -= d2_frac * c2_coeffs[i]
+
+    # Bernstein convex-hull fast certificates on the domain (ADR-009 §5.1):
+    bernstein_q_strictly_pos = min(q_bern_span) > 0
+    bernstein_convex_fast_cert = bernstein_q_strictly_pos and (max(sdc_bern_span) <= 0)
+    bernstein_margin_fast_cert = (
+        bernstein_q_strictly_pos
+        and min(_bernstein_restrict_exact(power_to_bernstein_exact(p_margin_coeffs), span_lo_q, span_hi_q)) >= 0
+    )
+
+    precision_ladder = (113, 170, 336)
+    escalation_trace: List[str] = []
+    final_prec_bits = 113
+    max_depth_reached = 0
+    min_q_lo = math.inf
+    min_q_hi = math.inf
+    min_f_lo = math.inf
+    min_f_hi = math.inf
+    max_f_hi = -math.inf
+
+    span_width_q = span_hi_q - span_lo_q
+    pending_panels: List[Tuple[Fraction, Fraction]] = [
+        (
+            span_lo_q + Fraction(k, subdivision_panels) * span_width_q,
+            span_lo_q + Fraction(k + 1, subdivision_panels) * span_width_q,
+        )
+        for k in range(subdivision_panels)
+    ]
+
+    ax_q, ay_q = curve.power_coeffs_xy()
+    unresolved_panels: List[Tuple[Fraction, Fraction]] = []
+
+    final_leaf_bounds: List[Tuple[float, float, float, float]] = []
+
+    for tier_idx, prec_bits in enumerate(precision_ladder):
+        iv.prec = prec_bits
+        mpmath.mp.prec = prec_bits
+        final_prec_bits = prec_bits
+        ax_iv = [_fraction_to_iv(c) for c in ax_q]
+        ay_iv = [_fraction_to_iv(c) for c in ay_q]
+        s_iv = iv.mpf(s_sign)
+        d_iv = _fraction_to_iv(d_frac)
+
+        def eval_Q_and_f_interval(a_q: Fraction, b_q: Fraction) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+            t_lo_iv = _fraction_to_iv(a_q)
+            t_hi_iv = _fraction_to_iv(b_q)
+            t_iv = iv.mpf([t_lo_iv.a, t_hi_iv.b])
+            dx_iv = ax_iv[1] + t_iv * (2 * ax_iv[2] + 3 * ax_iv[3] * t_iv)
+            dy_iv = ay_iv[1] + t_iv * (2 * ay_iv[2] + 3 * ay_iv[3] * t_iv)
+            ddx_iv = 2 * ax_iv[2] + 6 * ax_iv[3] * t_iv
+            ddy_iv = 2 * ay_iv[2] + 6 * ay_iv[3] * t_iv
+
+            q_iv = (dx_iv ** 2) + (dy_iv ** 2)
+            c_iv = dx_iv * ddy_iv - dy_iv * ddx_iv
+            q_lo_f64, q_hi_f64 = iv_to_outward_f64_pair(q_iv)
+            if q_lo_f64 <= 0.0:
+                return (max(0.0, q_lo_f64), max(0.0, q_hi_f64)), (-math.inf, math.inf)
+            f_iv = 1 - (s_iv * d_iv * c_iv) / (q_iv * iv.sqrt(q_iv))
+            f_lo_f64, f_hi_f64 = iv_to_outward_f64_pair(f_iv)
+            return (max(0.0, q_lo_f64), max(0.0, q_hi_f64)), (f_lo_f64, f_hi_f64)
+
+        next_unresolved: List[Tuple[Fraction, Fraction]] = []
+        tier_unresolved_bounds: List[Tuple[float, float, float, float]] = []
+        tier_max_depth = 0
+        tier_resolved_count = 0
+
+        def analyze_panel(a_q: Fraction, b_q: Fraction, depth: int) -> None:
+            nonlocal max_depth_reached, tier_max_depth, tier_resolved_count
+            if depth > max_depth_reached:
+                max_depth_reached = depth
+            if depth > tier_max_depth:
+                tier_max_depth = depth
+
+            (q_lo, q_hi), (f_lo, f_hi) = eval_Q_and_f_interval(a_q, b_q)
+
+            # Fast exact Bernstein convex-hull pruning on sub-panel if interval still straddles
+            # (ADR-009 §5.1): if s*d*C <= 0 everywhere on [a_q, b_q] and Q > 0, then f >= 1 >= epsilon_reg
+            if f_lo < epsilon_reg <= f_hi and q_lo > 0.0:
+                sub_sdc_b = _bernstein_restrict_exact(sdc_bern_full, a_q, b_q)
+                if max(sub_sdc_b) <= 0:
+                    f_lo = max(f_lo, 1.0)
+                    f_hi = max(f_hi, f_lo)
+
+            critical_straddle = (
+                (f_lo < epsilon_reg <= f_hi)
+                or (f_lo <= 0.0 <= f_hi)
+                or (q_lo <= 0.0)
+            )
+            needs_split = critical_straddle or ((f_hi - f_lo) > 0.02 and depth < 4)
+            if needs_split and depth < max_subdivision_depth:
+                mid_q = (a_q + b_q) / Fraction(2)
+                analyze_panel(a_q, mid_q, depth + 1)
+                analyze_panel(mid_q, b_q, depth + 1)
+                return
+
+            if critical_straddle:
+                next_unresolved.append((a_q, b_q))
+                tier_unresolved_bounds.append((q_lo, q_hi, f_lo, f_hi))
+            else:
+                tier_resolved_count += 1
+                final_leaf_bounds.append((q_lo, q_hi, f_lo, f_hi))
+
+        for pa_q, pb_q in pending_panels:
+            analyze_panel(pa_q, pb_q, 0)
+
+        escalation_trace.append(
+            f"prec={prec_bits}bit:entered={len(pending_panels)}:resolved={tier_resolved_count}:"
+            f"unresolved={len(next_unresolved)}:maxDepth={tier_max_depth}:"
+            f"bernsteinConvexFastCert={bernstein_convex_fast_cert if tier_idx == 0 else False}:"
+            f"bernsteinMarginFastCert={bernstein_margin_fast_cert if tier_idx == 0 else False}"
+        )
+        unresolved_panels = next_unresolved
+        if not unresolved_panels:
+            break
+        if tier_idx == len(precision_ladder) - 1:
+            final_leaf_bounds.extend(tier_unresolved_bounds)
+        # Escalate ONLY the unresolved panels to the next precision tier (113 -> 170 -> 336)
+        pending_panels = list(unresolved_panels)
+
+    iv.prec = 113
+    mpmath.mp.prec = 113
+    unresolved_depth_exceeded = len(unresolved_panels) > 0
+    for q_lo, q_hi, f_lo, f_hi in final_leaf_bounds:
+        if q_lo < min_q_lo:
+            min_q_lo = q_lo
+        if q_hi < min_q_hi:
+            min_q_hi = q_hi
+        if f_lo < min_f_lo:
+            min_f_lo = f_lo
+        if f_hi < min_f_hi:
+            min_f_hi = f_hi
+        if f_hi > max_f_hi:
+            max_f_hi = f_hi
+    min_q_hi = max(min_q_lo, min_q_hi)
+    min_f_hi = max(min_f_lo, min_f_hi)
+
+    # Isolate any cusp roots f(t*) = 0 on [span_lo_q, span_hi_q] via exact algebraic solver on P_exact(t)
+    # gated by the exact sign condition s * d * C(t*) > 0!
     isolated_cusp_brackets: List[Tuple[float, float]] = []
     if min_f_lo <= 1e-6 or unresolved_depth_exceeded:
         raw_cusp_roots = isolate_polynomial_roots_on_unit_interval(p_cusp_coeffs, tol_t=Fraction(1, 10**12))
@@ -996,7 +1094,6 @@ def certify_cubic_offset_on_unit_interval(
             if t_hi_q < span_lo_q or t_lo_q > span_hi_q:
                 continue
             t_mid_q = (t_lo_q + t_hi_q) / Fraction(2)
-            # Mandatory ADR-009 §3.1 sign gate: s * d * C(t*) > 0 across bracket endpoints & midpoint!
             sign_lo = s_sign * d_frac * curve.eval_C_exact(t_lo_q)
             sign_mid = s_sign * d_frac * curve.eval_C_exact(t_mid_q)
             sign_hi = s_sign * d_frac * curve.eval_C_exact(t_hi_q)
@@ -1007,19 +1104,23 @@ def certify_cubic_offset_on_unit_interval(
     has_zero_speed_cusp = len(isolated_cusp_brackets) > 0
 
     active_classes: List[CanonicalOffsetClassification] = []
+    detected_failure_cats: List[OffsetFailureCategory] = []
     if min_f_lo >= epsilon_reg and min_q_lo > 0.0 and not unresolved_depth_exceeded:
         outcome: Literal["CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"] = "CERTIFIED_VALID"
         fail_cat = OffsetFailureCategory.NONE
         primary_class = CanonicalOffsetClassification.CERTIFIED_VALID
         active_classes = [CanonicalOffsetClassification.CERTIFIED_VALID]
+        detected_failure_cats = []
         prod_ready = True
     elif has_tangent_reversal or has_zero_speed_cusp:
         outcome = "CERTIFIED_INVALID"
         prod_ready = False
         if has_zero_speed_cusp:
             active_classes.append(CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP)
+            detected_failure_cats.append(OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP)
         if has_tangent_reversal:
             active_classes.append(CanonicalOffsetClassification.TANGENT_REVERSAL)
+            detected_failure_cats.append(OffsetFailureCategory.TANGENT_REVERSAL)
 
         if has_tangent_reversal and not has_zero_speed_cusp:
             primary_class = CanonicalOffsetClassification.TANGENT_REVERSAL
@@ -1031,18 +1132,21 @@ def certify_cubic_offset_on_unit_interval(
             primary_class = CanonicalOffsetClassification.TANGENT_REVERSAL
             fail_cat = OffsetFailureCategory.TANGENT_REVERSAL
     elif min_f_lo > 0.0 and min_f_hi < epsilon_reg and min_q_lo > 0.0:
+        # Mathematically proven 0 < min_t f(t) < epsilon_reg and Q(t) > 0 across ALL leaf panels
+        # (even if another panel transversely crosses f = epsilon_reg while maintaining f_lo > 0).
         outcome = "CERTIFIED_INVALID"
         fail_cat = OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION
         primary_class = CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION
         active_classes = [CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION]
+        detected_failure_cats = [OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION]
         prod_ready = False
     else:
-        # Fail-closed ADR-009 §4.4 Category 6 / §5.3: interval enclosure straddles epsilon_reg or 0,
-        # or Q(I_k) <= 0 due to wrapping at subdivision limit without proving invalidity -> INCONCLUSIVE!
+        # Fail-closed ADR-009 §4.4 Category 6 / §5.3: unresolved at 336-bit precision & subdivision cap -> INCONCLUSIVE!
         outcome = "INCONCLUSIVE"
         fail_cat = OffsetFailureCategory.INCONCLUSIVE_VERIFICATION
         primary_class = CanonicalOffsetClassification.INCONCLUSIVE
         active_classes = [CanonicalOffsetClassification.INCONCLUSIVE]
+        detected_failure_cats = [OffsetFailureCategory.INCONCLUSIVE_VERIFICATION]
         prod_ready = False
 
     dev_bound_cm = 0.0
@@ -1051,6 +1155,7 @@ def certify_cubic_offset_on_unit_interval(
             curve, s_sign, d, subdivision_depth=3, grid_samples_per_subsegment=64, interval_panels_per_subsegment=16
         )
 
+    unresolved_f64 = [fraction_pair_to_outward_f64_pair(a_q, b_q) for a_q, b_q in unresolved_panels]
     return OffsetValidationRecord(
         segment_id=curve.segment_id,
         piece_id=piece_id,
@@ -1067,11 +1172,19 @@ def certify_cubic_offset_on_unit_interval(
         isolated_cusp_roots_t=isolated_cusp_brackets,
         isolated_self_intersections=[],
         max_geometric_deviation_bound_cm=dev_bound_cm,
+        max_certified_radial_error_cm=dev_bound_cm,
+        max_subdivision_depth_reached=max_depth_reached,
+        primary_span_coverage_ratio=coverage_ratio,
+        local_self_intersection_status="NONE" if outcome == "CERTIFIED_VALID" else "NOT_EVALUATED",
+        global_contour_self_intersection_status="NOT_EVALUATED",
+        unresolved_intervals=unresolved_f64 if outcome == "INCONCLUSIVE" else [],
+        escalation_trace=escalation_trace,
+        detected_failure_categories=detected_failure_cats,
         verification_outcome=outcome,
         failure_category=fail_cat,
         canonical_offset_classification=primary_class,
         active_classifications_on_domain=active_classes,
-        working_precision_bits=113,
+        working_precision_bits=final_prec_bits,
         is_production_ready=prod_ready,
     )
 
@@ -1141,10 +1254,10 @@ def compute_validated_offset_aabb_iv(
     """
     iv.prec = 113
     mpmath.mp.prec = 113
-    ax_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[0]]
-    ay_iv = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in curve.power_coeffs_xy()[1]]
+    ax_iv = [_fraction_to_iv(c) for c in curve.power_coeffs_xy()[0]]
+    ay_iv = [_fraction_to_iv(c) for c in curve.power_coeffs_xy()[1]]
     s_iv = iv.mpf(s_sign)
-    d_iv = iv.mpf(str(d))
+    d_iv = _fraction_to_iv(Fraction(d))
 
     min_x, min_y = math.inf, math.inf
     max_x, max_y = -math.inf, -math.inf
@@ -1220,28 +1333,48 @@ def krawczyk_isolate_offset_intersections(
     max_depth: int = 34,
     initial_panels: int = 16,
     det_min_threshold: float = 1e-18,
+    excluded_shared_corner: Optional[Tuple[int, int]] = None,
 ) -> Dict[str, Any]:
     """Rigorous 2D interval subdivision + Krawczyk operator solving F(t1, t2) = O_a(t1) - O_b(t2) = (0, 0)
     on domain_1 x domain_2 at 113-bit mpmath.iv precision.
 
     Certifies existence & uniqueness strictly via Krawczyk theorem:
       K(X) = m - Y * F(m) + (I_2 - Y * J(X)) * (X - m)
-      K(X) subseteq int(X) AND ||I_2 - Y * J(X)||_inf < 1.
-    Fails closed by recording any box that cannot be pruned or Krawczyk-certified as UNRESOLVED.
+      K(X) subseteq int(X) AND ||I_2 - Y * J(X)||_inf < 1 (verified in exact 113-bit mpf + outward binary64).
+    Never clamps brackets to [0, 1]; verifies domain containment explicitly.
+    When `excluded_shared_corner` is `(1, 0)` or `(0, 1)` for a G1 tangent-continuous adjacent segment join
+    where O_a(t_a_join) == O_b(t_b_join), prunes a box containing the shared join ONLY when rigorous interval
+    directional monotonicity proves O_a(t1) != O_b(t2) for every (t1, t2) != (t_a_join, t_b_join) in the box.
     """
     iv.prec = 113
     mpmath.mp.prec = 113
-    ax_a = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in seg_a.power_coeffs_xy()[0]]
-    ay_a = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in seg_a.power_coeffs_xy()[1]]
-    ax_b = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in seg_b.power_coeffs_xy()[0]]
-    ay_b = [iv.mpf(c.numerator) / iv.mpf(c.denominator) for c in seg_b.power_coeffs_xy()[1]]
+    ax_a = [_fraction_to_iv(c) for c in seg_a.power_coeffs_xy()[0]]
+    ay_a = [_fraction_to_iv(c) for c in seg_a.power_coeffs_xy()[1]]
+    ax_b = [_fraction_to_iv(c) for c in seg_b.power_coeffs_xy()[0]]
+    ay_b = [_fraction_to_iv(c) for c in seg_b.power_coeffs_xy()[1]]
     s_iv = iv.mpf(s_sign)
-    d_iv = iv.mpf(str(d))
+    d_iv = _fraction_to_iv(Fraction(d))
+    det_thresh_mp = _fraction_to_mpf(Fraction(det_min_threshold))
+    one_mp = mpmath.mp.mpf(1)
+
+    # Precompute shared G1 join direction vector v (unit tangent at the shared endpoint) if applicable
+    shared_join_dir: Optional[Tuple[Any, Any]] = None
+    if excluded_shared_corner in ((1, 0), (0, 1)):
+        ta_j, tb_j = excluded_shared_corner
+        ev_ja0 = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, iv.mpf(ta_j))
+        ev_jb0 = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv, d_iv, iv.mpf(tb_j))
+        if ev_ja0 is not None and ev_jb0 is not None:
+            # Shared tangent direction from O_a'(ta_j) + O_b'(tb_j)
+            vx_mp = (mpmath.mp.mpf(ev_ja0[2].a) + mpmath.mp.mpf(ev_ja0[2].b)) / 2
+            vy_mp = (mpmath.mp.mpf(ev_ja0[3].a) + mpmath.mp.mpf(ev_ja0[3].b)) / 2
+            vnorm = mpmath.hypot(vx_mp, vy_mp)
+            if vnorm > 0:
+                shared_join_dir = (iv.mpf(vx_mp / vnorm), iv.mpf(vy_mp / vnorm))
 
     def _iv_mid_mpf(iv_val: Any) -> Any:
         return (mpmath.mp.mpf(iv_val.a) + mpmath.mp.mpf(iv_val.b)) / 2
 
-    def _krawczyk_eval(i1: Any, i2: Any) -> Optional[Tuple[Any, Any, float, bool, bool]]:
+    def _krawczyk_eval(i1: Any, i2: Any) -> Optional[Tuple[Any, Any, float, bool, bool, bool]]:
         m1_mp = _iv_mid_mpf(i1)
         m2_mp = _iv_mid_mpf(i2)
         m1_iv = iv.mpf(m1_mp)
@@ -1262,7 +1395,7 @@ def krawczyk_isolate_offset_intersections(
         jm10 = _iv_mid_mpf(ev_ma[3])
         jm11 = -_iv_mid_mpf(ev_mb[3])
         det = jm00 * jm11 - jm01 * jm10
-        if abs(det) <= mpmath.mpf(str(det_min_threshold)):
+        if abs(det) <= det_thresh_mp:
             return None
 
         y00 = iv.mpf(jm11 / det)
@@ -1278,7 +1411,13 @@ def krawczyk_isolate_offset_intersections(
         m10 = -(y10 * j00 + y11 * j10)
         m11 = 1 - (y10 * j01 + y11 * j11)
 
-        norm_inf = max(float((abs(m00) + abs(m01)).b), float((abs(m10) + abs(m11)).b))
+        # Rigorous exact 113-bit mpf upper bound on ||I - Y J(X)||_inf (no round-to-nearest float()!)
+        row0_upper_mp = mpmath.mp.mpf((abs(m00) + abs(m01)).b)
+        row1_upper_mp = mpmath.mp.mpf((abs(m10) + abs(m11)).b)
+        norm_upper_mp = max(row0_upper_mp, row1_upper_mp)
+        norm_strictly_lt_one = bool(norm_upper_mp < one_mp)
+        norm_inf_outward = mpf_to_outward_upper_f64(norm_upper_mp)
+
         dx1 = i1 - m1_iv
         dx2 = i2 - m2_iv
         k1 = m1_iv - (y00 * fx_m + y01 * fy_m) + (m00 * dx1 + m01 * dx2)
@@ -1286,7 +1425,7 @@ def krawczyk_isolate_offset_intersections(
 
         disjoint = bool(k1.b < i1.a or k1.a > i1.b or k2.b < i2.a or k2.a > i2.b)
         inside = bool(k1.a > i1.a and k1.b < i1.b and k2.a > i2.a and k2.b < i2.b)
-        return k1, k2, norm_inf, inside, disjoint
+        return k1, k2, norm_inf_outward, norm_strictly_lt_one, inside, disjoint
 
     def _contract_krawczyk(c1: Any, c2: Any) -> Tuple[Any, Any, float]:
         best_norm = 0.0
@@ -1294,10 +1433,10 @@ def krawczyk_isolate_offset_intersections(
             kr = _krawczyk_eval(c1, c2)
             if kr is None:
                 break
-            nk1, nk2, norm_inf, _inside, disjoint = kr
-            if disjoint or norm_inf >= 1.0:
+            nk1, nk2, norm_inf_out, norm_lt_1, _inside, disjoint = kr
+            if disjoint or not norm_lt_1 or norm_inf_out >= 1.0:
                 break
-            best_norm = norm_inf
+            best_norm = norm_inf_out
             lo1 = max(c1.a, nk1.a)
             hi1 = min(c1.b, nk1.b)
             lo2 = max(c2.a, nk2.a)
@@ -1310,9 +1449,13 @@ def krawczyk_isolate_offset_intersections(
                 break
         return c1, c2, best_norm
 
-    # Seed broad-phase panel grid using validated interval O_a(I1) vs O_b(I2) AABB overlap
-    d1_lo, d1_hi = iv.mpf(domain_1[0]), iv.mpf(domain_1[1])
-    d2_lo, d2_hi = iv.mpf(domain_2[0]), iv.mpf(domain_2[1])
+    d1_lo_mp = _fraction_to_mpf(Fraction(domain_1[0]))
+    d1_hi_mp = _fraction_to_mpf(Fraction(domain_1[1]))
+    d2_lo_mp = _fraction_to_mpf(Fraction(domain_2[0]))
+    d2_hi_mp = _fraction_to_mpf(Fraction(domain_2[1]))
+    d1_lo, d1_hi = _fraction_to_iv(Fraction(domain_1[0])), _fraction_to_iv(Fraction(domain_1[1]))
+    d2_lo, d2_hi = _fraction_to_iv(Fraction(domain_2[0])), _fraction_to_iv(Fraction(domain_2[1]))
+
     panels_a = []
     for k in range(initial_panels):
         i1 = iv.mpf([
@@ -1364,10 +1507,6 @@ def krawczyk_isolate_offset_intersections(
         if same_segment:
             if domain_1 == domain_2 and i1_lo_mp > i2_hi_mp:
                 continue
-            # MVT Injectivity Trivial-Diagonal Exclusion:
-            # By Rolle's Theorem, if O(t1) = O(t2) for t1 != t2 in H = i1 U i2, then 0 must lie in
-            # BOTH O'_x(H) and O'_y(H). Thus if 0 not in O'_x(H) OR 0 not in O'_y(H), O is injective on H,
-            # proving zero non-trivial self-intersections inside i1 x i2 without any depth/distance heuristic.
             hull_span_mp = max(i1_hi_mp, i2_hi_mp) - min(i1_lo_mp, i2_lo_mp)
             boxes_overlap = (i1_hi_mp >= i2_lo_mp) and (i2_hi_mp >= i1_lo_mp)
             if boxes_overlap or float(hull_span_mp) <= 0.25:
@@ -1379,6 +1518,24 @@ def krawczyk_isolate_offset_intersections(
 
         eva = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, i1)
         evb = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv, d_iv, i2)
+
+        # Rigorous G1 shared-corner monotonicity exclusion:
+        # For adjacent segments with shared G1 offset join (ta_j, tb_j) in {(1, 0), (0, 1)}:
+        #   - If (1, 0): O_a(t1) - O_b(t2) = -(1 - t1) O_a'(xi1) - t2 O_b'(xi2) with (1-t1) >= 0, t2 >= 0.
+        #   - If (0, 1): O_a(t1) - O_b(t2) = t1 O_a'(xi1) + (1 - t2) O_b'(xi2) with t1 >= 0, (1-t2) >= 0.
+        # Hence if v . O_a'(I1) > 0 AND v . O_b'(I2) > 0 strictly on a box containing (ta_j, tb_j),
+        # then v . (O_a(t1) - O_b(t2)) != 0 for EVERY (t1, t2) != (ta_j, tb_j) in I1 x I2!
+        if excluded_shared_corner is not None and shared_join_dir is not None and eva is not None and evb is not None:
+            ta_j, tb_j = excluded_shared_corner
+            ta_j_mp, tb_j_mp = mpmath.mp.mpf(ta_j), mpmath.mp.mpf(tb_j)
+            contains_join = (i1_lo_mp <= ta_j_mp <= i1_hi_mp) and (i2_lo_mp <= tb_j_mp <= i2_hi_mp)
+            if contains_join:
+                vx_iv, vy_iv = shared_join_dir
+                proj_a = vx_iv * eva[2] + vy_iv * eva[3]
+                proj_b = vx_iv * evb[2] + vy_iv * evb[3]
+                if mpmath.mp.mpf(proj_a.a) > 0 and mpmath.mp.mpf(proj_b.a) > 0:
+                    continue
+
         ox_a, oy_a = _conservative_offset_aabb(ax_a, ay_a, i1, eva)
         ox_b, oy_b = _conservative_offset_aabb(ax_b, ay_b, i2, evb)
         fx = ox_a - ox_b
@@ -1391,12 +1548,12 @@ def krawczyk_isolate_offset_intersections(
                 unresolved_boxes.append(
                     {
                         "t1Box": [
-                            max(0.0, mpf_to_outward_lower_f64(i1.a)),
-                            min(1.0, mpf_to_outward_upper_f64(i1.b)),
+                            mpf_to_outward_lower_f64(i1.a),
+                            mpf_to_outward_upper_f64(i1.b),
                         ],
                         "t2Box": [
-                            max(0.0, mpf_to_outward_lower_f64(i2.a)),
-                            min(1.0, mpf_to_outward_upper_f64(i2.b)),
+                            mpf_to_outward_lower_f64(i2.a),
+                            mpf_to_outward_upper_f64(i2.b),
                         ],
                         "status": "UNRESOLVED",
                         "reason": "ZERO_BASE_SPEED_CONTAINED_AT_MAX_DEPTH",
@@ -1416,11 +1573,40 @@ def krawczyk_isolate_offset_intersections(
                     stack.append((i1, iv.mpf([mid, i2.b]), depth + 1))
             continue
 
-        def _record_krawczyk_solution(c1: Any, c2: Any, norm_val: float) -> None:
-            t1_lo = max(0.0, mpf_to_outward_lower_f64(c1.a))
-            t1_hi = min(1.0, mpf_to_outward_upper_f64(c1.b))
-            t2_lo = max(0.0, mpf_to_outward_lower_f64(c2.a))
-            t2_hi = min(1.0, mpf_to_outward_upper_f64(c2.b))
+        def _is_strictly_outside_domain(c1: Any, c2: Any) -> bool:
+            return bool(
+                mpmath.mp.mpf(c1.b) < d1_lo_mp
+                or mpmath.mp.mpf(c1.a) > d1_hi_mp
+                or mpmath.mp.mpf(c2.b) < d2_lo_mp
+                or mpmath.mp.mpf(c2.a) > d2_hi_mp
+            )
+
+        def _is_inside_domain(c1: Any, c2: Any) -> bool:
+            return bool(
+                mpmath.mp.mpf(c1.a) >= d1_lo_mp
+                and mpmath.mp.mpf(c1.b) <= d1_hi_mp
+                and mpmath.mp.mpf(c2.a) >= d2_lo_mp
+                and mpmath.mp.mpf(c2.b) <= d2_hi_mp
+            )
+
+        def _record_krawczyk_solution(c1: Any, c2: Any, norm_val: float) -> bool:
+            """Records a verified Krawczyk solution strictly within domain_1 x domain_2 without clamping.
+            Returns True if solution was cleanly handled (recorded or proven outside domain),
+            False if the contracted box still straddles the domain boundary and requires further refinement.
+            """
+            if _is_strictly_outside_domain(c1, c2):
+                return True
+            if not _is_inside_domain(c1, c2):
+                return False
+
+            t1_lo = mpf_to_outward_lower_f64(c1.a)
+            t1_hi = mpf_to_outward_upper_f64(c1.b)
+            t2_lo = mpf_to_outward_lower_f64(c2.a)
+            t2_hi = mpf_to_outward_upper_f64(c2.b)
+            # Never silently clamp to [0, 1]; check outward binary64 endpoints against requested domain
+            if t1_lo < domain_1[0] or t1_hi > domain_1[1] or t2_lo < domain_2[0] or t2_hi > domain_2[1]:
+                return False
+
             m1_pt = iv.mpf(_iv_mid_mpf(c1))
             m2_pt = iv.mpf(_iv_mid_mpf(c2))
             p_a = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, m1_pt)
@@ -1454,16 +1640,17 @@ def krawczyk_isolate_offset_intersections(
                         "existenceAndUniquenessCertified": True,
                     }
                 )
+            return True
 
         kr = _krawczyk_eval(i1, i2)
         if kr is not None:
-            k1, k2, norm_inf, inside, disjoint = kr
+            k1, k2, norm_inf_out, norm_lt_1, inside, disjoint = kr
             if disjoint:
                 continue
-            if inside and norm_inf < 1.0:
+            if inside and norm_lt_1 and norm_inf_out < 1.0:
                 c1, c2, final_norm = _contract_krawczyk(k1, k2)
-                _record_krawczyk_solution(c1, c2, final_norm if final_norm > 0.0 else norm_inf)
-                continue
+                if _record_krawczyk_solution(c1, c2, final_norm if final_norm > 0.0 else norm_inf_out):
+                    continue
 
         # Handle root potentially straddling an exact dyadic split boundary when box is tiny:
         if float(i1.delta) <= 1e-7 and float(i2.delta) <= 1e-7:
@@ -1471,22 +1658,22 @@ def krawczyk_isolate_offset_intersections(
             inf2 = iv.mpf([i2.a - 0.25 * i2.delta, i2.b + 0.25 * i2.delta])
             kr_inf = _krawczyk_eval(inf1, inf2)
             if kr_inf is not None:
-                k1, k2, norm_inf, inside, _disjoint = kr_inf
-                if inside and norm_inf < 1.0:
+                k1, k2, norm_inf_out, norm_lt_1, inside, _disjoint = kr_inf
+                if inside and norm_lt_1 and norm_inf_out < 1.0:
                     c1, c2, final_norm = _contract_krawczyk(k1, k2)
-                    _record_krawczyk_solution(c1, c2, final_norm if final_norm > 0.0 else norm_inf)
-                    continue
+                    if _record_krawczyk_solution(c1, c2, final_norm if final_norm > 0.0 else norm_inf_out):
+                        continue
 
         if depth >= max_depth:
             unresolved_boxes.append(
                 {
                     "t1Box": [
-                        max(0.0, mpf_to_outward_lower_f64(i1.a)),
-                        min(1.0, mpf_to_outward_upper_f64(i1.b)),
+                        mpf_to_outward_lower_f64(i1.a),
+                        mpf_to_outward_upper_f64(i1.b),
                     ],
                     "t2Box": [
-                        max(0.0, mpf_to_outward_lower_f64(i2.a)),
-                        min(1.0, mpf_to_outward_upper_f64(i2.b)),
+                        mpf_to_outward_lower_f64(i2.a),
+                        mpf_to_outward_upper_f64(i2.b),
                     ],
                     "status": "UNRESOLVED",
                     "reason": "KRAWCZYK_EXISTENCE_UNPROVEN_AT_MAX_DEPTH",
@@ -1580,11 +1767,7 @@ def detect_global_contour_self_intersections(
     n_seg = len(segments)
 
     for i in range(n_seg):
-        for j in range(i + 2, n_seg):
-            # Skip adjacent segments sharing a corner vertex (including wrap-around 0 and n_seg-1 if closed)
-            if i == 0 and j == n_seg - 1 and segments[0].p0 == segments[-1].p3:
-                continue
-
+        for j in range(i + 1, n_seg):
             info_a = offset_aabb_infos[i]
             info_b = offset_aabb_infos[j]
             if not (info_a["valid"] and info_b["valid"]):
@@ -1604,6 +1787,34 @@ def detect_global_contour_self_intersections(
             if not aabb_overlap:
                 continue
 
+            # Determine if (i, j) are adjacent segments sharing a base endpoint and check if their
+            # offset endpoints coincide (G1 join) vs separate (e.g. inward concave corner crossing!).
+            excluded_corner: Optional[Tuple[int, int]] = None
+            candidate_join: Optional[Tuple[int, int]] = None
+            if j == i + 1 and segments[i].p3 == segments[j].p0:
+                candidate_join = (1, 0)
+            elif i == 0 and j == n_seg - 1 and n_seg >= 2 and segments[j].p3 == segments[i].p0:
+                candidate_join = (0, 1)
+
+            if candidate_join is not None:
+                iv.prec = 113
+                mpmath.mp.prec = 113
+                ta_j, tb_j = candidate_join
+                ax_a = [_fraction_to_iv(c) for c in segments[i].power_coeffs_xy()[0]]
+                ay_a = [_fraction_to_iv(c) for c in segments[i].power_coeffs_xy()[1]]
+                ax_b = [_fraction_to_iv(c) for c in segments[j].power_coeffs_xy()[0]]
+                ay_b = [_fraction_to_iv(c) for c in segments[j].power_coeffs_xy()[1]]
+                s_iv_j = iv.mpf(s_sign)
+                d_iv_j = _fraction_to_iv(Fraction(d))
+                ev_a_j = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv_j, d_iv_j, iv.mpf(ta_j))
+                ev_b_j = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv_j, d_iv_j, iv.mpf(tb_j))
+                if ev_a_j is not None and ev_b_j is not None:
+                    # Only if O_i(ta_j) and O_j(tb_j) actually coincide (G1 continuous offset join)
+                    # do we exclude the trivial shared join point via directional monotonicity.
+                    # At a non-G1 corner (e.g. 90-degree inward corner), O_i(1) != O_j(0), so NO exclusion is applied!
+                    if (0 in (ev_a_j[0] - ev_b_j[0])) and (0 in (ev_a_j[1] - ev_b_j[1])):
+                        excluded_corner = candidate_join
+
             kraw = krawczyk_isolate_offset_intersections(
                 segments[i],
                 segments[j],
@@ -1613,6 +1824,7 @@ def detect_global_contour_self_intersections(
                 domain_2=(0.0, 1.0),
                 max_depth=max_depth,
                 initial_panels=16,
+                excluded_shared_corner=excluded_corner,
             )
             if kraw["unresolvedBoxes"]:
                 unresolved_records.append(
@@ -1750,9 +1962,164 @@ def _compute_circle_octant_bezier_errors(radius_cm: float) -> Tuple[float, float
     return e_grid, max(e_cert, e_grid)
 
 
+def certify_analytic_circle_offset_iv(
+    radius_cm: Fraction,
+    s_sign: int,
+    d_exact: Fraction,
+    segment_id: str,
+    piece_id: str = "sanity-circle",
+    epsilon_reg: float = 0.05,
+    max_geometric_deviation_bound_cm: float = 0.0,
+) -> OffsetValidationRecord:
+    """Real 113-bit mpmath.iv interval oracle for an exact CCW circle of radius R > 0.
+    Evaluates Q = R^2 and f = 1 - s*d/R in validated interval arithmetic and derives all
+    verification_outcome, failure_category, canonical_offset_classification, and cusp/reversal flags
+    solely from interval predicates (never from expected test labels).
+    """
+    iv.prec = 113
+    mpmath.mp.prec = 113
+    r_iv = _fraction_to_iv(radius_cm)
+    d_iv = _fraction_to_iv(d_exact)
+    s_iv = iv.mpf(s_sign)
+    eps_iv = _fraction_to_iv(Fraction(str(epsilon_reg)))
+
+    q_iv = r_iv ** 2
+    f_iv = 1 - (s_iv * d_iv) / r_iv
+    q_pair = iv_to_outward_f64_pair(q_iv)
+    f_pair = iv_to_outward_f64_pair(f_iv)
+
+    # Exact rational check for constant focal collapse f === 0 vs strict sign predicates
+    f_exact_q = Fraction(1) - Fraction(s_sign) * d_exact / radius_cm
+    has_zero_speed_cusp = (f_exact_q == 0)
+    has_tangent_reversal = (f_pair[1] < 0.0)
+
+    if f_pair[0] >= epsilon_reg and q_pair[0] > 0.0:
+        outcome: Literal["CERTIFIED_VALID", "CERTIFIED_INVALID", "INCONCLUSIVE"] = "CERTIFIED_VALID"
+        fail_cat = OffsetFailureCategory.NONE
+        canon_class = CanonicalOffsetClassification.CERTIFIED_VALID
+        active_classes = [CanonicalOffsetClassification.CERTIFIED_VALID]
+        detected_cats: List[OffsetFailureCategory] = []
+        cusp_roots: List[Tuple[float, float]] = []
+        prod_ready = True
+    elif has_zero_speed_cusp:
+        outcome = "CERTIFIED_INVALID"
+        fail_cat = OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP
+        canon_class = CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP
+        active_classes = [CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP]
+        detected_cats = [OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP]
+        cusp_roots = [(0.0, 1.0)]
+        prod_ready = False
+    elif has_tangent_reversal:
+        outcome = "CERTIFIED_INVALID"
+        fail_cat = OffsetFailureCategory.TANGENT_REVERSAL
+        canon_class = CanonicalOffsetClassification.TANGENT_REVERSAL
+        active_classes = [CanonicalOffsetClassification.TANGENT_REVERSAL]
+        detected_cats = [OffsetFailureCategory.TANGENT_REVERSAL]
+        cusp_roots = []
+        prod_ready = False
+    elif f_pair[0] > 0.0 and f_pair[1] < epsilon_reg:
+        outcome = "CERTIFIED_INVALID"
+        fail_cat = OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION
+        canon_class = CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION
+        active_classes = [CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION]
+        detected_cats = [OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION]
+        cusp_roots = []
+        prod_ready = False
+    else:
+        outcome = "INCONCLUSIVE"
+        fail_cat = OffsetFailureCategory.INCONCLUSIVE_VERIFICATION
+        canon_class = CanonicalOffsetClassification.INCONCLUSIVE
+        active_classes = [CanonicalOffsetClassification.INCONCLUSIVE]
+        detected_cats = [OffsetFailureCategory.INCONCLUSIVE_VERIFICATION]
+        cusp_roots = []
+        prod_ready = False
+
+    return OffsetValidationRecord(
+        segment_id=segment_id,
+        piece_id=piece_id,
+        contour_orientation="CCW_EXTERIOR",
+        offset_direction_sign_s=s_sign,
+        offset_distance_cm=float(d_exact),
+        regularity_margin_epsilon=epsilon_reg,
+        min_base_speed_squared_interval=q_pair,
+        min_offset_speed_factor_interval=f_pair,
+        has_zero_speed_cusp_on_domain=has_zero_speed_cusp,
+        has_tangent_reversal_on_domain=has_tangent_reversal,
+        stationary_parameterization_status=StationaryParameterizationStatus.NONE_REGULAR_SPEED,
+        base_curve_singularity_classification=BaseCurveSingularityClassification.REGULAR_BASE_CURVE,
+        isolated_cusp_roots_t=cusp_roots,
+        isolated_self_intersections=[],
+        max_geometric_deviation_bound_cm=max_geometric_deviation_bound_cm,
+        max_certified_radial_error_cm=max_geometric_deviation_bound_cm,
+        max_subdivision_depth_reached=0,
+        primary_span_coverage_ratio=1.0,
+        local_self_intersection_status="NONE" if outcome == "CERTIFIED_VALID" else "NOT_EVALUATED",
+        global_contour_self_intersection_status="NOT_EVALUATED",
+        unresolved_intervals=[(0.0, 1.0)] if outcome == "INCONCLUSIVE" else [],
+        escalation_trace=["prec=113bit:analytic_circle_exact_iv"],
+        detected_failure_categories=detected_cats,
+        verification_outcome=outcome,
+        failure_category=fail_cat,
+        canonical_offset_classification=canon_class,
+        active_classifications_on_domain=active_classes,
+        working_precision_bits=113,
+        is_production_ready=prod_ready,
+    )
+
+
+def certify_cubic_offset_with_local_self_intersection(
+    curve: ExactCubicBezier2D,
+    s_sign: int,
+    d: float,
+    piece_id: str = "piece-01",
+    epsilon_reg: float = 0.05,
+) -> OffsetValidationRecord:
+    """Production Tier-2 oracle pipeline combining complete-interval regularity certification with
+    2D Krawczyk local swallowtail self-intersection isolation when cusp roots bracket a reversal loop.
+    """
+    base_rec = certify_cubic_offset_on_unit_interval(
+        curve, s_sign=s_sign, d=d, piece_id=piece_id, epsilon_reg=epsilon_reg
+    )
+    if (
+        base_rec.has_zero_speed_cusp_on_domain
+        and base_rec.has_tangent_reversal_on_domain
+        and len(base_rec.isolated_cusp_roots_t) >= 2
+    ):
+        c1_lo = base_rec.isolated_cusp_roots_t[0][0]
+        c2_hi = base_rec.isolated_cusp_roots_t[-1][1]
+        local_si_cert = isolate_local_swallowtail_self_intersection(
+            curve, s_sign=s_sign, d=d, cusp_t1=c1_lo, cusp_t2=c2_hi
+        )
+        active = [CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION] + [
+            c for c in base_rec.active_classifications_on_domain
+            if c != CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION
+        ]
+        detected = [OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION] + [
+            c for c in base_rec.detected_failure_categories
+            if c != OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION
+        ]
+        return base_rec.model_copy(
+            update={
+                "isolated_self_intersections": [local_si_cert],
+                "local_self_intersection_status": "DETECTED",
+                "verification_outcome": "CERTIFIED_INVALID",
+                "failure_category": OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION,
+                "canonical_offset_classification": CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION,
+                "active_classifications_on_domain": active,
+                "detected_failure_categories": detected,
+                "is_production_ready": False,
+            }
+        )
+    return base_rec
+
+
 def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
-    """Executes ADR-009 §1.4 & §6.1 Four Analytical CCW Circle Sanity Cases (AG-01..AG-04) with exact canonical classifications."""
+    """Executes ADR-009 §1.4 & §6.1 Four Analytical CCW Circle Sanity Cases (AG-01..AG-04) via real
+    113-bit interval circle oracle `certify_analytic_circle_offset_iv` AND cross-checks against the
+    cubic Bezier octant interval oracle `certify_cubic_offset_on_unit_interval`.
+    """
     R = 10.0
+    R_frac = Fraction(10)
     cases_spec = [
         (
             "AG-01",
@@ -1800,8 +2167,6 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
         ),
     ]
 
-    # Construct a canonical cubic Bezier octant (theta in [0, pi/4]) approximating the R=10 cm CCW circle
-    # so AG-01..AG-04 ALSO cross-check against the real complete-interval oracle `certify_cubic_offset_on_unit_interval`.
     mpmath.mp.prec = 113
     theta_oct = mpmath.pi / 4
     k_oct = (mpmath.mpf(4) / 3) * mpmath.tan(theta_oct / 4)
@@ -1823,16 +2188,15 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
         s_sign,
         d_val,
         expected_cat,
-        failure_cat,
-        outcome,
-        has_cusp,
-        has_rev,
+        expected_failure_cat,
+        expected_outcome,
+        expected_has_cusp,
+        expected_has_rev,
     ) in cases_spec:
         kappa = 1.0 / R
         d_frac = Fraction(str(d_val))
-        f_frac = Fraction(1) - Fraction(s_sign) * d_frac / Fraction(10)
+        f_frac = Fraction(1) - Fraction(s_sign) * d_frac / R_frac
         f_factor = float(f_frac)
-        f_interval_f64 = fraction_pair_to_outward_f64_pair(f_frac, f_frac)
         signed_radius = R - s_sign * d_val
         offset_speed_norm = abs(f_factor) * R
 
@@ -1844,7 +2208,18 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
         eff_r = abs(signed_radius)
         e_grid, e_cert = _compute_circle_octant_bezier_errors(eff_r)
 
-        # Invoke real interval oracle on the cubic Bezier circle octant
+        # Invoke REAL 113-bit analytic circle interval oracle (never copies expected_cat!)
+        val_record = certify_analytic_circle_offset_iv(
+            radius_cm=R_frac,
+            s_sign=s_sign,
+            d_exact=d_frac,
+            segment_id=f"{fam_id}-ccw-circle",
+            piece_id="sanity-circle",
+            epsilon_reg=0.05,
+            max_geometric_deviation_bound_cm=e_cert,
+        )
+
+        # Cross-check against real complete-interval cubic Bezier octant oracle
         octant_val = certify_cubic_offset_on_unit_interval(
             octant_curve,
             s_sign=s_sign,
@@ -1853,30 +2228,39 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
             piece_id=fam_id,
             subdivision_panels=64,
         )
-        octant_matches_outcome = octant_val.verification_outcome == outcome
+        octant_matches_outcome = octant_val.verification_outcome == expected_outcome
         if fam_id in ("AG-01", "AG-03", "AG-04"):
             octant_matches_class = octant_val.canonical_offset_classification == expected_cat
         else:
-            # AG-02: cubic octant has ~2.7e-4 curvature ripple around exact 1/R => CERTIFIED_INVALID (cusp/reversal)
             octant_matches_class = octant_val.verification_outcome == "CERTIFIED_INVALID"
 
         extra_subcases: Dict[str, Any] = {}
         if fam_id == "AG-04":
-            # Also explicitly verify outward offset with d = 12.0 cm > R = 10.0 cm per ADR-009 §6 #4
             d_large = 12.0
-            f_large = 1.0 - (-1) * d_large * kappa  # 2.20 > 1.0
-            r_large = R - (-1) * d_large  # 22.0 cm
+            d_large_frac = Fraction(12)
+            f_large = 1.0 - (-1) * d_large * kappa
+            r_large = R - (-1) * d_large
             eg_large, ec_large = _compute_circle_octant_bezier_errors(r_large)
+            circle_val_large = certify_analytic_circle_offset_iv(
+                radius_cm=R_frac,
+                s_sign=-1,
+                d_exact=d_large_frac,
+                segment_id="AG-04-d12-ccw-circle",
+                piece_id="AG-04-d12",
+                max_geometric_deviation_bound_cm=ec_large,
+            )
             octant_val_large = certify_cubic_offset_on_unit_interval(
                 octant_curve,
                 s_sign=-1,
                 d=d_large,
-                d_exact=Fraction(12),
+                d_exact=d_large_frac,
                 piece_id="AG-04-d12",
                 subdivision_panels=64,
             )
             octant_matches_class = octant_matches_class and (
-                octant_val_large.verification_outcome == "CERTIFIED_VALID"
+                circle_val_large.verification_outcome == "CERTIFIED_VALID"
+                and circle_val_large.canonical_offset_classification == CanonicalOffsetClassification.CERTIFIED_VALID
+                and octant_val_large.verification_outcome == "CERTIFIED_VALID"
                 and octant_val_large.canonical_offset_classification == CanonicalOffsetClassification.CERTIFIED_VALID
             )
             extra_subcases["outwardSuperRadiusSubcase_d12cm"] = {
@@ -1885,35 +2269,19 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
                 "analyticalOffsetRadiusCm": round(r_large, 6),
                 "O_at_t0": (r_large, 0.0),
                 "O_prime_at_t0": (0.0, round(f_large * R, 6)),
-                "canonicalOffsetClassification": CanonicalOffsetClassification.CERTIFIED_VALID.value,
-                "verificationOutcome": "CERTIFIED_VALID",
+                "canonicalOffsetClassification": circle_val_large.canonical_offset_classification.value,
+                "verificationOutcome": circle_val_large.verification_outcome,
                 "gridErrorCm": eg_large,
                 "certifiedIntervalErrorCm": ec_large,
                 "bezierOctantOracleOutcome": octant_val_large.verification_outcome,
             }
 
-        val_record = OffsetValidationRecord(
-            segment_id=f"{fam_id}-ccw-circle",
-            piece_id="sanity-circle",
-            contour_orientation="CCW_EXTERIOR",
-            offset_direction_sign_s=s_sign,
-            offset_distance_cm=d_val,
-            regularity_margin_epsilon=0.05,
-            min_base_speed_squared_interval=(R * R, R * R),
-            min_offset_speed_factor_interval=f_interval_f64,
-            has_zero_speed_cusp_on_domain=has_cusp,
-            has_tangent_reversal_on_domain=has_rev,
-            stationary_parameterization_status=StationaryParameterizationStatus.NONE_REGULAR_SPEED,
-            base_curve_singularity_classification=BaseCurveSingularityClassification.REGULAR_BASE_CURVE,
-            isolated_cusp_roots_t=[(0.0, 1.0)] if has_cusp else [],
-            isolated_self_intersections=[],
-            max_geometric_deviation_bound_cm=e_cert,
-            verification_outcome=outcome,  # type: ignore[arg-type]
-            failure_category=failure_cat,
-            canonical_offset_classification=expected_cat,
-            active_classifications_on_domain=[expected_cat],
-            working_precision_bits=113,
-            is_production_ready=(outcome == "CERTIFIED_VALID"),
+        oracle_matches_expected = (
+            val_record.verification_outcome == expected_outcome
+            and val_record.failure_category == expected_failure_cat
+            and val_record.canonical_offset_classification == expected_cat
+            and val_record.has_zero_speed_cusp_on_domain is expected_has_cusp
+            and val_record.has_tangent_reversal_on_domain is expected_has_rev
         )
 
         results.append(
@@ -1931,15 +2299,15 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
                 "O_prime_at_t0": o_prime_at_0,
                 "O_at_pi2": o_at_pi2,
                 "O_prime_at_pi2": o_prime_at_pi2,
-                "hasZeroSpeedCuspOnDomain": has_cusp,
-                "hasTangentReversalOnDomain": has_rev,
+                "hasZeroSpeedCuspOnDomain": val_record.has_zero_speed_cusp_on_domain,
+                "hasTangentReversalOnDomain": val_record.has_tangent_reversal_on_domain,
                 "expectedCategory": expected_cat.value,
-                "classifiedCategory": expected_cat.value,
-                "canonicalOffsetClassification": expected_cat.value,
-                "activeClassificationsOnDomain": [expected_cat.value],
-                "baseCurveSingularityClassification": BaseCurveSingularityClassification.REGULAR_BASE_CURVE.value,
-                "verificationOutcome": outcome,
-                "failureCategory": failure_cat.value,
+                "classifiedCategory": val_record.canonical_offset_classification.value,
+                "canonicalOffsetClassification": val_record.canonical_offset_classification.value,
+                "activeClassificationsOnDomain": [c.value for c in val_record.active_classifications_on_domain],
+                "baseCurveSingularityClassification": val_record.base_curve_singularity_classification.value,
+                "verificationOutcome": val_record.verification_outcome,
+                "failureCategory": val_record.failure_category.value,
                 "gridErrorCm": e_grid,
                 "certifiedIntervalErrorCm": e_cert,
                 "bezierOctantOracleCrossCheck": {
@@ -1951,7 +2319,12 @@ def verify_four_circle_sanity_cases() -> List[Dict[str, Any]]:
                 },
                 "offsetValidationRecord": val_record.model_dump(mode="json"),
                 **extra_subcases,
-                "passed": (e_grid <= e_cert and octant_matches_outcome and octant_matches_class),
+                "passed": (
+                    oracle_matches_expected
+                    and e_grid <= e_cert
+                    and octant_matches_outcome
+                    and octant_matches_class
+                ),
             }
         )
     return results
@@ -2114,60 +2487,41 @@ def execute_17_adversarial_geometry_families() -> Dict[str, Any]:
         }
     )
 
-    # AG-08: Swallowtail Double Cusp + Local Self-Crossing Loop Isolation (O(t1*) = O(t2*) solved in 2D)
-    local_si_cert = isolate_local_swallowtail_self_intersection(
-        ag06_curve, s_sign=+1, d=2.0, cusp_t1=root1_ag06.tLower, cusp_t2=root2_ag06.tUpper
+    # AG-08: Swallowtail Double Cusp + Local Self-Crossing Loop Isolation via real production oracle pipeline!
+    ag08_curve = ExactCubicBezier2D(
+        segment_id="AG-08-swallowtail-self-intersection",
+        p0=ag06_curve.p0,
+        p1=ag06_curve.p1,
+        p2=ag06_curve.p2,
+        p3=ag06_curve.p3,
     )
+    ag08_val = certify_cubic_offset_with_local_self_intersection(
+        ag08_curve, s_sign=+1, d=2.0, piece_id="AG-08"
+    )
+    assert len(ag08_val.isolated_self_intersections) >= 1
+    local_si_cert = ag08_val.isolated_self_intersections[0]
     t_trim_left = 0.5 * (local_si_cert.t1Bracket[0] + local_si_cert.t1Bracket[1])
     t_trim_right = 0.5 * (local_si_cert.t2Bracket[0] + local_si_cert.t2Bracket[1])
-    ag08_active = [
-        CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION,
-        CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP,
-        CanonicalOffsetClassification.TANGENT_REVERSAL,
-    ]
-    ag08_val = OffsetValidationRecord(
-        segment_id="AG-08-swallowtail-self-intersection",
-        piece_id="AG-08",
-        contour_orientation="CCW_EXTERIOR",
-        offset_direction_sign_s=+1,
-        offset_distance_cm=2.0,
-        regularity_margin_epsilon=0.05,
-        min_base_speed_squared_interval=(64.0, 64.0),
-        min_offset_speed_factor_interval=(-0.5, -0.5),
-        has_zero_speed_cusp_on_domain=True,
-        has_tangent_reversal_on_domain=True,
-        stationary_parameterization_status=StationaryParameterizationStatus.NONE_REGULAR_SPEED,
-        base_curve_singularity_classification=BaseCurveSingularityClassification.REGULAR_BASE_CURVE,
-        isolated_cusp_roots_t=[
-            (root1_ag06.tLower, root1_ag06.tUpper),
-            (root2_ag06.tLower, root2_ag06.tUpper),
-        ],
-        isolated_self_intersections=[local_si_cert],
-        max_geometric_deviation_bound_cm=0.0,
-        verification_outcome="CERTIFIED_INVALID",
-        failure_category=OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION,
-        canonical_offset_classification=CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION,
-        active_classifications_on_domain=ag08_active,
-        working_precision_bits=113,
-        is_production_ready=False,
-    )
     families.append(
         {
             "familyId": "AG-08",
             "title": "Swallowtail Double Cusp & 2D Local Self-Intersection Isolation (O(t1*) = O(t2*))",
             "expectedCategory": CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION.value,
-            "classifiedCategory": CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION.value,
-            "canonicalOffsetClassification": CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION.value,
-            "activeClassificationsOnDomain": [c.value for c in ag08_active],
-            "baseCurveSingularityClassification": BaseCurveSingularityClassification.REGULAR_BASE_CURVE.value,
-            "verificationOutcome": "CERTIFIED_INVALID",
-            "failureCategory": OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION.value,
+            "classifiedCategory": ag08_val.canonical_offset_classification.value,
+            "canonicalOffsetClassification": ag08_val.canonical_offset_classification.value,
+            "activeClassificationsOnDomain": [c.value for c in ag08_val.active_classifications_on_domain],
+            "baseCurveSingularityClassification": ag08_val.base_curve_singularity_classification.value,
+            "verificationOutcome": ag08_val.verification_outcome,
+            "failureCategory": ag08_val.failure_category.value,
             "selfIntersectionCertificate": local_si_cert.model_dump(mode="json"),
             "swallowtailTrimParameters": [round(t_trim_left, 12), round(t_trim_right, 12)],
             "trimmed": True,
             "offsetValidationRecord": ag08_val.model_dump(mode="json"),
             "passed": (
-                local_si_cert.residualDistanceCm <= 1e-12
+                ag08_val.verification_outcome == "CERTIFIED_INVALID"
+                and ag08_val.canonical_offset_classification == CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION
+                and ag08_val.local_self_intersection_status == "DETECTED"
+                and local_si_cert.residualDistanceCm <= 1e-12
                 and 0.31 < t_trim_left < 0.32
                 and 0.68 < t_trim_right < 0.69
             ),
@@ -3031,6 +3385,92 @@ def execute_adr009_section6_complete_suite() -> Dict[str, Any]:
                 and collapsed_val.stationary_parameterization_status
                 == StationaryParameterizationStatus.COLLAPSED_ZERO_LENGTH_CURVE
                 and collapsed_val.verification_outcome == "CERTIFIED_INVALID"
+            ),
+        }
+    )
+
+    # 7. ADR-009 §6 #11b: S-Curve Inflection + High-Curvature Concave Region (d * kappa_max ~= 1.15 > 1)
+    # x(t) = 10t, y(t) = 5*(8t^3 - 12t^2 + 4t) => C(0.5) = 0 exact inflection point,
+    # while on (0.5, 1] concave region reaches kappa_max ~= 0.69282 cm^-1; at s=+1, d=1.66 cm => d*kappa_max ~= 1.150 > 1.
+    s6_11b_curve = ExactCubicBezier2D(
+        segment_id="ADR009-S6-11b-scurve-inflection-concave-cusp",
+        p0=(Fraction(0), Fraction(0)),
+        p1=(Fraction(10, 3), Fraction(20, 3)),
+        p2=(Fraction(20, 3), Fraction(-20, 3)),
+        p3=(Fraction(10), Fraction(0)),
+    )
+    c_11b_half = s6_11b_curve.eval_C_exact(Fraction(1, 2))
+    s6_11b_val = certify_cubic_offset_on_unit_interval(
+        s6_11b_curve, s_sign=+1, d=1.66, d_exact=Fraction(166, 100), piece_id="ADR009-S6-11b"
+    )
+    cases.append(
+        {
+            "caseId": "ADR009-S6-11b",
+            "adr009Section6Item": "11b",
+            "title": "S-Curve Inflection Point With Concave Super-Critical Region (d*kappa_max ~= 1.15 > 1)",
+            "canonicalOffsetClassification": s6_11b_val.canonical_offset_classification.value,
+            "baseCurveSingularityClassification": s6_11b_val.base_curve_singularity_classification.value,
+            "verificationOutcome": s6_11b_val.verification_outcome,
+            "failureCategory": s6_11b_val.failure_category.value,
+            "C_at_0_5": float(c_11b_half),
+            "isolatedCuspRootsCount": len(s6_11b_val.isolated_cusp_roots_t),
+            "minOffsetSpeedFactorInterval": list(s6_11b_val.min_offset_speed_factor_interval),
+            "offsetValidationRecord": s6_11b_val.model_dump(mode="json"),
+            "passed": (
+                c_11b_half == 0
+                and s6_11b_val.verification_outcome == "CERTIFIED_INVALID"
+                and s6_11b_val.has_zero_speed_cusp_on_domain is True
+                and s6_11b_val.has_tangent_reversal_on_domain is True
+                and len(s6_11b_val.isolated_cusp_roots_t) == 2
+                and s6_11b_val.min_offset_speed_factor_interval[0] < -0.10
+            ),
+        }
+    )
+
+    # 8. ADR-009 §6 #15: Steep-Parameterization Method B1 Output-Space Gate (||B'|| ~= 50 cm/t)
+    # Unrefined r_param = 1e-4 gives M * r_param = 5e-3 cm > tau = 1e-4 cm (REJECTED),
+    # whereas refined r_param = 1e-6 gives M * r_param + delta_eval <= 1e-4 cm (ACCEPTED).
+    s6_15_curve = ExactCubicBezier2D(
+        segment_id="ADR009-S6-15-steep-parameterization",
+        p0=(Fraction(0), Fraction(0)),
+        p1=(Fraction(50, 3), Fraction(2)),
+        p2=(Fraction(100, 3), Fraction(2)),
+        p3=(Fraction(50), Fraction(0)),
+    )
+    tau_cm = 1e-4
+    r_param_unrefined = 1e-4
+    r_param_refined = 1e-6
+    delta_eval_cm = 1e-12
+    m_speed_unrefined = compute_interval_max_speed_on_domain_cm_per_t(
+        s6_15_curve, 0.5 - r_param_unrefined, 0.5 + r_param_unrefined, panels=16
+    )
+    m_speed_refined = compute_interval_max_speed_on_domain_cm_per_t(
+        s6_15_curve, 0.5 - r_param_refined, 0.5 + r_param_refined, panels=16
+    )
+    b_ref_unrefined = m_speed_unrefined * r_param_unrefined + delta_eval_cm
+    b_ref_refined = m_speed_refined * r_param_refined + delta_eval_cm
+    unrefined_rejected = b_ref_unrefined > tau_cm
+    refined_accepted = b_ref_refined <= tau_cm
+    cases.append(
+        {
+            "caseId": "ADR009-S6-15",
+            "adr009Section6Item": 15,
+            "title": "Method B1 Steep-Parameterization Rejection (||B'|| >= 50 cm/t, r_param=1e-4 Rejected vs 1e-6 Accepted)",
+            "canonicalOffsetClassification": CanonicalOffsetClassification.CERTIFIED_VALID.value,
+            "baseCurveSingularityClassification": BaseCurveSingularityClassification.REGULAR_BASE_CURVE.value,
+            "toleranceTauCm": tau_cm,
+            "unrefinedParamHalfWidth": r_param_unrefined,
+            "unrefinedMaxSpeedCmPerT": m_speed_unrefined,
+            "unrefinedOutputBoundCm": b_ref_unrefined,
+            "unrefinedRejectedByMethodB1": unrefined_rejected,
+            "refinedParamHalfWidth": r_param_refined,
+            "refinedMaxSpeedCmPerT": m_speed_refined,
+            "refinedOutputBoundCm": b_ref_refined,
+            "refinedAcceptedByMethodB1": refined_accepted,
+            "passed": (
+                m_speed_unrefined >= 49.9
+                and unrefined_rejected is True
+                and refined_accepted is True
             ),
         }
     )

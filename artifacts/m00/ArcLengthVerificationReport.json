@@ -2,28 +2,29 @@
   "milestoneId": "M00.5",
   "artifactName": "ArcLengthVerificationReport.json",
   "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
-  "certifiedReferenceLengthCm": 16.665650514560983,
-  "certifiedHalfWidthCm": 1.7047798047256008e-06,
+  "certifiedReferenceLengthCm": 16.66565051456102,
+  "certifiedHalfWidthCm": 1.0654872700512946e-07,
   "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
   "diagnosticQuadLength113BitCm": 16.6656505146,
   "adaptiveGaussLegendreLengthCm": 16.6656505146,
   "adaptiveGaussLegendreConverged": true,
   "adaptiveGaussLegendreWithinC1CertEnclosure": true,
   "forwardLengthErrorCm": 1.4210854715202004e-14,
+  "forwardCertifiedBoundBCertCm": 1.0654874191666604e-07,
   "forwardToleranceMaxCm": 1e-06,
   "panelsEvaluated": 23,
   "methodC1CertArmscyeEnclosure": {
     "certificationAuthority": "METHOD_C1_CERT_CHORD_POLYGON_BOUNDS",
     "exactRationalEnclosureAvailable": true,
-    "lowerChordBoundRational": "5408312247529469291799214695681059/324518553658426726783156020576256",
-    "upperControlPolygonBoundRational": "338019584624676397693337936866609/20282409603651670423947251286016",
-    "subdivisionDepth": 10,
-    "panelsCount": 1024,
-    "lowerChordBoundCm": 16.665648809781178,
-    "upperControlPolygonBoundCm": 16.665652219340792,
-    "certifiedReferenceLengthCm": 16.665650514560983,
-    "certifiedHalfWidthCm": 1.7047798047256008e-06,
-    "enclosureWidthCm": 3.4095596094512016e-06,
+    "lowerChordBoundRational": "169009773943284952285459039047251/10141204801825835211973625643008",
+    "upperControlPolygonBoundRational": "676039104417399504604626927250495/40564819207303340847894502572032",
+    "subdivisionDepth": 12,
+    "panelsCount": 4096,
+    "lowerChordBoundCm": 16.66565040801229,
+    "upperControlPolygonBoundCm": 16.665650621109748,
+    "certifiedReferenceLengthCm": 16.66565051456102,
+    "certifiedHalfWidthCm": 1.0654872700512946e-07,
+    "enclosureWidthCm": 2.1309745401025892e-07,
     "nonStrictInequalityHolds": true,
     "quadratureRole": "DIAGNOSTIC_ONLY_NON_AUTHORITATIVE",
     "quadratureLength113BitCm": 16.66565051456102,
@@ -56,108 +57,307 @@
     "parameter_uncertainty_dt": 0.0,
     "local_speed_upper_bound_cm_per_t": 29.71330786133547,
     "propagated_position_error_cm": 0.0,
-    "direct_geometric_error_bound_cm": 1.7047798047256008e-06,
+    "direct_geometric_error_bound_cm": 1.0654874191666604e-07,
     "propagation_method": "C1_CERT_CHORD_POLYGON_BOUNDS",
     "working_precision_bits": 113,
-    "adaptive_subdivision_panels": 1024,
-    "certified_within_tolerance": true
+    "adaptive_subdivision_panels": 4096,
+    "certified_within_tolerance": true,
+    "quantity_name": "forward_arc_length_cm",
+    "reference_method_and_version": "M00.5 Method C1-Cert De Casteljau Chord/Control-Polygon Interval Enclosure (v2)",
+    "precision_and_arithmetic_model": "Exact rational De Casteljau + 113-bit mpmath.iv outward interval sum",
+    "enclosure_or_remainder_method": "De Casteljau geometric convexity theorem: sum(||chord_i||) <= L(B) <= sum(polygon_i)",
+    "assurance_classification": "CERTIFIED_ENCLOSURE",
+    "error_components": {
+      "x_float64": 16.665650514561005,
+      "x_ref": 16.66565051456102,
+      "observed_discrepancy_e_obs": 1.491153657279534e-14,
+      "reference_enclosure_b_ref": 1.0654872700512946e-07,
+      "implementation_to_exact_bound_b_cert": 1.0654874191666604e-07,
+      "heuristic_error_estimate": 1.4210854715202004e-14,
+      "parameter_enclosure": null,
+      "output_propagation": {
+        "propagation_method": "NONE_DIRECT_ENCLOSURE",
+        "derivative_upper_bound_m": null,
+        "point_evaluation_rounding_bound_delta_eval": 0.0,
+        "output_enclosure_radius_b_ref_x": 1.0654872700512946e-07
+      }
+    },
+    "acceptance_tolerance_tau": 1e-06,
+    "verification_outcome": "CERTIFIED_VALID",
+    "reproducibility_manifest": {
+      "python_version": "3.12.16",
+      "mpmath_version": "1.4.1",
+      "subdivision_depth_k": 12,
+      "input_fixture_sha256": "c382b30702909dd638e6d5d7985d08093df103558bedb49b5f304283c5254fa2"
+    }
   },
   "inverseArcLengthChecks": [
     {
       "targetFraction": 0.25,
       "targetArcLengthCm": 4.16641263,
-      "tStar": 0.42565761772302035,
+      "tStar": 0.42565761772340116,
       "tBracket": [
-        0.42565761772302035,
-        0.4256576177230204
+        0.42565761772302096,
+        0.4256576177237814
       ],
       "tStarWithinBracket": true,
       "quadratureConverged": true,
-      "arcLengthResidualCm": 8.881784197001252e-16,
-      "deltaT": 5.551115123125783e-17,
-      "localSpeedUpperBoundCmPerT": 14.101023588867298,
-      "deltaPosCm": 7.827640529571466e-16,
+      "arcLengthResidualCm": 5.360156762890256e-12,
+      "deltaT": 7.60447260717001e-13,
+      "rParam": 3.802236303585005e-13,
+      "deltaEvalCm": 4.245241561119716e-15,
+      "localSpeedUpperBoundCmPerT": 14.101023588890042,
+      "deltaPosCm": 1.0727330003038367e-11,
+      "bRefXCm": 5.365787622299744e-12,
+      "bCertCm": 1.072594438519e-11,
       "numericalVerificationRecord": {
         "curve_id": "bodice-front-armscye-m005",
         "operation_type": "INVERSE_ARC_LENGTH",
         "parameter_bracket_t": [
-          0.42565761772302035,
-          0.4256576177230204
+          0.42565761772302096,
+          0.4256576177237814
         ],
-        "parameter_uncertainty_dt": 5.551115123125783e-17,
-        "local_speed_upper_bound_cm_per_t": 14.101023588867298,
-        "propagated_position_error_cm": 7.827640529571466e-16,
-        "direct_geometric_error_bound_cm": 8.881784197001252e-16,
+        "parameter_uncertainty_dt": 7.60447260717001e-13,
+        "local_speed_upper_bound_cm_per_t": 14.101023588890042,
+        "propagated_position_error_cm": 1.0727330003038367e-11,
+        "direct_geometric_error_bound_cm": 5.360156762890256e-12,
         "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
         "working_precision_bits": 113,
         "adaptive_subdivision_panels": 11,
-        "certified_within_tolerance": true
+        "certified_within_tolerance": true,
+        "quantity_name": "inverse_arc_length_position_cm",
+        "reference_method_and_version": "M00.5 Monotone Newton-Brent + 113-bit mpmath.iv Method B1 Propagation (v2)",
+        "precision_and_arithmetic_model": "IEEE-754 binary64 solver verified via 113-bit mpmath.iv outward interval arithmetic",
+        "enclosure_or_remainder_method": "Method B1 Validated First-Order Speed Supremum: B_ref_x = M * r_param + delta_eval",
+        "assurance_classification": "CERTIFIED_ENCLOSURE",
+        "error_components": {
+          "x_float64": 4.166412628645615,
+          "x_ref": 4.166412628640255,
+          "observed_discrepancy_e_obs": 5.360156762890256e-12,
+          "reference_enclosure_b_ref": 5.365787622299744e-12,
+          "implementation_to_exact_bound_b_cert": 1.072594438519e-11,
+          "heuristic_error_estimate": 5.360156762890256e-12,
+          "parameter_enclosure": {
+            "t_lower": 0.42565761772302096,
+            "t_upper": 0.4256576177237814,
+            "t_mid": 0.42565761772340116,
+            "r_param": 3.802236303585005e-13,
+            "residual_interval_lower": -8.881784197001252e-16,
+            "residual_interval_upper": 1.0722978061039612e-11
+          },
+          "output_propagation": {
+            "propagation_method": "METHOD_B1_VALIDATED_DERIVATIVE",
+            "derivative_upper_bound_m": 14.101023588890042,
+            "point_evaluation_rounding_bound_delta_eval": 4.245241561119716e-15,
+            "output_enclosure_radius_b_ref_x": 5.365787622299744e-12
+          }
+        },
+        "acceptance_tolerance_tau": 1e-07,
+        "verification_outcome": "CERTIFIED_VALID",
+        "reproducibility_manifest": {
+          "python_version": "3.12.16",
+          "mpmath_version": "1.4.1",
+          "subdivision_depth_k": 6,
+          "input_fixture_sha256": "c382b30702909dd638e6d5d7985d08093df103558bedb49b5f304283c5254fa2"
+        }
       },
       "passed": true
     },
     {
       "targetFraction": 0.5,
       "targetArcLengthCm": 8.33282526,
-      "tStar": 0.6672109771073951,
+      "tStar": 0.6672109771077023,
       "tBracket": [
-        0.667210977107091,
-        0.6672109771076993
+        0.6672109771077002,
+        0.6672109771077044
       ],
       "tStarWithinBracket": true,
       "quadratureConverged": true,
-      "arcLengthResidualCm": 6.227907078937278e-12,
-      "deltaT": 6.082911951921233e-13,
-      "localSpeedUpperBoundCmPerT": 20.469830714570282,
-      "deltaPosCm": 1.2451617790746392e-11,
+      "arcLengthResidualCm": 4.263256414560601e-14,
+      "deltaT": 4.218847493575595e-15,
+      "rParam": 2.1094237467877974e-15,
+      "deltaEvalCm": 5.1813583132537425e-15,
+      "localSpeedUpperBoundCmPerT": 20.469830714568364,
+      "deltaPosCm": 9.154045231732721e-14,
+      "bRefXCm": 4.836090531529048e-14,
+      "bCertCm": 9.099346946089649e-14,
       "numericalVerificationRecord": {
         "curve_id": "bodice-front-armscye-m005",
         "operation_type": "INVERSE_ARC_LENGTH",
         "parameter_bracket_t": [
-          0.667210977107091,
-          0.6672109771076993
+          0.6672109771077002,
+          0.6672109771077044
         ],
-        "parameter_uncertainty_dt": 6.082911951921233e-13,
-        "local_speed_upper_bound_cm_per_t": 20.469830714570282,
-        "propagated_position_error_cm": 1.2451617790746392e-11,
-        "direct_geometric_error_bound_cm": 6.227907078937278e-12,
+        "parameter_uncertainty_dt": 4.218847493575595e-15,
+        "local_speed_upper_bound_cm_per_t": 20.469830714568364,
+        "propagated_position_error_cm": 9.154045231732721e-14,
+        "direct_geometric_error_bound_cm": 4.263256414560601e-14,
         "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
         "working_precision_bits": 113,
         "adaptive_subdivision_panels": 19,
-        "certified_within_tolerance": true
+        "certified_within_tolerance": true,
+        "quantity_name": "inverse_arc_length_position_cm",
+        "reference_method_and_version": "M00.5 Monotone Newton-Brent + 113-bit mpmath.iv Method B1 Propagation (v2)",
+        "precision_and_arithmetic_model": "IEEE-754 binary64 solver verified via 113-bit mpmath.iv outward interval arithmetic",
+        "enclosure_or_remainder_method": "Method B1 Validated First-Order Speed Supremum: B_ref_x = M * r_param + delta_eval",
+        "assurance_classification": "CERTIFIED_ENCLOSURE",
+        "error_components": {
+          "x_float64": 8.332825257280552,
+          "x_ref": 8.33282525728051,
+          "observed_discrepancy_e_obs": 4.263256414560601e-14,
+          "reference_enclosure_b_ref": 4.836090531529048e-14,
+          "implementation_to_exact_bound_b_cert": 9.099346946089649e-14,
+          "heuristic_error_estimate": 4.263256414560601e-14,
+          "parameter_enclosure": {
+            "t_lower": 0.6672109771077002,
+            "t_upper": 0.6672109771077044,
+            "t_mid": 0.6672109771077023,
+            "r_param": 2.1094237467877974e-15,
+            "residual_interval_lower": -1.7763568394002505e-15,
+            "residual_interval_upper": 8.704148513061227e-14
+          },
+          "output_propagation": {
+            "propagation_method": "METHOD_B1_VALIDATED_DERIVATIVE",
+            "derivative_upper_bound_m": 20.469830714568364,
+            "point_evaluation_rounding_bound_delta_eval": 5.1813583132537425e-15,
+            "output_enclosure_radius_b_ref_x": 4.836090531529048e-14
+          }
+        },
+        "acceptance_tolerance_tau": 1e-07,
+        "verification_outcome": "CERTIFIED_VALID",
+        "reproducibility_manifest": {
+          "python_version": "3.12.16",
+          "mpmath_version": "1.4.1",
+          "subdivision_depth_k": 6,
+          "input_fixture_sha256": "c382b30702909dd638e6d5d7985d08093df103558bedb49b5f304283c5254fa2"
+        }
       },
       "passed": true
     },
     {
       "targetFraction": 0.75,
       "targetArcLengthCm": 12.49923789,
-      "tStar": 0.8487550415554228,
+      "tStar": 0.8487550415550644,
       "tBracket": [
-        0.8487550415554227,
-        0.8487550415554228
+        0.8487550415547052,
+        0.8487550415554237
       ],
       "tStarWithinBracket": true,
       "quadratureConverged": true,
-      "arcLengthResidualCm": 1.7763568394002505e-15,
-      "deltaT": 1.1102230246251565e-16,
-      "localSpeedUpperBoundCmPerT": 25.446326345545092,
-      "deltaPosCm": 2.825109740094988e-15,
+      "arcLengthResidualCm": 9.142908652393089e-12,
+      "deltaT": 7.185363415374013e-13,
+      "rParam": 3.5926817076870066e-13,
+      "deltaEvalCm": 5.346249867685805e-15,
+      "localSpeedUpperBoundCmPerT": 25.44632634554731,
+      "deltaPosCm": 1.8289456487764043e-11,
+      "bRefXCm": 9.147401368815864e-12,
+      "bCertCm": 1.8290310021208953e-11,
       "numericalVerificationRecord": {
         "curve_id": "bodice-front-armscye-m005",
         "operation_type": "INVERSE_ARC_LENGTH",
         "parameter_bracket_t": [
-          0.8487550415554227,
-          0.8487550415554228
+          0.8487550415547052,
+          0.8487550415554237
         ],
-        "parameter_uncertainty_dt": 1.1102230246251565e-16,
-        "local_speed_upper_bound_cm_per_t": 25.446326345545092,
-        "propagated_position_error_cm": 2.825109740094988e-15,
-        "direct_geometric_error_bound_cm": 1.7763568394002505e-15,
+        "parameter_uncertainty_dt": 7.185363415374013e-13,
+        "local_speed_upper_bound_cm_per_t": 25.44632634554731,
+        "propagated_position_error_cm": 1.8289456487764043e-11,
+        "direct_geometric_error_bound_cm": 9.142908652393089e-12,
         "propagation_method": "B1_FIRST_ORDER_UPPER_BOUND",
         "working_precision_bits": 113,
         "adaptive_subdivision_panels": 19,
-        "certified_within_tolerance": true
+        "certified_within_tolerance": true,
+        "quantity_name": "inverse_arc_length_position_cm",
+        "reference_method_and_version": "M00.5 Monotone Newton-Brent + 113-bit mpmath.iv Method B1 Propagation (v2)",
+        "precision_and_arithmetic_model": "IEEE-754 binary64 solver verified via 113-bit mpmath.iv outward interval arithmetic",
+        "enclosure_or_remainder_method": "Method B1 Validated First-Order Speed Supremum: B_ref_x = M * r_param + delta_eval",
+        "assurance_classification": "CERTIFIED_ENCLOSURE",
+        "error_components": {
+          "x_float64": 12.49923788591162,
+          "x_ref": 12.499237885920763,
+          "observed_discrepancy_e_obs": 9.142908652393089e-12,
+          "reference_enclosure_b_ref": 9.147401368815864e-12,
+          "implementation_to_exact_bound_b_cert": 1.8290310021208953e-11,
+          "heuristic_error_estimate": 9.142908652393089e-12,
+          "parameter_enclosure": {
+            "t_lower": 0.8487550415547052,
+            "t_upper": 0.8487550415554237,
+            "t_mid": 0.8487550415550644,
+            "r_param": 3.5926817076870066e-13,
+            "residual_interval_lower": -1.8285817304786178e-11,
+            "residual_interval_upper": 0.0
+          },
+          "output_propagation": {
+            "propagation_method": "METHOD_B1_VALIDATED_DERIVATIVE",
+            "derivative_upper_bound_m": 25.44632634554731,
+            "point_evaluation_rounding_bound_delta_eval": 5.346249867685805e-15,
+            "output_enclosure_radius_b_ref_x": 9.147401368815864e-12
+          }
+        },
+        "acceptance_tolerance_tau": 1e-07,
+        "verification_outcome": "CERTIFIED_VALID",
+        "reproducibility_manifest": {
+          "python_version": "3.12.16",
+          "mpmath_version": "1.4.1",
+          "subdivision_depth_k": 43,
+          "input_fixture_sha256": "c382b30702909dd638e6d5d7985d08093df103558bedb49b5f304283c5254fa2"
+        }
       },
       "passed": true
+    }
+  ],
+  "adr009Section2_5TraceabilityTable": [
+    {
+      "recordId": "M00.5-FORWARD-ARC-LENGTH",
+      "operationType": "ARC_LENGTH",
+      "assuranceClassification": "CERTIFIED_ENCLOSURE",
+      "eObs": 1.491153657279534e-14,
+      "bRef": 1.0654872700512946e-07,
+      "bCert": 1.0654874191666604e-07,
+      "acceptanceToleranceTau": 1e-06,
+      "propagationMethod": "NONE_DIRECT_ENCLOSURE",
+      "deltaEvalCm": 0.0,
+      "verificationOutcome": "CERTIFIED_VALID",
+      "inputFixtureSha256": "c382b30702909dd638e6d5d7985d08093df103558bedb49b5f304283c5254fa2"
+    },
+    {
+      "recordId": "M00.5-INVERSE-ARC-LENGTH-25PCT",
+      "operationType": "INVERSE_ARC_LENGTH",
+      "assuranceClassification": "CERTIFIED_ENCLOSURE",
+      "eObs": 5.360156762890256e-12,
+      "bRef": 5.365787622299744e-12,
+      "bCert": 1.072594438519e-11,
+      "acceptanceToleranceTau": 1e-07,
+      "propagationMethod": "METHOD_B1_VALIDATED_DERIVATIVE",
+      "deltaEvalCm": 4.245241561119716e-15,
+      "verificationOutcome": "CERTIFIED_VALID",
+      "inputFixtureSha256": "c382b30702909dd638e6d5d7985d08093df103558bedb49b5f304283c5254fa2"
+    },
+    {
+      "recordId": "M00.5-INVERSE-ARC-LENGTH-50PCT",
+      "operationType": "INVERSE_ARC_LENGTH",
+      "assuranceClassification": "CERTIFIED_ENCLOSURE",
+      "eObs": 4.263256414560601e-14,
+      "bRef": 4.836090531529048e-14,
+      "bCert": 9.099346946089649e-14,
+      "acceptanceToleranceTau": 1e-07,
+      "propagationMethod": "METHOD_B1_VALIDATED_DERIVATIVE",
+      "deltaEvalCm": 5.1813583132537425e-15,
+      "verificationOutcome": "CERTIFIED_VALID",
+      "inputFixtureSha256": "c382b30702909dd638e6d5d7985d08093df103558bedb49b5f304283c5254fa2"
+    },
+    {
+      "recordId": "M00.5-INVERSE-ARC-LENGTH-75PCT",
+      "operationType": "INVERSE_ARC_LENGTH",
+      "assuranceClassification": "CERTIFIED_ENCLOSURE",
+      "eObs": 9.142908652393089e-12,
+      "bRef": 9.147401368815864e-12,
+      "bCert": 1.8290310021208953e-11,
+      "acceptanceToleranceTau": 1e-07,
+      "propagationMethod": "METHOD_B1_VALIDATED_DERIVATIVE",
+      "deltaEvalCm": 5.346249867685805e-15,
+      "verificationOutcome": "CERTIFIED_VALID",
+      "inputFixtureSha256": "c382b30702909dd638e6d5d7985d08093df103558bedb49b5f304283c5254fa2"
     }
   ],
   "allPassed": true

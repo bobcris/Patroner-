@@ -1,8 +1,8 @@
 {
   "deliverable": "M00_CLASSIFICATION_CONFORMANCE_REPORT.json",
-  "checkpoint": "16",
-  "packageId": "PKG-M00-02",
-  "remediatedFinding": "FINDING-TAX-01",
+  "checkpoint": "PKG-M00-04",
+  "packageId": "PKG-M00-04",
+  "remediatedFinding": "FINDING-TAX-01 / I-03 / I-06",
   "governingADR": "ADR-009 (R2.1.2-R1 \u00a72.2, \u00a74.2, \u00a74.3, \u00a74.4, \u00a75.3)",
   "canonicalOffsetClassificationsVerifiedCount": 7,
   "canonicalOffsetTaxonomy": [
@@ -54,7 +54,8 @@
         "AG-03 (f=-0.20 < 0 everywhere without zero-speed cusp)",
         "AG-06 (on (t1*, t2*) alongside cusp roots)",
         "AG-08",
-        "ADR009-S6-10 (concave)"
+        "ADR009-S6-10 (concave)",
+        "ADR009-S6-11B"
       ]
     },
     {
@@ -68,7 +69,7 @@
     {
       "classification": "GLOBAL_SELF_INTERSECTION",
       "adr009Section": "\u00a74.4 Category 5",
-      "mathematicalCondition": "O_i(t1*) = O_j(t2*) between non-adjacent contour segments where each segment is locally regular f_i(t) >= epsilon_reg",
+      "mathematicalCondition": "O_i(t1*) = O_j(t2*) between contour segments where each segment is locally regular f_i(t) >= epsilon_reg",
       "verifiedByCases": [
         "AG-15"
       ]
