@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
@@ -368,6 +369,47 @@ class OffsetValidationRecord(BaseModel):
     def validate_adr009_invariants(self) -> "OffsetValidationRecord":
         q_lo, q_hi = self.min_base_speed_squared_interval
         f_lo, f_hi = self.min_offset_speed_factor_interval
+        for field_name, val in (
+            ("offset_distance_cm", self.offset_distance_cm),
+            ("regularity_margin_epsilon", self.regularity_margin_epsilon),
+            ("max_geometric_deviation_bound_cm", self.max_geometric_deviation_bound_cm),
+            ("primary_span_coverage_ratio", self.primary_span_coverage_ratio),
+            ("min_base_speed_squared_interval[0]", q_lo),
+            ("min_base_speed_squared_interval[1]", q_hi),
+        ):
+            if not math.isfinite(val):
+                raise ValueError(f"OffsetValidationRecord field '{field_name}' must be finite (got {val!r})")
+        if math.isnan(f_lo) or math.isnan(f_hi):
+            raise ValueError(
+                f"OffsetValidationRecord field 'min_offset_speed_factor_interval' cannot contain NaN "
+                f"(got {(f_lo, f_hi)!r})"
+            )
+        if self.verification_outcome == "CERTIFIED_VALID":
+            if not (math.isfinite(f_lo) and math.isfinite(f_hi)):
+                raise ValueError(
+                    f"CERTIFIED_VALID OffsetValidationRecord requires finite min_offset_speed_factor_interval "
+                    f"(got {(f_lo, f_hi)!r})"
+                )
+        else:
+            # CERTIFIED_INVALID (e.g., infinite-curvature zero-speed cusp AG-10b) and INCONCLUSIVE
+            # (zero-straddling base speed interval) may carry extended-real lower=-inf / upper=+inf,
+            # but never degenerate (+inf, *) lower or (*, -inf) upper endpoints.
+            if f_lo == math.inf or f_hi == -math.inf:
+                raise ValueError(
+                    f"OffsetValidationRecord min_offset_speed_factor_interval cannot have +inf lower or -inf upper "
+                    f"endpoint (got {(f_lo, f_hi)!r})"
+                )
+        if self.max_certified_radial_error_cm is not None and not math.isfinite(self.max_certified_radial_error_cm):
+            raise ValueError(
+                f"OffsetValidationRecord field 'max_certified_radial_error_cm' must be finite "
+                f"(got {self.max_certified_radial_error_cm!r})"
+            )
+        for idx, (r_lo, r_hi) in enumerate(self.isolated_cusp_roots_t):
+            if not (math.isfinite(r_lo) and math.isfinite(r_hi)):
+                raise ValueError(f"isolated_cusp_roots_t[{idx}] bounds must be finite (got {(r_lo, r_hi)!r})")
+        for idx, (u_lo, u_hi) in enumerate(self.unresolved_intervals):
+            if not (math.isfinite(u_lo) and math.isfinite(u_hi)):
+                raise ValueError(f"unresolved_intervals[{idx}] bounds must be finite (got {(u_lo, u_hi)!r})")
         if q_lo < 0.0:
             raise ValueError("min_base_speed_squared_interval lower bound must be >= 0")
         if q_hi < q_lo:
@@ -504,6 +546,16 @@ class OffsetClassificationReport(BaseModel):
 
     @model_validator(mode="after")
     def validate_adr009_classification_invariants(self) -> "OffsetClassificationReport":
+        for field_name, val in (
+            ("offsetDistanceCm", self.offsetDistanceCm),
+            ("minBaseSpeedSquaredQ", self.minBaseSpeedSquaredQ),
+            ("minOffsetSpeedFactorF", self.minOffsetSpeedFactorF),
+            ("gridErrorCm", self.gridErrorCm),
+            ("certifiedIntervalErrorCm", self.certifiedIntervalErrorCm),
+            ("maxJoinTangentDeltaDeg", self.maxJoinTangentDeltaDeg),
+        ):
+            if not math.isfinite(val):
+                raise ValueError(f"OffsetClassificationReport field '{field_name}' must be finite (got {val!r})")
         if self.gridErrorCm > self.certifiedIntervalErrorCm + 1e-15:
             raise ValueError(
                 "OffsetClassificationReport violation: gridErrorCm cannot exceed certifiedIntervalErrorCm"

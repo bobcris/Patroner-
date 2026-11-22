@@ -10,7 +10,9 @@ import { INITIAL_CONCEPTS } from '../../domain/design/curated-concepts';
 import { generateGarmentConcept } from '../../services/ai/fashion-service';
 import { safeVerifySpecificationApproval } from '../../engine/production';
 import {
+  createStudioDraftBriefFromSpec,
   ReferenceImageAsset,
+  StudioDraftBrief,
   validateReferenceImageFile
 } from '../../state/ProjectWorkspaceContext';
 import { Button } from '../../components/ui/Button';
@@ -34,6 +36,8 @@ interface FashionStudioProps {
   onNavigateToSpec: () => void;
   referenceImage?: ReferenceImageAsset | null;
   onChangeReferenceImage?: (asset: ReferenceImageAsset | null) => void;
+  draftBrief?: StudioDraftBrief;
+  onUpdateDraftBrief?: (patch: Partial<StudioDraftBrief>) => void;
   conceptHistory?: readonly DesignSpecification[];
 }
 
@@ -59,35 +63,56 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
   onNavigateToSpec,
   referenceImage: externalReferenceImage,
   onChangeReferenceImage,
+  draftBrief: externalDraftBrief,
+  onUpdateDraftBrief,
   conceptHistory = []
 }) => {
-  const [prompt, setPrompt] = useState(currentSpec.prompt);
-  const [category, setCategory] = useState<GarmentCategory>(currentSpec.garmentCategory);
-  const [silhouette, setSilhouette] = useState<Silhouette>(currentSpec.silhouette);
-  const [selectedFabricId, setSelectedFabricId] = useState<string>(currentSpec.fabric.id);
-  const [selectedColor, setSelectedColor] = useState(currentSpec.color);
-  const [easeProfile, setEaseProfile] = useState<EaseProfile>(currentSpec.easeProfile);
-  const [lengthCm, setLengthCm] = useState<number>(currentSpec.lengthCm);
+  const [localDraftBrief, setLocalDraftBrief] = useState<StudioDraftBrief>(() =>
+    createStudioDraftBriefFromSpec(currentSpec)
+  );
   const [localReferenceImage, setLocalReferenceImage] = useState<ReferenceImageAsset | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
 
+  const isControlledDraft = externalDraftBrief !== undefined && onUpdateDraftBrief !== undefined;
+  const draftBrief = isControlledDraft ? externalDraftBrief : localDraftBrief;
+  const patchDraftBrief = (patch: Partial<StudioDraftBrief>) => {
+    if (isControlledDraft) {
+      onUpdateDraftBrief(patch);
+    } else {
+      setLocalDraftBrief(prev => ({ ...prev, ...patch }));
+    }
+  };
+
+  const prompt = draftBrief.prompt;
+  const category = draftBrief.category;
+  const silhouette = draftBrief.silhouette;
+  const selectedFabricId = draftBrief.selectedFabricId;
+  const selectedColor = draftBrief.selectedColor;
+  const easeProfile = draftBrief.easeProfile;
+  const lengthCm = draftBrief.lengthCm;
+
+  const setPrompt = (value: string) => patchDraftBrief({ prompt: value });
+  const setCategory = (value: GarmentCategory) => patchDraftBrief({ category: value });
+  const setSilhouette = (value: Silhouette) => patchDraftBrief({ silhouette: value });
+  const setSelectedFabricId = (value: string) => patchDraftBrief({ selectedFabricId: value });
+  const setSelectedColor = (value: { name: string; hex: string }) => patchDraftBrief({ selectedColor: value });
+  const setEaseProfile = (value: EaseProfile) => patchDraftBrief({ easeProfile: value });
+  const setLengthCm = (value: number) => patchDraftBrief({ lengthCm: value });
+
   const referenceImage =
     externalReferenceImage !== undefined ? externalReferenceImage : localReferenceImage;
   const setReferenceImage = onChangeReferenceImage ?? setLocalReferenceImage;
 
-  // Keep creative brief form synchronized when currentSpec changes externally (e.g., Workshop edits or history restore)
+  // In standalone uncontrolled mode, keep local brief synchronized when currentSpec changes externally.
+  // In controlled mode, ProjectWorkspaceContext updates studioDraftBrief on updateSpec while preserving unsaved edits across mode switches (M-B3-02).
   useEffect(() => {
-    setPrompt(currentSpec.prompt);
-    setCategory(currentSpec.garmentCategory);
-    setSilhouette(currentSpec.silhouette);
-    setSelectedFabricId(currentSpec.fabric.id);
-    setSelectedColor(currentSpec.color);
-    setEaseProfile(currentSpec.easeProfile);
-    setLengthCm(currentSpec.lengthCm);
-  }, [currentSpec]);
+    if (!isControlledDraft) {
+      setLocalDraftBrief(createStudioDraftBriefFromSpec(currentSpec));
+    }
+  }, [currentSpec, isControlledDraft]);
 
   const approvalVerification = safeVerifySpecificationApproval(currentSpec);
   const isCadSupported = approvalVerification.isCadSupported;
@@ -150,7 +175,7 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
         result.executionMode === 'live-server-gemini'
           ? 'Concept generated with live server multimodal reasoning.'
           : referenceImage
-            ? `Concept synthesized with reference image "${referenceImage.name}" (Studio Demonstration Mode).`
+            ? `Concept synthesized in Studio Demonstration Mode with reference image "${referenceImage.name}" attached to brief (no automated visual analysis).`
             : 'Concept synthesized via Studio Intelligence Engine (Studio Demonstration Mode).'
       );
     } catch (err) {

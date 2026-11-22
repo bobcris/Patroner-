@@ -25,31 +25,48 @@ export interface ConceptGenerationResult {
   engineNotes: string;
 }
 
+export interface ConceptGenerationOptions {
+  /** Explicitly opt into calling the server-side `/api/fashion/concept` endpoint. */
+  enableLiveEndpoint?: boolean;
+  endpointUrl?: string;
+}
+
+function isLiveConceptEndpointEnabled(options?: ConceptGenerationOptions): boolean {
+  if (typeof options?.enableLiveEndpoint === 'boolean') {
+    return options.enableLiveEndpoint;
+  }
+  const metaEnv = (import.meta as { env?: Record<string, string | undefined> }).env;
+  return metaEnv?.VITE_ENABLE_FASHION_CONCEPT_API === 'true';
+}
+
 /**
  * AI Fashion Service for translating creative concepts into structured garment specifications.
  * Separates AI-inferred proposals from deterministic pattern drafting and human approvals.
  */
 export async function generateGarmentConcept(
-  input: ConceptGenerationInput
+  input: ConceptGenerationInput,
+  options?: ConceptGenerationOptions
 ): Promise<ConceptGenerationResult> {
-  // Check if server-side Gemini endpoint is reachable
-  try {
-    const res = await fetch('/api/fashion/concept', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input)
-    });
+  // Only invoke server-side Gemini endpoint when explicitly configured/enabled to avoid spurious 404s in client-only SPA mode
+  if (isLiveConceptEndpointEnabled(options)) {
+    try {
+      const res = await fetch(options?.endpointUrl ?? '/api/fashion/concept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input)
+      });
 
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        specification: data.specification,
-        executionMode: 'live-server-gemini',
-        engineNotes: 'Generated via server-side Gemini multimodal reasoning.'
-      };
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          specification: data.specification,
+          executionMode: 'live-server-gemini',
+          engineNotes: 'Generated via server-side Gemini multimodal reasoning.'
+        };
+      }
+    } catch {
+      // Fallback to client-side Studio Demonstration Engine (deterministic fashion intelligence)
     }
-  } catch {
-    // Fallback to client-side Studio Demonstration Engine (deterministic fashion intelligence)
   }
 
   // Find fabric
@@ -99,8 +116,8 @@ export async function generateGarmentConcept(
     designNotes: [
       `Engineered for ${selectedFabric.name} with ${input.easeProfile} ease profile.`,
       input.referenceImageName
-        ? `Inspiration referenced from uploaded image: "${input.referenceImageName}". Silhouette analyzed for drape and proportion.`
-        : 'Pure parametric prompt generation.'
+        ? `Reference image attached for designer brief context: "${input.referenceImageName}" (stored with session brief; automated visual silhouette analysis is not performed in Studio Demonstration Mode).`
+        : 'Synthesized from parametric brief controls (Studio Demonstration Mode).'
     ],
     isApproved: false, // Must be approved by designer before drafting
     version: 1,
@@ -116,6 +133,6 @@ export async function generateGarmentConcept(
   return {
     specification: generatedSpec,
     executionMode: 'studio-demonstration-mode',
-    engineNotes: 'Studio Demonstration Mode (AI concept synthesized using fashion engineering ontology).'
+    engineNotes: 'Studio Demonstration Mode (deterministic parametric synthesis; live multimodal vision endpoint disabled).'
   };
 }

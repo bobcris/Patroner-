@@ -123,14 +123,32 @@ FORBIDDEN_QUALIFIED_IMPORT_TARGETS: Set[str] = {
     "sys.path_hooks",
     "sys.path_importer_cache",
     "sys.modules",
+    "sys._getframe",
+    "sys._current_frames",
     "types.FunctionType",
     "types.CodeType",
+    "operator.attrgetter",
+    "operator.itemgetter",
+    "operator.methodcaller",
+}
+
+# Sensitive stdlib modules whose wildcard import (`from <mod> import *`) would leak
+# prohibited import machinery, frame/module reflection, bytecode execution, or dynamic
+# attribute/method callables into the local namespace without explicit alias tracking (M-A1-01).
+FORBIDDEN_WILDCARD_IMPORT_MODULES: Set[str] = {
+    "sys",
+    "inspect",
+    "types",
+    "importlib",
+    "operator",
 }
 
 FORBIDDEN_SYS_IMPORT_MACHINERY_ATTRS: Set[str] = {
     "meta_path",
     "path_hooks",
     "path_importer_cache",
+    "_getframe",
+    "_current_frames",
 }
 
 FORBIDDEN_DYNAMIC_CALL_NAMES: Set[str] = {
@@ -217,6 +235,11 @@ DANGEROUS_ATTR_NAMES: Set[str] = {
     "f_code",
     "FunctionType",
     "CodeType",
+    "_getframe",
+    "_current_frames",
+    "methodcaller",
+    "attrgetter",
+    "itemgetter",
 }
 
 REFLECTIVE_NAMESPACE_ROOTS: Set[str] = {
@@ -466,11 +489,19 @@ def check_python_source_independence(
             )
             continue
 
+        if full_target.endswith(".*") and top in FORBIDDEN_WILDCARD_IMPORT_MODULES:
+            _add_violation(
+                lineno,
+                full_target,
+                f"{module_role} must not use wildcard import '{full_target}' on sensitive stdlib module '{top}' (M-A1-01 anti-bypass)",
+            )
+            continue
+
         if full_target in FORBIDDEN_QUALIFIED_IMPORT_TARGETS:
             _add_violation(
                 lineno,
                 full_target,
-                f"{module_role} must not import reflective/import-machinery target '{full_target}' (L-01 anti-bypass)",
+                f"{module_role} must not import reflective/import-machinery target '{full_target}' (L-01/M-A1-02 anti-bypass)",
             )
             continue
 
@@ -670,11 +701,11 @@ def check_python_source_independence(
                         f"getattr(..., {attr_val!r})",
                         f"{module_role} must not dynamically resolve forbidden attribute '{attr_val}' via getattr (K-04 anti-bypass)",
                     )
-            elif leaf in ("attrgetter", "itemgetter"):
+            elif leaf in ("attrgetter", "itemgetter", "methodcaller"):
                 _add_violation(
                     node.lineno,
                     f"{dotted}(...)",
-                    f"{module_role} must not use reflective operator '{leaf}' (K-04 anti-bypass)",
+                    f"{module_role} must not use reflective operator '{leaf}' (K-04/M-A1-02 anti-bypass)",
                 )
             elif isinstance(node.func, ast.Attribute) and node.func.attr in ("get", "pop", "__getitem__", "setdefault"):
                 recv_refl = _is_reflective_namespace_expr(node.func.value, aliases)

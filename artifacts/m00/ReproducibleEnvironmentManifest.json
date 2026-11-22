@@ -69,7 +69,7 @@
     "ciWorkflowVerified": true
   },
   "sourceInputsProvenance": {
-    "sourceInputsDigest": "7771f5977d8a307827dd463586214e99664f10514840efbe30733052aee2e93b",
+    "sourceInputsDigest": "861e09ce4afb0156e1ea6e859cf0c5675bccd02380e53d23d694325d7763368c",
     "filesCount": 37,
     "missingFiles": [],
     "allSourceInputsPresent": true,
@@ -111,8 +111,8 @@
       },
       {
         "path": "scripts/check_oracle_independence.py",
-        "sha256": "281d53ce88b5cc2747552fe2279dcb37a9255ccd72162d5368d0e93cd3f80aa7",
-        "bytes": 37052
+        "sha256": "4d18e106800d89f12e63bbbcda609397849d1ac6e1e58aeaa9acc0cbd96598fd",
+        "bytes": 38079
       },
       {
         "path": "scripts/m00_capture_c0_legacy.ts",
@@ -161,8 +161,8 @@
       },
       {
         "path": "services/geometry-engine/patroner_geometry/contracts.py",
-        "sha256": "523b5817d5bb52c249e82723a30c1fa614d78c2d7786f7e11195920967535c67",
-        "bytes": 68589
+        "sha256": "f1389c7733445d45bec1b4a649280c545dcace2a3858fe8651836e4e2780e665",
+        "bytes": 71752
       },
       {
         "path": "services/geometry-engine/patroner_geometry/provenance.py",
@@ -211,8 +211,8 @@
       },
       {
         "path": "services/geometry-engine/tests/test_pkg_m00_05_checkpoint_k_remediation.py",
-        "sha256": "9792e4d3f2dcb5d1ab0b2971ac37fce26e09a1d9622ce6e32f0b9c47d19d3420",
-        "bytes": 33873
+        "sha256": "ad59dfddc9d9a852e41a375a8ef5a784d9fc512223409f21bb062a016154d8d1",
+        "bytes": 43565
       },
       {
         "path": "services/geometry-engine/uv.lock",
@@ -511,7 +511,7 @@
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "1261d36778ec7f1cd633923184f17af0b4a91032c1ad13fe317b2cbee66df73c",
+      "sha256": "b2e513ad082250be41a706c527f0ca7a93d2e4a0f11f58c6f32604e861f643b1",
       "bytes": "4896",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     }

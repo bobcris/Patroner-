@@ -330,11 +330,11 @@ export const DesignSpecificationView: React.FC<DesignSpecificationViewProps> = (
             </Badge>
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-neutral-600 pt-1 border-t border-stone-200">
-          <span className="truncate">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 text-[11px] text-neutral-600 pt-1 border-t border-stone-200">
+          <span className="min-w-0 break-all sm:truncate">
             SHA-256 FINGERPRINT: <span className="text-neutral-900 font-semibold">{canonicalFingerprint}</span>
           </span>
-          <span className="text-neutral-500 shrink-0">
+          <span className="text-neutral-500 lg:text-right">
             Note: SHA-256 is an integrity digest; local session approval does not constitute an external identity or PKI signature.
           </span>
         </div>

@@ -779,3 +779,204 @@ def test_l02_benchmark_report_snapshot_and_separation_documented() -> None:
     )
     assert "Non-Deterministic Runtime Observations" in report_text
 
+
+# ---------------------------------------------------------------------------
+# Checkpoint N — Track A Remediations (M-A1-01, M-A1-02, M-A3-01)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("bypass_id", "code_snippet"),
+    [
+        ("sys_star_modules", "from sys import *\nm = modules['patroner_geometry.tier1_solver']\n"),
+        ("sys_star_meta_path", "from sys import *\nx = meta_path\n"),
+        ("inspect_star_getmodule", "from inspect import *\nm = getmodule(object)\n"),
+        ("inspect_star_currentframe", "from inspect import *\nf = currentframe()\n"),
+        ("inspect_star_stack", "from inspect import *\ns = stack()\n"),
+        ("types_star_function_type", "from types import *\nfn = FunctionType(None, {})\n"),
+        ("types_star_code_type", "from types import *\nc = CodeType\n"),
+        ("importlib_star", "from importlib import *\n"),
+        ("operator_star", "from operator import *\n"),
+    ],
+)
+def test_checkpoint_n_m_a1_01_blocks_wildcard_imports_on_sensitive_stdlib_modules(
+    bypass_id: str,
+    code_snippet: str,
+) -> None:
+    """M-A1-01: Wildcard imports from sensitive stdlib modules must be rejected in Tier-2 oracles."""
+    violations = check_python_source_independence(
+        code_snippet,
+        module_role="tier2_oracle",
+        filename="services/geometry-engine/patroner_geometry/c1_cert_oracle.py",
+    )
+    assert len(violations) >= 1, f"M-A1-01 wildcard bypass '{bypass_id}' evaded oracle-independence audit!"
+
+
+def test_checkpoint_n_m_a1_01_preserves_benign_math_wildcard_and_explicit_imports() -> None:
+    """M-A1-01: Harmless stdlib imports (e.g., math, importlib.metadata, sys.version_info) remain permitted."""
+    clean_code = (
+        "from math import *\n"
+        "import importlib.metadata\n"
+        "import sys\n"
+        "import inspect\n"
+        "import types\n"
+        "VER = importlib.metadata.version('mpmath')\n"
+        "PY = sys.version_info\n"
+        "SIG = inspect.signature(len)\n"
+        "MOD = types.ModuleType('placeholder')\n"
+    )
+    violations = check_python_source_independence(
+        clean_code,
+        module_role="tier2_oracle",
+        filename="services/geometry-engine/patroner_geometry/c1_cert_oracle.py",
+    )
+    assert violations == [], f"Unexpected false positives: {violations}"
+
+
+@pytest.mark.parametrize(
+    ("bypass_id", "code_snippet"),
+    [
+        ("sys_getframe_direct", "import sys\nf = sys._getframe(0)\n"),
+        ("sys_getframe_from_import", "from sys import _getframe\nf = _getframe(0)\n"),
+        ("sys_getframe_alias", "from sys import _getframe as gf\nf = gf(0)\n"),
+        ("sys_getframe_getattr_concat", "import sys as s\nf = getattr(s, '_get' + 'frame')(0)\n"),
+        ("sys_current_frames_direct", "import sys\nf = sys._current_frames()\n"),
+        ("operator_methodcaller_direct", "import operator\nc = operator.methodcaller('find_spec', 'x')\n"),
+        ("operator_methodcaller_from_import", "from operator import methodcaller\nc = methodcaller('find_spec', 'x')\n"),
+        ("operator_methodcaller_alias", "from operator import methodcaller as mc\nc = mc('find_spec', 'x')\n"),
+        ("operator_methodcaller_getattr", "import operator as op\nc = getattr(op, 'method' + 'caller')\n"),
+    ],
+)
+def test_checkpoint_n_m_a1_02_blocks_sys_getframe_and_operator_methodcaller(
+    bypass_id: str,
+    code_snippet: str,
+) -> None:
+    """M-A1-02: sys._getframe, sys._current_frames, and operator.methodcaller must be blocked."""
+    violations = check_python_source_independence(
+        code_snippet,
+        module_role="tier2_oracle",
+        filename="services/geometry-engine/patroner_geometry/c1_cert_oracle.py",
+    )
+    assert len(violations) >= 1, f"M-A1-02 bypass '{bypass_id}' evaded oracle-independence audit!"
+
+
+def test_checkpoint_n_m_a3_01_rejects_nan_and_inf_in_pydantic_contracts() -> None:
+    """M-A3-01: Pydantic v2 OffsetValidationRecord and OffsetClassificationReport must reject NaN and +/-Inf."""
+    import math as _math
+    from patroner_geometry.contracts import (
+        BaseCurveSingularityClassification,
+        CanonicalOffsetClassification,
+        OffsetValidationRecord,
+        StationaryParameterizationStatus,
+    )
+
+    base_record: Dict[str, Any] = {
+        "segment_id": "seg-ma301",
+        "piece_id": "piece-ma301",
+        "contour_orientation": "CCW_EXTERIOR",
+        "offset_direction_sign_s": 1,
+        "offset_distance_cm": 1.0,
+        "regularity_margin_epsilon": 0.05,
+        "min_base_speed_squared_interval": (1.0, 2.0),
+        "min_offset_speed_factor_interval": (0.5, 1.0),
+        "has_zero_speed_cusp_on_domain": False,
+        "has_tangent_reversal_on_domain": False,
+        "stationary_parameterization_status": StationaryParameterizationStatus.NONE_REGULAR_SPEED,
+        "base_curve_singularity_classification": BaseCurveSingularityClassification.REGULAR_BASE_CURVE,
+        "max_geometric_deviation_bound_cm": 0.01,
+        "verification_outcome": "CERTIFIED_VALID",
+        "failure_category": OffsetFailureCategory.NONE,
+        "canonical_offset_classification": CanonicalOffsetClassification.CERTIFIED_VALID,
+        "active_classifications_on_domain": [CanonicalOffsetClassification.CERTIFIED_VALID],
+        "working_precision_bits": 53,
+        "is_production_ready": False,
+    }
+    # Sanity: finite record validates
+    OffsetValidationRecord(**base_record)
+
+    bad_record_patches: List[Dict[str, Any]] = [
+        {"min_base_speed_squared_interval": (_math.nan, 2.0)},
+        {"min_base_speed_squared_interval": (1.0, _math.nan)},
+        {"min_base_speed_squared_interval": (1.0, _math.inf)},
+        {"min_offset_speed_factor_interval": (_math.nan, 1.0)},
+        {"min_offset_speed_factor_interval": (0.5, _math.inf)},
+        {"min_offset_speed_factor_interval": (-_math.inf, 1.0)},
+        {"regularity_margin_epsilon": _math.nan},
+        {"offset_distance_cm": _math.inf},
+        {"max_geometric_deviation_bound_cm": _math.inf},
+        {"max_certified_radial_error_cm": _math.nan},
+        {"primary_span_coverage_ratio": _math.nan},
+    ]
+    for patch in bad_record_patches:
+        with pytest.raises(ValidationError):
+            OffsetValidationRecord(**{**base_record, **patch})
+
+    # Extended-real (-inf, 0.0) for CERTIFIED_INVALID (e.g. AG-10b infinite-curvature cusp) and
+    # (-inf, +inf) for INCONCLUSIVE remain accepted, while NaN and degenerate (+inf, +inf) / (-inf, -inf) fail.
+    invalid_cusp_record = {
+        **base_record,
+        "verification_outcome": "CERTIFIED_INVALID",
+        "failure_category": OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP,
+        "canonical_offset_classification": CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP,
+        "active_classifications_on_domain": [
+            CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP
+        ],
+        "min_base_speed_squared_interval": (0.0, 0.0),
+        "min_offset_speed_factor_interval": (-_math.inf, 0.0),
+        "has_zero_speed_cusp_on_domain": True,
+    }
+    OffsetValidationRecord(**invalid_cusp_record)
+    for bad_invalid_f in [(_math.nan, 0.0), (0.0, _math.nan), (_math.inf, _math.inf), (-_math.inf, -_math.inf)]:
+        with pytest.raises(ValidationError):
+            OffsetValidationRecord(**{**invalid_cusp_record, "min_offset_speed_factor_interval": bad_invalid_f})
+
+    inconclusive_record = {
+        **base_record,
+        "verification_outcome": "INCONCLUSIVE",
+        "failure_category": OffsetFailureCategory.INCONCLUSIVE_VERIFICATION,
+        "canonical_offset_classification": CanonicalOffsetClassification.INCONCLUSIVE,
+        "active_classifications_on_domain": [CanonicalOffsetClassification.INCONCLUSIVE],
+        "min_base_speed_squared_interval": (0.0, 0.0),
+        "min_offset_speed_factor_interval": (-_math.inf, _math.inf),
+    }
+    OffsetValidationRecord(**inconclusive_record)
+    with pytest.raises(ValidationError):
+        OffsetValidationRecord(**{**inconclusive_record, "min_base_speed_squared_interval": (0.0, _math.inf)})
+
+    base_report: Dict[str, Any] = {
+        "segmentId": "seg-ma301",
+        "canonicalOffsetClassification": CanonicalOffsetClassification.CERTIFIED_VALID,
+        "activeClassificationsOnDomain": [CanonicalOffsetClassification.CERTIFIED_VALID],
+        "baseCurveSingularityClassification": BaseCurveSingularityClassification.REGULAR_BASE_CURVE,
+        "verificationOutcome": "CERTIFIED_VALID",
+        "failureCategory": OffsetFailureCategory.NONE,
+        "directionSign": 1,
+        "offsetDistanceCm": 1.0,
+        "minBaseSpeedSquaredQ": 1.0,
+        "minOffsetSpeedFactorF": 0.5,
+        "hasZeroSpeedCuspOnDomain": False,
+        "hasTangentReversalOnDomain": False,
+        "gridErrorCm": 0.001,
+        "certifiedIntervalErrorCm": 0.002,
+        "maxJoinTangentDeltaDeg": 0.1,
+        "reparameterized": False,
+        "trimmed": False,
+        "oracleTierUsed": "C1-Cert-53bit",
+        "isProductionReady": False,
+    }
+    OffsetClassificationReport(**base_report)
+
+    bad_report_patches: List[Dict[str, Any]] = [
+        {"gridErrorCm": _math.inf, "certifiedIntervalErrorCm": _math.inf},
+        {"gridErrorCm": 0.001, "certifiedIntervalErrorCm": _math.inf},
+        {"gridErrorCm": _math.nan, "certifiedIntervalErrorCm": 0.002},
+        {"minBaseSpeedSquaredQ": _math.inf},
+        {"minOffsetSpeedFactorF": _math.nan},
+        {"offsetDistanceCm": _math.inf},
+        {"maxJoinTangentDeltaDeg": _math.nan},
+    ]
+    for patch in bad_report_patches:
+        with pytest.raises(ValidationError):
+            OffsetClassificationReport(**{**base_report, **patch})
+
+

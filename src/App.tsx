@@ -22,6 +22,8 @@ const WorkspaceShell: React.FC = () => {
     updateSpec,
     referenceImage,
     setReferenceImage,
+    studioDraftBrief,
+    updateStudioDraftBrief,
     activeSize,
     measurements,
     measurementProvenance,
@@ -62,6 +64,8 @@ const WorkspaceShell: React.FC = () => {
               onNavigateToSpec={() => navigateToTab('specification')}
               referenceImage={referenceImage}
               onChangeReferenceImage={setReferenceImage}
+              draftBrief={studioDraftBrief}
+              onUpdateDraftBrief={updateStudioDraftBrief}
               conceptHistory={conceptHistory}
             />
           )}

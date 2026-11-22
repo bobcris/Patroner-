@@ -62,12 +62,39 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isTwoElementNumericTuple(value: unknown): value is readonly [number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    isFiniteNumber(value[0]) &&
+    isFiniteNumber(value[1])
+  );
+}
+
+function isValidSpeedFactorTuple(
+  value: unknown,
+  allowsExtendedReal: boolean,
+): value is readonly [number, number] {
+  if (!Array.isArray(value) || value.length !== 2) {
+    return false;
+  }
+  const lo: unknown = value[0];
+  const hi: unknown = value[1];
+  if (typeof lo !== 'number' || typeof hi !== 'number' || Number.isNaN(lo) || Number.isNaN(hi)) {
+    return false;
+  }
+  return allowsExtendedReal
+    ? lo !== Number.POSITIVE_INFINITY && hi !== Number.NEGATIVE_INFINITY
+    : Number.isFinite(lo) && Number.isFinite(hi);
+}
+
 /**
  * Validates the 3 cross-field numeric inequalities on `OffsetValidationRecord` that
  * exceed JSON Schema Draft 2020-12 native expressiveness:
- *   1. `min_base_speed_squared_interval[1] >= min_base_speed_squared_interval[0]` (and `>= 0`)
- *   2. `min_offset_speed_factor_interval[1] >= min_offset_speed_factor_interval[0]`
- *   3. `verification_outcome === 'CERTIFIED_VALID'` =>
+ *   1. `min_base_speed_squared_interval` is a finite 2-tuple with `0 <= q_lo <= q_hi`
+ *   2. `min_offset_speed_factor_interval` is a finite 2-tuple with `f_lo <= f_hi`
+ *   3. `regularity_margin_epsilon` is a finite non-negative number, and when
+ *      `verification_outcome === 'CERTIFIED_VALID'`,
  *      `min_offset_speed_factor_interval[0] >= regularity_margin_epsilon - 1e-15`
  */
 export function validateOffsetValidationRecordCrossFieldInvariants(
@@ -75,32 +102,72 @@ export function validateOffsetValidationRecordCrossFieldInvariants(
 ): CrossFieldValidationResult {
   const violations: CrossFieldViolation[] = [];
 
-  const [qLo, qHi] = record.min_base_speed_squared_interval ?? [Number.NaN, Number.NaN];
-  const [fLo, fHi] = record.min_offset_speed_factor_interval ?? [Number.NaN, Number.NaN];
-  const eps = record.regularity_margin_epsilon;
-
-  if (!isFiniteNumber(qLo) || !isFiniteNumber(qHi) || qLo < 0 || qHi < qLo) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
     violations.push({
       invariantId: 'CF-02-BASE-SPEED-SQUARED-INTERVAL-INVERTED',
       entity: 'OffsetValidationRecord',
-      message: `min_base_speed_squared_interval [${qLo}, ${qHi}] must satisfy 0 <= q_lo <= q_hi`,
+      message: 'OffsetValidationRecord payload must be a non-null object',
     });
+    return { valid: false, violations };
   }
 
-  if (!isFiniteNumber(fLo) || !isFiniteNumber(fHi) || fHi < fLo) {
+  const rawQ: unknown = (record as { min_base_speed_squared_interval?: unknown }).min_base_speed_squared_interval;
+  const rawF: unknown = (record as { min_offset_speed_factor_interval?: unknown }).min_offset_speed_factor_interval;
+  const eps: unknown = (record as { regularity_margin_epsilon?: unknown }).regularity_margin_epsilon;
+
+  if (!isTwoElementNumericTuple(rawQ)) {
+    violations.push({
+      invariantId: 'CF-02-BASE-SPEED-SQUARED-INTERVAL-INVERTED',
+      entity: 'OffsetValidationRecord',
+      message: 'min_base_speed_squared_interval must be a 2-element tuple of finite numbers [q_lo, q_hi]',
+    });
+  } else {
+    const [qLo, qHi] = rawQ;
+    if (qLo < 0 || qHi < qLo) {
+      violations.push({
+        invariantId: 'CF-02-BASE-SPEED-SQUARED-INTERVAL-INVERTED',
+        entity: 'OffsetValidationRecord',
+        message: `min_base_speed_squared_interval [${qLo}, ${qHi}] must satisfy 0 <= q_lo <= q_hi`,
+      });
+    }
+  }
+
+  let fLo: number | null = null;
+  const allowsExtendedRealSpeedFactor =
+    record.verification_outcome === 'CERTIFIED_INVALID' || record.verification_outcome === 'INCONCLUSIVE';
+
+  if (!isValidSpeedFactorTuple(rawF, allowsExtendedRealSpeedFactor)) {
     violations.push({
       invariantId: 'CF-03-OFFSET-SPEED-FACTOR-INTERVAL-INVERTED',
       entity: 'OffsetValidationRecord',
-      message: `min_offset_speed_factor_interval [${fLo}, ${fHi}] must satisfy f_lo <= f_hi`,
+      message: allowsExtendedRealSpeedFactor
+        ? 'min_offset_speed_factor_interval must be a 2-element numeric tuple [f_lo, f_hi] without NaN, +Infinity lower, or -Infinity upper'
+        : 'min_offset_speed_factor_interval must be a 2-element tuple of finite numbers [f_lo, f_hi]',
     });
+  } else {
+    const [lo, hi] = rawF;
+    fLo = lo;
+    if (hi < lo) {
+      violations.push({
+        invariantId: 'CF-03-OFFSET-SPEED-FACTOR-INTERVAL-INVERTED',
+        entity: 'OffsetValidationRecord',
+        message: `min_offset_speed_factor_interval [${lo}, ${hi}] must satisfy f_lo <= f_hi`,
+      });
+    }
   }
 
-  if (record.verification_outcome === 'CERTIFIED_VALID') {
-    if (!isFiniteNumber(eps) || !isFiniteNumber(fLo) || fLo < eps - NUMERIC_INVARIANT_TOLERANCE) {
+  if (!isFiniteNumber(eps) || eps < 0) {
+    violations.push({
+      invariantId: 'CF-01-SPEED-FACTOR-LOWER-BELOW-DYNAMIC-EPSILON',
+      entity: 'OffsetValidationRecord',
+      message: `regularity_margin_epsilon (${String(eps)}) must be a finite non-negative number`,
+    });
+  } else if (record.verification_outcome === 'CERTIFIED_VALID') {
+    if (fLo === null || fLo < eps - NUMERIC_INVARIANT_TOLERANCE) {
       violations.push({
         invariantId: 'CF-01-SPEED-FACTOR-LOWER-BELOW-DYNAMIC-EPSILON',
         entity: 'OffsetValidationRecord',
-        message: `CERTIFIED_VALID record requires min_offset_speed_factor_interval[0] (${fLo}) >= regularity_margin_epsilon (${eps})`,
+        message: `CERTIFIED_VALID record requires min_offset_speed_factor_interval[0] (${String(fLo)}) >= regularity_margin_epsilon (${eps})`,
       });
     }
   }
@@ -120,7 +187,18 @@ export function validateOffsetClassificationReportCrossFieldInvariants(
   report: OffsetClassificationReportNumericFields,
 ): CrossFieldValidationResult {
   const violations: CrossFieldViolation[] = [];
-  const { gridErrorCm, certifiedIntervalErrorCm } = report;
+
+  if (!report || typeof report !== 'object' || Array.isArray(report)) {
+    violations.push({
+      invariantId: 'CF-04-CLASSIFICATION-REPORT-GRID-EXCEEDS-CERTIFIED-ERROR',
+      entity: 'OffsetClassificationReport',
+      message: 'OffsetClassificationReport payload must be a non-null object',
+    });
+    return { valid: false, violations };
+  }
+
+  const gridErrorCm: unknown = (report as { gridErrorCm?: unknown }).gridErrorCm;
+  const certifiedIntervalErrorCm: unknown = (report as { certifiedIntervalErrorCm?: unknown }).certifiedIntervalErrorCm;
 
   if (
     !isFiniteNumber(gridErrorCm) ||
@@ -132,7 +210,7 @@ export function validateOffsetClassificationReportCrossFieldInvariants(
     violations.push({
       invariantId: 'CF-04-CLASSIFICATION-REPORT-GRID-EXCEEDS-CERTIFIED-ERROR',
       entity: 'OffsetClassificationReport',
-      message: `gridErrorCm (${gridErrorCm}) cannot exceed certifiedIntervalErrorCm (${certifiedIntervalErrorCm})`,
+      message: `gridErrorCm (${String(gridErrorCm)}) cannot exceed certifiedIntervalErrorCm (${String(certifiedIntervalErrorCm)})`,
     });
   }
 

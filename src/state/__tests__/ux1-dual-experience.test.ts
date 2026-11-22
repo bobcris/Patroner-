@@ -11,6 +11,9 @@ import {
   MAX_CONCEPT_HISTORY_ITEMS,
   MAX_REFERENCE_IMAGE_BYTES,
   appendConceptHistory,
+  createStudioDraftBriefFromSpec,
+  deriveDraftingOptionsForSpecChange,
+  formatOversizeImageMb,
   resolveTabForExperienceMode,
   validateReferenceImageFile
 } from '../ProjectWorkspaceContext.tsx';
@@ -123,3 +126,132 @@ test('UX-1 B4: MeasurementWorkspace removes nested grid wrapper around anatomica
     false
   );
 });
+
+test('Checkpoint N M-B4-02: oversize reference image rounding never displays "5.00 MB" for files > 5.0 MB', () => {
+  const justOver5Mb = MAX_REFERENCE_IMAGE_BYTES + 1;
+  const slightlyOver5Mb = MAX_REFERENCE_IMAGE_BYTES + 1024;
+  assert.equal(formatOversizeImageMb(justOver5Mb), '5.01');
+  assert.equal(formatOversizeImageMb(slightlyOver5Mb), '5.01');
+
+  const res = validateReferenceImageFile({
+    name: 'barely-over.png',
+    type: 'image/png',
+    size: slightlyOver5Mb
+  });
+  assert.equal(res.valid, false);
+  assert.match(res.error ?? '', /5\.01 MB/);
+  assert.equal((res.error ?? '').includes('5.00 MB'), false);
+});
+
+test('Checkpoint N M-B4-01: generateGarmentConcept avoids default 404 fetch in SPA mode and uses truthful fallback notes', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  let lastFetchBody: string | undefined;
+
+  globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+    fetchCalls += 1;
+    lastFetchBody = init?.body;
+    return new Response(null, { status: 404 });
+  }) as unknown as typeof fetch;
+
+  try {
+    // Default client-only SPA call must not hit missing /api/fashion/concept endpoint
+    const demoResult = await generateGarmentConcept({
+      prompt: 'Clean linen midi skirt',
+      category: 'skirt',
+      silhouette: 'straight',
+      fabricId: INITIAL_CONCEPTS[0].fabric.id,
+      colorName: 'Chalk Oatmeal',
+      colorHex: '#E8E3D9',
+      easeProfile: 'classic',
+      lengthCm: 65,
+      referenceImageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      referenceImageName: 'linen-ref.png'
+    });
+    assert.equal(fetchCalls, 0);
+    assert.equal(demoResult.executionMode, 'studio-demonstration-mode');
+    assert.equal(demoResult.specification.isApproved, false);
+    assert.ok(demoResult.specification.designNotes.some(note => note.includes('linen-ref.png')));
+    assert.equal(
+      demoResult.specification.designNotes.some(note => /silhouette analyzed/i.test(note)),
+      false,
+      'Studio Demonstration Mode must not claim automated silhouette analysis'
+    );
+
+    // Explicit opt-in still posts referenceImageBase64 and falls back cleanly on 404
+    const optInResult = await generateGarmentConcept(
+      {
+        prompt: 'Clean linen midi skirt',
+        category: 'skirt',
+        silhouette: 'straight',
+        fabricId: INITIAL_CONCEPTS[0].fabric.id,
+        colorName: 'Chalk Oatmeal',
+        colorHex: '#E8E3D9',
+        easeProfile: 'classic',
+        lengthCm: 65,
+        referenceImageBase64: 'data:image/png;base64,AAAA',
+        referenceImageName: 'linen-ref.png'
+      },
+      { enableLiveEndpoint: true }
+    );
+    assert.equal(fetchCalls, 1);
+    assert.match(lastFetchBody ?? '', /"referenceImageBase64":"data:image\/png;base64,AAAA"/);
+    assert.equal(optInResult.executionMode, 'studio-demonstration-mode');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Checkpoint N M-B3-01: ProjectWorkspaceContext keeps state updaters pure with zero nested setState calls', () => {
+  const skirt = INITIAL_CONCEPTS[0];
+  const bodice = INITIAL_CONCEPTS[1] ?? { ...skirt, id: 'bodice-1', garmentCategory: 'bodice' as const };
+  const switchDelta = deriveDraftingOptionsForSpecChange(skirt, {
+    ...bodice,
+    dartStyle: 'french',
+    sleeveEaseStrategy: 'tailored'
+  });
+  assert.deepEqual(switchDelta, {
+    bodiceDartStyle: 'french',
+    sleeveEaseStrategy: 'tailored'
+  });
+
+  const sameGarmentNoDartChange = deriveDraftingOptionsForSpecChange(skirt, {
+    ...skirt,
+    lengthCm: skirt.lengthCm + 4
+  });
+  assert.deepEqual(sameGarmentNoDartChange, {});
+
+  const ctxSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/state/ProjectWorkspaceContext.tsx'),
+    'utf-8'
+  );
+  assert.equal(/setCurrentSpec\s*\(\s*prevSpec\s*=>/.test(ctxSource), false);
+  assert.equal(/setMeasurementProvenance\s*\(\s*prevOrigin\s*=>/.test(ctxSource), false);
+});
+
+test('Checkpoint N M-B3-02: StudioDraftBrief snapshot lifts unsaved Creative Studio brief into ProjectWorkspaceContext', () => {
+  const initial = INITIAL_CONCEPTS[0];
+  const brief = createStudioDraftBriefFromSpec(initial);
+  assert.equal(brief.prompt, initial.prompt);
+  assert.equal(brief.category, initial.garmentCategory);
+  assert.equal(brief.silhouette, initial.silhouette);
+  assert.equal(brief.selectedFabricId, initial.fabric.id);
+  assert.equal(brief.lengthCm, initial.lengthCm);
+
+  const appSource = fs.readFileSync(path.join(process.cwd(), 'src/App.tsx'), 'utf-8');
+  assert.match(appSource, /draftBrief=\{studioDraftBrief\}/);
+  assert.match(appSource, /onUpdateDraftBrief=\{updateStudioDraftBrief\}/);
+});
+
+test('Checkpoint N M-B7-01: DesignSpecificationView SHA-256 lineage row wraps cleanly without shrink-0 overflow at 768px', () => {
+  const specSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/features/design-specification/DesignSpecificationView.tsx'),
+    'utf-8'
+  );
+  assert.match(specSource, /flex flex-col lg:flex-row lg:items-center justify-between gap-2 text-\[11px\]/);
+  assert.equal(
+    specSource.includes('text-neutral-500 shrink-0">\n            Note: SHA-256 is an integrity digest'),
+    false
+  );
+});
+

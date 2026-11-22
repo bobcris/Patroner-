@@ -36,7 +36,7 @@
     "evidenceAndPrepDocsAudited": 10,
     "totalFilesAudited": 44,
     "referencedSchemaSha256": "86fc75751e4a838d83d9057afde5ae363e1dbb258d0c86e2924e2153ee8b8048",
-    "sourceInputsDigest": "7771f5977d8a307827dd463586214e99664f10514840efbe30733052aee2e93b",
+    "sourceInputsDigest": "861e09ce4afb0156e1ea6e859cf0c5675bccd02380e53d23d694325d7763368c",
     "oracleIndependenceVerified": true,
     "python312LockEnvironmentVerified": true,
     "twoSubprocessDeterministicReplayVerified": true,
@@ -126,7 +126,7 @@
     {
       "artifact": "ReproducibleEnvironmentManifest.json",
       "path": "artifacts/m00/ReproducibleEnvironmentManifest.json",
-      "sha256": "c7f948f152107f1e924fa50f2e8382d3ed07539c475145c5219d8c44ed4a5756",
+      "sha256": "c84d9ec204455ebebfd77ecfacc3968227cd5bcac59da7393d7997ca2759963b",
       "bytes": "20975",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },
@@ -168,7 +168,7 @@
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "1261d36778ec7f1cd633923184f17af0b4a91032c1ad13fe317b2cbee66df73c",
+      "sha256": "b2e513ad082250be41a706c527f0ca7a93d2e4a0f11f58c6f32604e861f643b1",
       "bytes": "4896",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     }
@@ -184,7 +184,7 @@
     {
       "primaryPath": "artifacts/m00/ReproducibleEnvironmentManifest.json",
       "mirrorPath": "ReproducibleEnvironmentManifest.json",
-      "sha256": "c7f948f152107f1e924fa50f2e8382d3ed07539c475145c5219d8c44ed4a5756",
+      "sha256": "c84d9ec204455ebebfd77ecfacc3968227cd5bcac59da7393d7997ca2759963b",
       "bytes": "20975",
       "identicalToPrimary": true
     }
@@ -364,8 +364,8 @@
     }
   ],
   "reproducibleEnvironmentManifest": {
-    "artifactsCopySha256": "c7f948f152107f1e924fa50f2e8382d3ed07539c475145c5219d8c44ed4a5756",
-    "rootCopySha256": "c7f948f152107f1e924fa50f2e8382d3ed07539c475145c5219d8c44ed4a5756",
+    "artifactsCopySha256": "c84d9ec204455ebebfd77ecfacc3968227cd5bcac59da7393d7997ca2759963b",
+    "rootCopySha256": "c84d9ec204455ebebfd77ecfacc3968227cd5bcac59da7393d7997ca2759963b",
     "copiesIdentical": true
   },
   "allAuditedFiles": [
@@ -449,7 +449,7 @@
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "1261d36778ec7f1cd633923184f17af0b4a91032c1ad13fe317b2cbee66df73c",
+      "sha256": "b2e513ad082250be41a706c527f0ca7a93d2e4a0f11f58c6f32604e861f643b1",
       "bytes": "4896",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     },
@@ -463,7 +463,7 @@
     {
       "artifact": "ReproducibleEnvironmentManifest.json",
       "path": "ReproducibleEnvironmentManifest.json",
-      "sha256": "c7f948f152107f1e924fa50f2e8382d3ed07539c475145c5219d8c44ed4a5756",
+      "sha256": "c84d9ec204455ebebfd77ecfacc3968227cd5bcac59da7393d7997ca2759963b",
       "bytes": "20975",
       "category": "COMPATIBILITY_MIRROR"
     },
@@ -533,7 +533,7 @@
     {
       "artifact": "ReproducibleEnvironmentManifest.json",
       "path": "artifacts/m00/ReproducibleEnvironmentManifest.json",
-      "sha256": "c7f948f152107f1e924fa50f2e8382d3ed07539c475145c5219d8c44ed4a5756",
+      "sha256": "c84d9ec204455ebebfd77ecfacc3968227cd5bcac59da7393d7997ca2759963b",
       "bytes": "20975",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },

@@ -3,11 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BodiceDartStyle,
   BodyMeasurements,
   DesignSpecification,
+  EaseProfile,
+  GarmentCategory,
+  Silhouette,
   SleeveEaseStrategy,
   StandardSize
 } from '../types';
@@ -53,6 +56,69 @@ export interface ReferenceImageValidationResult {
   error?: string;
 }
 
+export interface StudioDraftBrief {
+  prompt: string;
+  category: GarmentCategory;
+  silhouette: Silhouette;
+  selectedFabricId: string;
+  selectedColor: { name: string; hex: string };
+  easeProfile: EaseProfile;
+  lengthCm: number;
+}
+
+/**
+ * Formats an oversized file size in MB rounded upward to 2 decimal places so any file
+ * strictly larger than 5.0 MB never rounds down to a contradictory "5.00 MB" message (M-B4-02).
+ */
+export function formatOversizeImageMb(sizeBytes: number): string {
+  const exactMb = sizeBytes / (1024 * 1024);
+  const roundedUp = Math.ceil(exactMb * 100) / 100;
+  return Math.max(roundedUp, 5.01).toFixed(2);
+}
+
+/**
+ * Pure helper creating a Creative Studio draft brief snapshot from a DesignSpecification (M-B3-02).
+ */
+export function createStudioDraftBriefFromSpec(spec: DesignSpecification): StudioDraftBrief {
+  return {
+    prompt: spec.prompt,
+    category: spec.garmentCategory,
+    silhouette: spec.silhouette,
+    selectedFabricId: spec.fabric.id,
+    selectedColor: { ...spec.color },
+    easeProfile: spec.easeProfile,
+    lengthCm: spec.lengthCm
+  };
+}
+
+/**
+ * Pure helper computing drafting option updates when currentSpec changes, avoiding nested setState
+ * inside React functional state updaters (M-B3-01).
+ */
+export function deriveDraftingOptionsForSpecChange(
+  prevSpec: DesignSpecification,
+  nextSpec: DesignSpecification
+): { bodiceDartStyle?: BodiceDartStyle; sleeveEaseStrategy?: SleeveEaseStrategy } {
+  const isSwitchingGarment =
+    nextSpec.id !== prevSpec.id || nextSpec.garmentCategory !== prevSpec.garmentCategory;
+
+  if (isSwitchingGarment) {
+    return {
+      bodiceDartStyle: nextSpec.dartStyle ?? 'waist',
+      sleeveEaseStrategy: nextSpec.sleeveEaseStrategy ?? 'classic'
+    };
+  }
+
+  const delta: { bodiceDartStyle?: BodiceDartStyle; sleeveEaseStrategy?: SleeveEaseStrategy } = {};
+  if (nextSpec.dartStyle !== prevSpec.dartStyle) {
+    delta.bodiceDartStyle = nextSpec.dartStyle ?? 'waist';
+  }
+  if (nextSpec.sleeveEaseStrategy !== prevSpec.sleeveEaseStrategy) {
+    delta.sleeveEaseStrategy = nextSpec.sleeveEaseStrategy ?? 'classic';
+  }
+  return delta;
+}
+
 /**
  * Pure validator for uploaded reference moodboard/photograph files.
  */
@@ -74,7 +140,7 @@ export function validateReferenceImageFile(file: {
     };
   }
   if (file.size > MAX_REFERENCE_IMAGE_BYTES) {
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+    const sizeMb = formatOversizeImageMb(file.size);
     return {
       valid: false,
       error: `Image "${file.name}" is ${sizeMb} MB, which exceeds the 5.0 MB limit.`
@@ -119,9 +185,11 @@ export interface ProjectWorkspaceContextValue {
   conceptHistory: readonly DesignSpecification[];
   updateSpec: (nextSpec: DesignSpecification) => void;
 
-  // Shared reference image state (persisted across Creative Studio <-> Professional Workshop)
+  // Shared reference image & unsaved Creative Studio draft brief (persisted across Creative Studio <-> Professional Workshop)
   referenceImage: ReferenceImageAsset | null;
   setReferenceImage: (asset: ReferenceImageAsset | null) => void;
+  studioDraftBrief: StudioDraftBrief;
+  updateStudioDraftBrief: (patch: Partial<StudioDraftBrief>) => void;
 
   // Authoritative measurements & provenance state
   activeSize: StandardSize | 'custom';
@@ -186,6 +254,9 @@ export const ProjectWorkspaceProvider: React.FC<ProjectWorkspaceProviderProps> =
   const [currentSpec, setCurrentSpec] = useState<DesignSpecification>(initialSpec);
   const [conceptHistory, setConceptHistory] = useState<DesignSpecification[]>([initialSpec]);
   const [referenceImage, setReferenceImage] = useState<ReferenceImageAsset | null>(null);
+  const [studioDraftBrief, setStudioDraftBrief] = useState<StudioDraftBrief>(() =>
+    createStudioDraftBriefFromSpec(initialSpec)
+  );
 
   const [activeSize, setActiveSize] = useState<StandardSize | 'custom'>('M');
   const [measurements, setMeasurements] = useState<BodyMeasurements>({
@@ -235,24 +306,35 @@ export const ProjectWorkspaceProvider: React.FC<ProjectWorkspaceProviderProps> =
     [lastWorkshopTab]
   );
 
-  const updateSpec = useCallback((nextSpec: DesignSpecification) => {
-    setCurrentSpec(prevSpec => {
-      const isSwitchingGarment =
-        nextSpec.id !== prevSpec.id || nextSpec.garmentCategory !== prevSpec.garmentCategory;
+  const currentSpecRef = useRef<DesignSpecification>(currentSpec);
+  currentSpecRef.current = currentSpec;
 
-      if (isSwitchingGarment) {
-        setBodiceDartStyle(nextSpec.dartStyle ?? 'waist');
-        setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy ?? 'classic');
-      } else {
-        if (nextSpec.dartStyle !== prevSpec.dartStyle) {
-          setBodiceDartStyle(nextSpec.dartStyle ?? 'waist');
-        }
-        if (nextSpec.sleeveEaseStrategy !== prevSpec.sleeveEaseStrategy) {
-          setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy ?? 'classic');
-        }
+  const measurementProvenanceRef = useRef<MeasurementOrigin>(measurementProvenance);
+  measurementProvenanceRef.current = measurementProvenance;
+
+  const updateStudioDraftBrief = useCallback((patch: Partial<StudioDraftBrief>) => {
+    setStudioDraftBrief(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  const updateSpec = useCallback((nextSpec: DesignSpecification) => {
+    const prevSpec = currentSpecRef.current;
+    currentSpecRef.current = nextSpec;
+
+    const switchedGarment = prevSpec.id !== nextSpec.id;
+    setCurrentSpec(nextSpec);
+    if (switchedGarment) {
+      setBodiceDartStyle(nextSpec.dartStyle ?? 'waist');
+      setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy ?? 'classic');
+    } else {
+      const draftingDelta = deriveDraftingOptionsForSpecChange(prevSpec, nextSpec);
+      if (draftingDelta.bodiceDartStyle !== undefined) {
+        setBodiceDartStyle(draftingDelta.bodiceDartStyle);
       }
-      return nextSpec;
-    });
+      if (draftingDelta.sleeveEaseStrategy !== undefined) {
+        setSleeveEaseStrategy(draftingDelta.sleeveEaseStrategy);
+      }
+    }
+    setStudioDraftBrief(createStudioDraftBriefFromSpec(nextSpec));
     setConceptHistory(prev => appendConceptHistory(prev, nextSpec));
   }, []);
 
@@ -342,6 +424,7 @@ export const ProjectWorkspaceProvider: React.FC<ProjectWorkspaceProviderProps> =
       setMeasurements(m);
       setActiveSize(sizeLabel);
       const nextProvenance = provenance ?? (sizeLabel === 'custom' ? 'user-entered' : 'standard-chart');
+      measurementProvenanceRef.current = nextProvenance;
       setMeasurementProvenance(nextProvenance);
       if (nextProvenance === 'standard-chart') {
         setMeasurementProvenanceEvidence(undefined);
@@ -355,18 +438,18 @@ export const ProjectWorkspaceProvider: React.FC<ProjectWorkspaceProviderProps> =
 
   const updateMeasurementProvenance = useCallback(
     (nextOrigin: MeasurementOrigin, evidence?: MeasurementProvenanceEvidence) => {
-      setMeasurementProvenance(prevOrigin => {
-        const transition = transitionMeasurementProvenance(prevOrigin, nextOrigin, evidence);
-        if (!transition.isValid) {
-          return prevOrigin;
-        }
-        setMeasurementProvenanceEvidence(transition.evidence);
-        if (NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(transition.nextOrigin)) {
-          setMeasurementApprovalState('unverified');
-        }
-        setMeasurementRevisionCount(prev => prev + 1);
-        return transition.nextOrigin;
-      });
+      const prevOrigin = measurementProvenanceRef.current;
+      const transition = transitionMeasurementProvenance(prevOrigin, nextOrigin, evidence);
+      if (!transition.isValid) {
+        return;
+      }
+      measurementProvenanceRef.current = transition.nextOrigin;
+      setMeasurementProvenance(transition.nextOrigin);
+      setMeasurementProvenanceEvidence(transition.evidence);
+      if (NON_APPROVABLE_PRODUCTION_MEASUREMENT_ORIGINS.has(transition.nextOrigin)) {
+        setMeasurementApprovalState('unverified');
+      }
+      setMeasurementRevisionCount(prev => prev + 1);
     },
     []
   );
@@ -405,6 +488,8 @@ export const ProjectWorkspaceProvider: React.FC<ProjectWorkspaceProviderProps> =
       updateSpec,
       referenceImage,
       setReferenceImage,
+      studioDraftBrief,
+      updateStudioDraftBrief,
       activeSize,
       measurements,
       measurementProvenance,
@@ -443,6 +528,8 @@ export const ProjectWorkspaceProvider: React.FC<ProjectWorkspaceProviderProps> =
       conceptHistory,
       updateSpec,
       referenceImage,
+      studioDraftBrief,
+      updateStudioDraftBrief,
       activeSize,
       measurements,
       measurementProvenance,
