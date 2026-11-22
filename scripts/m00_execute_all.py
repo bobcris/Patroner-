@@ -77,7 +77,13 @@ HISTORICAL_ROOT_MARKDOWN_REPORTS: List[str] = [
 ]
 
 ARTIFACTS_DIR = REPO_ROOT / "artifacts" / "m00"
-ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _tsx_runner_cmd() -> List[str]:
+    local_tsx = REPO_ROOT / "node_modules" / ".bin" / "tsx"
+    if local_tsx.is_file():
+        return [str(local_tsx)]
+    return ["npx", "--yes", "tsx"]
 
 
 def serialize_deterministic_json(payload: Dict[str, Any]) -> Tuple[str, str]:
@@ -660,23 +666,28 @@ def _execute_deterministic_core_to_dir(output_dir: Path) -> Dict[str, Any]:
     m00_8 = execute_m00_8_anthropometric_and_seam_parity_verification()
     prod_dxf, prod_seam = verify_exported_bundle()
 
-    # Run M00.2 C0-Legacy Behavioral Snapshot & Divergence Registry (via npx tsx)
+    # Run M00.2 C0-Legacy Behavioral Snapshot & Divergence Registry strictly into output_dir (K-05)
+    c0_out_path = output_dir / "BaselineDivergenceRegistry.json"
     subprocess.run(
-        ["npx", "--yes", "tsx", str(REPO_ROOT / "scripts" / "m00_capture_c0_legacy.ts")],
+        [*_tsx_runner_cmd(), str(REPO_ROOT / "scripts" / "m00_capture_c0_legacy.ts"), "--out", str(c0_out_path)],
         cwd=str(REPO_ROOT),
         check=True,
     )
-    m00_2_bytes = (ARTIFACTS_DIR / "BaselineDivergenceRegistry.json").read_bytes()
-    (output_dir / "BaselineDivergenceRegistry.json").write_bytes(m00_2_bytes)
+    m00_2_bytes = c0_out_path.read_bytes()
 
-    # Run ADR-009 §7.2 63 Canonical Garment Contours Exporter (via npx tsx)
+    # Run ADR-009 §7.2 63 Canonical Garment Contours Exporter strictly into output_dir (K-05)
+    contours63_out_path = output_dir / "CanonicalGarmentContours63.json"
     subprocess.run(
-        ["npx", "--yes", "tsx", str(REPO_ROOT / "scripts" / "m00_export_canonical_63_contours.ts")],
+        [
+            *_tsx_runner_cmd(),
+            str(REPO_ROOT / "scripts" / "m00_export_canonical_63_contours.ts"),
+            "--out",
+            str(contours63_out_path),
+        ],
         cwd=str(REPO_ROOT),
         check=True,
     )
-    contours63_bytes = (ARTIFACTS_DIR / "CanonicalGarmentContours63.json").read_bytes()
-    (output_dir / "CanonicalGarmentContours63.json").write_bytes(contours63_bytes)
+    contours63_bytes = contours63_out_path.read_bytes()
 
     write_json_file(output_dir / "SchemasLockReport.json", m00_1, rel_root=output_dir)
     write_json_file(output_dir / "IntervalLibraryQualificationReport.json", m00_4_qual, rel_root=output_dir)
@@ -712,11 +723,12 @@ def _discover_evidence_and_prep_docs() -> List[Dict[str, str]]:
         for p in sorted(evidence_dir.glob("M00_*.md")):
             if p.is_file():
                 paths.append(p)
-        pkg04_dir = evidence_dir / "pkg_m00_04"
-        if pkg04_dir.is_dir():
-            for p in sorted(pkg04_dir.rglob("*")):
-                if p.is_file():
-                    paths.append(p)
+        for pkg_sub in ("pkg_m00_04", "pkg_m00_05"):
+            pkg_dir = evidence_dir / pkg_sub
+            if pkg_dir.is_dir():
+                for p in sorted(pkg_dir.rglob("*")):
+                    if p.is_file():
+                        paths.append(p)
     prep_dir = REPO_ROOT / "docs" / "prep"
     if prep_dir.is_dir():
         for p in sorted(prep_dir.rglob("*.md")):
@@ -766,7 +778,8 @@ def main() -> None:
         print(f"[SINGLE-RUN] Wrote 11 deterministic artifacts cleanly to {out_dir}")
         return
 
-    print("=== EXECUTING PATRONER M00 INTEGRATED VERIFICATION SUITE (PKG-M00-04) ===")
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    print("=== EXECUTING PATRONER M00 INTEGRATED VERIFICATION SUITE (PKG-M00-05) ===")
 
     # 1. Dynamic source-inputs discovery & digest (REM-01 / I-01)
     discovered = discover_m00_source_inputs(REPO_ROOT)

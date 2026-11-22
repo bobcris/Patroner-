@@ -42,8 +42,10 @@ from .contracts import (
     StationaryParameterizationStatus,
 )
 from .qualification import (
+    certify_regular_offset_exact_rational,
     de_casteljau_subdivide_exact,
     eval_polynomial_exact,
+    exact_offset_endpoints_coincide,
     fraction_pair_to_outward_f64_pair,
     fraction_to_outward_lower_f64,
     fraction_to_outward_upper_f64,
@@ -683,6 +685,8 @@ def certify_cubic_offset_on_unit_interval(
     max_subdivision_depth: int = 14,
     evaluated_subspan: Tuple[float, float] = (0.0, 1.0),
     d_exact: Optional[Fraction] = None,
+    max_nodes_per_tier: int = 1024,
+    allow_exact_rational_fallback: bool = True,
 ) -> OffsetValidationRecord:
     """Complete-interval [0, 1] Method C3 Offset Verification Oracle (ADR-009 §3.1, §4, §5).
 
@@ -691,9 +695,11 @@ def certify_cubic_offset_on_unit_interval(
        polynomial GCD G(t) = gcd(x'(t), y'(t)) and exact algebraic root isolation (handling arbitrary
        rational denominators and irrational quadratic roots without limit_denominator heuristics),
        classifying every stationary point via the 5-way base-curve singularity classifier.
-    3. Subdivides [0, 1] into exact-rational interval panels and adaptive refinements in 113-bit
-       `mpmath.iv`, failing closed to INCONCLUSIVE (`INCONCLUSIVE_VERIFICATION`, `is_production_ready=False`)
-       whenever any panel remains unresolved at `max_subdivision_depth` without proving invalidity.
+    3. Subdivides [0, 1] into exact-rational interval panels and bounded adaptive refinements across
+       113 -> 170 -> 336-bit `mpmath.iv` with explicit per-tier node budget (`max_nodes_per_tier`),
+       escalating unresolved panels at 336-bit to exact Q[t] Sturm/Bernstein algebraic decision
+       (ADR-009 §5.2 Step 2 / K-02) and failing closed to INCONCLUSIVE when depth/fallback is disabled
+       or any condition remains unresolvable.
     """
     span_lo, span_hi = evaluated_subspan
     coverage_ratio = span_hi - span_lo
@@ -702,8 +708,10 @@ def certify_cubic_offset_on_unit_interval(
             f"ADR-009 §5.2 anti-bypass violation: primary_span_coverage_ratio={coverage_ratio:.4f} < 0.85 on {curve.segment_id}"
         )
 
-    d_frac = d_exact if d_exact is not None else Fraction(str(d))
-    eps_frac = Fraction(str(epsilon_reg))
+    d_frac = d_exact if d_exact is not None else (d if isinstance(d, Fraction) else Fraction(str(d)))
+    eps_frac = epsilon_reg if isinstance(epsilon_reg, Fraction) else Fraction(str(epsilon_reg))
+    d = float(d_frac)
+    epsilon_reg = float(eps_frac)
     span_lo_q = Fraction(span_lo)
     span_hi_q = Fraction(span_hi)
 
@@ -1012,9 +1020,28 @@ def certify_cubic_offset_on_unit_interval(
         tier_unresolved_bounds: List[Tuple[float, float, float, float]] = []
         tier_max_depth = 0
         tier_resolved_count = 0
+        tier_nodes_visited = 0
+        tier_budget_exceeded = False
 
-        def analyze_panel(a_q: Fraction, b_q: Fraction, depth: int) -> None:
-            nonlocal max_depth_reached, tier_max_depth, tier_resolved_count
+        # Bounded iterative stack with explicit global per-tier node budget (K-02 termination guarantee)
+        panel_stack: List[Tuple[Fraction, Fraction, int]] = [
+            (pa_q, pb_q, 0) for pa_q, pb_q in reversed(pending_panels)
+        ]
+        while panel_stack:
+            a_q, b_q, depth = panel_stack.pop()
+            tier_nodes_visited += 1
+            if tier_nodes_visited > max_nodes_per_tier:
+                tier_budget_exceeded = True
+                (q_lo_b, q_hi_b), (f_lo_b, f_hi_b) = eval_Q_and_f_interval(a_q, b_q)
+                next_unresolved.append((a_q, b_q))
+                tier_unresolved_bounds.append((q_lo_b, q_hi_b, f_lo_b, f_hi_b))
+                while panel_stack:
+                    ra_q, rb_q, _rd = panel_stack.pop()
+                    (rq_lo, rq_hi), (rf_lo, rf_hi) = eval_Q_and_f_interval(ra_q, rb_q)
+                    next_unresolved.append((ra_q, rb_q))
+                    tier_unresolved_bounds.append((rq_lo, rq_hi, rf_lo, rf_hi))
+                break
+
             if depth > max_depth_reached:
                 max_depth_reached = depth
             if depth > tier_max_depth:
@@ -1038,9 +1065,9 @@ def certify_cubic_offset_on_unit_interval(
             needs_split = critical_straddle or ((f_hi - f_lo) > 0.02 and depth < 4)
             if needs_split and depth < max_subdivision_depth:
                 mid_q = (a_q + b_q) / Fraction(2)
-                analyze_panel(a_q, mid_q, depth + 1)
-                analyze_panel(mid_q, b_q, depth + 1)
-                return
+                panel_stack.append((mid_q, b_q, depth + 1))
+                panel_stack.append((a_q, mid_q, depth + 1))
+                continue
 
             if critical_straddle:
                 next_unresolved.append((a_q, b_q))
@@ -1049,12 +1076,10 @@ def certify_cubic_offset_on_unit_interval(
                 tier_resolved_count += 1
                 final_leaf_bounds.append((q_lo, q_hi, f_lo, f_hi))
 
-        for pa_q, pb_q in pending_panels:
-            analyze_panel(pa_q, pb_q, 0)
-
         escalation_trace.append(
-            f"prec={prec_bits}bit:entered={len(pending_panels)}:resolved={tier_resolved_count}:"
-            f"unresolved={len(next_unresolved)}:maxDepth={tier_max_depth}:"
+            f"prec={prec_bits}bit:entered={len(pending_panels)}:visited={tier_nodes_visited}:"
+            f"resolved={tier_resolved_count}:unresolved={len(next_unresolved)}:"
+            f"maxDepth={tier_max_depth}:budgetExceeded={tier_budget_exceeded}:"
             f"bernsteinConvexFastCert={bernstein_convex_fast_cert if tier_idx == 0 else False}:"
             f"bernsteinMarginFastCert={bernstein_margin_fast_cert if tier_idx == 0 else False}"
         )
@@ -1086,8 +1111,10 @@ def certify_cubic_offset_on_unit_interval(
     # Isolate any cusp roots f(t*) = 0 on [span_lo_q, span_hi_q] via exact algebraic solver on P_exact(t)
     # gated by the exact sign condition s * d * C(t*) > 0!
     isolated_cusp_brackets: List[Tuple[float, float]] = []
+    exact_concave_reversal_detected = False
     if min_f_lo <= 1e-6 or unresolved_depth_exceeded:
         raw_cusp_roots = isolate_polynomial_roots_on_unit_interval(p_cusp_coeffs, tol_t=Fraction(1, 10**12))
+        concave_cusp_q: List[Tuple[Fraction, Fraction, int]] = []
         for cr in raw_cusp_roots:
             t_lo_q = Fraction(cr["tLowerRational"])
             t_hi_q = Fraction(cr["tUpperRational"])
@@ -1099,8 +1126,20 @@ def certify_cubic_offset_on_unit_interval(
             sign_hi = s_sign * d_frac * curve.eval_C_exact(t_hi_q)
             if sign_mid > 0 and sign_lo >= 0 and sign_hi >= 0:
                 isolated_cusp_brackets.append(fraction_pair_to_outward_f64_pair(t_lo_q, t_hi_q))
+                mult_r = int(cr.get("exactMultiplicity", 1))
+                concave_cusp_q.append((t_lo_q, t_hi_q, mult_r))
+                is_ep = (t_lo_q == t_hi_q == span_lo_q) or (t_lo_q == t_hi_q == span_hi_q)
+                if (not is_ep) and (mult_r % 2 == 1):
+                    exact_concave_reversal_detected = True
+        if not exact_concave_reversal_detected and concave_cusp_q:
+            bps = sorted({span_lo_q, span_hi_q, *(lo for lo, _, _ in concave_cusp_q), *(hi for _, hi, _ in concave_cusp_q)})
+            for idx_b in range(len(bps) - 1):
+                mid_b = (bps[idx_b] + bps[idx_b + 1]) / Fraction(2)
+                if s_sign * d_frac * curve.eval_C_exact(mid_b) > 0 and eval_polynomial_exact(p_cusp_coeffs, mid_b) < 0:
+                    exact_concave_reversal_detected = True
+                    break
 
-    has_tangent_reversal = min_f_hi < 0.0
+    has_tangent_reversal = (min_f_hi < 0.0) or exact_concave_reversal_detected
     has_zero_speed_cusp = len(isolated_cusp_brackets) > 0
 
     active_classes: List[CanonicalOffsetClassification] = []
@@ -1140,6 +1179,71 @@ def certify_cubic_offset_on_unit_interval(
         active_classes = [CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION]
         detected_failure_cats = [OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION]
         prod_ready = False
+    elif unresolved_depth_exceeded and allow_exact_rational_fallback and max_subdivision_depth >= 12:
+        # ADR-009 §5.2 Step 2 / K-02: Complete exact rational Sturm/Bernstein algebraic decision at 336-bit ceiling
+        ex_dec = certify_regular_offset_exact_rational(
+            q_coeffs,
+            c_coeffs,
+            p_cusp_coeffs,
+            p_margin_coeffs,
+            s_sign,
+            d_frac,
+            span_lo_q=span_lo_q,
+            span_hi_q=span_hi_q,
+        )
+        escalation_trace.append(
+            f"exact_rational_step2:outcome={ex_dec['outcome']}:cat={ex_dec['failureCategory']}:reason={ex_dec['reason']}"
+        )
+        if ex_dec["outcome"] == "CERTIFIED_VALID":
+            outcome = "CERTIFIED_VALID"
+            fail_cat = OffsetFailureCategory.NONE
+            primary_class = CanonicalOffsetClassification.CERTIFIED_VALID
+            active_classes = [CanonicalOffsetClassification.CERTIFIED_VALID]
+            detected_failure_cats = []
+            prod_ready = True
+            unresolved_panels = []
+            unresolved_depth_exceeded = False
+            # Update certified lower bounds consistent with exact proof Q(t) > 0 and f(t) >= epsilon_reg
+            min_f_lo = max(min_f_lo, epsilon_reg)
+            min_f_hi = max(min_f_lo, min_f_hi)
+            if min_q_lo <= 0.0:
+                min_q_lo = max(min_q_lo, 1e-300)
+                min_q_hi = max(min_q_lo, min_q_hi)
+        elif ex_dec["outcome"] == "CERTIFIED_INVALID":
+            outcome = "CERTIFIED_INVALID"
+            prod_ready = False
+            unresolved_panels = []
+            unresolved_depth_exceeded = False
+            ex_cat = ex_dec["failureCategory"]
+            for lo_q, hi_q in ex_dec.get("cuspBracketsRational", []):
+                b_f64 = fraction_pair_to_outward_f64_pair(lo_q, hi_q)
+                if b_f64 not in isolated_cusp_brackets:
+                    isolated_cusp_brackets.append(b_f64)
+            if ex_cat == "TANGENT_REVERSAL":
+                has_tangent_reversal = True
+                has_zero_speed_cusp = len(isolated_cusp_brackets) > 0
+                fail_cat = OffsetFailureCategory.TANGENT_REVERSAL
+                primary_class = CanonicalOffsetClassification.TANGENT_REVERSAL
+                active_classes = [CanonicalOffsetClassification.TANGENT_REVERSAL]
+                detected_failure_cats = [OffsetFailureCategory.TANGENT_REVERSAL]
+            elif ex_cat == "ACTUAL_ZERO_SPEED_CUSP":
+                has_zero_speed_cusp = True
+                fail_cat = OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP
+                primary_class = CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP
+                active_classes = [CanonicalOffsetClassification.ACTUAL_OFFSET_SINGULARITY_ZERO_SPEED_CUSP]
+                detected_failure_cats = [OffsetFailureCategory.ACTUAL_ZERO_SPEED_CUSP]
+            else:
+                fail_cat = OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION
+                primary_class = CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION
+                active_classes = [CanonicalOffsetClassification.REGULARITY_MARGIN_VIOLATION]
+                detected_failure_cats = [OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION]
+        else:
+            outcome = "INCONCLUSIVE"
+            fail_cat = OffsetFailureCategory.INCONCLUSIVE_VERIFICATION
+            primary_class = CanonicalOffsetClassification.INCONCLUSIVE
+            active_classes = [CanonicalOffsetClassification.INCONCLUSIVE]
+            detected_failure_cats = [OffsetFailureCategory.INCONCLUSIVE_VERIFICATION]
+            prod_ready = False
     else:
         # Fail-closed ADR-009 §4.4 Category 6 / §5.3: unresolved at 336-bit precision & subdivision cap -> INCONCLUSIVE!
         outcome = "INCONCLUSIVE"
@@ -1894,13 +1998,12 @@ def certify_intra_segment_local_self_intersection(
                 if ev_lo_336 is not None and ev_hi_336 is not None and (
                     (0 in (ev_lo_336[0] - ev_hi_336[0])) and (0 in (ev_lo_336[1] - ev_hi_336[1]))
                 ):
-                    # Exact rational closed-loop check: B(lo) == B(hi) and parallel same-direction tangent
+                    # Exact algebraic endpoint coincidence O(span_lo) == O(span_hi) in Q(sqrt(qa), sqrt(qb))
                     b_lo = curve.eval_point_exact(span_lo_q)
                     b_hi = curve.eval_point_exact(span_hi_q)
-                    dx_lo, dy_lo = curve.eval_deriv1_exact(span_lo_q)
-                    dx_hi, dy_hi = curve.eval_deriv1_exact(span_hi_q)
-                    same_normal = (dx_lo * dy_hi - dy_lo * dx_hi == 0) and (dx_lo * dx_hi + dy_lo * dy_hi > 0)
-                    if b_lo == b_hi and (d_frac == 0 or same_normal):
+                    d_lo = curve.eval_deriv1_exact(span_lo_q)
+                    d_hi = curve.eval_deriv1_exact(span_hi_q)
+                    if exact_offset_endpoints_coincide(b_lo, d_lo, b_hi, d_hi, s_sign, d_frac):
                         ix_x = 0.5 * (float(ev_lo[0].a) + float(ev_lo[0].b))
                         ix_y = 0.5 * (float(ev_lo[1].a) + float(ev_lo[1].b))
                         endpoint_solutions.append(

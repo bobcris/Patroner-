@@ -172,8 +172,8 @@
         "verificationOutcome": "CERTIFIED_INVALID",
         "canonicalOffsetClassification": "TANGENT_REVERSAL",
         "minOffsetSpeedFactorInterval": [
-          -0.0009772478821221126,
-          -0.0002360660659896488
+          -0.032102468402841325,
+          -1.4416585502496105e-13
         ],
         "matchesExpectedOutcome": true,
         "matchesExpectedClassification": true
@@ -489,7 +489,8 @@
         "global_contour_self_intersection_status": "NOT_EVALUATED",
         "unresolved_intervals": [],
         "escalation_trace": [
-          "prec=113bit:entered=128:resolved=128:unresolved=0:maxDepth=0:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+          "prec=113bit:entered=128:visited=128:resolved=128:unresolved=0:maxDepth=0:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "step2.5_local_si:status=CERTIFIED_DISJOINT:method=exact_directional_monotonicity_mvt"
         ],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
@@ -577,9 +578,9 @@
         "global_contour_self_intersection_status": "NOT_EVALUATED",
         "unresolved_intervals": [],
         "escalation_trace": [
-          "prec=113bit:entered=128:resolved=292:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=170bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=336bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+          "prec=113bit:entered=128:visited=464:resolved=292:unresolved=4:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=4:visited=116:resolved=56:unresolved=4:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=4:visited=116:resolved=56:unresolved=4:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
         ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "TANGENT_REVERSAL",
@@ -656,9 +657,9 @@
         "global_contour_self_intersection_status": "NOT_EVALUATED",
         "unresolved_intervals": [],
         "escalation_trace": [
-          "prec=113bit:entered=128:resolved=226:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=170bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=336bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+          "prec=113bit:entered=128:visited=332:resolved=226:unresolved=4:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=4:visited=116:resolved=56:unresolved=4:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=4:visited=116:resolved=56:unresolved=4:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
         ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "ACTUAL_ZERO_SPEED_CUSP",
@@ -769,9 +770,9 @@
         "global_contour_self_intersection_status": "NOT_EVALUATED",
         "unresolved_intervals": [],
         "escalation_trace": [
-          "prec=113bit:entered=128:resolved=292:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=170bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=336bit:entered=4:resolved=56:unresolved=4:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+          "prec=113bit:entered=128:visited=464:resolved=292:unresolved=4:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=4:visited=116:resolved=56:unresolved=4:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=4:visited=116:resolved=56:unresolved=4:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
         ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "LOCAL_OFFSET_SELF_INTERSECTION",
@@ -1117,7 +1118,8 @@
         "global_contour_self_intersection_status": "NOT_EVALUATED",
         "unresolved_intervals": [],
         "escalation_trace": [
-          "prec=113bit:entered=128:resolved=162:unresolved=0:maxDepth=1:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+          "prec=113bit:entered=128:visited=196:resolved=162:unresolved=0:maxDepth=1:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "step2.5_local_si:status=CERTIFIED_DISJOINT:method=krawczyk_2d_interval_subdivision"
         ],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
@@ -1456,7 +1458,8 @@
         "global_contour_self_intersection_status": "NOT_EVALUATED",
         "unresolved_intervals": [],
         "escalation_trace": [
-          "prec=113bit:entered=128:resolved=219:unresolved=0:maxDepth=2:bernsteinConvexFastCert=True:bernsteinMarginFastCert=False"
+          "prec=113bit:entered=128:visited=310:resolved=219:unresolved=0:maxDepth=2:budgetExceeded=False:bernsteinConvexFastCert=True:bernsteinMarginFastCert=False",
+          "step2.5_local_si:status=CERTIFIED_DISJOINT:method=exact_directional_monotonicity_mvt"
         ],
         "verification_outcome": "CERTIFIED_VALID",
         "failure_category": "NONE",
@@ -1515,9 +1518,9 @@
         "global_contour_self_intersection_status": "NOT_EVALUATED",
         "unresolved_intervals": [],
         "escalation_trace": [
-          "prec=113bit:entered=128:resolved=194:unresolved=2:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=170bit:entered=2:resolved=28:unresolved=2:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=336bit:entered=2:resolved=28:unresolved=2:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+          "prec=113bit:entered=128:visited=264:resolved=194:unresolved=2:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=2:visited=58:resolved=28:unresolved=2:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=2:visited=58:resolved=28:unresolved=2:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
         ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "REGULARITY_MARGIN_VIOLATION",
@@ -1645,9 +1648,9 @@
           ]
         ],
         "escalation_trace": [
-          "prec=113bit:entered=1:resolved=0:unresolved=1:maxDepth=0:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=170bit:entered=1:resolved=0:unresolved=1:maxDepth=0:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=336bit:entered=1:resolved=0:unresolved=1:maxDepth=0:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+          "prec=113bit:entered=1:visited=1:resolved=0:unresolved=1:maxDepth=0:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=1:visited=1:resolved=0:unresolved=1:maxDepth=0:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=1:visited=1:resolved=0:unresolved=1:maxDepth=0:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
         ],
         "verification_outcome": "INCONCLUSIVE",
         "failure_category": "INCONCLUSIVE_VERIFICATION",
@@ -1783,9 +1786,9 @@
         "global_contour_self_intersection_status": "NOT_EVALUATED",
         "unresolved_intervals": [],
         "escalation_trace": [
-          "prec=113bit:entered=128:resolved=675:unresolved=9:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=170bit:entered=9:resolved=104:unresolved=9:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
-          "prec=336bit:entered=9:resolved=107:unresolved=8:maxDepth=14:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
+          "prec=113bit:entered=128:visited=1025:resolved=559:unresolved=27:maxDepth=14:budgetExceeded=True:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=170bit:entered=27:visited=379:resolved=194:unresolved=9:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False",
+          "prec=336bit:entered=9:visited=221:resolved=107:unresolved=8:maxDepth=14:budgetExceeded=False:bernsteinConvexFastCert=False:bernsteinMarginFastCert=False"
         ],
         "verification_outcome": "CERTIFIED_INVALID",
         "failure_category": "TANGENT_REVERSAL",

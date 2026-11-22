@@ -16,8 +16,11 @@ import { CubicBezierCurve } from '../src/engine/geometry/primitives';
 import { offsetCubicBezier } from '../src/engine/geometry/offset';
 import type { StandardSize } from '../src/types';
 
-const outDir = path.resolve(process.cwd(), 'artifacts/m00');
-fs.mkdirSync(outDir, { recursive: true });
+const outFlagIdx = process.argv.indexOf('--out');
+const outPath =
+  outFlagIdx !== -1 && process.argv[outFlagIdx + 1]
+    ? path.resolve(process.argv[outFlagIdx + 1])
+    : path.resolve(process.cwd(), 'artifacts/m00/BaselineDivergenceRegistry.json');
 
 const sizes: StandardSize[] = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 const bodiceConcept = INITIAL_CONCEPTS.find(c => c.garmentCategory === 'bodice') ?? INITIAL_CONCEPTS[0];
@@ -113,7 +116,7 @@ const divergenceRegistry = {
 };
 
 const jsonText = JSON.stringify(divergenceRegistry, null, 2) + '\n';
-const outPath = path.join(outDir, 'BaselineDivergenceRegistry.json');
+fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, jsonText, 'utf-8');
 const sha256 = crypto.createHash('sha256').update(jsonText).digest('hex');
-console.log(`M00.2 BaselineDivergenceRegistry.json generated (SHA-256: ${sha256})`);
+console.log(`M00.2 BaselineDivergenceRegistry.json generated at ${outPath} (SHA-256: ${sha256})`);

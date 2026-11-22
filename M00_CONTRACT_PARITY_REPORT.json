@@ -7,7 +7,7 @@
     "milestoneId": "M00.1",
     "artifactName": "SchemasLockReport.json",
     "schemaPath": "packages/contracts/schemas/canonical_contracts.schema.json",
-    "schemaSha256": "ce150c21338472cb5fb4e597e05cb3fde23c90da3868ed5b010be1a37b2a3af9",
+    "schemaSha256": "c9aa05eaa42891c42396f5ed850146d19f5309041623f16ed970d2909a9c845c",
     "draftVersion": "https://json-schema.org/draft/2020-12/schema",
     "canonicalCoordinateFrame": {
       "geometryUnit": "cm",
@@ -199,7 +199,7 @@
         "bothRejected": true
       }
     ],
-    "contradictoryCertificationStateCount": 8,
+    "contradictoryCertificationStateCount": 16,
     "contradictoryCertificationStateResults": [
       {
         "caseId": "CONTRA-01-VALID-WITH-NON-NONE-FAILURE",
@@ -261,6 +261,70 @@
         "caseId": "CONTRA-08-INCONCLUSIVE-WITH-PRODUCTION-READY-TRUE",
         "entity": "OffsetValidationRecord",
         "reason": "INCONCLUSIVE with is_production_ready=True must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-09-VALID-WITH-PARTIAL-SPAN-COVERAGE-ZERO",
+        "entity": "OffsetValidationRecord",
+        "reason": "K-06: CERTIFIED_VALID with primary_span_coverage_ratio < 1.0 (0.0) must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-10-VALID-WITH-PARTIAL-SPAN-COVERAGE-SUBUNIT",
+        "entity": "OffsetValidationRecord",
+        "reason": "K-06: CERTIFIED_VALID with primary_span_coverage_ratio < 1.0 (0.9) must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-11-VALID-WITH-UNRESOLVED-STATIONARY-STATUS",
+        "entity": "OffsetValidationRecord",
+        "reason": "K-06: CERTIFIED_VALID with stationary_parameterization_status=UNRESOLVED must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-12-VALID-WITH-GENUINE-BASE-SINGULARITY",
+        "entity": "OffsetValidationRecord",
+        "reason": "K-06: CERTIFIED_VALID with genuine base geometric singularity must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-13-VALID-WITH-ISOLATED-CUSP-ROOTS",
+        "entity": "OffsetValidationRecord",
+        "reason": "K-06: CERTIFIED_VALID with non-empty isolated_cusp_roots_t must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-14-VALID-WITH-ISOLATED-SELF-INTERSECTIONS",
+        "entity": "OffsetValidationRecord",
+        "reason": "K-06: CERTIFIED_VALID with non-empty isolated_self_intersections must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-15-VALID-WITH-LOCAL-SI-NOT-EVALUATED",
+        "entity": "OffsetValidationRecord",
+        "reason": "K-06/K-01: CERTIFIED_VALID with local_self_intersection_status=NOT_EVALUATED must be rejected by both validators",
+        "jsonSchemaRejected": true,
+        "pydanticV2Rejected": true,
+        "bothRejected": true
+      },
+      {
+        "caseId": "CONTRA-16-VALID-WITH-UNRESOLVED-INTERVALS",
+        "entity": "OffsetValidationRecord",
+        "reason": "K-06: CERTIFIED_VALID with non-empty unresolved_intervals must be rejected by both validators",
         "jsonSchemaRejected": true,
         "pydanticV2Rejected": true,
         "bothRejected": true

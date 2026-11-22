@@ -375,9 +375,8 @@ class OffsetValidationRecord(BaseModel):
         if f_hi < f_lo:
             raise ValueError("min_offset_speed_factor_interval upper bound < lower bound")
 
-        # All 8 contradictory certification states enforced strictly fail-closed:
+        # Complete ADR-009 §5.3 & K-06 contradictory certification-state enforcement (100% parity with JSON Schema):
         if self.verification_outcome == "CERTIFIED_VALID":
-            # State 1: CERTIFIED_VALID with non-NONE failure category or non-CERTIFIED_VALID classification
             if self.failure_category != OffsetFailureCategory.NONE:
                 raise ValueError("CERTIFIED_VALID record must have failure_category == NONE")
             if self.canonical_offset_classification != CanonicalOffsetClassification.CERTIFIED_VALID:
@@ -392,25 +391,51 @@ class OffsetValidationRecord(BaseModel):
                 raise ValueError("CERTIFIED_VALID record cannot contain non-NONE detected_failure_categories")
             if self.unresolved_intervals:
                 raise ValueError("CERTIFIED_VALID record cannot contain unresolved_intervals")
-            # State 2: CERTIFIED_VALID with has_zero_speed_cusp_on_domain=True
+            if self.primary_span_coverage_ratio != 1.0:
+                raise ValueError(
+                    f"CERTIFIED_VALID record requires complete [0, 1] span coverage "
+                    f"(primary_span_coverage_ratio == 1.0, got {self.primary_span_coverage_ratio})"
+                )
+            if self.stationary_parameterization_status not in (
+                StationaryParameterizationStatus.NONE_REGULAR_SPEED,
+                StationaryParameterizationStatus.REMOVABLE_PARAMETERIZATION_DEGENERACY,
+                StationaryParameterizationStatus.ENDPOINT_TANGENTIAL_DEGENERACY,
+            ):
+                raise ValueError(
+                    f"CERTIFIED_VALID record cannot have stationary_parameterization_status="
+                    f"{self.stationary_parameterization_status.value}"
+                )
+            if self.base_curve_singularity_classification not in (
+                BaseCurveSingularityClassification.REGULAR_BASE_CURVE,
+                BaseCurveSingularityClassification.REMOVABLE_PARAMETERIZATION_DEGENERACY,
+                BaseCurveSingularityClassification.ENDPOINT_TANGENTIAL_DEGENERACY,
+            ):
+                raise ValueError(
+                    f"CERTIFIED_VALID record cannot have base_curve_singularity_classification="
+                    f"{self.base_curve_singularity_classification.value}"
+                )
+            if self.isolated_cusp_roots_t:
+                raise ValueError("CERTIFIED_VALID record cannot contain isolated_cusp_roots_t")
+            if self.isolated_self_intersections:
+                raise ValueError("CERTIFIED_VALID record cannot contain isolated_self_intersections")
             if self.has_zero_speed_cusp_on_domain:
                 raise ValueError("CERTIFIED_VALID record cannot have has_zero_speed_cusp_on_domain=True")
-            # State 3: CERTIFIED_VALID with has_tangent_reversal_on_domain=True
             if self.has_tangent_reversal_on_domain:
                 raise ValueError("CERTIFIED_VALID record cannot have has_tangent_reversal_on_domain=True")
-            # State 4: CERTIFIED_VALID with min_offset_speed_factor_interval[0] < regularity_margin_epsilon
             if f_lo < self.regularity_margin_epsilon - 1e-15:
                 raise ValueError(
                     f"CERTIFIED_VALID record requires min_offset_speed_factor_interval[0] ({f_lo}) "
                     f">= regularity_margin_epsilon ({self.regularity_margin_epsilon})"
                 )
-            if self.local_self_intersection_status in ("DETECTED", "UNRESOLVED"):
-                raise ValueError("CERTIFIED_VALID record cannot have local self-intersection DETECTED/UNRESOLVED")
+            if self.local_self_intersection_status != "NONE":
+                raise ValueError(
+                    f"CERTIFIED_VALID record requires local_self_intersection_status == 'NONE' "
+                    f"(got {self.local_self_intersection_status!r})"
+                )
             if self.global_contour_self_intersection_status in ("DETECTED", "UNRESOLVED"):
                 raise ValueError("CERTIFIED_VALID record cannot have global self-intersection DETECTED/UNRESOLVED")
 
         elif self.verification_outcome == "CERTIFIED_INVALID":
-            # State 5: CERTIFIED_INVALID with failure_category=NONE or INCONCLUSIVE_VERIFICATION
             if self.failure_category in (
                 OffsetFailureCategory.NONE,
                 OffsetFailureCategory.INCONCLUSIVE_VERIFICATION,
@@ -426,17 +451,18 @@ class OffsetValidationRecord(BaseModel):
                 raise ValueError(
                     "CERTIFIED_INVALID record cannot have canonical_offset_classification CERTIFIED_VALID or INCONCLUSIVE"
                 )
-            # State 6: CERTIFIED_INVALID with is_production_ready=True
             if self.is_production_ready:
                 raise ValueError("CERTIFIED_INVALID verification outcome cannot set is_production_ready=True")
 
         elif self.verification_outcome == "INCONCLUSIVE":
-            # State 7: INCONCLUSIVE with non-INCONCLUSIVE_VERIFICATION failure_category
             if self.failure_category != OffsetFailureCategory.INCONCLUSIVE_VERIFICATION:
                 raise ValueError("INCONCLUSIVE record must have failure_category == INCONCLUSIVE_VERIFICATION")
             if self.canonical_offset_classification != CanonicalOffsetClassification.INCONCLUSIVE:
                 raise ValueError("INCONCLUSIVE record must have canonical_offset_classification == INCONCLUSIVE")
-            # State 8: INCONCLUSIVE with is_production_ready=True
+            if self.active_classifications_on_domain != [CanonicalOffsetClassification.INCONCLUSIVE]:
+                raise ValueError(
+                    "INCONCLUSIVE record must have active_classifications_on_domain == ['INCONCLUSIVE']"
+                )
             if self.is_production_ready:
                 raise ValueError("INCONCLUSIVE verification outcome cannot set is_production_ready=True")
 
@@ -485,6 +511,19 @@ class OffsetClassificationReport(BaseModel):
                 raise ValueError(
                     "CERTIFIED_VALID OffsetClassificationReport must have canonicalOffsetClassification == CERTIFIED_VALID"
                 )
+            if self.activeClassificationsOnDomain != [CanonicalOffsetClassification.CERTIFIED_VALID]:
+                raise ValueError(
+                    "CERTIFIED_VALID OffsetClassificationReport must have activeClassificationsOnDomain == ['CERTIFIED_VALID']"
+                )
+            if self.baseCurveSingularityClassification not in (
+                BaseCurveSingularityClassification.REGULAR_BASE_CURVE,
+                BaseCurveSingularityClassification.REMOVABLE_PARAMETERIZATION_DEGENERACY,
+                BaseCurveSingularityClassification.ENDPOINT_TANGENTIAL_DEGENERACY,
+            ):
+                raise ValueError(
+                    f"CERTIFIED_VALID OffsetClassificationReport cannot have baseCurveSingularityClassification="
+                    f"{self.baseCurveSingularityClassification.value}"
+                )
             if self.hasZeroSpeedCuspOnDomain:
                 raise ValueError("CERTIFIED_VALID OffsetClassificationReport cannot have hasZeroSpeedCuspOnDomain=True")
             if self.hasTangentReversalOnDomain:
@@ -495,6 +534,8 @@ class OffsetClassificationReport(BaseModel):
                 raise ValueError(
                     "CERTIFIED_VALID OffsetClassificationReport requires minOffsetSpeedFactorF >= 0.05"
                 )
+            if self.isolatedRoots:
+                raise ValueError("CERTIFIED_VALID OffsetClassificationReport cannot contain isolatedRoots")
         elif self.verificationOutcome == "CERTIFIED_INVALID":
             if self.failureCategory in (
                 OffsetFailureCategory.NONE,
@@ -520,6 +561,10 @@ class OffsetClassificationReport(BaseModel):
             if self.canonicalOffsetClassification != CanonicalOffsetClassification.INCONCLUSIVE:
                 raise ValueError(
                     "INCONCLUSIVE OffsetClassificationReport must have canonicalOffsetClassification == INCONCLUSIVE"
+                )
+            if self.activeClassificationsOnDomain != [CanonicalOffsetClassification.INCONCLUSIVE]:
+                raise ValueError(
+                    "INCONCLUSIVE OffsetClassificationReport must have activeClassificationsOnDomain == ['INCONCLUSIVE']"
                 )
             if self.isProductionReady:
                 raise ValueError("INCONCLUSIVE OffsetClassificationReport cannot set isProductionReady=True")
@@ -1059,6 +1104,79 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
                 "is_production_ready": True,
             },
             "reason": "INCONCLUSIVE with is_production_ready=True must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-09-VALID-WITH-PARTIAL-SPAN-COVERAGE-ZERO",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "primary_span_coverage_ratio": 0.0},
+            "reason": "K-06: CERTIFIED_VALID with primary_span_coverage_ratio < 1.0 (0.0) must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-10-VALID-WITH-PARTIAL-SPAN-COVERAGE-SUBUNIT",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "primary_span_coverage_ratio": 0.9},
+            "reason": "K-06: CERTIFIED_VALID with primary_span_coverage_ratio < 1.0 (0.9) must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-11-VALID-WITH-UNRESOLVED-STATIONARY-STATUS",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "stationary_parameterization_status": "UNRESOLVED"},
+            "reason": "K-06: CERTIFIED_VALID with stationary_parameterization_status=UNRESOLVED must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-12-VALID-WITH-GENUINE-BASE-SINGULARITY",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {
+                **val_base,
+                "stationary_parameterization_status": "GENUINE_BASE_GEOMETRIC_SINGULARITY",
+                "base_curve_singularity_classification": "GENUINE_ZERO_SPEED_GEOMETRIC_CUSP_OR_FOLD",
+            },
+            "reason": "K-06: CERTIFIED_VALID with genuine base geometric singularity must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-13-VALID-WITH-ISOLATED-CUSP-ROOTS",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "isolated_cusp_roots_t": [[0.49, 0.51]]},
+            "reason": "K-06: CERTIFIED_VALID with non-empty isolated_cusp_roots_t must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-14-VALID-WITH-ISOLATED-SELF-INTERSECTIONS",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {
+                **val_base,
+                "isolated_self_intersections": [
+                    {
+                        "scope": "LOCAL",
+                        "segmentIdA": "seg-1",
+                        "segmentIdB": "seg-1",
+                        "t1Bracket": [0.1, 0.11],
+                        "t2Bracket": [0.89, 0.9],
+                        "intersectionPointCm": {"x": 1.0, "y": 2.0},
+                        "residualDistanceCm": 0.0,
+                    }
+                ],
+            },
+            "reason": "K-06: CERTIFIED_VALID with non-empty isolated_self_intersections must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-15-VALID-WITH-LOCAL-SI-NOT-EVALUATED",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "local_self_intersection_status": "NOT_EVALUATED"},
+            "reason": "K-06/K-01: CERTIFIED_VALID with local_self_intersection_status=NOT_EVALUATED must be rejected by both validators",
+        },
+        {
+            "caseId": "CONTRA-16-VALID-WITH-UNRESOLVED-INTERVALS",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "payload": {**val_base, "unresolved_intervals": [[0.45, 0.55]]},
+            "reason": "K-06: CERTIFIED_VALID with non-empty unresolved_intervals must be rejected by both validators",
         },
     ]
     contradictory_results = _run_dual_negative(contradictory_cases)

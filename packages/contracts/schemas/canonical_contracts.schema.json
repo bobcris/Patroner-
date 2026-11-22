@@ -521,6 +521,23 @@
                 "type": "array",
                 "items": { "const": "NONE" }
               },
+              "primary_span_coverage_ratio": { "const": 1.0 },
+              "stationary_parameterization_status": {
+                "enum": [
+                  "NONE_REGULAR_SPEED",
+                  "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+                  "ENDPOINT_TANGENTIAL_DEGENERACY"
+                ]
+              },
+              "base_curve_singularity_classification": {
+                "enum": [
+                  "REGULAR_BASE_CURVE",
+                  "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+                  "ENDPOINT_TANGENTIAL_DEGENERACY"
+                ]
+              },
+              "isolated_cusp_roots_t": { "maxItems": 0 },
+              "isolated_self_intersections": { "maxItems": 0 },
               "unresolved_intervals": { "maxItems": 0 },
               "has_zero_speed_cusp_on_domain": { "const": false },
               "has_tangent_reversal_on_domain": { "const": false },
@@ -531,7 +548,7 @@
                   { "type": "number", "minimum": 0.05 }
                 ]
               },
-              "local_self_intersection_status": { "enum": ["NONE", "NOT_EVALUATED"] },
+              "local_self_intersection_status": { "const": "NONE" },
               "global_contour_self_intersection_status": { "enum": ["NONE", "NOT_EVALUATED"] }
             }
           }
@@ -578,6 +595,12 @@
             "properties": {
               "failure_category": { "const": "INCONCLUSIVE_VERIFICATION" },
               "canonical_offset_classification": { "const": "INCONCLUSIVE" },
+              "active_classifications_on_domain": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": { "const": "INCONCLUSIVE" }
+              },
               "is_production_ready": { "const": false }
             }
           }
@@ -654,9 +677,23 @@
             "properties": {
               "failureCategory": { "const": "NONE" },
               "canonicalOffsetClassification": { "const": "CERTIFIED_VALID" },
+              "activeClassificationsOnDomain": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": { "const": "CERTIFIED_VALID" }
+              },
+              "baseCurveSingularityClassification": {
+                "enum": [
+                  "REGULAR_BASE_CURVE",
+                  "REMOVABLE_PARAMETERIZATION_DEGENERACY",
+                  "ENDPOINT_TANGENTIAL_DEGENERACY"
+                ]
+              },
               "hasZeroSpeedCuspOnDomain": { "const": false },
               "hasTangentReversalOnDomain": { "const": false },
-              "minOffsetSpeedFactorF": { "minimum": 0.05 }
+              "minOffsetSpeedFactorF": { "minimum": 0.05 },
+              "isolatedRoots": { "maxItems": 0 }
             }
           }
         },
@@ -682,6 +719,12 @@
             "properties": {
               "failureCategory": { "const": "INCONCLUSIVE_VERIFICATION" },
               "canonicalOffsetClassification": { "const": "INCONCLUSIVE" },
+              "activeClassificationsOnDomain": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": { "const": "INCONCLUSIVE" }
+              },
               "isProductionReady": { "const": false }
             }
           }

@@ -33,10 +33,10 @@
     "compatibilityMirrorCount": 2,
     "configAndSchemaFilesAudited": 4,
     "historicalPreservedReportsAudited": 10,
-    "evidenceAndPrepDocsAudited": 7,
-    "totalFilesAudited": 41,
-    "referencedSchemaSha256": "ce150c21338472cb5fb4e597e05cb3fde23c90da3868ed5b010be1a37b2a3af9",
-    "sourceInputsDigest": "409374876a9eb6c7fa3cab0cf46c282e31fc39e8febb0d77dab51cc46eb47cfc",
+    "evidenceAndPrepDocsAudited": 10,
+    "totalFilesAudited": 44,
+    "referencedSchemaSha256": "c9aa05eaa42891c42396f5ed850146d19f5309041623f16ed970d2909a9c845c",
+    "sourceInputsDigest": "c092649d12aef35a63853c40891005aa3968c3d2d09341771c9ef4bb15866f82",
     "oracleIndependenceVerified": true,
     "python312LockEnvironmentVerified": true,
     "twoSubprocessDeterministicReplayVerified": true,
@@ -49,8 +49,8 @@
     {
       "artifact": "SchemasLockReport.json",
       "path": "artifacts/m00/SchemasLockReport.json",
-      "sha256": "d259098d73e10f16e7d74e51f3907148a2befc9292446dc0b4506ff0d1b644c2",
-      "bytes": "11151",
+      "sha256": "d318973aba3d8391f85eba9ab9ba049b1c0eed04e72751eddff1febb4c8c9067",
+      "bytes": "13843",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },
     {
@@ -77,8 +77,8 @@
     {
       "artifact": "AdversarialGeometryVerificationReport.json",
       "path": "artifacts/m00/AdversarialGeometryVerificationReport.json",
-      "sha256": "fe1061e160216ac334995fb8f892988079f16394b47570ff70d88c6836598630",
-      "bytes": "69289",
+      "sha256": "22af41efaeff797529e5604164686143dd3bf119ed3cb637607c3af392269463",
+      "bytes": "70268",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },
     {
@@ -126,15 +126,15 @@
     {
       "artifact": "ReproducibleEnvironmentManifest.json",
       "path": "artifacts/m00/ReproducibleEnvironmentManifest.json",
-      "sha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
-      "bytes": "20755",
+      "sha256": "dafa5ed89b9483088dea3506b53475af6100d37b0362c17cc757b6704157ae59",
+      "bytes": "20975",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },
     {
       "artifact": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
       "path": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
-      "sha256": "bc5d057e61608a524a61d48bd386688800551ae7d3111a542332f896b37dfabd",
-      "bytes": "28974",
+      "sha256": "183f310afce7c3f83f8e3145e966e433d97f209aa33bab926efd2040fdd3024a",
+      "bytes": "29265",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     },
     {
@@ -154,8 +154,8 @@
     {
       "artifact": "M00_CONTRACT_PARITY_REPORT.json",
       "path": "M00_CONTRACT_PARITY_REPORT.json",
-      "sha256": "676d54cb87c677f2bde9f2f66b948d58ce21928a82bb57f0238ac31dbbb749a9",
-      "bytes": "11947",
+      "sha256": "f408414bb9d796193fc6266b4e1cca614ad84682da05bf44e6541ce5f89dddaf",
+      "bytes": "14767",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     },
     {
@@ -168,7 +168,7 @@
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "1b1d56e564ab17cfa06ba3deecf70544f517368153da6605c0243abd5c42c609",
+      "sha256": "26f618f29cca2168f6eca198e2c46e2c9f698c942e4c6658b1fb8fa17f4dd71c",
       "bytes": "4896",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     }
@@ -184,8 +184,8 @@
     {
       "primaryPath": "artifacts/m00/ReproducibleEnvironmentManifest.json",
       "mirrorPath": "ReproducibleEnvironmentManifest.json",
-      "sha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
-      "bytes": "20755",
+      "sha256": "dafa5ed89b9483088dea3506b53475af6100d37b0362c17cc757b6704157ae59",
+      "bytes": "20975",
       "identicalToPrimary": true
     }
   ],
@@ -193,8 +193,8 @@
     {
       "artifact": "canonical_contracts.schema.json",
       "path": "packages/contracts/schemas/canonical_contracts.schema.json",
-      "sha256": "ce150c21338472cb5fb4e597e05cb3fde23c90da3868ed5b010be1a37b2a3af9",
-      "bytes": "34237",
+      "sha256": "c9aa05eaa42891c42396f5ed850146d19f5309041623f16ed970d2909a9c845c",
+      "bytes": "35900",
       "category": "CONFIG_AND_SCHEMA"
     },
     {
@@ -323,8 +323,8 @@
     {
       "artifact": "FINAL_VERIFICATION_REPORT.md",
       "path": "docs/evidence/pkg_m00_04/FINAL_VERIFICATION_REPORT.md",
-      "sha256": "d36908a775c3c1d5c9a142b47bbe275bf92afae5f38f6393644d976bed7be404",
-      "bytes": "17170",
+      "sha256": "5f3e98fc28c01df30d8776d8e963410cf343833ae052cd13a32eb7f04146eead",
+      "bytes": "18721",
       "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
     },
     {
@@ -335,16 +335,37 @@
       "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
     },
     {
+      "artifact": "00_BASELINE_AND_TRACEABILITY_MATRIX.md",
+      "path": "docs/evidence/pkg_m00_05/00_BASELINE_AND_TRACEABILITY_MATRIX.md",
+      "sha256": "e25151e904e47d6b2f5308a8d32de95b646c479e6d8382789722f7b25adadff3",
+      "bytes": "6565",
+      "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
+    },
+    {
+      "artifact": "FINAL_VERIFICATION_REPORT.md",
+      "path": "docs/evidence/pkg_m00_05/FINAL_VERIFICATION_REPORT.md",
+      "sha256": "6b037ece43f50b6610e27066ed6109d1d119f46c6121c4f8a5fa6127e3d27590",
+      "bytes": "9262",
+      "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
+    },
+    {
+      "artifact": "K01_THROUGH_K07_REMEDIATION_DOSSIER.md",
+      "path": "docs/evidence/pkg_m00_05/K01_THROUGH_K07_REMEDIATION_DOSSIER.md",
+      "sha256": "b67f2535aeb671f1922699dbca25194aeb884f24a77465701c70e0ed6e745996",
+      "bytes": "20198",
+      "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
+    },
+    {
       "artifact": "TRACK_B_ORIGINAL_ROADMAP_READINESS.md",
       "path": "docs/prep/TRACK_B_ORIGINAL_ROADMAP_READINESS.md",
-      "sha256": "51ef4dce09fdd447045949466248df7fe29c2174a15bdc6f7fe2f4fd5af7c475",
-      "bytes": "9440",
+      "sha256": "dd49ef3adbd2ddc5234135d9d6329c7255012786d10acc70d3323bd05371d9f7",
+      "bytes": "11516",
       "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
     }
   ],
   "reproducibleEnvironmentManifest": {
-    "artifactsCopySha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
-    "rootCopySha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
+    "artifactsCopySha256": "dafa5ed89b9483088dea3506b53475af6100d37b0362c17cc757b6704157ae59",
+    "rootCopySha256": "dafa5ed89b9483088dea3506b53475af6100d37b0362c17cc757b6704157ae59",
     "copiesIdentical": true
   },
   "allAuditedFiles": [
@@ -365,8 +386,8 @@
     {
       "artifact": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
       "path": "M00_CANONICAL_AG01_AG17_REGISTRY.json",
-      "sha256": "bc5d057e61608a524a61d48bd386688800551ae7d3111a542332f896b37dfabd",
-      "bytes": "28974",
+      "sha256": "183f310afce7c3f83f8e3145e966e433d97f209aa33bab926efd2040fdd3024a",
+      "bytes": "29265",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     },
     {
@@ -379,8 +400,8 @@
     {
       "artifact": "M00_CONTRACT_PARITY_REPORT.json",
       "path": "M00_CONTRACT_PARITY_REPORT.json",
-      "sha256": "676d54cb87c677f2bde9f2f66b948d58ce21928a82bb57f0238ac31dbbb749a9",
-      "bytes": "11947",
+      "sha256": "f408414bb9d796193fc6266b4e1cca614ad84682da05bf44e6541ce5f89dddaf",
+      "bytes": "14767",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     },
     {
@@ -428,7 +449,7 @@
     {
       "artifact": "M00_REPRODUCIBILITY_REPORT.json",
       "path": "M00_REPRODUCIBILITY_REPORT.json",
-      "sha256": "1b1d56e564ab17cfa06ba3deecf70544f517368153da6605c0243abd5c42c609",
+      "sha256": "26f618f29cca2168f6eca198e2c46e2c9f698c942e4c6658b1fb8fa17f4dd71c",
       "bytes": "4896",
       "category": "ACTIVE_ROOT_DELIVERABLE"
     },
@@ -442,15 +463,15 @@
     {
       "artifact": "ReproducibleEnvironmentManifest.json",
       "path": "ReproducibleEnvironmentManifest.json",
-      "sha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
-      "bytes": "20755",
+      "sha256": "dafa5ed89b9483088dea3506b53475af6100d37b0362c17cc757b6704157ae59",
+      "bytes": "20975",
       "category": "COMPATIBILITY_MIRROR"
     },
     {
       "artifact": "AdversarialGeometryVerificationReport.json",
       "path": "artifacts/m00/AdversarialGeometryVerificationReport.json",
-      "sha256": "fe1061e160216ac334995fb8f892988079f16394b47570ff70d88c6836598630",
-      "bytes": "69289",
+      "sha256": "22af41efaeff797529e5604164686143dd3bf119ed3cb637607c3af392269463",
+      "bytes": "70268",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },
     {
@@ -512,15 +533,15 @@
     {
       "artifact": "ReproducibleEnvironmentManifest.json",
       "path": "artifacts/m00/ReproducibleEnvironmentManifest.json",
-      "sha256": "4c3f742600875c7f1152651b0fc37b932f6d203079b3fc609266705cf4e7a199",
-      "bytes": "20755",
+      "sha256": "dafa5ed89b9483088dea3506b53475af6100d37b0362c17cc757b6704157ae59",
+      "bytes": "20975",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },
     {
       "artifact": "SchemasLockReport.json",
       "path": "artifacts/m00/SchemasLockReport.json",
-      "sha256": "d259098d73e10f16e7d74e51f3907148a2befc9292446dc0b4506ff0d1b644c2",
-      "bytes": "11151",
+      "sha256": "d318973aba3d8391f85eba9ab9ba049b1c0eed04e72751eddff1febb4c8c9067",
+      "bytes": "13843",
       "category": "ACTIVE_DETERMINISTIC_ARTIFACT"
     },
     {
@@ -596,8 +617,8 @@
     {
       "artifact": "FINAL_VERIFICATION_REPORT.md",
       "path": "docs/evidence/pkg_m00_04/FINAL_VERIFICATION_REPORT.md",
-      "sha256": "d36908a775c3c1d5c9a142b47bbe275bf92afae5f38f6393644d976bed7be404",
-      "bytes": "17170",
+      "sha256": "5f3e98fc28c01df30d8776d8e963410cf343833ae052cd13a32eb7f04146eead",
+      "bytes": "18721",
       "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
     },
     {
@@ -608,17 +629,38 @@
       "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
     },
     {
+      "artifact": "00_BASELINE_AND_TRACEABILITY_MATRIX.md",
+      "path": "docs/evidence/pkg_m00_05/00_BASELINE_AND_TRACEABILITY_MATRIX.md",
+      "sha256": "e25151e904e47d6b2f5308a8d32de95b646c479e6d8382789722f7b25adadff3",
+      "bytes": "6565",
+      "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
+    },
+    {
+      "artifact": "FINAL_VERIFICATION_REPORT.md",
+      "path": "docs/evidence/pkg_m00_05/FINAL_VERIFICATION_REPORT.md",
+      "sha256": "6b037ece43f50b6610e27066ed6109d1d119f46c6121c4f8a5fa6127e3d27590",
+      "bytes": "9262",
+      "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
+    },
+    {
+      "artifact": "K01_THROUGH_K07_REMEDIATION_DOSSIER.md",
+      "path": "docs/evidence/pkg_m00_05/K01_THROUGH_K07_REMEDIATION_DOSSIER.md",
+      "sha256": "b67f2535aeb671f1922699dbca25194aeb884f24a77465701c70e0ed6e745996",
+      "bytes": "20198",
+      "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
+    },
+    {
       "artifact": "TRACK_B_ORIGINAL_ROADMAP_READINESS.md",
       "path": "docs/prep/TRACK_B_ORIGINAL_ROADMAP_READINESS.md",
-      "sha256": "51ef4dce09fdd447045949466248df7fe29c2174a15bdc6f7fe2f4fd5af7c475",
-      "bytes": "9440",
+      "sha256": "dd49ef3adbd2ddc5234135d9d6329c7255012786d10acc70d3323bd05371d9f7",
+      "bytes": "11516",
       "category": "EVIDENCE_AND_PREP_DOCUMENTATION"
     },
     {
       "artifact": "canonical_contracts.schema.json",
       "path": "packages/contracts/schemas/canonical_contracts.schema.json",
-      "sha256": "ce150c21338472cb5fb4e597e05cb3fde23c90da3868ed5b010be1a37b2a3af9",
-      "bytes": "34237",
+      "sha256": "c9aa05eaa42891c42396f5ed850146d19f5309041623f16ed970d2909a9c845c",
+      "bytes": "35900",
       "category": "CONFIG_AND_SCHEMA"
     },
     {

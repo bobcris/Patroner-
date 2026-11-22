@@ -87,3 +87,22 @@ Per `plan/05_WORKLOAD_DEPENDENCY_GRAPH.md`, `plan/16_UNIFIED_EXECUTION_SCHEDULE.
    - *Prior text:* Referred informally to `"Governance Conflicts C-01–C-10"`.
    - *Authoritative Reference:* The canonical conflict IDs are **`CONFLICT-D1` through `CONFLICT-D10`** as recorded verbatim in `docs/evidence/M00_GOVERNANCE_AND_SPEC_CONFLICT_REGISTER.md` and compiled for Owner decision in `docs/evidence/pkg_m00_04/I08_GOVERNANCE_ADJUDICATION_DOSSIER.md`. All ten remain **`PENDING OWNER ADJUDICATION`**.
 
+---
+
+## 5. PKG-M00-05 Reconciliation of `M02` Sub-Workload Labels (Appended `2026-11-22` — Finding `K-07`)
+
+> **Preservation Notice:** Sections 1–4 above are preserved verbatim as historical preparation and `PKG-M00-04` errata records. This section corrects an inaccuracy introduced in Section 4, Item 2 (line 79) — which mislabeled `M02c` as `"offsets"` and loosely grouped `M02e`–`M02g` — against the authoritative specification in `plan/workloads/M02_DETERMINISTIC_FASHION_ENGINE.md`. This reconciliation does **not** alter any governance gate state, does **not** modify any file in `plan/`, and does **not** authorize `M01`, `M02`, `M03`, or `P1-3`.
+
+Per `plan/workloads/M02_DETERMINISTIC_FASHION_ENGINE.md`, the authoritative `M02a`–`M02h` sub-workload taxonomy is:
+
+| Sub-Workload | Authoritative Title (`plan/workloads/M02_DETERMINISTIC_FASHION_ENGINE.md`) | Governance Status |
+| :--- | :--- | :--- |
+| **`M02a`** | Anthropometric Intake, Plausibility Bounds & Body Manifold (`BodyProfile`) | **NOT STARTED / BLOCKED (`Gate Auth-2` & `DEC-13 Stage 2` CLOSED)** |
+| **`M02b`** | Parametric Block Construction (`Bodice`, `Sleeve`, `Skirt`, `Trouser`) | **NOT STARTED / BLOCKED** *(note: `Trouser` block absent in legacy TS — `BLOCKED_MISSING_TROUSER_BLOCK`)* |
+| **`M02c`** | Adaptive Gauss-Legendre Arc-Length & Monotone Brent Inversion Kernel | **NOT STARTED / BLOCKED** *(NOT offsets; Section 4 Item 2 mislabeled `M02c` as offsets)* |
+| **`M02d`** | Continuous Anthropometric Grading & Dart Manipulation Engine | **NOT STARTED / BLOCKED** |
+| **`M02e`** | Certified Offset Curve Synthesis, Singularity Classification & Seam Allowance Trimming (`ADR-009`) | **NOT STARTED / BLOCKED** *(authoritative home of certified offsets & `C1-Fast`/`C1-Cert`)* |
+| **`M02f`** | Paired Seam Walking, Ease Distribution & Notch Anchoring | **NOT STARTED / BLOCKED** |
+| **`M02g`** | Grainline, Drill-Hole & Internal Cutout Topology Validator | **NOT STARTED / BLOCKED** |
+| **`M02h`** | Deterministic 2D Marker Nesting Engine (`DEC-06`) | **NOT STARTED / BLOCKED** |
+

@@ -5,16 +5,16 @@
   "replayMethod": "TWO_ISOLATED_OS_SUBPROCESSES",
   "distinctSubprocessesExecuted": true,
   "pythonHashSeed": "0",
-  "sourceInputsDigest": "409374876a9eb6c7fa3cab0cf46c282e31fc39e8febb0d77dab51cc46eb47cfc",
+  "sourceInputsDigest": "c092649d12aef35a63853c40891005aa3968c3d2d09341771c9ef4bb15866f82",
   "consecutiveRunsCompared": 2,
   "deterministicArtifactsVerifiedCount": 11,
   "allMathematicalArtifactsBitExactAcrossRuns": true,
   "artifactRunComparisons": [
     {
       "artifact": "AdversarialGeometryVerificationReport.json",
-      "run1Sha256": "fe1061e160216ac334995fb8f892988079f16394b47570ff70d88c6836598630",
-      "run2Sha256": "fe1061e160216ac334995fb8f892988079f16394b47570ff70d88c6836598630",
-      "bytes": 69289,
+      "run1Sha256": "22af41efaeff797529e5604164686143dd3bf119ed3cb637607c3af392269463",
+      "run2Sha256": "22af41efaeff797529e5604164686143dd3bf119ed3cb637607c3af392269463",
+      "bytes": 70268,
       "identicalAcrossRuns": true
     },
     {
@@ -75,9 +75,9 @@
     },
     {
       "artifact": "SchemasLockReport.json",
-      "run1Sha256": "d259098d73e10f16e7d74e51f3907148a2befc9292446dc0b4506ff0d1b644c2",
-      "run2Sha256": "d259098d73e10f16e7d74e51f3907148a2befc9292446dc0b4506ff0d1b644c2",
-      "bytes": 11151,
+      "run1Sha256": "d318973aba3d8391f85eba9ab9ba049b1c0eed04e72751eddff1febb4c8c9067",
+      "run2Sha256": "d318973aba3d8391f85eba9ab9ba049b1c0eed04e72751eddff1febb4c8c9067",
+      "bytes": 13843,
       "identicalAcrossRuns": true
     },
     {

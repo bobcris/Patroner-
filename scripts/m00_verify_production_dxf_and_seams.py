@@ -42,8 +42,14 @@ from patroner_geometry.qualification import (  # noqa: E402
 from patroner_geometry.sub_oracles import parse_dxf_aama_strict  # noqa: E402
 
 ARTIFACTS_DIR = REPO_ROOT / "artifacts" / "m00"
-ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 REQUIRED_LAYERS = {"1", "2", "4", "7", "8", "11"}
+
+
+def _tsx_runner_cmd() -> List[str]:
+    local_tsx = REPO_ROOT / "node_modules" / ".bin" / "tsx"
+    if local_tsx.is_file():
+        return [str(local_tsx)]
+    return ["npx", "--yes", "tsx"]
 
 
 def parse_dxf_aama_multi_piece(dxf_text: str) -> Dict[str, Any]:
@@ -96,7 +102,7 @@ def _segment_c1_cert_arc_length(
 
 def verify_exported_bundle() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     raw = subprocess.check_output(
-        ["npx", "--yes", "tsx", str(REPO_ROOT / "scripts" / "m00_export_canonical_pieces.ts")],
+        [*_tsx_runner_cmd(), str(REPO_ROOT / "scripts" / "m00_export_canonical_pieces.ts")],
         cwd=str(REPO_ROOT),
         text=True,
     )

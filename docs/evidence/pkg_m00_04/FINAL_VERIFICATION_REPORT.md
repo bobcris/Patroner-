@@ -1,3 +1,16 @@
+> **SUPERSESSION NOTICE (`2026-11-22` — `PKG-M00-05` / Finding `K-07`)**
+>
+> This historical `PKG-M00-04` report is preserved verbatim below as the pre-Checkpoint-J / pre-Checkpoint-K record (in which `I-04` reported 63-contour P95 latencies of `49.25 ms` for `mpmath.iv`, `7.73 ms` for `python-flint`, and `14.59 ms` for `DecimalInterval`).
+>
+> It has been **SUPERSEDED** by:
+> 1. **Checkpoint J (`I-04` Bernstein Screening Remediation):** Implemented certified Bernstein convex-hull and de Casteljau subdivision screening across all three interval candidates while preserving exact differential equivalence on all 63 canonical garment contours and all adversarial curves.
+> 2. **Checkpoint K (`PKG-M00-05` Remediation of `K-01` through `K-07`):** Closed all seven Checkpoint K technical findings (local self-intersection certification soundness, exact-boundary completeness & termination, outer-timer benchmark integrity, strict AST/dynamic oracle-independence enforcement, single-run output isolation, 16-state Pydantic/JSON Schema certification parity, and evidence/report accuracy).
+>
+> **Authoritative Current Report:** See `docs/evidence/pkg_m00_05/FINAL_VERIFICATION_REPORT.md` and `docs/evidence/pkg_m00_05/K01_THROUGH_K07_REMEDIATION_DOSSIER.md`.  
+> **Governance Baseline Preserved Unchanged:** `M00: NOT ACCEPTED`, `Gate Auth-2/3/4: CLOSED`, `DEC-13 Stage 2: CLOSED`, `AC-09: PENDING`, `isProductionReady: false`, `externalCadInteroperabilityVerified: false`, `BLOCKED_MISSING_TROUSER_BLOCK`, `CONFLICT-D1`–`CONFLICT-D10: OPEN`.
+
+---
+
 # PATRONER — `PKG-M00-04` FINAL VERIFICATION REPORT
 
 **Package:** `PKG-M00-04` — Final M00 Closure Remediation (Checkpoint I Findings `I-01` through `I-08`)  
