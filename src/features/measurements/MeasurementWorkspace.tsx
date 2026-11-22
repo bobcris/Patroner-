@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BodyMeasurements, DesignSpecification, StandardSize } from '../../types';
 import {
   STANDARD_SIZING_SYSTEM,
@@ -63,6 +63,12 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
 }) => {
   const [selectedSize, setSelectedSize] = useState<StandardSize | 'custom'>(activeSize);
   const [measurements, setMeasurements] = useState<BodyMeasurements>(currentMeasurements);
+
+  // Keep local editor synchronized when measurements or active size update from shared workspace context
+  useEffect(() => {
+    setSelectedSize(activeSize);
+    setMeasurements(currentMeasurements);
+  }, [activeSize, currentMeasurements]);
   const [targetVerifiedOrigin, setTargetVerifiedOrigin] = useState<MeasurementOrigin>(
     measurementProvenance === 'physically-measured' ||
       measurementProvenance === 'operator-confirmed' ||
@@ -429,9 +435,9 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="space-y-4 text-xs" data-testid="measurement-inputs-container">
             {isBodice ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs" data-testid="measurement-inputs-grid">
                 <div>
                   <label htmlFor="input-bust" className="block text-neutral-700 font-medium mb-1">
                     Full Bust Girth
@@ -593,7 +599,7 @@ export const MeasurementWorkspace: React.FC<MeasurementWorkspaceProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs" data-testid="measurement-inputs-grid">
                 <div>
                   <label htmlFor="input-waist" className="block text-neutral-700 font-medium mb-1">
                     Natural Waist Girth

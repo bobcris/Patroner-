@@ -3,20 +3,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DesignSpecification, EaseProfile, FabricProperty, GarmentCategory, Silhouette } from '../../types';
 import { PRESET_FABRICS } from '../../domain/design/preset-fabrics';
 import { INITIAL_CONCEPTS } from '../../domain/design/curated-concepts';
 import { generateGarmentConcept } from '../../services/ai/fashion-service';
 import { safeVerifySpecificationApproval } from '../../engine/production';
+import {
+  ReferenceImageAsset,
+  validateReferenceImageFile
+} from '../../state/ProjectWorkspaceContext';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { Sparkles, Upload, ArrowRight, CheckCircle2, Sliders, Info, Scissors } from 'lucide-react';
+import {
+  Sparkles,
+  Upload,
+  ArrowRight,
+  CheckCircle2,
+  Sliders,
+  Info,
+  Scissors,
+  AlertTriangle,
+  History,
+  Trash2
+} from 'lucide-react';
 
 interface FashionStudioProps {
   currentSpec: DesignSpecification;
   onUpdateSpec: (spec: DesignSpecification) => void;
   onNavigateToSpec: () => void;
+  referenceImage?: ReferenceImageAsset | null;
+  onChangeReferenceImage?: (asset: ReferenceImageAsset | null) => void;
+  conceptHistory?: readonly DesignSpecification[];
 }
 
 const COLOR_SWATCHES = [
@@ -29,10 +47,19 @@ const COLOR_SWATCHES = [
   { name: 'Burgundy Wine', hex: '#4A1521' }
 ];
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 export const FashionStudio: React.FC<FashionStudioProps> = ({
   currentSpec,
   onUpdateSpec,
-  onNavigateToSpec
+  onNavigateToSpec,
+  referenceImage: externalReferenceImage,
+  onChangeReferenceImage,
+  conceptHistory = []
 }) => {
   const [prompt, setPrompt] = useState(currentSpec.prompt);
   const [category, setCategory] = useState<GarmentCategory>(currentSpec.garmentCategory);
@@ -41,9 +68,26 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
   const [selectedColor, setSelectedColor] = useState(currentSpec.color);
   const [easeProfile, setEaseProfile] = useState<EaseProfile>(currentSpec.easeProfile);
   const [lengthCm, setLengthCm] = useState<number>(currentSpec.lengthCm);
-  const [referenceImage, setReferenceImage] = useState<{ name: string; url: string } | null>(null);
+  const [localReferenceImage, setLocalReferenceImage] = useState<ReferenceImageAsset | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+
+  const referenceImage =
+    externalReferenceImage !== undefined ? externalReferenceImage : localReferenceImage;
+  const setReferenceImage = onChangeReferenceImage ?? setLocalReferenceImage;
+
+  // Keep creative brief form synchronized when currentSpec changes externally (e.g., Workshop edits or history restore)
+  useEffect(() => {
+    setPrompt(currentSpec.prompt);
+    setCategory(currentSpec.garmentCategory);
+    setSilhouette(currentSpec.silhouette);
+    setSelectedFabricId(currentSpec.fabric.id);
+    setSelectedColor(currentSpec.color);
+    setEaseProfile(currentSpec.easeProfile);
+    setLengthCm(currentSpec.lengthCm);
+  }, [currentSpec]);
 
   const approvalVerification = safeVerifySpecificationApproval(currentSpec);
   const isCadSupported = approvalVerification.isCadSupported;
@@ -52,21 +96,40 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setReferenceImage({
-          name: file.name,
-          url: reader.result as string
-        });
-      };
-      reader.readAsDataURL(file);
+    // Reset input value so re-selecting the same filename still triggers onChange
+    e.target.value = '';
+    if (!file) return;
+
+    const validation = validateReferenceImageFile(file);
+    if (!validation.valid) {
+      setUploadError(validation.error ?? 'Invalid reference image file.');
+      return;
     }
+
+    setUploadError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string' || !reader.result.startsWith('data:image/')) {
+        setUploadError('Could not read the uploaded image as a valid data URL.');
+        return;
+      }
+      setReferenceImage({
+        name: file.name,
+        dataUrl: reader.result,
+        mimeType: file.type,
+        sizeBytes: file.size
+      });
+    };
+    reader.onerror = () => {
+      setUploadError(`Failed to read "${file.name}". Please try another PNG, JPG, or WEBP image.`);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleGenerateConcept = async () => {
     setIsGenerating(true);
     setGenerationNotice(null);
+    setGenerationError(null);
 
     try {
       const result = await generateGarmentConcept({
@@ -78,59 +141,64 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
         colorHex: selectedColor.hex,
         easeProfile,
         lengthCm,
+        referenceImageBase64: referenceImage?.dataUrl,
         referenceImageName: referenceImage?.name
       });
 
       onUpdateSpec(result.specification);
       setGenerationNotice(
         result.executionMode === 'live-server-gemini'
-          ? 'Concept generated with live server AI multimodal reasoning.'
-          : 'Concept generated via Studio Intelligence Engine (Deterministic demonstration mode).'
+          ? 'Concept generated with live server multimodal reasoning.'
+          : referenceImage
+            ? `Concept synthesized with reference image "${referenceImage.name}" (Studio Demonstration Mode).`
+            : 'Concept synthesized via Studio Intelligence Engine (Studio Demonstration Mode).'
       );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unable to synthesize design concept. Please try again.';
+      setGenerationError(message);
     } finally {
       setIsGenerating(false);
     }
   };
 
   const loadPresetConcept = (concept: DesignSpecification) => {
-    setPrompt(concept.prompt);
-    setCategory(concept.garmentCategory);
-    setSilhouette(concept.silhouette);
-    setSelectedFabricId(concept.fabric.id);
-    setSelectedColor(concept.color);
-    setEaseProfile(concept.easeProfile);
-    setLengthCm(concept.lengthCm);
+    setUploadError(null);
+    setGenerationError(null);
     onUpdateSpec(concept);
-    setGenerationNotice('Curated atelier design concept loaded.');
+    setGenerationNotice(`Loaded atelier concept "${concept.name}".`);
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8">
-      {/* Top Banner: atelier title & mode indicator */}
+    <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8" data-testid="creative-studio-view">
+      {/* Top Editorial Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-neutral-200 pb-6 mb-8 gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs uppercase tracking-widest text-neutral-500 font-mono">Module 01</span>
-            <span className="text-neutral-300">/</span>
-            <Badge variant="dark" size="sm">Design Studio</Badge>
-          </div>
+          <span className="text-xs uppercase tracking-widest text-neutral-500 font-medium block mb-1.5">
+            Creative Studio
+          </span>
           <h2 className="text-2xl lg:text-3xl font-serif font-bold text-neutral-900 tracking-tight">
-            AI Fashion Design Studio
+            Garment Concept &amp; Silhouette Direction
           </h2>
           <p className="text-sm text-neutral-600 mt-1 max-w-2xl">
-            Synthesize original fashion concepts, define construction specifications, and explore garment silhouettes.
-            AI estimates remain strictly separated from deterministic pattern geometry.
+            Shape silhouette, proportion, fabric drape, and visual inspiration. Concept proposals remain
+            distinct from approved drafting specifications until confirmed in the Professional Workshop.
           </p>
         </div>
 
-        {/* Quick preset selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono text-neutral-500 uppercase">Load Preset:</span>
+        {/* Curated atelier presets */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-neutral-500">Atelier Presets:</span>
           {INITIAL_CONCEPTS.map(concept => (
             <button
               key={concept.id}
+              type="button"
               onClick={() => loadPresetConcept(concept)}
-              className="px-2.5 py-1 text-xs border border-neutral-300 rounded bg-white hover:bg-neutral-50 text-neutral-700 cursor-pointer transition-colors"
+              className={`px-2.5 py-1.5 text-xs border rounded-sm cursor-pointer transition-colors ${
+                currentSpec.id === concept.id
+                  ? 'border-neutral-900 bg-neutral-900 text-white'
+                  : 'border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-700'
+              }`}
             >
               {concept.name.split(' ')[1]} {concept.garmentCategory}
             </button>
@@ -303,37 +371,87 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
               </div>
             </div>
 
-            {/* Reference Image Upload Dropzone */}
+            {/* Reference Image Upload Dropzone with Preview & Validation */}
             <div>
               <label className="block text-xs font-medium text-neutral-700 mb-1.5">
                 Reference Moodboard / Photograph (Optional)
               </label>
-              <div className="border border-dashed border-neutral-300 rounded-sm p-4 text-center hover:border-neutral-400 transition-colors bg-neutral-50/50">
+              <div className="border border-dashed border-neutral-300 rounded-sm p-4 hover:border-neutral-400 transition-colors bg-neutral-50/60">
                 {referenceImage ? (
-                  <div className="flex items-center justify-between text-xs text-neutral-800">
-                    <span className="truncate max-w-[200px] font-mono">{referenceImage.name}</span>
-                    <button
-                      onClick={() => setReferenceImage(null)}
-                      className="text-rose-600 hover:underline text-[11px] cursor-pointer"
-                    >
-                      Remove
-                    </button>
+                  <div className="flex items-center gap-3.5 text-xs text-neutral-800" data-testid="reference-image-card">
+                    <img
+                      src={referenceImage.dataUrl}
+                      alt={`Reference moodboard: ${referenceImage.name}`}
+                      data-testid="reference-image-preview"
+                      className="w-16 h-16 rounded-sm object-cover border border-neutral-200 bg-white shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-neutral-900 truncate" title={referenceImage.name}>
+                        {referenceImage.name}
+                      </p>
+                      <p className="text-[11px] text-neutral-500 mt-0.5">
+                        {formatBytes(referenceImage.sizeBytes)} · Included in concept generation
+                      </p>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <label
+                          htmlFor="ref-img-replace-input"
+                          className="text-[11px] text-neutral-700 hover:text-neutral-950 underline cursor-pointer"
+                        >
+                          Replace
+                          <input
+                            id="ref-img-replace-input"
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            onChange={handleImageUpload}
+                            className="hidden"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReferenceImage(null);
+                            setUploadError(null);
+                          }}
+                          data-testid="reference-image-remove"
+                          className="inline-flex items-center gap-1 text-rose-600 hover:underline text-[11px] cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Remove
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ) : (
-                  <label htmlFor="ref-img-input" className="cursor-pointer block">
+                  <label htmlFor="ref-img-input" className="cursor-pointer block text-center">
                     <Upload className="w-5 h-5 mx-auto text-neutral-400 mb-1.5" />
-                    <span className="text-xs text-neutral-600 block font-medium">Click to upload reference image</span>
-                    <span className="text-[10px] text-neutral-400 font-mono">PNG, JPG, WEBP for silhouette analysis</span>
+                    <span className="text-xs text-neutral-700 block font-medium">
+                      Click to upload reference image
+                    </span>
+                    <span className="text-[11px] text-neutral-400 block mt-0.5">
+                      PNG, JPG, or WEBP up to 5 MB for silhouette &amp; drape direction
+                    </span>
                     <input
                       id="ref-img-input"
+                      data-testid="reference-image-input"
                       type="file"
-                      accept="image/*"
+                      accept="image/png,image/jpeg,image/webp"
                       onChange={handleImageUpload}
                       className="hidden"
                     />
                   </label>
                 )}
               </div>
+
+              {uploadError && (
+                <div
+                  role="alert"
+                  data-testid="reference-image-error"
+                  className="mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-sm text-xs text-rose-800 flex items-start gap-2"
+                >
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                  <span>{uploadError}</span>
+                </div>
+              )}
             </div>
 
             {/* Generation CTA */}
@@ -348,8 +466,19 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
               {isGenerating ? 'Synthesizing Fashion Concept...' : 'Generate Design Concept'}
             </Button>
 
+            {generationError && (
+              <div
+                role="alert"
+                data-testid="generation-error"
+                className="p-3 bg-rose-50 text-rose-800 text-xs rounded-sm border border-rose-200 flex items-start gap-2"
+              >
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                <span>{generationError}</span>
+              </div>
+            )}
+
             {generationNotice && (
-              <div className="p-3 bg-neutral-100 text-neutral-800 text-xs rounded border border-neutral-200 flex items-start gap-2">
+              <div className="p-3 bg-neutral-100 text-neutral-800 text-xs rounded-sm border border-neutral-200 flex items-start gap-2">
                 <Info className="w-4 h-4 shrink-0 text-neutral-600 mt-0.5" />
                 <span>{generationNotice}</span>
               </div>
@@ -586,14 +715,58 @@ export const FashionStudio: React.FC<FashionStudioProps> = ({
                 <Button
                   variant="primary"
                   onClick={onNavigateToSpec}
+                  data-testid="proceed-to-workshop-cta"
                   className="w-full sm:w-auto font-mono text-xs uppercase tracking-wider"
                   icon={<Scissors className="w-4 h-4" />}
                 >
-                  Proceed to Tech Spec &amp; Approval
+                  Open in Professional Workshop
                 </Button>
               </div>
             </div>
           </div>
+
+          {/* Lightweight Concept History (Non-destructive snapshots referencing canonical specs) */}
+          {conceptHistory.length > 1 && (
+            <div
+              className="bg-white border border-neutral-200 rounded-sm p-4 shadow-2xs space-y-2.5"
+              data-testid="concept-history-strip"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-neutral-700 inline-flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-neutral-500" />
+                  Recent Concept Direction
+                </span>
+                <span className="text-[11px] text-neutral-400">
+                  {conceptHistory.length} snapshots in session
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {conceptHistory.map(item => {
+                  const isCurrent =
+                    item.id === currentSpec.id && item.version === currentSpec.version;
+                  return (
+                    <button
+                      key={`${item.id}-v${item.version}`}
+                      type="button"
+                      onClick={() => loadPresetConcept(item)}
+                      className={`px-2.5 py-1.5 text-xs rounded-sm border transition-colors cursor-pointer flex items-center gap-2 ${
+                        isCurrent
+                          ? 'border-neutral-900 bg-neutral-900 text-white'
+                          : 'border-neutral-200 bg-stone-50 text-neutral-700 hover:border-neutral-400'
+                      }`}
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full border border-white/60 shrink-0"
+                        style={{ backgroundColor: item.color.hex }}
+                      />
+                      <span className="truncate max-w-[160px]">{item.name}</span>
+                      <span className="text-[10px] opacity-70">{item.lengthCm}cm</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

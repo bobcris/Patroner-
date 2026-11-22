@@ -5,7 +5,7 @@
   "replayMethod": "TWO_ISOLATED_OS_SUBPROCESSES",
   "distinctSubprocessesExecuted": true,
   "pythonHashSeed": "0",
-  "sourceInputsDigest": "c092649d12aef35a63853c40891005aa3968c3d2d09341771c9ef4bb15866f82",
+  "sourceInputsDigest": "7771f5977d8a307827dd463586214e99664f10514840efbe30733052aee2e93b",
   "consecutiveRunsCompared": 2,
   "deterministicArtifactsVerifiedCount": 11,
   "allMathematicalArtifactsBitExactAcrossRuns": true,
@@ -75,9 +75,9 @@
     },
     {
       "artifact": "SchemasLockReport.json",
-      "run1Sha256": "d318973aba3d8391f85eba9ab9ba049b1c0eed04e72751eddff1febb4c8c9067",
-      "run2Sha256": "d318973aba3d8391f85eba9ab9ba049b1c0eed04e72751eddff1febb4c8c9067",
-      "bytes": 13843,
+      "run1Sha256": "6560014afdfd1bb36884b1a3ad43041080f5bc451fb435b02bf4c83712e05181",
+      "run2Sha256": "6560014afdfd1bb36884b1a3ad43041080f5bc451fb435b02bf4c83712e05181",
+      "bytes": 17987,
       "identicalAcrossRuns": true
     },
     {

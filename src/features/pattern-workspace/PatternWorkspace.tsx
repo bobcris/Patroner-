@@ -22,7 +22,7 @@ import {
   DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS,
   getUnsupportedCategoryMessage
 } from '../../engine/production';
-import { ProductionPackagePanel, ProductionBomControlState } from '../production/ProductionPackagePanel';
+import type { ProductionBomControlState } from '../production/ProductionPackagePanel';
 import { SimulationFitPanel } from '../simulation/SimulationFitPanel';
 import { AssemblyInspectionPanel, AssemblyScenarioMode } from './AssemblyInspectionPanel';
 import { Button } from '../../components/ui/Button';
@@ -149,7 +149,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   // Canvas zoom & pan state
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation' | 'production'>('pieces');
+  const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation'>('pieces');
   const [assemblyScenario, setAssemblyScenario] = useState<AssemblyScenarioMode>('active-draft');
   const [selectedPrototypeId, setSelectedPrototypeId] = useState<string>('PROTO-BOD-2026-M-01');
   const [enabledGradingSizes, setEnabledGradingSizes] = useState<Record<string, boolean>>({
@@ -304,11 +304,10 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) || pieces[0];
 
-  const effectiveViewMode: 'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation' | 'production' =
+  const effectiveViewMode: 'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation' =
     (currentSpec.garmentCategory !== 'bodice' || (cadViewMode === 'grading' && !gradedPatternSet)) &&
     cadViewMode !== 'pieces' &&
-    cadViewMode !== 'simulation' &&
-    cadViewMode !== 'production'
+    cadViewMode !== 'simulation'
       ? 'pieces'
       : cadViewMode;
 
@@ -599,21 +598,13 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               <Badge variant="neutral" size="sm">AC-08</Badge>
             </button>
             <button
-              onClick={() => setCadViewMode('production')}
-              data-testid="cad-view-mode-production"
-              className={`px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
-                effectiveViewMode === 'production'
-                  ? 'bg-emerald-900 text-white shadow-2xs'
-                  : 'text-neutral-700 hover:text-neutral-900'
-              }`}
+              type="button"
+              onClick={onNavigateToProduction}
+              data-testid="pattern-open-production-cta"
+              className="px-3 py-1 text-xs font-medium rounded-xs transition-colors cursor-pointer flex items-center gap-1.5 text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200"
             >
-              <span>Production Package (M 05)</span>
-              <Badge
-                variant={m05Package.validation.isValid ? 'success' : 'warning'}
-                size="sm"
-              >
-                {m05Package.validation.passedCount}/10 GATES
-              </Badge>
+              <span>Production ({m05Package.validation.passedCount}/10)</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -621,8 +612,6 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
         <div className="text-[11px] font-mono text-neutral-500">
           {effectiveViewMode === 'simulation' ? (
             <span className="text-neutral-900 font-bold">M06 3D EQUILIBRIUM DRAPE, FIT &amp; BOUNDED OPTIMIZATION</span>
-          ) : effectiveViewMode === 'production' ? (
-            <span className="text-emerald-900 font-bold">M05 BOM, DOCS, DXF-AAMA &amp; 10-GATE VALIDATION</span>
           ) : effectiveViewMode === 'assembly' ? (
             <span className="text-blue-900 font-bold">2D RIGID ALIGNMENT AT SCYE JUNCTIONS</span>
           ) : effectiveViewMode === 'grading' ? (
@@ -652,56 +641,6 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
             onUpdateSpec?.(proposal.proposedDesignSpec);
           }}
         />
-      ) : effectiveViewMode === 'production' ? (
-        <div className="space-y-4" data-testid="m04-production-readiness-summary">
-          <div className="bg-white border border-neutral-200 rounded-sm p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
-                <span className="font-bold text-neutral-900 uppercase">Authoritative Shared Production Readiness</span>
-                <Badge variant={categoryPolicy.supportsMultiSizeGrading ? 'accent' : 'neutral'} size="sm">
-                  {categoryPolicy.policyMode}
-                </Badge>
-                <Badge
-                  variant={
-                    workspaceBundle.upstreamStaleness.isStaleAgainstPrevious
-                      ? 'danger'
-                      : exportValidation.isExportPermitted
-                      ? 'success'
-                      : 'warning'
-                  }
-                  size="sm"
-                >
-                  {workspaceBundle.upstreamStaleness.isStaleAgainstPrevious
-                    ? 'STALE — RE-SYNC REQUIRED'
-                    : `EXPORT: ${exportValidation.isExportPermitted ? 'VERIFIED' : (exportValidation.rejectionCode ?? 'BLOCKED')}`}
-                </Badge>
-                <Badge variant="neutral" size="sm">isProductionReady: false</Badge>
-              </div>
-              <p className="text-xs text-neutral-600 font-mono">
-                {categoryPolicy.policyLabel} • Digest: {m05Package.canonicalContentDigest.slice(0, 16)}… • Shared identically with Module 05 Production Overview.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onNavigateToProduction}
-              icon={<ArrowRight className="w-3.5 h-3.5" />}
-              className="font-mono text-xs uppercase shrink-0"
-            >
-              Open Full Module 05 Overview
-            </Button>
-          </div>
-          <ProductionPackagePanel
-            bundle={m05Package}
-            exportValidation={exportValidation}
-            baselineEligibility={workspaceBundle.baselineEligibility}
-            bomControls={bomControls}
-            onChangeBomControls={setBomControls}
-            onCommitProductionBaseline={onCommitProductionBaseline}
-            onSyncWorkingDraftSnapshot={onSyncWorkingDraftSnapshot}
-            titleContext="Module 04 Shared Production Readiness (Synchronized with Module 05)"
-          />
-        </div>
       ) : (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Interactive CAD Canvas */}

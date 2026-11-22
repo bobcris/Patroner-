@@ -375,7 +375,11 @@ class OffsetValidationRecord(BaseModel):
         if f_hi < f_lo:
             raise ValueError("min_offset_speed_factor_interval upper bound < lower bound")
 
-        # Complete ADR-009 §5.3 & K-06 contradictory certification-state enforcement (100% parity with JSON Schema):
+        # Complete ADR-009 §5.3 & K-06 contradictory certification-state enforcement
+        # (100% parity with JSON Schema Draft 2020-12 on all 16 discrete/enum/structural states;
+        # the 3 cross-field numeric inequalities q_hi >= q_lo, f_hi >= f_lo, and
+        # CERTIFIED_VALID => f_lo >= regularity_margin_epsilon exceed Draft 2020-12 native
+        # expressiveness and are enforced at runtime by Pydantic v2 and packages/contracts/src/cross-field-validators.ts):
         if self.verification_outcome == "CERTIFIED_VALID":
             if self.failure_category != OffsetFailureCategory.NONE:
                 raise ValueError("CERTIFIED_VALID record must have failure_category == NONE")
@@ -1282,11 +1286,104 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
         ),
     )
 
+    # L-03: Explicit cross-field numeric inequalities enforced by Pydantic v2 (Python) and
+    # packages/contracts/src/cross-field-validators.ts (TypeScript) that exceed JSON Schema Draft 2020-12
+    # native expressiveness (Draft 2020-12 has no dynamic cross-property numeric comparison keywords).
+    report_base = sample_report.model_dump(mode="json")
+    cross_field_cases: List[Dict[str, Any]] = [
+        {
+            "caseId": "CF-01-SPEED-FACTOR-LOWER-BELOW-DYNAMIC-EPSILON",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "invariant": "verification_outcome == 'CERTIFIED_VALID' => min_offset_speed_factor_interval[0] >= regularity_margin_epsilon",
+            "payload": {
+                **val_base,
+                "regularity_margin_epsilon": 0.25,
+                "min_offset_speed_factor_interval": [0.18, 0.30],
+            },
+            "reason": "L-03: Dynamic comparison f_lo (0.18) < regularity_margin_epsilon (0.25) when CERTIFIED_VALID exceeds Draft 2020-12 static floors",
+        },
+        {
+            "caseId": "CF-02-BASE-SPEED-SQUARED-INTERVAL-INVERTED",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "invariant": "min_base_speed_squared_interval[1] >= min_base_speed_squared_interval[0]",
+            "payload": {
+                **val_base,
+                "min_base_speed_squared_interval": [5.0, 2.0],
+            },
+            "reason": "L-03: Cross-element numeric order q_hi (2.0) < q_lo (5.0) is not natively expressible in Draft 2020-12",
+        },
+        {
+            "caseId": "CF-03-OFFSET-SPEED-FACTOR-INTERVAL-INVERTED",
+            "entity": "OffsetValidationRecord",
+            "model": OffsetValidationRecord,
+            "invariant": "min_offset_speed_factor_interval[1] >= min_offset_speed_factor_interval[0]",
+            "payload": {
+                **val_base,
+                "min_offset_speed_factor_interval": [0.90, 0.50],
+            },
+            "reason": "L-03: Cross-element numeric order f_hi (0.50) < f_lo (0.90) is not natively expressible in Draft 2020-12",
+        },
+        {
+            "caseId": "CF-04-CLASSIFICATION-REPORT-GRID-EXCEEDS-CERTIFIED-ERROR",
+            "entity": "OffsetClassificationReport",
+            "model": OffsetClassificationReport,
+            "invariant": "gridErrorCm <= certifiedIntervalErrorCm",
+            "payload": {
+                **report_base,
+                "gridErrorCm": 0.005,
+                "certifiedIntervalErrorCm": 0.001,
+            },
+            "reason": "L-03: Cross-field numeric bound gridErrorCm (0.005) > certifiedIntervalErrorCm (0.001) is not natively expressible in Draft 2020-12",
+        },
+    ]
+
+    cross_field_results: List[Dict[str, Any]] = []
+    for cf in cross_field_cases:
+        def_name = cf["entity"]
+        model_cls = cf["model"]
+        bad_payload = cf["payload"]
+        sub_schema = {
+            "$schema": schema_doc["$schema"],
+            "$defs": schema_doc["$defs"],
+            "$ref": f"#/$defs/{def_name}",
+        }
+        js_rejected = False
+        try:
+            jsonschema.validate(instance=bad_payload, schema=sub_schema)
+        except jsonschema.ValidationError:
+            js_rejected = True
+
+        pyd_rejected = False
+        pyd_err = ""
+        try:
+            model_cls.model_validate(bad_payload)
+        except ValidationError as exc:
+            pyd_rejected = True
+            pyd_err = str(exc.errors()[0].get("msg", ""))
+
+        cross_field_results.append(
+            {
+                "caseId": cf["caseId"],
+                "entity": def_name,
+                "invariant": cf["invariant"],
+                "reason": cf["reason"],
+                "pydanticV2Rejected": pyd_rejected,
+                "pydanticErrorMessage": pyd_err,
+                "jsonSchemaDraft202012Rejected": js_rejected,
+                "jsonSchemaDraft202012NativeExpressible": False,
+                "requiresRuntimeCrossFieldValidator": True,
+                "nonPythonRuntimeValidator": "packages/contracts/src/cross-field-validators.ts",
+            }
+        )
+
     all_passed = (
         all(r["jsonSchemaDraft202012Valid"] and r["pydanticV2RoundTripValid"] for r in parity_results)
         and all(n["bothRejected"] for n in negative_results)
         and all(c["bothRejected"] for c in contradictory_results)
         and all(s["pydanticSemanticValidatorRejected"] for s in semantic_invariant_checks)
+        and all(cf["pydanticV2Rejected"] for cf in cross_field_results)
     )
 
     return {
@@ -1304,6 +1401,21 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
             "StationaryParameterizationStatus includes ADR-009 §5.3 UNRESOLVED alongside the §4.2 5-way taxonomy states "
             "(ENDPOINT_TANGENTIAL_DEGENERACY, COLLAPSED_ZERO_LENGTH_CURVE) in both Pydantic v2 and JSON Schema Draft 2020-12."
         ),
+        "schemaExpressivenessBoundary": {
+            "findingId": "L-03",
+            "jsonSchemaAcceptanceAloneIsCompleteCertification": False,
+            "discreteAndStructuralParity": "100% parity between Pydantic v2 and JSON Schema Draft 2020-12 on all 16 discrete/enum/structural contradictory certification states and 10 structural negative cases.",
+            "crossFieldNumericInequalitiesBeyondDraft202012": [
+                "OffsetValidationRecord: verification_outcome == 'CERTIFIED_VALID' => min_offset_speed_factor_interval[0] >= regularity_margin_epsilon",
+                "OffsetValidationRecord: min_base_speed_squared_interval[1] >= min_base_speed_squared_interval[0]",
+                "OffsetValidationRecord: min_offset_speed_factor_interval[1] >= min_offset_speed_factor_interval[0]",
+                "OffsetClassificationReport: gridErrorCm <= certifiedIntervalErrorCm",
+            ],
+            "authoritativeRuntimeValidators": {
+                "python": "services/geometry-engine/patroner_geometry/contracts.py (Pydantic v2 model_validator)",
+                "typescript": "packages/contracts/src/cross-field-validators.ts",
+            },
+        },
         "entitiesVerifiedCount": len(parity_results),
         "entityParityResults": parity_results,
         "negativeValidationCount": len(negative_results),
@@ -1311,5 +1423,7 @@ def verify_schemas_lock(schema_path: Path) -> Dict[str, Any]:
         "contradictoryCertificationStateCount": len(contradictory_results),
         "contradictoryCertificationStateResults": contradictory_results,
         "semanticInvariantChecks": semantic_invariant_checks,
+        "crossFieldNumericInequalityCount": len(cross_field_results),
+        "crossFieldNumericInequalityChecks": cross_field_results,
         "allPassed": all_passed,
     }

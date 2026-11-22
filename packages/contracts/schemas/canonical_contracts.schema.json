@@ -2,7 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://patroner.io/schemas/v1/canonical_contracts.schema.json",
   "title": "PatronerCanonicalContractsV1",
-  "description": "Canonical M00.1 JSON Schema Draft 2020-12 contracts enforcing ADR-002, ADR-003, ADR-005, and ADR-009 (R2.1.2-R1).",
+  "description": "Canonical M00.1 JSON Schema Draft 2020-12 contracts enforcing ADR-002, ADR-003, ADR-005, and ADR-009 (R2.1.2-R1). IMPORTANT (L-03): JSON Schema Draft 2020-12 acceptance alone is NOT complete contract certification; consumers MUST also execute the paired runtime cross-field numeric validator (Pydantic v2 in Python or packages/contracts/src/cross-field-validators.ts in TypeScript) for the 4 cross-field numeric inequalities beyond Draft 2020-12 native expressiveness.",
+  "x-validationBoundary": {
+    "jsonSchemaAcceptanceAloneIsCompleteCertification": false,
+    "nativeExpressivenessScope": "All structural, type, enum, range, and 16 discrete/conditional contradictory certification state invariants.",
+    "runtimeCrossFieldNumericInequalitiesRequired": [
+      "OffsetValidationRecord: verification_outcome == 'CERTIFIED_VALID' => min_offset_speed_factor_interval[0] >= regularity_margin_epsilon",
+      "OffsetValidationRecord: min_base_speed_squared_interval[1] >= min_base_speed_squared_interval[0]",
+      "OffsetValidationRecord: min_offset_speed_factor_interval[1] >= min_offset_speed_factor_interval[0]",
+      "OffsetClassificationReport: gridErrorCm <= certifiedIntervalErrorCm"
+    ],
+    "pairedRuntimeValidators": {
+      "python": "services/geometry-engine/patroner_geometry/contracts.py",
+      "typescript": "packages/contracts/src/cross-field-validators.ts"
+    }
+  },
   "type": "object",
   "$defs": {
     "Point2D": {
@@ -387,7 +401,12 @@
     },
     "OffsetValidationRecord": {
       "type": "object",
-      "description": "ADR-009 §5.3 Mandatory Offset Validation Record produced by the C1-Cert oracle.",
+      "description": "ADR-009 §5.3 Mandatory Offset Validation Record produced by the C1-Cert oracle. JSON Schema enforces all structural, enum, and discrete conditional certification states; runtime consumers MUST additionally enforce the 3 cross-field numeric inequalities listed in x-crossFieldNumericInvariants via Pydantic v2 or packages/contracts/src/cross-field-validators.ts.",
+      "x-crossFieldNumericInvariants": [
+        "min_base_speed_squared_interval[1] >= min_base_speed_squared_interval[0]",
+        "min_offset_speed_factor_interval[1] >= min_offset_speed_factor_interval[0]",
+        "verification_outcome == 'CERTIFIED_VALID' => min_offset_speed_factor_interval[0] >= regularity_margin_epsilon"
+      ],
       "required": [
         "segment_id",
         "piece_id",
@@ -609,6 +628,10 @@
     },
     "OffsetClassificationReport": {
       "type": "object",
+      "description": "ADR-009 §5.3 Offset Classification Report. JSON Schema enforces all structural, enum, and discrete conditional certification states; runtime consumers MUST additionally enforce gridErrorCm <= certifiedIntervalErrorCm via Pydantic v2 or packages/contracts/src/cross-field-validators.ts.",
+      "x-crossFieldNumericInvariants": [
+        "gridErrorCm <= certifiedIntervalErrorCm"
+      ],
       "required": [
         "segmentId",
         "canonicalOffsetClassification",

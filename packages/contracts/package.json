@@ -4,6 +4,7 @@
   "private": true,
   "description": "Canonical JSON Schema Draft 2020-12 and TypeScript contracts for Patroner M00.1 (DEC-01 Monorepo Architecture)",
   "files": [
-    "schemas/canonical_contracts.schema.json"
+    "schemas/canonical_contracts.schema.json",
+    "src/cross-field-validators.ts"
   ]
 }

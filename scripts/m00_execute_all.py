@@ -765,6 +765,11 @@ def main() -> None:
         default="",
         help="Target output directory for --single-run mode.",
     )
+    parser.add_argument(
+        "--preserve-benchmarks",
+        action="store_true",
+        help="Reuse existing artifacts/m00/IntervalCandidateBenchmarks.json without re-running wall-clock benchmarks.",
+    )
     args = parser.parse_args()
 
     workflow_path = REPO_ROOT / ".github" / "workflows" / "m00-verification.yml"
@@ -860,38 +865,69 @@ def main() -> None:
     }
 
     # 6. Execute NON-DETERMINISTIC wall-clock benchmarks STRICTLY isolated from deterministic manifests!
-    runtime_10k = benchmark_10k_population_runtimes()
-    runtime_63_contours = benchmark_63_canonical_garment_contours(ARTIFACTS_DIR / "CanonicalGarmentContours63.json")
-    combined_benchmarks = {
-        **runtime_10k,
-        "packageId": "PKG-M00-04",
-        "canonical63ContourBenchmarks": runtime_63_contours,
-    }
-    meta_benchmarks = write_json_file(ARTIFACTS_DIR / "IntervalCandidateBenchmarks.json", combined_benchmarks)
+    benchmarks_path = ARTIFACTS_DIR / "IntervalCandidateBenchmarks.json"
+    if args.preserve_benchmarks and benchmarks_path.is_file():
+        combined_benchmarks = json.loads(benchmarks_path.read_text(encoding="utf-8"))
+        runtime_10k = combined_benchmarks
+        runtime_63_contours = combined_benchmarks["canonical63ContourBenchmarks"]
+        meta_benchmarks = _digest_existing_file(benchmarks_path, "NON_DETERMINISTIC_RUNTIME_OBSERVATION")
+        obs_path = ARTIFACTS_DIR / "RuntimeBenchmarkObservation.json"
+        if not obs_path.is_file():
+            latency_eval_10k = runtime_10k.get("latencyQualificationEvaluation") or evaluate_three_candidates_p95_latency(
+                runtime_10k, threshold_ms=5.0
+            )
+            runtime_observation_record = {
+                "artifactName": "RuntimeBenchmarkObservation.json",
+                "nonDeterministicRuntimeObservation": True,
+                "packageId": "PKG-M00-04",
+                "hostObservation": {
+                    "platform": platform.platform(),
+                    "machine": platform.machine(),
+                    "pythonVersion": platform.python_version(),
+                },
+                "twoSubprocessReplayPids": {
+                    "run1Pid": replay_result["run1Pid"],
+                    "run2Pid": replay_result["run2Pid"],
+                    "distinctSubprocessesExecuted": replay_result["distinctSubprocessesExecuted"],
+                },
+                "intervalCandidateBenchmarksDigest": meta_benchmarks,
+                "synthetic10kLatencyQualificationEvaluation": latency_eval_10k,
+                "canonical63ContourLatencyQualificationEvaluation": runtime_63_contours["latencyQualificationEvaluation5Ms"],
+            }
+            write_json_file(obs_path, runtime_observation_record)
+    else:
+        runtime_10k = benchmark_10k_population_runtimes()
+        runtime_63_contours = benchmark_63_canonical_garment_contours(ARTIFACTS_DIR / "CanonicalGarmentContours63.json")
+        combined_benchmarks = {
+            **runtime_10k,
+            "packageId": "PKG-M00-04",
+            "canonical63ContourBenchmarks": runtime_63_contours,
+        }
+        meta_benchmarks = write_json_file(benchmarks_path, combined_benchmarks)
 
-    latency_eval_10k = runtime_10k.get("latencyQualificationEvaluation") or evaluate_three_candidates_p95_latency(
-        runtime_10k, threshold_ms=5.0
-    )
+        latency_eval_10k = runtime_10k.get("latencyQualificationEvaluation") or evaluate_three_candidates_p95_latency(
+            runtime_10k, threshold_ms=5.0
+        )
 
-    runtime_observation_record = {
-        "artifactName": "RuntimeBenchmarkObservation.json",
-        "nonDeterministicRuntimeObservation": True,
-        "packageId": "PKG-M00-04",
-        "hostObservation": {
-            "platform": platform.platform(),
-            "machine": platform.machine(),
-            "pythonVersion": platform.python_version(),
-        },
-        "twoSubprocessReplayPids": {
-            "run1Pid": replay_result["run1Pid"],
-            "run2Pid": replay_result["run2Pid"],
-            "distinctSubprocessesExecuted": replay_result["distinctSubprocessesExecuted"],
-        },
-        "intervalCandidateBenchmarksDigest": meta_benchmarks,
-        "synthetic10kLatencyQualificationEvaluation": latency_eval_10k,
-        "canonical63ContourLatencyQualificationEvaluation": runtime_63_contours["latencyQualificationEvaluation5Ms"],
-    }
-    write_json_file(ARTIFACTS_DIR / "RuntimeBenchmarkObservation.json", runtime_observation_record)
+        runtime_observation_record = {
+            "artifactName": "RuntimeBenchmarkObservation.json",
+            "nonDeterministicRuntimeObservation": True,
+            "packageId": "PKG-M00-04",
+            "hostObservation": {
+                "platform": platform.platform(),
+                "machine": platform.machine(),
+                "pythonVersion": platform.python_version(),
+            },
+            "twoSubprocessReplayPids": {
+                "run1Pid": replay_result["run1Pid"],
+                "run2Pid": replay_result["run2Pid"],
+                "distinctSubprocessesExecuted": replay_result["distinctSubprocessesExecuted"],
+            },
+            "intervalCandidateBenchmarksDigest": meta_benchmarks,
+            "synthetic10kLatencyQualificationEvaluation": latency_eval_10k,
+            "canonical63ContourLatencyQualificationEvaluation": runtime_63_contours["latencyQualificationEvaluation5Ms"],
+        }
+        write_json_file(ARTIFACTS_DIR / "RuntimeBenchmarkObservation.json", runtime_observation_record)
 
     per_curve_meta = runtime_10k.get("perCurveLatencyBenchmarks", {}).get("metadata", {})
     deterministic_op_counts = per_curve_meta.get("deterministicOperationCountsPerBenchmarkIteration")

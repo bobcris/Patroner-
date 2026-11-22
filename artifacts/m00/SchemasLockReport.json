@@ -2,7 +2,7 @@
   "milestoneId": "M00.1",
   "artifactName": "SchemasLockReport.json",
   "schemaPath": "packages/contracts/schemas/canonical_contracts.schema.json",
-  "schemaSha256": "c9aa05eaa42891c42396f5ed850146d19f5309041623f16ed970d2909a9c845c",
+  "schemaSha256": "86fc75751e4a838d83d9057afde5ae363e1dbb258d0c86e2924e2153ee8b8048",
   "draftVersion": "https://json-schema.org/draft/2020-12/schema",
   "canonicalCoordinateFrame": {
     "geometryUnit": "cm",
@@ -48,6 +48,21 @@
     "INCONCLUSIVE_VERIFICATION"
   ],
   "adr009EnumReconciliationNote": "StationaryParameterizationStatus includes ADR-009 \u00a75.3 UNRESOLVED alongside the \u00a74.2 5-way taxonomy states (ENDPOINT_TANGENTIAL_DEGENERACY, COLLAPSED_ZERO_LENGTH_CURVE) in both Pydantic v2 and JSON Schema Draft 2020-12.",
+  "schemaExpressivenessBoundary": {
+    "findingId": "L-03",
+    "jsonSchemaAcceptanceAloneIsCompleteCertification": false,
+    "discreteAndStructuralParity": "100% parity between Pydantic v2 and JSON Schema Draft 2020-12 on all 16 discrete/enum/structural contradictory certification states and 10 structural negative cases.",
+    "crossFieldNumericInequalitiesBeyondDraft202012": [
+      "OffsetValidationRecord: verification_outcome == 'CERTIFIED_VALID' => min_offset_speed_factor_interval[0] >= regularity_margin_epsilon",
+      "OffsetValidationRecord: min_base_speed_squared_interval[1] >= min_base_speed_squared_interval[0]",
+      "OffsetValidationRecord: min_offset_speed_factor_interval[1] >= min_offset_speed_factor_interval[0]",
+      "OffsetClassificationReport: gridErrorCm <= certifiedIntervalErrorCm"
+    ],
+    "authoritativeRuntimeValidators": {
+      "python": "services/geometry-engine/patroner_geometry/contracts.py (Pydantic v2 model_validator)",
+      "typescript": "packages/contracts/src/cross-field-validators.ts"
+    }
+  },
   "entitiesVerifiedCount": 12,
   "entityParityResults": [
     {
@@ -361,6 +376,57 @@
       "description": "ADR-009 \u00a72.5: non-null parameter_enclosure with NONE_DIRECT_ENCLOSURE must be rejected",
       "pydanticSemanticValidatorRejected": true,
       "errorMessage": "Value error, ADR-009 \u00a72.5 violation: non-null parameter_enclosure requires METHOD_B1_VALIDATED_DERIVATIVE or METHOD_B2_DIRECT_INTERVAL_IMAGE"
+    }
+  ],
+  "crossFieldNumericInequalityCount": 4,
+  "crossFieldNumericInequalityChecks": [
+    {
+      "caseId": "CF-01-SPEED-FACTOR-LOWER-BELOW-DYNAMIC-EPSILON",
+      "entity": "OffsetValidationRecord",
+      "invariant": "verification_outcome == 'CERTIFIED_VALID' => min_offset_speed_factor_interval[0] >= regularity_margin_epsilon",
+      "reason": "L-03: Dynamic comparison f_lo (0.18) < regularity_margin_epsilon (0.25) when CERTIFIED_VALID exceeds Draft 2020-12 static floors",
+      "pydanticV2Rejected": true,
+      "pydanticErrorMessage": "Value error, CERTIFIED_VALID record requires min_offset_speed_factor_interval[0] (0.18) >= regularity_margin_epsilon (0.25)",
+      "jsonSchemaDraft202012Rejected": false,
+      "jsonSchemaDraft202012NativeExpressible": false,
+      "requiresRuntimeCrossFieldValidator": true,
+      "nonPythonRuntimeValidator": "packages/contracts/src/cross-field-validators.ts"
+    },
+    {
+      "caseId": "CF-02-BASE-SPEED-SQUARED-INTERVAL-INVERTED",
+      "entity": "OffsetValidationRecord",
+      "invariant": "min_base_speed_squared_interval[1] >= min_base_speed_squared_interval[0]",
+      "reason": "L-03: Cross-element numeric order q_hi (2.0) < q_lo (5.0) is not natively expressible in Draft 2020-12",
+      "pydanticV2Rejected": true,
+      "pydanticErrorMessage": "Value error, min_base_speed_squared_interval upper bound < lower bound",
+      "jsonSchemaDraft202012Rejected": false,
+      "jsonSchemaDraft202012NativeExpressible": false,
+      "requiresRuntimeCrossFieldValidator": true,
+      "nonPythonRuntimeValidator": "packages/contracts/src/cross-field-validators.ts"
+    },
+    {
+      "caseId": "CF-03-OFFSET-SPEED-FACTOR-INTERVAL-INVERTED",
+      "entity": "OffsetValidationRecord",
+      "invariant": "min_offset_speed_factor_interval[1] >= min_offset_speed_factor_interval[0]",
+      "reason": "L-03: Cross-element numeric order f_hi (0.50) < f_lo (0.90) is not natively expressible in Draft 2020-12",
+      "pydanticV2Rejected": true,
+      "pydanticErrorMessage": "Value error, min_offset_speed_factor_interval upper bound < lower bound",
+      "jsonSchemaDraft202012Rejected": false,
+      "jsonSchemaDraft202012NativeExpressible": false,
+      "requiresRuntimeCrossFieldValidator": true,
+      "nonPythonRuntimeValidator": "packages/contracts/src/cross-field-validators.ts"
+    },
+    {
+      "caseId": "CF-04-CLASSIFICATION-REPORT-GRID-EXCEEDS-CERTIFIED-ERROR",
+      "entity": "OffsetClassificationReport",
+      "invariant": "gridErrorCm <= certifiedIntervalErrorCm",
+      "reason": "L-03: Cross-field numeric bound gridErrorCm (0.005) > certifiedIntervalErrorCm (0.001) is not natively expressible in Draft 2020-12",
+      "pydanticV2Rejected": true,
+      "pydanticErrorMessage": "Value error, OffsetClassificationReport violation: gridErrorCm cannot exceed certifiedIntervalErrorCm",
+      "jsonSchemaDraft202012Rejected": false,
+      "jsonSchemaDraft202012NativeExpressible": false,
+      "requiresRuntimeCrossFieldValidator": true,
+      "nonPythonRuntimeValidator": "packages/contracts/src/cross-field-validators.ts"
     }
   ],
   "allPassed": true

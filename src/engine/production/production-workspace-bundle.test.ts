@@ -547,6 +547,7 @@ test('P1-2-REM-04 (§6): ProductionOverview consumes authoritative governance sl
     'utf8'
   );
   const appSrc = fs.readFileSync(path.resolve('src/App.tsx'), 'utf8');
+  const ctxSrc = fs.readFileSync(path.resolve('src/state/ProjectWorkspaceContext.tsx'), 'utf8');
 
   // ProductionOverview reads workspaceBundle.governance.sleeveEaseStrategy for adaptedSleeveEase
   assert.ok(m05Src.includes('workspaceBundle.governance.sleeveEaseStrategy'));
@@ -554,11 +555,12 @@ test('P1-2-REM-04 (§6): ProductionOverview consumes authoritative governance sl
   assert.ok(m05Src.includes('data-testid="m05-skirt-prototype-isolation-card"'));
   assert.ok(m05Src.includes('if (!isBodiceCategory) return null;'));
 
-  // App wires real previousPackageRevision and resets optional strategy fields when switching garments
-  assert.ok(appSrc.includes('previousPackageRevision: committedPreviousRevision'));
-  assert.ok(appSrc.includes('committedBaselinesByGarment'));
-  assert.ok(appSrc.includes("setBodiceDartStyle(nextSpec.dartStyle ?? 'waist')"));
-  assert.ok(appSrc.includes("setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy ?? 'classic')"));
+  // App mounts ProjectWorkspaceProvider which wires real previousPackageRevision and resets optional strategy fields when switching garments
+  assert.ok(appSrc.includes('<ProjectWorkspaceProvider>'));
+  assert.ok(ctxSrc.includes('previousPackageRevision: committedPreviousRevision'));
+  assert.ok(ctxSrc.includes('committedBaselinesByGarment'));
+  assert.ok(ctxSrc.includes("setBodiceDartStyle(nextSpec.dartStyle ?? 'waist')"));
+  assert.ok(ctxSrc.includes("setSleeveEaseStrategy(nextSpec.sleeveEaseStrategy ?? 'classic')"));
 });
 
 // ============================================================================

@@ -460,14 +460,25 @@ def test_k04_blocks_all_checkpoint_k_allowlist_and_dynamic_bypasses(
 
 
 def test_k04_allows_exact_allowlist_and_benign_stdlib_patterns() -> None:
-    """Exact allowlisted modules and legitimate stdlib idioms (importlib.metadata, re.compile) must pass."""
+    """Exact allowlisted modules and legitimate stdlib idioms (importlib.metadata, re.compile,
+    Path.resolve, inspect.signature, sys.version_info, types.SimpleNamespace, bare types.ModuleType) must pass.
+    """
     clean_code = (
         "import importlib.metadata\n"
+        "import inspect\n"
         "import re\n"
+        "import sys\n"
+        "import types\n"
+        "from pathlib import Path\n"
         "from patroner_geometry.contracts import OffsetValidationRecord\n"
         "from .contracts import CanonicalOffsetClassification\n"
         "PAT = re.compile(r'^[a-z]+$')\n"
         "VER = importlib.metadata.version('mpmath')\n"
+        "PY_VER = sys.version_info\n"
+        "SIG = inspect.signature(len)\n"
+        "NS = types.SimpleNamespace(precision=113)\n"
+        "EMPTY_MOD = types.ModuleType('harmless_placeholder')\n"
+        "ROOT = Path('.').resolve()\n"
         "def read_value(obj):\n"
         "    return getattr(obj, 'value', None)\n"
     )
@@ -477,6 +488,51 @@ def test_k04_allows_exact_allowlist_and_benign_stdlib_patterns() -> None:
         filename="services/geometry-engine/patroner_geometry/c1_cert_oracle.py",
     )
     assert violations == [], f"Unexpected false-positive violations: {violations}"
+
+
+@pytest.mark.parametrize(
+    ("bypass_id", "code_snippet"),
+    [
+        ("pydoc_locate_direct", "import pydoc\nm = pydoc.locate('patroner_geometry.solvers')\n"),
+        ("pydoc_safeimport_direct", "import pydoc\nm = pydoc.safeimport('patroner_geometry.solvers')\n"),
+        ("pydoc_importfile_direct", "import pydoc\nm = pydoc.importfile('solvers.py')\n"),
+        ("pydoc_from_locate_alias", "from pydoc import locate as loc\nm = loc('patroner_geometry.solvers')\n"),
+        (
+            "pydoc_alias_concat_name",
+            "import pydoc as pd\nmod = 'patroner_' + 'geometry.solvers'\nm = pd.locate(mod)\n",
+        ),
+        (
+            "pydoc_getattr_dynamic_attr",
+            "import pydoc as pd\nfn = getattr(pd, 'loc' + 'ate')\nm = fn('patroner_geometry.solvers')\n",
+        ),
+        ("inspect_getmodule_direct", "import inspect\nm = inspect.getmodule(object)\n"),
+        ("inspect_getmodule_alias", "from inspect import getmodule as gm\nm = gm(object)\n"),
+        (
+            "inspect_getattr_concat",
+            "import inspect as insp\nfn = getattr(insp, 'get' + 'module')\nm = fn(object)\n",
+        ),
+        ("inspect_currentframe_builtins", "import inspect\nb = inspect.currentframe().f_builtins\n"),
+        ("inspect_stack_globals", "import inspect\ng = inspect.stack()[0].frame.f_globals\n"),
+        ("sys_meta_path_direct", "import sys\nfinder = sys.meta_path[0]\n"),
+        ("sys_meta_path_alias", "from sys import meta_path as mp\nfinder = mp[0]\n"),
+        ("sys_path_hooks_direct", "import sys\nhook = sys.path_hooks[0]('.')\n"),
+        ("sys_path_importer_cache_direct", "import sys\nfinder = sys.path_importer_cache['.']\n"),
+        ("sys_meta_path_getattr_concat", "import sys as s\nmp = getattr(s, 'meta_' + 'path')\n"),
+        ("types_function_type_exec", "import types\nfn = types.FunctionType(None, {})\n"),
+        ("types_code_type_alias", "from types import CodeType as CT\nx = CT\n"),
+    ],
+)
+def test_l01_blocks_pydoc_inspect_sys_machinery_and_types_code_exec_bypasses(
+    bypass_id: str,
+    code_snippet: str,
+) -> None:
+    """L-01: Every genuine dynamic-import, reflective-frame/module, sys finder, or raw code-execution bypass must fail."""
+    violations = check_python_source_independence(
+        code_snippet,
+        module_role="tier2_oracle",
+        filename="services/geometry-engine/patroner_geometry/c1_cert_oracle.py",
+    )
+    assert len(violations) >= 1, f"L-01 bypass '{bypass_id}' evaded oracle-independence audit!"
 
 
 def test_k04_live_repository_audit_passes_with_zero_violations() -> None:
@@ -654,3 +710,72 @@ def test_k07_supersession_notice_m02_reconciliation_and_evidence_pack() -> None:
     ):
         doc_path = REPO_ROOT / "docs" / "evidence" / "pkg_m00_05" / doc_name
         assert doc_path.exists() and doc_path.stat().st_size > 500, f"Missing or empty {doc_path}"
+
+
+# ---------------------------------------------------------------------------
+# L-03: JSON Schema Draft 2020-12 Cross-Field Numeric Inequality Boundary
+# ---------------------------------------------------------------------------
+
+
+def test_l03_cross_field_numeric_inequalities_enforced_and_boundary_documented() -> None:
+    """
+    L-03 regression test:
+    1. All 4 cross-field numeric inequalities MUST be rejected by Pydantic v2.
+    2. JSON Schema Draft 2020-12 explicitly documents that schema acceptance alone is NOT
+       complete contract certification and points to the paired runtime cross-field validator.
+    3. verify_schemas_lock() honestly reports all 4 inequalities in schemaExpressivenessBoundary
+       and crossFieldNumericInequalityChecks without overclaiming Draft 2020-12 parity on them.
+    """
+    report = verify_schemas_lock(SCHEMA_PATH)
+    assert report["allPassed"] is True, report
+
+    boundary = report["schemaExpressivenessBoundary"]
+    assert boundary["findingId"] == "L-03"
+    assert boundary["jsonSchemaAcceptanceAloneIsCompleteCertification"] is False
+    assert len(boundary["crossFieldNumericInequalitiesBeyondDraft202012"]) == 4
+    assert boundary["authoritativeRuntimeValidators"]["typescript"] == "packages/contracts/src/cross-field-validators.ts"
+
+    cf_checks = report["crossFieldNumericInequalityChecks"]
+    assert report["crossFieldNumericInequalityCount"] == 4
+    expected_ids = {
+        "CF-01-SPEED-FACTOR-LOWER-BELOW-DYNAMIC-EPSILON",
+        "CF-02-BASE-SPEED-SQUARED-INTERVAL-INVERTED",
+        "CF-03-OFFSET-SPEED-FACTOR-INTERVAL-INVERTED",
+        "CF-04-CLASSIFICATION-REPORT-GRID-EXCEEDS-CERTIFIED-ERROR",
+    }
+    assert {c["caseId"] for c in cf_checks} == expected_ids
+    for check in cf_checks:
+        assert check["pydanticV2Rejected"] is True, f"Pydantic failed to reject {check['caseId']}"
+        assert check["jsonSchemaDraft202012NativeExpressible"] is False
+        assert check["requiresRuntimeCrossFieldValidator"] is True
+        assert check["nonPythonRuntimeValidator"] == "packages/contracts/src/cross-field-validators.ts"
+
+    schema_doc = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    assert schema_doc["x-validationBoundary"]["jsonSchemaAcceptanceAloneIsCompleteCertification"] is False
+    assert len(schema_doc["x-validationBoundary"]["runtimeCrossFieldNumericInequalitiesRequired"]) == 4
+    assert len(schema_doc["$defs"]["OffsetValidationRecord"]["x-crossFieldNumericInvariants"]) == 3
+    assert len(schema_doc["$defs"]["OffsetClassificationReport"]["x-crossFieldNumericInvariants"]) == 1
+
+    ts_validator_path = REPO_ROOT / "packages" / "contracts" / "src" / "cross-field-validators.ts"
+    assert ts_validator_path.is_file(), "Missing TypeScript runtime cross-field validator"
+    ts_src = ts_validator_path.read_text(encoding="utf-8")
+    for fn_name in (
+        "validateOffsetValidationRecordCrossFieldInvariants",
+        "validateOffsetClassificationReportCrossFieldInvariants",
+    ):
+        assert fn_name in ts_src
+
+
+def test_l02_benchmark_report_snapshot_and_separation_documented() -> None:
+    """L-02: FINAL_VERIFICATION_REPORT.md must cite exact on-disk benchmark SHA-256 and deterministic separation."""
+    report_text = (REPO_ROOT / "docs" / "evidence" / "pkg_m00_05" / "FINAL_VERIFICATION_REPORT.md").read_text(
+        encoding="utf-8"
+    )
+    bench_path = REPO_ROOT / "artifacts" / "m00" / "IntervalCandidateBenchmarks.json"
+    assert bench_path.is_file(), "Missing artifacts/m00/IntervalCandidateBenchmarks.json"
+    bench_sha = hashlib.sha256(bench_path.read_bytes()).hexdigest()
+    assert bench_sha in report_text, (
+        f"FINAL_VERIFICATION_REPORT.md §4 is out of sync with on-disk IntervalCandidateBenchmarks.json SHA-256 ({bench_sha})"
+    )
+    assert "Non-Deterministic Runtime Observations" in report_text
+

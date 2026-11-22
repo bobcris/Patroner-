@@ -141,8 +141,8 @@
 - **Positive & Adversarial Regression Tests:**
   - `test_pkg_m00_05_checkpoint_k_remediation.py::test_k06_all_16_contradictory_validation_records_rejected_by_pydantic_and_json_schema`
   - `test_pkg_m00_05_checkpoint_k_remediation.py::test_k06_contradictory_classification_reports_rejected_by_pydantic_and_json_schema`
-- **Post-Change Verification Result:** **PASS** — `verify_schemas_lock` reports `allPassed: true` with `16/16` dual-rejected `OffsetValidationRecord` cases and `5/5` dual-rejected `OffsetClassificationReport` cases.
-- **Residual Limitations:** None.
+- **Post-Change Verification Result:** **PASS** — `verify_schemas_lock` reports `allPassed: true` with `16/16` dual-rejected `OffsetValidationRecord` discrete/structural cases, `5/5` dual-rejected `OffsetClassificationReport` discrete cases, and `4/4` Pydantic-rejected cross-field numeric inequalities (`CF-01` through `CF-04`, paired with TypeScript runtime enforcement in `packages/contracts/src/cross-field-validators.ts`).
+- **Residual Limitations (Clarified in `L-03`):** JSON Schema Draft 2020-12 natively enforces all structural, type, enum, range, and 16 discrete conditional certification invariants, but cannot natively compare two dynamic numeric properties in the same instance (`f_lo >= regularity_margin_epsilon`, `q_hi >= q_lo`, `f_hi >= f_lo`, `gridErrorCm <= certifiedIntervalErrorCm`). JSON Schema acceptance alone is therefore NOT complete contract certification; Python consumers enforce these via Pydantic v2 (`contracts.py`) and TypeScript/non-Python consumers MUST enforce them via `packages/contracts/src/cross-field-validators.ts`.
 - **Closure Status:** **CLOSED (Technical)**
 
 ---
@@ -166,3 +166,12 @@
 - **Post-Change Verification Result:** **PASS** — Supersession notice, authoritative `M02a`–`M02h` reconciliation, and complete `docs/evidence/pkg_m00_05/` pack are present, verified, and hashed in `M00_ARTIFACT_HASH_VERIFICATION.json`.
 - **Residual Limitations:** Historical pre-Checkpoint-J files remain intentionally preserved verbatim for audit traceability; readers must consult `docs/evidence/pkg_m00_05/FINAL_VERIFICATION_REPORT.md` as the current authoritative verification summary.
 - **Closure Status:** **CLOSED (Technical)**
+
+---
+
+## Checkpoint L Follow-Up Closure (`L-01`, `L-02`, `L-03`)
+
+- **`L-01` (Oracle Independence Hardening):** Hardened `scripts/check_oracle_independence.py` against genuine dynamic-import and reflection bypasses (`pydoc.locate`/`safeimport`/`importfile`, `inspect.getmodule`/`currentframe`/`stack`/frame attributes, `sys.meta_path`/`path_hooks`/`path_importer_cache`, `types.FunctionType`/`CodeType`) for both direct and aliased imports and folded/dynamic attribute names, while preserving benign stdlib APIs (`importlib.metadata`, `re.compile`, `Path.resolve`, `inspect.signature`, `sys.version_info`, `types.SimpleNamespace`, bare `types.ModuleType`). Verified with 18 new adversarial test cases and zero repo-wide violations.
+- **`L-02` (Benchmark Report Reconciliation):** Reconciled `docs/evidence/pkg_m00_05/FINAL_VERIFICATION_REPORT.md` §4 directly to the exact on-disk `artifacts/m00/IntervalCandidateBenchmarks.json` and `RuntimeBenchmarkObservation.json` SHA-256 snapshots, with explicit separation of deterministic artifacts from host-dependent non-deterministic runtime observations and an automated test (`test_l02_benchmark_report_snapshot_and_separation_documented`) preventing silent snapshot drift.
+- **`L-03` (JSON Schema Expressiveness Boundary):** Replaced overclaimed `"100% parity"` wording with an explicit boundary specification in `contracts.py`, `canonical_contracts.schema.json` (`x-validationBoundary`, `x-crossFieldNumericInvariants`), and `SchemasLockReport.json` (`schemaExpressivenessBoundary`, `crossFieldNumericInequalityChecks` `CF-01`–`CF-04`). Added TypeScript runtime cross-field enforcement in `packages/contracts/src/cross-field-validators.ts` with paired Python and TypeScript regression tests covering all 4 cross-field numeric inequalities.
+

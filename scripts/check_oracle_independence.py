@@ -102,6 +102,35 @@ FORBIDDEN_DYNAMIC_MODULES: Set[str] = {
     "pickle",
     "code",
     "subprocess",
+    "pydoc",
+}
+
+# Specific qualified stdlib targets that expose dynamic import machinery, live builtins/modules,
+# or raw bytecode execution — blocked without prohibiting harmless APIs in the same parent module
+# (e.g. `inspect.signature`, `sys.version_info`, `types.SimpleNamespace`, `types.ModuleType`).
+FORBIDDEN_QUALIFIED_IMPORT_TARGETS: Set[str] = {
+    "inspect.getmodule",
+    "inspect.getmodulename",
+    "inspect.currentframe",
+    "inspect.stack",
+    "inspect.getouterframes",
+    "inspect.getinnerframes",
+    "inspect.trace",
+    "inspect.getmembers",
+    "inspect.getmembers_static",
+    "inspect.getclosurevars",
+    "sys.meta_path",
+    "sys.path_hooks",
+    "sys.path_importer_cache",
+    "sys.modules",
+    "types.FunctionType",
+    "types.CodeType",
+}
+
+FORBIDDEN_SYS_IMPORT_MACHINERY_ATTRS: Set[str] = {
+    "meta_path",
+    "path_hooks",
+    "path_importer_cache",
 }
 
 FORBIDDEN_DYNAMIC_CALL_NAMES: Set[str] = {
@@ -117,12 +146,15 @@ FORBIDDEN_DYNAMIC_ATTR_CALLS: Set[str] = {
     "spec_from_loader",
     "module_from_spec",
     "find_spec",
+    "find_module",
     "run_module",
     "run_path",
     "load_module",
     "exec_module",
     "create_module",
     "__import__",
+    "safeimport",
+    "importfile",
 }
 
 FORBIDDEN_REFLECTIVE_ATTRS: Set[str] = {
@@ -133,6 +165,11 @@ FORBIDDEN_REFLECTIVE_ATTRS: Set[str] = {
     "__import__",
     "__code__",
     "__closure__",
+    "f_builtins",
+    "f_globals",
+    "f_locals",
+    "f_back",
+    "f_code",
 }
 
 DANGEROUS_ATTR_NAMES: Set[str] = {
@@ -153,9 +190,33 @@ DANGEROUS_ATTR_NAMES: Set[str] = {
     "spec_from_loader",
     "module_from_spec",
     "find_spec",
+    "find_module",
     "load_module",
     "exec_module",
     "modules",
+    "meta_path",
+    "path_hooks",
+    "path_importer_cache",
+    "locate",
+    "safeimport",
+    "importfile",
+    "getmodule",
+    "getmodulename",
+    "currentframe",
+    "stack",
+    "getouterframes",
+    "getinnerframes",
+    "trace",
+    "getmembers",
+    "getmembers_static",
+    "getclosurevars",
+    "f_builtins",
+    "f_globals",
+    "f_locals",
+    "f_back",
+    "f_code",
+    "FunctionType",
+    "CodeType",
 }
 
 REFLECTIVE_NAMESPACE_ROOTS: Set[str] = {
@@ -164,8 +225,12 @@ REFLECTIVE_NAMESPACE_ROOTS: Set[str] = {
     "importlib",
     "sys",
     "sys.modules",
+    "sys.meta_path",
+    "sys.path_hooks",
+    "sys.path_importer_cache",
     "runpy",
     "imp",
+    "pydoc",
 }
 
 SHARED_CONTRACT_FILES: Set[str] = {
@@ -401,6 +466,14 @@ def check_python_source_independence(
             )
             continue
 
+        if full_target in FORBIDDEN_QUALIFIED_IMPORT_TARGETS:
+            _add_violation(
+                lineno,
+                full_target,
+                f"{module_role} must not import reflective/import-machinery target '{full_target}' (L-01 anti-bypass)",
+            )
+            continue
+
         if module_role == "tier2_oracle":
             if _matches_prefix(full_target, TIER2_FORBIDDEN_SOLVER_PREFIXES) or _matches_prefix(full_target, dynamic_tier1):
                 _add_violation(
@@ -489,12 +562,24 @@ def check_python_source_independence(
     # 2. Check dynamic calls, obfuscated builtins reflection, and forbidden attribute/subscript accesses
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute):
+            dotted_attr = _call_target_dotted_name(node, aliases)
             if node.attr in FORBIDDEN_REFLECTIVE_ATTRS:
-                dotted_attr = _call_target_dotted_name(node, aliases) or f"<expr>.{node.attr}"
+                _add_violation(
+                    node.lineno,
+                    dotted_attr or f"<expr>.{node.attr}",
+                    f"{module_role} must not access reflective attribute '{node.attr}' (K-04/L-01 anti-bypass)",
+                )
+            elif dotted_attr in FORBIDDEN_QUALIFIED_IMPORT_TARGETS:
                 _add_violation(
                     node.lineno,
                     dotted_attr,
-                    f"{module_role} must not access reflective attribute '{node.attr}' (K-04 anti-bypass)",
+                    f"{module_role} must not access reflective/import-machinery attribute '{dotted_attr}' (L-01 anti-bypass)",
+                )
+            elif _call_target_dotted_name(node.value, aliases) == "sys" and node.attr in FORBIDDEN_SYS_IMPORT_MACHINERY_ATTRS:
+                _add_violation(
+                    node.lineno,
+                    f"sys.{node.attr}",
+                    f"{module_role} must not access sys import-machinery attribute 'sys.{node.attr}' (L-01 anti-bypass)",
                 )
             elif _call_target_dotted_name(node.value, aliases) == "importlib" and node.attr != "metadata":
                 _add_violation(
@@ -526,6 +611,14 @@ def check_python_source_independence(
                     node.lineno,
                     label,
                     f"{module_role} must not invoke dynamic loader/eval call '{dotted}' (ADR-009 §7.1 anti-bypass)",
+                )
+            elif dotted in FORBIDDEN_QUALIFIED_IMPORT_TARGETS or dotted in ("pydoc.locate", "pydoc.resolve"):
+                arg0 = _extract_string_literal(node.args[0], string_env) if node.args else None
+                label = f"{dotted}({arg0!r})" if arg0 is not None else f"{dotted}(...)"
+                _add_violation(
+                    node.lineno,
+                    label,
+                    f"{module_role} must not invoke reflective/import-machinery API '{dotted}' (L-01 anti-bypass)",
                 )
             elif leaf in FORBIDDEN_DYNAMIC_ATTR_CALLS:
                 arg0 = _extract_string_literal(node.args[0], string_env) if node.args else None
