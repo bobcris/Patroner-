@@ -1149,6 +1149,62 @@ def certify_cubic_offset_on_unit_interval(
         detected_failure_cats = [OffsetFailureCategory.INCONCLUSIVE_VERIFICATION]
         prod_ready = False
 
+    local_si_certs: List[SelfIntersectionCertificate] = []
+    local_si_status: Literal["NONE", "DETECTED", "UNRESOLVED", "NOT_EVALUATED"] = "NOT_EVALUATED"
+    local_si_unresolved_f64: List[Tuple[float, float]] = []
+
+    if outcome == "CERTIFIED_VALID":
+        # ADR-009 §5.1 Step 2.5 (K-01): Unconditional intra-segment local self-intersection certification
+        # on regular segments (f(t) >= epsilon_reg > 0 does NOT exclude regular pinched self-crossing loops!).
+        local_si_res = certify_intra_segment_local_self_intersection(
+            curve,
+            s_sign=s_sign,
+            d=d,
+            d_exact=d_frac,
+            evaluated_subspan=(span_lo, span_hi),
+            assume_positive_offset_speed=True,
+        )
+        escalation_trace.append(
+            f"step2.5_local_si:status={local_si_res['status']}:method={local_si_res['method']}"
+        )
+        if local_si_res["status"] == "CERTIFIED_DISJOINT":
+            local_si_status = "NONE"
+        elif local_si_res["status"] == "CERTIFIED_INTERSECTION_FOUND":
+            local_si_status = "DETECTED"
+            local_si_certs = [
+                SelfIntersectionCertificate(
+                    scope="LOCAL",
+                    segmentIdA=curve.segment_id,
+                    segmentIdB=curve.segment_id,
+                    t1Bracket=sol["t1Bracket"],
+                    t2Bracket=sol["t2Bracket"],
+                    intersectionPointCm=sol["intersectionPointCm"],
+                    residualDistanceCm=sol["residualDistanceCm"],
+                )
+                for sol in local_si_res["certifiedIntersections"]
+            ]
+            outcome = "CERTIFIED_INVALID"
+            fail_cat = OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION
+            primary_class = CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION
+            active_classes = [CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION]
+            detected_failure_cats = [OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION]
+            prod_ready = False
+        else:
+            local_si_status = "UNRESOLVED"
+            for ub in local_si_res.get("unresolvedBoxes", []):
+                if "t1Box" in ub:
+                    local_si_unresolved_f64.append((float(ub["t1Box"][0]), float(ub["t1Box"][1])))
+                if "t2Box" in ub:
+                    local_si_unresolved_f64.append((float(ub["t2Box"][0]), float(ub["t2Box"][1])))
+            if not local_si_unresolved_f64:
+                local_si_unresolved_f64.append((span_lo, span_hi))
+            outcome = "INCONCLUSIVE"
+            fail_cat = OffsetFailureCategory.INCONCLUSIVE_VERIFICATION
+            primary_class = CanonicalOffsetClassification.INCONCLUSIVE
+            active_classes = [CanonicalOffsetClassification.INCONCLUSIVE]
+            detected_failure_cats = [OffsetFailureCategory.INCONCLUSIVE_VERIFICATION]
+            prod_ready = False
+
     dev_bound_cm = 0.0
     if outcome == "CERTIFIED_VALID":
         _e_grid, dev_bound_cm = compute_piecewise_offset_approximation_errors_cm(
@@ -1156,6 +1212,8 @@ def certify_cubic_offset_on_unit_interval(
         )
 
     unresolved_f64 = [fraction_pair_to_outward_f64_pair(a_q, b_q) for a_q, b_q in unresolved_panels]
+    if local_si_unresolved_f64:
+        unresolved_f64.extend(local_si_unresolved_f64)
     return OffsetValidationRecord(
         segment_id=curve.segment_id,
         piece_id=piece_id,
@@ -1170,12 +1228,12 @@ def certify_cubic_offset_on_unit_interval(
         stationary_parameterization_status=StationaryParameterizationStatus.NONE_REGULAR_SPEED,
         base_curve_singularity_classification=BaseCurveSingularityClassification.REGULAR_BASE_CURVE,
         isolated_cusp_roots_t=isolated_cusp_brackets,
-        isolated_self_intersections=[],
+        isolated_self_intersections=local_si_certs,
         max_geometric_deviation_bound_cm=dev_bound_cm,
         max_certified_radial_error_cm=dev_bound_cm,
         max_subdivision_depth_reached=max_depth_reached,
         primary_span_coverage_ratio=coverage_ratio,
-        local_self_intersection_status="NONE" if outcome == "CERTIFIED_VALID" else "NOT_EVALUATED",
+        local_self_intersection_status=local_si_status,
         global_contour_self_intersection_status="NOT_EVALUATED",
         unresolved_intervals=unresolved_f64 if outcome == "INCONCLUSIVE" else [],
         escalation_trace=escalation_trace,
@@ -1334,6 +1392,8 @@ def krawczyk_isolate_offset_intersections(
     initial_panels: int = 16,
     det_min_threshold: float = 1e-18,
     excluded_shared_corner: Optional[Tuple[int, int]] = None,
+    d_exact: Optional[Fraction] = None,
+    max_nodes: int = 8192,
 ) -> Dict[str, Any]:
     """Rigorous 2D interval subdivision + Krawczyk operator solving F(t1, t2) = O_a(t1) - O_b(t2) = (0, 0)
     on domain_1 x domain_2 at 113-bit mpmath.iv precision.
@@ -1353,7 +1413,7 @@ def krawczyk_isolate_offset_intersections(
     ax_b = [_fraction_to_iv(c) for c in seg_b.power_coeffs_xy()[0]]
     ay_b = [_fraction_to_iv(c) for c in seg_b.power_coeffs_xy()[1]]
     s_iv = iv.mpf(s_sign)
-    d_iv = _fraction_to_iv(Fraction(d))
+    d_iv = _fraction_to_iv(d_exact if d_exact is not None else Fraction(d))
     det_thresh_mp = _fraction_to_mpf(Fraction(det_min_threshold))
     one_mp = mpmath.mp.mpf(1)
 
@@ -1497,8 +1557,29 @@ def krawczyk_isolate_offset_intersections(
                 stack.append((i1, i2, 0))
 
     same_segment = seg_a.segment_id == seg_b.segment_id
+    nodes_visited = 0
+    budget_exceeded = False
     while stack:
         i1, i2, depth = stack.pop()
+        nodes_visited += 1
+        if nodes_visited > max_nodes:
+            budget_exceeded = True
+            unresolved_boxes.append(
+                {
+                    "t1Box": [
+                        mpf_to_outward_lower_f64(i1.a),
+                        mpf_to_outward_upper_f64(i1.b),
+                    ],
+                    "t2Box": [
+                        mpf_to_outward_lower_f64(i2.a),
+                        mpf_to_outward_upper_f64(i2.b),
+                    ],
+                    "status": "UNRESOLVED",
+                    "reason": "KRAWCZYK_NODE_BUDGET_EXCEEDED",
+                }
+            )
+            break
+
         i1_lo_mp = mpmath.mp.mpf(i1._mpi_[0])
         i1_hi_mp = mpmath.mp.mpf(i1._mpi_[1])
         i2_lo_mp = mpmath.mp.mpf(i2._mpi_[0])
@@ -1513,8 +1594,17 @@ def krawczyk_isolate_offset_intersections(
                 h_lo = min(i1_lo_mp, i2_lo_mp)
                 h_hi = max(i1_hi_mp, i2_hi_mp)
                 ev_hull = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, iv.mpf([h_lo, h_hi]))
-                if ev_hull is not None and ((0 not in ev_hull[2]) or (0 not in ev_hull[3])):
-                    continue
+                if ev_hull is not None:
+                    if (0 not in ev_hull[2]) or (0 not in ev_hull[3]):
+                        continue
+                    # General oblique directional monotonicity on hull [h_lo, h_hi]:
+                    # if v = mid(O'(hull)) satisfies v . O'(hull) > 0 strictly, O is strictly injective on [h_lo, h_hi].
+                    vhx = _iv_mid_mpf(ev_hull[2])
+                    vhy = _iv_mid_mpf(ev_hull[3])
+                    if vhx != 0 or vhy != 0:
+                        proj_hull = iv.mpf(vhx) * ev_hull[2] + iv.mpf(vhy) * ev_hull[3]
+                        if mpmath.mp.mpf(proj_hull.a) > 0:
+                            continue
 
         eva = _eval_offset_and_deriv_iv(ax_a, ay_a, s_iv, d_iv, i1)
         evb = _eval_offset_and_deriv_iv(ax_b, ay_b, s_iv, d_iv, i2)
@@ -1605,6 +1695,9 @@ def krawczyk_isolate_offset_intersections(
             t2_hi = mpf_to_outward_upper_f64(c2.b)
             # Never silently clamp to [0, 1]; check outward binary64 endpoints against requested domain
             if t1_lo < domain_1[0] or t1_hi > domain_1[1] or t2_lo < domain_2[0] or t2_hi > domain_2[1]:
+                return False
+            # On same-segment search, a certified local self-intersection requires strictly distinct parameters
+            if same_segment and not (t1_hi < t2_lo or t2_hi < t1_lo):
                 return False
 
             m1_pt = iv.mpf(_iv_mid_mpf(c1))
@@ -1697,6 +1790,172 @@ def krawczyk_isolate_offset_intersections(
         "status": status,
         "certifiedIntersections": certified_solutions,
         "unresolvedBoxes": unresolved_boxes,
+        "nodesVisited": nodes_visited,
+        "budgetExceeded": budget_exceeded,
+    }
+
+
+def certify_intra_segment_local_self_intersection(
+    curve: ExactCubicBezier2D,
+    s_sign: int,
+    d: float,
+    *,
+    d_exact: Optional[Fraction] = None,
+    evaluated_subspan: Tuple[float, float] = (0.0, 1.0),
+    assume_positive_offset_speed: bool = True,
+    max_depth: int = 34,
+    max_nodes: int = 8192,
+) -> Dict[str, Any]:
+    """ADR-009 §5.1 Step 2.5 rigorous intra-segment local self-intersection certifier (K-01).
+
+    Algorithm:
+    1. Exact O(1) directional-monotonicity injectivity certificate (when `assume_positive_offset_speed=True`,
+       i.e. f(t) > 0 everywhere on [span_lo, span_hi]):
+       Because O'(t) = f(t) * B'(t) with f(t) > 0, if any fixed non-zero direction v satisfies
+       v . B'(t) > 0 everywhere (or < 0 everywhere) on [span_lo, span_hi] — verified via exact Q
+       Bernstein hull of degree-2 B'(t) — then v . O(t) is strictly monotone, proving O is injective.
+    2. Exact endpoint coincidence check at (span_lo, span_hi) in 113-bit / 336-bit mpmath.iv.
+    3. Full 2D interval subdivision + directional-monotonicity diagonal exclusion + Krawczyk operator
+       over [span_lo, span_hi]^2 with explicit global node budget, failing closed to UNRESOLVED on
+       any grazing/near-tangent unresolvable box.
+    """
+    span_lo, span_hi = evaluated_subspan
+    span_lo_q = Fraction(span_lo)
+    span_hi_q = Fraction(span_hi)
+    d_frac = d_exact if d_exact is not None else Fraction(str(d))
+
+    if assume_positive_offset_speed:
+        dx_b_full = [
+            Fraction(3) * (curve.p1[0] - curve.p0[0]),
+            Fraction(3) * (curve.p2[0] - curve.p1[0]),
+            Fraction(3) * (curve.p3[0] - curve.p2[0]),
+        ]
+        dy_b_full = [
+            Fraction(3) * (curve.p1[1] - curve.p0[1]),
+            Fraction(3) * (curve.p2[1] - curve.p1[1]),
+            Fraction(3) * (curve.p3[1] - curve.p2[1]),
+        ]
+        dx_b = _bernstein_restrict_exact(dx_b_full, span_lo_q, span_hi_q)
+        dy_b = _bernstein_restrict_exact(dy_b_full, span_lo_q, span_hi_q)
+
+        # Candidate projection directions: x, y, diagonal +/-45deg, chord, midpoint tangent
+        chord_x = curve.p3[0] - curve.p0[0]
+        chord_y = curve.p3[1] - curve.p0[1]
+        mid_tx = dx_b[0] + Fraction(2) * dx_b[1] + dx_b[2]
+        mid_ty = dy_b[0] + Fraction(2) * dy_b[1] + dy_b[2]
+        directions = (
+            (Fraction(1), Fraction(0)),
+            (Fraction(0), Fraction(1)),
+            (Fraction(1), Fraction(1)),
+            (Fraction(1), Fraction(-1)),
+            (chord_x, chord_y),
+            (mid_tx, mid_ty),
+        )
+        for vx, vy in directions:
+            if vx == 0 and vy == 0:
+                continue
+            proj = [vx * dx_b[k] + vy * dy_b[k] for k in range(3)]
+            if min(proj) > 0 or max(proj) < 0:
+                return {
+                    "status": "CERTIFIED_DISJOINT",
+                    "method": "exact_directional_monotonicity_mvt",
+                    "certifiedIntersections": [],
+                    "unresolvedBoxes": [],
+                }
+
+    # Check exact endpoint coincidence O(span_lo) == O(span_hi) before 2D interior Krawczyk search
+    endpoint_solutions: List[Dict[str, Any]] = []
+    endpoint_unresolved: List[Dict[str, Any]] = []
+    if span_hi > span_lo:
+        iv.prec = 113
+        mpmath.mp.prec = 113
+        ax_q, ay_q = curve.power_coeffs_xy()
+        ax_iv = [_fraction_to_iv(c) for c in ax_q]
+        ay_iv = [_fraction_to_iv(c) for c in ay_q]
+        s_iv = iv.mpf(s_sign)
+        d_iv = _fraction_to_iv(d_frac)
+        ev_lo = _eval_offset_and_deriv_iv(ax_iv, ay_iv, s_iv, d_iv, _fraction_to_iv(span_lo_q))
+        ev_hi = _eval_offset_and_deriv_iv(ax_iv, ay_iv, s_iv, d_iv, _fraction_to_iv(span_hi_q))
+        if ev_lo is not None and ev_hi is not None:
+            if (0 in (ev_lo[0] - ev_hi[0])) and (0 in (ev_lo[1] - ev_hi[1])):
+                # Escalate to 336-bit to separate near-coincidence vs exact closed-loop endpoint intersection
+                iv.prec = 336
+                mpmath.mp.prec = 336
+                ax_336 = [_fraction_to_iv(c) for c in ax_q]
+                ay_336 = [_fraction_to_iv(c) for c in ay_q]
+                ev_lo_336 = _eval_offset_and_deriv_iv(
+                    ax_336, ay_336, iv.mpf(s_sign), _fraction_to_iv(d_frac), _fraction_to_iv(span_lo_q)
+                )
+                ev_hi_336 = _eval_offset_and_deriv_iv(
+                    ax_336, ay_336, iv.mpf(s_sign), _fraction_to_iv(d_frac), _fraction_to_iv(span_hi_q)
+                )
+                iv.prec = 113
+                mpmath.mp.prec = 113
+                if ev_lo_336 is not None and ev_hi_336 is not None and (
+                    (0 in (ev_lo_336[0] - ev_hi_336[0])) and (0 in (ev_lo_336[1] - ev_hi_336[1]))
+                ):
+                    # Exact rational closed-loop check: B(lo) == B(hi) and parallel same-direction tangent
+                    b_lo = curve.eval_point_exact(span_lo_q)
+                    b_hi = curve.eval_point_exact(span_hi_q)
+                    dx_lo, dy_lo = curve.eval_deriv1_exact(span_lo_q)
+                    dx_hi, dy_hi = curve.eval_deriv1_exact(span_hi_q)
+                    same_normal = (dx_lo * dy_hi - dy_lo * dx_hi == 0) and (dx_lo * dx_hi + dy_lo * dy_hi > 0)
+                    if b_lo == b_hi and (d_frac == 0 or same_normal):
+                        ix_x = 0.5 * (float(ev_lo[0].a) + float(ev_lo[0].b))
+                        ix_y = 0.5 * (float(ev_lo[1].a) + float(ev_lo[1].b))
+                        endpoint_solutions.append(
+                            {
+                                "t1Bracket": (span_lo, span_lo),
+                                "t2Bracket": (span_hi, span_hi),
+                                "intersectionPointCm": Point2D(x=ix_x, y=ix_y),
+                                "residualDistanceCm": 0.0,
+                                "krawczykNormInf": 0.0,
+                                "krawczykContainmentVerified": True,
+                                "existenceAndUniquenessCertified": True,
+                            }
+                        )
+                    else:
+                        endpoint_unresolved.append(
+                            {
+                                "t1Box": [span_lo, span_lo],
+                                "t2Box": [span_hi, span_hi],
+                                "status": "UNRESOLVED",
+                                "reason": "ENDPOINT_COINCIDENCE_UNRESOLVED_AT_336BIT",
+                            }
+                        )
+
+    kraw = krawczyk_isolate_offset_intersections(
+        curve,
+        curve,
+        s_sign=s_sign,
+        d=d,
+        domain_1=(span_lo, span_hi),
+        domain_2=(span_lo, span_hi),
+        max_depth=max_depth,
+        initial_panels=16,
+        d_exact=d_frac,
+        max_nodes=max_nodes,
+    )
+    all_certs = endpoint_solutions + list(kraw["certifiedIntersections"])
+    all_certs.sort(key=lambda sol: (sol["t1Bracket"][0], sol["t2Bracket"][0]))
+    all_unresolved = endpoint_unresolved + list(kraw["unresolvedBoxes"])
+
+    # If a genuine local self-intersection is mathematically proven, classify as CERTIFIED_INTERSECTION_FOUND.
+    # Only if zero intersections are proven and unresolved boxes remain do we fail closed to UNRESOLVED.
+    if all_certs:
+        status = "CERTIFIED_INTERSECTION_FOUND"
+    elif all_unresolved:
+        status = "UNRESOLVED"
+    else:
+        status = "CERTIFIED_DISJOINT"
+
+    return {
+        "status": status,
+        "method": "krawczyk_2d_interval_subdivision",
+        "certifiedIntersections": all_certs,
+        "unresolvedBoxes": all_unresolved,
+        "nodesVisited": kraw.get("nodesVisited", 0),
+        "budgetExceeded": kraw.get("budgetExceeded", False),
     }
 
 
@@ -2073,12 +2332,14 @@ def certify_cubic_offset_with_local_self_intersection(
     d: float,
     piece_id: str = "piece-01",
     epsilon_reg: float = 0.05,
+    d_exact: Optional[Fraction] = None,
 ) -> OffsetValidationRecord:
     """Production Tier-2 oracle pipeline combining complete-interval regularity certification with
-    2D Krawczyk local swallowtail self-intersection isolation when cusp roots bracket a reversal loop.
+    unconditional 2D Krawczyk intra-segment local self-intersection isolation (both regular pinched
+    loops where f(t) >= epsilon_reg and swallowtail reversal loops bracketed by cusp roots).
     """
     base_rec = certify_cubic_offset_on_unit_interval(
-        curve, s_sign=s_sign, d=d, piece_id=piece_id, epsilon_reg=epsilon_reg
+        curve, s_sign=s_sign, d=d, piece_id=piece_id, epsilon_reg=epsilon_reg, d_exact=d_exact
     )
     if (
         base_rec.has_zero_speed_cusp_on_domain
@@ -2110,6 +2371,48 @@ def certify_cubic_offset_with_local_self_intersection(
                 "is_production_ready": False,
             }
         )
+    # Also check regular-margin-violating segments (0 < min f < eps_reg) for non-cusp local self-intersection
+    if (
+        base_rec.verification_outcome == "CERTIFIED_INVALID"
+        and base_rec.failure_category == OffsetFailureCategory.REGULARITY_MARGIN_VIOLATION
+        and base_rec.min_offset_speed_factor_interval[0] > 0.0
+        and base_rec.local_self_intersection_status == "NOT_EVALUATED"
+    ):
+        local_si_res = certify_intra_segment_local_self_intersection(
+            curve, s_sign=s_sign, d=d, d_exact=d_exact, assume_positive_offset_speed=True
+        )
+        if local_si_res["status"] == "CERTIFIED_INTERSECTION_FOUND":
+            certs = [
+                SelfIntersectionCertificate(
+                    scope="LOCAL",
+                    segmentIdA=curve.segment_id,
+                    segmentIdB=curve.segment_id,
+                    t1Bracket=sol["t1Bracket"],
+                    t2Bracket=sol["t2Bracket"],
+                    intersectionPointCm=sol["intersectionPointCm"],
+                    residualDistanceCm=sol["residualDistanceCm"],
+                )
+                for sol in local_si_res["certifiedIntersections"]
+            ]
+            active = [CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION] + [
+                c for c in base_rec.active_classifications_on_domain
+                if c != CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION
+            ]
+            detected = [OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION] + [
+                c for c in base_rec.detected_failure_categories
+                if c != OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION
+            ]
+            return base_rec.model_copy(
+                update={
+                    "isolated_self_intersections": certs,
+                    "local_self_intersection_status": "DETECTED",
+                    "failure_category": OffsetFailureCategory.LOCAL_OFFSET_SELF_INTERSECTION,
+                    "canonical_offset_classification": CanonicalOffsetClassification.LOCAL_SELF_INTERSECTION,
+                    "active_classifications_on_domain": active,
+                    "detected_failure_categories": detected,
+                    "is_production_ready": False,
+                }
+            )
     return base_rec
 
 

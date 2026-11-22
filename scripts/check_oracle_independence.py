@@ -1,24 +1,34 @@
 #!/usr/bin/env python3
 """ADR-009 §5.4 & §7.1 / ADR-001 Hardened Static AST & Boundary Oracle-Independence Auditor.
 
-Closes all Checkpoint I (`I-02`) bypasses:
-1. Full AST + alias/call-graph analysis detecting direct, aliased, relative, and dynamic imports:
-   - `import` / `from ... import ...` (with relative import resolution)
-   - `importlib` (`import_module`, `util.spec_from_file_location`, `machinery.*`, or any `importlib` usage)
-   - `__import__`, `builtins.__import__`, `getattr(__builtins__, ...)`
-   - `runpy` (`run_module`, `run_path`), `exec`, `eval`, `compile`, `sys.modules[...]`
-2. Audits `__init__.py` and `contracts.py` explicitly (never skips them):
-   - `contracts.py` must remain a pure shared-contract module (no Tier-1 solver imports, no Tier-2 oracle imports, no dynamic loaders).
-   - `__init__.py` must never import or re-export Tier-1 production solvers or dynamic loaders across the Tier-1/Tier-2 boundary.
-3. Dynamic Tier-1 discovery + strict Tier-2 internal allowlist:
-   - Any Python module under `services/` outside the explicit Tier-2 oracle / shared-contract allowlist is dynamically
-     classified as `tier1_production` and forbidden from being imported by Tier-2 oracles.
-   - Any `patroner_geometry.*` import inside a Tier-2 oracle not in the explicit Tier-2/shared allowlist
-     (e.g. `patroner_geometry.offset_kernel`) is rejected fail-closed even in standalone source checks.
-4. Independent TypeScript `src/engine/` (`C0-Legacy` per `ADR-001`) boundary audit:
-   - Verifies `src/engine/` contains zero references/imports/invocations of Python Tier-2 oracles or interval libraries.
-   - Explicitly inventories controlled `scripts/*.ts` bridge/capture entrypoints (`m00_capture_c0_legacy.ts`,
-     `m00_export_canonical_pieces.ts`, `m00_export_canonical_63_contours.ts`).
+Closes Checkpoint I (`I-02`) and Checkpoint K (`K-04`) bypasses:
+1. Strict exact-module internal allowlist (NO bare `"patroner_geometry"` prefix leak):
+   - Every `import` and `from ... import ...` (including relative imports) is resolved to its exact
+     module path and validated against `TIER2_ALLOWED_EXACT_MODULES` (exact equality, never broad prefix).
+   - Unapproved internal modules such as `from .offset_kernel import fast_offset`,
+     `from . import offset_kernel`, `import patroner_geometry.offset_kernel`, or bare
+     `import patroner_geometry` are rejected fail-closed.
+2. Hardened dynamic/obfuscated import & builtins-reflection detection:
+   - Static string constant folding across string concatenation (`+`), f-strings, `"".join(...)`,
+     and simple local string-variable aliases.
+   - Blocks `importlib` (except explicit read-only `importlib.metadata`), `runpy`, `imp`, `builtins`,
+     `pkgutil`, `zipimport`, `ctypes`, `marshal`, `pickle`, `code`, `subprocess`, `operator.attrgetter`/
+     `operator.itemgetter` dynamic dispatch.
+   - Blocks `__import__`, `exec`, `eval`, bare/builtin `compile` (preserving `re.compile`),
+     `getattr` on `builtins`/`__builtins__`/`sys`/`importlib`/`vars(...)`/`globals()`/`locals()` or
+     with non-literal / dangerous resolved attribute names, `vars(...)`/`dir(...)` on builtins/sys/importlib,
+     `globals()`/`locals()`/`vars()` subscripting or `.get(...)`, `sys.modules[...]`/`sys.modules.get(...)`,
+     and reflective attributes (`__builtins__`, `__globals__`, `__subclasses__`, `__loader__`, `__import__`).
+3. Audits `__init__.py` and `contracts.py` explicitly (never skips them).
+4. Independent TypeScript `src/engine/` (`C0-Legacy` per `ADR-001`) boundary audit.
+
+Static Analysis Scope & Limitations:
+- This auditor performs deterministic Python AST static analysis and TypeScript boundary scanning.
+- Static AST analysis cannot prove runtime absence of arbitrary metaprogramming loaded from external
+  C-extensions, monkey-patched third-party libraries, or `sys.meta_path` hooks installed outside
+  `services/`; accordingly, this check enforces a conservative fail-closed ban on dynamic loader APIs
+  and reflection primitives inside all audited engine modules and should be paired with dependency lock
+  and code-review controls.
 """
 
 from __future__ import annotations
@@ -42,20 +52,19 @@ TIER2_ORACLE_MODULES: Set[str] = {
     "patroner_geometry.provenance",
 }
 
-# Explicit allowlist of internal patroner_geometry modules that Tier-2 oracles may import
-TIER2_ALLOWED_INTERNAL_MODULES: Set[str] = {
-    "patroner_geometry",
+# Exact allowlist of internal patroner_geometry modules that Tier-2 oracles and __init__.py may import.
+# CRITICAL (K-04): Bare `"patroner_geometry"` is intentionally EXCLUDED so prefix matching can NEVER
+# permit unapproved sibling modules such as `patroner_geometry.offset_kernel`.
+TIER2_ALLOWED_EXACT_MODULES: Set[str] = {
     "patroner_geometry.contracts",
     "patroner_geometry.c1_cert_oracle",
     "patroner_geometry.qualification",
     "patroner_geometry.sub_oracles",
     "patroner_geometry.provenance",
-    "contracts",
-    "c1_cert_oracle",
-    "qualification",
-    "sub_oracles",
-    "provenance",
 }
+
+# Backwards-compatible alias referencing the exact allowlist (never includes bare "patroner_geometry")
+TIER2_ALLOWED_INTERNAL_MODULES: Set[str] = set(TIER2_ALLOWED_EXACT_MODULES)
 
 # Libraries strictly forbidden in Tier-1 production fast-path solvers (ADR-009 §7.1)
 TIER1_FORBIDDEN_LIBRARIES: Set[str] = {
@@ -80,11 +89,19 @@ TIER2_FORBIDDEN_SOLVER_PREFIXES: Tuple[str, ...] = (
     "fashion_engine.kernels",
 )
 
-# Dynamic code/module loading APIs forbidden across Tier-1/Tier-2/shared contract boundaries
+# Dynamic code/module loading and reflective-bypass modules forbidden across audited engine boundaries
 FORBIDDEN_DYNAMIC_MODULES: Set[str] = {
     "importlib",
     "runpy",
     "imp",
+    "builtins",
+    "pkgutil",
+    "zipimport",
+    "ctypes",
+    "marshal",
+    "pickle",
+    "code",
+    "subprocess",
 }
 
 FORBIDDEN_DYNAMIC_CALL_NAMES: Set[str] = {
@@ -103,7 +120,52 @@ FORBIDDEN_DYNAMIC_ATTR_CALLS: Set[str] = {
     "run_module",
     "run_path",
     "load_module",
+    "exec_module",
+    "create_module",
     "__import__",
+}
+
+FORBIDDEN_REFLECTIVE_ATTRS: Set[str] = {
+    "__builtins__",
+    "__globals__",
+    "__subclasses__",
+    "__loader__",
+    "__import__",
+    "__code__",
+    "__closure__",
+}
+
+DANGEROUS_ATTR_NAMES: Set[str] = {
+    "__import__",
+    "import_module",
+    "exec",
+    "eval",
+    "compile",
+    "__builtins__",
+    "__globals__",
+    "__subclasses__",
+    "__loader__",
+    "__spec__",
+    "__dict__",
+    "run_module",
+    "run_path",
+    "spec_from_file_location",
+    "spec_from_loader",
+    "module_from_spec",
+    "find_spec",
+    "load_module",
+    "exec_module",
+    "modules",
+}
+
+REFLECTIVE_NAMESPACE_ROOTS: Set[str] = {
+    "builtins",
+    "__builtins__",
+    "importlib",
+    "sys",
+    "sys.modules",
+    "runpy",
+    "imp",
 }
 
 SHARED_CONTRACT_FILES: Set[str] = {
@@ -124,6 +186,11 @@ def _matches_prefix(target: str, prefixes: Iterable[str]) -> bool:
         if target == pref or target.startswith(pref + "."):
             return True
     return False
+
+
+def _is_exact_allowed_internal_module(module_path: str) -> bool:
+    """Returns True ONLY if `module_path` exactly matches an explicitly allowlisted internal module."""
+    return module_path in TIER2_ALLOWED_EXACT_MODULES
 
 
 def _resolve_relative_module(
@@ -164,9 +231,76 @@ def _call_target_dotted_name(func: ast.AST, aliases: Dict[str, str]) -> str:
     return ""
 
 
-def _extract_string_literal(node: ast.AST) -> Optional[str]:
+def _extract_string_literal(node: ast.AST, string_env: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """Statically folds string literals, concatenations, f-strings, simple joins, and string variable aliases."""
+    env = string_env or {}
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
+    if isinstance(node, ast.Name) and node.id in env:
+        return env[node.id]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _extract_string_literal(node.left, env)
+        right = _extract_string_literal(node.right, env)
+        if left is not None and right is not None:
+            return left + right
+    if isinstance(node, ast.JoinedStr):
+        parts: List[str] = []
+        for val in node.values:
+            if isinstance(val, ast.FormattedValue):
+                s = _extract_string_literal(val.value, env)
+            else:
+                s = _extract_string_literal(val, env)
+            if s is None:
+                return None
+            parts.append(s)
+        return "".join(parts)
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "join"
+        and len(node.args) == 1
+    ):
+        sep = _extract_string_literal(node.func.value, env)
+        arg = node.args[0]
+        if sep is not None and isinstance(arg, (ast.List, ast.Tuple)):
+            items: List[str] = []
+            for elt in arg.elts:
+                s = _extract_string_literal(elt, env)
+                if s is None:
+                    return None
+                items.append(s)
+            return sep.join(items)
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "decode"
+        and isinstance(node.func.value, ast.Constant)
+        and isinstance(node.func.value.value, (bytes, bytearray))
+    ):
+        try:
+            return bytes(node.func.value.value).decode("utf-8")
+        except Exception:
+            return None
+    return None
+
+
+def _is_reflective_namespace_expr(node: ast.AST, aliases: Dict[str, str]) -> Optional[str]:
+    """Returns a descriptive label if `node` evaluates to a reflective namespace
+    (`builtins`, `__builtins__`, `sys.modules`, `globals()`, `locals()`, `vars(...)`, `*.__dict__`, `*.__globals__`),
+    else None.
+    """
+    dotted = _call_target_dotted_name(node, aliases)
+    if dotted in REFLECTIVE_NAMESPACE_ROOTS or dotted.endswith(".__dict__") or dotted.endswith(".__globals__") or dotted.endswith(".__builtins__"):
+        return dotted
+    if isinstance(node, ast.Call):
+        fn_dotted = _call_target_dotted_name(node.func, aliases)
+        fn_leaf = fn_dotted.split(".")[-1] if fn_dotted else ""
+        if fn_leaf in ("globals", "locals", "vars", "dir"):
+            return f"{fn_dotted}(...)"
+    if isinstance(node, ast.Subscript):
+        inner = _is_reflective_namespace_expr(node.value, aliases)
+        if inner is not None:
+            return f"{inner}[...]"
     return None
 
 
@@ -190,31 +324,51 @@ def check_python_source_independence(
     dynamic_tier1 = set(extra_tier1_modules or set())
     violations: List[Dict[str, Any]] = []
 
-    # Track aliases (both import aliases and simple local assignments like `imp = importlib.import_module`)
+    # Track aliases (import aliases + simple local assignments) and statically foldable local string constants.
     aliases: Dict[str, str] = {}
-    imported_modules: List[Tuple[int, str]] = []
+    string_env: Dict[str, str] = {}
+    # Each entry: (lineno, resolved_module_path, full_target_path, import_kind)
+    #   import_kind == "import": `import A.B` -> resolved_module_path = "A.B"
+    #   import_kind == "from":   `from A import sym` -> resolved_module_path = A (or A.sym if A == "patroner_geometry")
+    imported_entries: List[Tuple[int, str, str, str]] = []
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 asname = alias.asname or alias.name.split(".")[0]
                 aliases[asname] = alias.name
-                imported_modules.append((node.lineno, alias.name))
+                imported_entries.append((node.lineno, alias.name, alias.name, "import"))
         elif isinstance(node, ast.ImportFrom):
             resolved_base = _resolve_relative_module(current_module, node.level, node.module)
             if not node.names and resolved_base:
-                imported_modules.append((node.lineno, resolved_base))
+                imported_entries.append((node.lineno, resolved_base, resolved_base, "from"))
             for alias in node.names:
                 if alias.name == "*":
                     if resolved_base:
-                        imported_modules.append((node.lineno, resolved_base))
+                        imported_entries.append((node.lineno, resolved_base, f"{resolved_base}.*", "from"))
                     continue
                 full_target = f"{resolved_base}.{alias.name}" if resolved_base else alias.name
                 asname = alias.asname or alias.name
                 aliases[asname] = full_target
-                imported_modules.append((node.lineno, full_target))
+                # If `from . import offset_kernel` (resolved_base == "patroner_geometry"), the imported module is full_target.
+                # If `from .offset_kernel import fast_offset` (resolved_base == "patroner_geometry.offset_kernel"),
+                # the imported module is resolved_base.
+                if resolved_base in ("patroner_geometry", "fashion_engine", ""):
+                    mod_path = full_target
+                else:
+                    mod_path = resolved_base
+                imported_entries.append((node.lineno, mod_path, full_target, "from"))
         elif isinstance(node, ast.Assign):
+            rhs_str = _extract_string_literal(node.value, string_env)
+            if rhs_str is not None:
+                for tgt in node.targets:
+                    if isinstance(tgt, ast.Name):
+                        string_env[tgt.id] = rhs_str
             rhs_name = _call_target_dotted_name(node.value, aliases)
+            if not rhs_name:
+                refl_lbl = _is_reflective_namespace_expr(node.value, aliases)
+                if refl_lbl is not None:
+                    rhs_name = refl_lbl
             if rhs_name:
                 for tgt in node.targets:
                     if isinstance(tgt, ast.Name):
@@ -231,104 +385,133 @@ def check_python_source_independence(
             }
         )
 
-    # 1. Check all static/relative imports
-    for lineno, target in imported_modules:
-        top = target.split(".")[0]
+    # 1. Check all static and relative imports with strict exact-module allowlisting
+    for lineno, mod_path, full_target, import_kind in imported_entries:
+        top = full_target.split(".")[0]
 
-        # Dynamic loader modules are strictly forbidden across all audited roles.
+        # Dynamic loader / reflection modules are strictly forbidden across all audited roles.
         # Exception: `importlib.metadata` is read-only installed package metadata lookup, not dynamic code loading.
         if top in FORBIDDEN_DYNAMIC_MODULES and not (
-            target == "importlib.metadata" or target.startswith("importlib.metadata.")
+            full_target == "importlib.metadata" or full_target.startswith("importlib.metadata.")
         ):
             _add_violation(
                 lineno,
-                target,
-                f"{module_role} must not import dynamic loader module '{top}' (ADR-009 §7.1 anti-bypass)",
+                full_target,
+                f"{module_role} must not import dynamic loader/reflective module '{top}' (ADR-009 §7.1 anti-bypass)",
             )
             continue
 
         if module_role == "tier2_oracle":
-            if _matches_prefix(target, TIER2_FORBIDDEN_SOLVER_PREFIXES) or _matches_prefix(target, dynamic_tier1):
+            if _matches_prefix(full_target, TIER2_FORBIDDEN_SOLVER_PREFIXES) or _matches_prefix(full_target, dynamic_tier1):
                 _add_violation(
                     lineno,
-                    target,
+                    full_target,
                     "Tier-2 verification oracle must not import Tier-1 production solver module",
                 )
             elif (
-                (target.startswith("patroner_geometry.") or target.startswith("fashion_engine."))
-                and not _matches_prefix(target, TIER2_ALLOWED_INTERNAL_MODULES)
-            ):
-                # Strict allowlist: catches newly created Tier-1 files like `patroner_geometry.offset_kernel`
+                mod_path == "patroner_geometry"
+                or mod_path.startswith("patroner_geometry.")
+                or mod_path == "fashion_engine"
+                or mod_path.startswith("fashion_engine.")
+            ) and not _is_exact_allowed_internal_module(mod_path):
+                # Strict exact-module allowlist (K-04): rejects bare `patroner_geometry` and any non-allowlisted
+                # internal submodule such as `patroner_geometry.offset_kernel` (even via relative import).
                 _add_violation(
                     lineno,
-                    target,
-                    "Tier-2 verification oracle imported non-allowlisted internal module (potential Tier-1 boundary bypass)",
+                    full_target,
+                    f"Tier-2 verification oracle imported non-allowlisted internal module '{mod_path}' (K-04 exact allowlist)",
                 )
 
         elif module_role == "tier1_production":
-            if top in TIER1_FORBIDDEN_LIBRARIES or _matches_prefix(target, TIER1_FORBIDDEN_LIBRARIES):
+            if top in TIER1_FORBIDDEN_LIBRARIES or _matches_prefix(full_target, TIER1_FORBIDDEN_LIBRARIES):
                 _add_violation(
                     lineno,
-                    target,
+                    full_target,
                     "Tier-1 production module must not import interval oracle library (mpmath/python-flint)",
                 )
-            elif _matches_prefix(target, TIER2_ORACLE_MODULES):
+            elif _matches_prefix(full_target, TIER2_ORACLE_MODULES):
                 _add_violation(
                     lineno,
-                    target,
+                    full_target,
                     "Tier-1 production module must not import Tier-2 verification oracle module",
                 )
 
         elif module_role == "shared_contracts":
-            if _matches_prefix(target, TIER2_FORBIDDEN_SOLVER_PREFIXES) or _matches_prefix(target, dynamic_tier1):
+            if _matches_prefix(full_target, TIER2_FORBIDDEN_SOLVER_PREFIXES) or _matches_prefix(full_target, dynamic_tier1):
                 _add_violation(
                     lineno,
-                    target,
+                    full_target,
                     "Shared contracts module must not import Tier-1 production solver module",
                 )
-            elif _matches_prefix(target, TIER2_ORACLE_MODULES):
+            elif _matches_prefix(full_target, TIER2_ORACLE_MODULES):
                 _add_violation(
                     lineno,
-                    target,
+                    full_target,
                     "Shared contracts module must not import Tier-2 verification oracle module",
                 )
             elif top in TIER1_FORBIDDEN_LIBRARIES:
                 _add_violation(
                     lineno,
-                    target,
+                    full_target,
                     "Shared contracts module must not import oracle interval library (mpmath/python-flint)",
                 )
             elif (
-                target.startswith("patroner_geometry.")
-                and target != "patroner_geometry.contracts"
-                and not target.startswith("patroner_geometry.contracts.")
+                mod_path == "patroner_geometry"
+                or (mod_path.startswith("patroner_geometry.") and mod_path != "patroner_geometry.contracts")
+                or mod_path == "fashion_engine"
+                or mod_path.startswith("fashion_engine.")
             ):
                 _add_violation(
                     lineno,
-                    target,
+                    full_target,
                     "Shared contracts module must remain self-contained without importing sibling engine modules",
                 )
 
         elif module_role == "package_init":
-            if _matches_prefix(target, TIER2_FORBIDDEN_SOLVER_PREFIXES) or _matches_prefix(target, dynamic_tier1):
+            if _matches_prefix(full_target, TIER2_FORBIDDEN_SOLVER_PREFIXES) or _matches_prefix(full_target, dynamic_tier1):
                 _add_violation(
                     lineno,
-                    target,
+                    full_target,
                     "Package __init__.py must not import or re-export Tier-1 production solver module",
                 )
             elif (
-                (target.startswith("patroner_geometry.") or target.startswith("fashion_engine."))
-                and not _matches_prefix(target, TIER2_ALLOWED_INTERNAL_MODULES)
-            ):
+                mod_path == "patroner_geometry"
+                or mod_path.startswith("patroner_geometry.")
+                or mod_path == "fashion_engine"
+                or mod_path.startswith("fashion_engine.")
+            ) and not _is_exact_allowed_internal_module(mod_path):
                 _add_violation(
                     lineno,
-                    target,
-                    "Package __init__.py imported non-allowlisted internal module across Tier-1/Tier-2 boundary",
+                    full_target,
+                    f"Package __init__.py imported non-allowlisted internal module '{mod_path}' across Tier-1/Tier-2 boundary",
                 )
 
-    # 2. Check dynamic calls (`__import__`, `importlib.import_module`, `exec`, `eval`, `compile`, `runpy`, `getattr(__builtins__, ...)`, `sys.modules[...]`)
+    # 2. Check dynamic calls, obfuscated builtins reflection, and forbidden attribute/subscript accesses
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
+        if isinstance(node, ast.Attribute):
+            if node.attr in FORBIDDEN_REFLECTIVE_ATTRS:
+                dotted_attr = _call_target_dotted_name(node, aliases) or f"<expr>.{node.attr}"
+                _add_violation(
+                    node.lineno,
+                    dotted_attr,
+                    f"{module_role} must not access reflective attribute '{node.attr}' (K-04 anti-bypass)",
+                )
+            elif _call_target_dotted_name(node.value, aliases) == "importlib" and node.attr != "metadata":
+                _add_violation(
+                    node.lineno,
+                    f"importlib.{node.attr}",
+                    f"{module_role} may only access read-only importlib.metadata, not 'importlib.{node.attr}' (K-04 anti-bypass)",
+                )
+
+        elif isinstance(node, ast.Name):
+            if node.id == "__builtins__":
+                _add_violation(
+                    node.lineno,
+                    "__builtins__",
+                    f"{module_role} must not reference '__builtins__' directly (K-04 anti-bypass)",
+                )
+
+        elif isinstance(node, ast.Call):
             dotted = _call_target_dotted_name(node.func, aliases)
             leaf = dotted.split(".")[-1] if dotted else ""
 
@@ -337,7 +520,7 @@ def check_python_source_independence(
                 for prefix in ("builtins", "__builtins__")
                 for name in FORBIDDEN_DYNAMIC_CALL_NAMES
             }:
-                arg0 = _extract_string_literal(node.args[0]) if node.args else None
+                arg0 = _extract_string_literal(node.args[0], string_env) if node.args else None
                 label = f"{dotted}({arg0!r})" if arg0 is not None else f"{dotted}(...)"
                 _add_violation(
                     node.lineno,
@@ -345,43 +528,80 @@ def check_python_source_independence(
                     f"{module_role} must not invoke dynamic loader/eval call '{dotted}' (ADR-009 §7.1 anti-bypass)",
                 )
             elif leaf in FORBIDDEN_DYNAMIC_ATTR_CALLS:
-                arg0 = _extract_string_literal(node.args[0]) if node.args else None
+                arg0 = _extract_string_literal(node.args[0], string_env) if node.args else None
                 label = f"{dotted}({arg0!r})" if arg0 is not None else f"{dotted}(...)"
                 _add_violation(
                     node.lineno,
                     label,
                     f"{module_role} must not invoke dynamic module loader '{dotted}' (ADR-009 §7.1 anti-bypass)",
                 )
-            elif leaf == "getattr" and len(node.args) >= 2:
-                obj_name = _call_target_dotted_name(node.args[0], aliases)
-                attr_lit = _extract_string_literal(node.args[1])
-                if obj_name in ("__builtins__", "builtins") and attr_lit in (
-                    "__import__",
-                    "exec",
-                    "eval",
-                    "compile",
-                ):
+            elif leaf in ("globals", "locals"):
+                _add_violation(
+                    node.lineno,
+                    f"{dotted}()",
+                    f"{module_role} must not invoke '{leaf}()' namespace reflection (K-04 anti-bypass)",
+                )
+            elif leaf in ("vars", "dir"):
+                if not node.args:
                     _add_violation(
                         node.lineno,
-                        f"getattr({obj_name}, {attr_lit!r})",
-                        f"{module_role} must not dynamically resolve '{attr_lit}' from builtins (ADR-009 §7.1 anti-bypass)",
+                        f"{dotted}()",
+                        f"{module_role} must not invoke '{leaf}()' namespace reflection (K-04 anti-bypass)",
+                    )
+                else:
+                    target_refl = _is_reflective_namespace_expr(node.args[0], aliases)
+                    if target_refl is not None:
+                        _add_violation(
+                            node.lineno,
+                            f"{dotted}({target_refl})",
+                            f"{module_role} must not reflect namespace via '{leaf}({target_refl})' (K-04 anti-bypass)",
+                        )
+            elif leaf == "getattr" and len(node.args) >= 2:
+                obj_refl = _is_reflective_namespace_expr(node.args[0], aliases)
+                attr_val = _extract_string_literal(node.args[1], string_env)
+                if obj_refl is not None:
+                    _add_violation(
+                        node.lineno,
+                        f"getattr({obj_refl}, {attr_val!r})" if attr_val is not None else f"getattr({obj_refl}, <dynamic>)",
+                        f"{module_role} must not dynamically resolve attributes from '{obj_refl}' via getattr (K-04 anti-bypass)",
+                    )
+                elif attr_val is None:
+                    _add_violation(
+                        node.lineno,
+                        f"getattr({_call_target_dotted_name(node.args[0], aliases) or '<expr>'}, <dynamic>)",
+                        f"{module_role} must not invoke getattr with non-statically-resolvable attribute name (K-04 fail-closed)",
+                    )
+                elif attr_val in DANGEROUS_ATTR_NAMES:
+                    _add_violation(
+                        node.lineno,
+                        f"getattr(..., {attr_val!r})",
+                        f"{module_role} must not dynamically resolve forbidden attribute '{attr_val}' via getattr (K-04 anti-bypass)",
+                    )
+            elif leaf in ("attrgetter", "itemgetter"):
+                _add_violation(
+                    node.lineno,
+                    f"{dotted}(...)",
+                    f"{module_role} must not use reflective operator '{leaf}' (K-04 anti-bypass)",
+                )
+            elif isinstance(node.func, ast.Attribute) and node.func.attr in ("get", "pop", "__getitem__", "setdefault"):
+                recv_refl = _is_reflective_namespace_expr(node.func.value, aliases)
+                if recv_refl is not None:
+                    key_val = _extract_string_literal(node.args[0], string_env) if node.args else None
+                    _add_violation(
+                        node.lineno,
+                        f"{recv_refl}.{node.func.attr}({key_val!r})" if key_val is not None else f"{recv_refl}.{node.func.attr}(...)",
+                        f"{module_role} must not bypass import isolation via '{recv_refl}.{node.func.attr}' (K-04 anti-bypass)",
                     )
 
         elif isinstance(node, ast.Subscript):
-            base_name = _call_target_dotted_name(node.value, aliases)
-            if base_name == "sys.modules":
-                key_lit = _extract_string_literal(node.slice)
-                if key_lit is None or (
-                    _matches_prefix(key_lit, TIER2_FORBIDDEN_SOLVER_PREFIXES)
-                    or _matches_prefix(key_lit, dynamic_tier1)
-                    or _matches_prefix(key_lit, TIER2_ORACLE_MODULES)
-                    or key_lit.split(".")[0] in TIER1_FORBIDDEN_LIBRARIES
-                ):
-                    _add_violation(
-                        node.lineno,
-                        f"sys.modules[{key_lit!r}]",
-                        f"{module_role} must not bypass import isolation via sys.modules lookup",
-                    )
+            recv_refl = _is_reflective_namespace_expr(node.value, aliases)
+            if recv_refl is not None:
+                key_val = _extract_string_literal(node.slice, string_env)
+                _add_violation(
+                    node.lineno,
+                    f"{recv_refl}[{key_val!r}]" if key_val is not None else f"{recv_refl}[<dynamic>]",
+                    f"{module_role} must not bypass import isolation via reflective subscript '{recv_refl}[...]' (K-04 anti-bypass)",
+                )
 
     # Deduplicate exact identical violation entries while preserving order
     deduped: List[Dict[str, Any]] = []
@@ -521,6 +741,7 @@ def audit_repository_oracle_independence(repo_root: Path) -> Dict[str, Any]:
 
     return {
         "checkName": "ADR-009 §5.4 / §7.1 & ADR-001 Hardened AST + Boundary Oracle-Independence Verification",
+        "exactInternalModuleAllowlist": sorted(TIER2_ALLOWED_EXACT_MODULES),
         "tier2OracleFilesChecked": oracle_files,
         "tier1ProductionFilesChecked": tier1_files,
         "sharedContractFilesChecked": shared_contract_files,
@@ -528,6 +749,13 @@ def audit_repository_oracle_independence(repo_root: Path) -> Dict[str, Any]:
         "sharedContractFiles": sorted(shared_contract_files + package_init_files),
         "dynamicTier1ModulesDiscovered": sorted(dynamic_tier1_modules),
         "typescriptC0LegacyAudit": ts_audit,
+        "staticAnalysisScopeAndLimitations": (
+            "Static Python AST and TypeScript boundary verification with exact-module internal allowlisting "
+            "(no bare 'patroner_geometry' prefix) and fail-closed rejection of dynamic loader/reflection APIs "
+            "(importlib except read-only importlib.metadata, builtins, vars/globals/locals/getattr reflection, "
+            "sys.modules, exec/eval/compile). Static AST cannot inspect arbitrary third-party C-extensions or "
+            "external runtime sys.meta_path hooks; pair with locked dependency manifests and code review."
+        ),
         "violationsCount": len(all_violations),
         "violations": all_violations,
         "allPassed": len(all_violations) == 0 and ts_audit["allPassed"],

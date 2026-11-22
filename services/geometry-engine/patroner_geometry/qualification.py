@@ -2569,6 +2569,504 @@ def _classify_stationary_roots_exact_jet(
     return "REGULAR_SPEED", "NONE", "NONE_REGULAR_SPEED", 0
 
 
+def _certify_local_self_intersection_candidate(
+    p0: Tuple[Any, Any],
+    p1: Tuple[Any, Any],
+    p2: Tuple[Any, Any],
+    p3: Tuple[Any, Any],
+    dx_b: List[Any],
+    dy_b: List[Any],
+    d_q: Fraction,
+    s_sign: int,
+    candidate_library: str,
+    tables: Dict[str, Any],
+    prec_bits: int,
+    *,
+    max_depth: int = 34,
+    max_nodes: int = 4096,
+) -> Tuple[str, str, int]:
+    """Independent candidate-library ADR-009 §5.1 Step 2.5 intra-segment local self-intersection certifier (K-01).
+
+    Assumes f(t) > 0 everywhere on [0, 1] (regular offset speed).
+    Executes strictly inside `candidate_library` (`mpmath_iv`, `python_flint`, or `decimal_interval`):
+      Step 2.5a: O(1) directional-monotonicity MVT proof over candidate Bernstein derivative hulls.
+      Step 2.5b: Exact endpoint coincidence check + 2D interval subdivision + oblique directional-monotonicity
+                 diagonal exclusion + 2D Krawczyk existence/uniqueness operator with global node budget.
+    Returns (status, method, isolated_count) where status in
+      {"CERTIFIED_DISJOINT", "CERTIFIED_INTERSECTION_FOUND", "UNRESOLVED"}.
+    """
+    # Step 2.5a: Fast O(1) directional monotonicity certificate on regular segment (f(t) > 0 => sgn(v.O') = sgn(v.B')).
+    dx_pos, dx_neg, _ = _bernstein_sign_predicates(dx_b, candidate_library, tables)
+    if dx_pos or dx_neg:
+        return "CERTIFIED_DISJOINT", "candidate_directional_monotonicity_x", 0
+    dy_pos, dy_neg, _ = _bernstein_sign_predicates(dy_b, candidate_library, tables)
+    if dy_pos or dy_neg:
+        return "CERTIFIED_DISJOINT", "candidate_directional_monotonicity_y", 0
+
+    p0x_f, p0y_f = float(p0[0]), float(p0[1])
+    p1x_f, p1y_f = float(p1[0]), float(p1[1])
+    p2x_f, p2y_f = float(p2[0]), float(p2[1])
+    p3x_f, p3y_f = float(p3[0]), float(p3[1])
+    chord_vx, chord_vy = p3x_f - p0x_f, p3y_f - p0y_f
+    mid_vx = 0.75 * ((p1x_f - p0x_f) + 2.0 * (p2x_f - p1x_f) + (p3x_f - p2x_f))
+    mid_vy = 0.75 * ((p1y_f - p0y_f) + 2.0 * (p2y_f - p1y_f) + (p3y_f - p2y_f))
+
+    proj_dirs = (
+        (1.0, 1.0),
+        (1.0, -1.0),
+        (chord_vx, chord_vy),
+        (mid_vx, mid_vy),
+    )
+    if candidate_library == "decimal_interval":
+        cf_a, cc_a = tables["cf"], tables["cc"]
+        for vx_f, vy_f in proj_dirs:
+            if vx_f == 0.0 and vy_f == 0.0:
+                continue
+            vx_iv = DecimalInterval.from_float_exact(vx_f)
+            vy_iv = DecimalInterval.from_float_exact(vy_f)
+            proj_b = [
+                vx_iv.mul(dx_b[k], cf_a, cc_a).add(vy_iv.mul(dy_b[k], cf_a, cc_a), cf_a, cc_a)
+                for k in range(3)
+            ]
+            p_pos, p_neg, _ = _bernstein_sign_predicates(proj_b, candidate_library, tables)
+            if p_pos or p_neg:
+                return "CERTIFIED_DISJOINT", "candidate_directional_monotonicity_proj", 0
+    else:
+        for vx_f, vy_f in proj_dirs:
+            if vx_f == 0.0 and vy_f == 0.0:
+                continue
+            vx_iv = _coord_to_candidate_iv(vx_f, candidate_library, tables)
+            vy_iv = _coord_to_candidate_iv(vy_f, candidate_library, tables)
+            proj_b = [vx_iv * dx_b[k] + vy_iv * dy_b[k] for k in range(3)]
+            p_pos, p_neg, _ = _bernstein_sign_predicates(proj_b, candidate_library, tables)
+            if p_pos or p_neg:
+                return "CERTIFIED_DISJOINT", "candidate_directional_monotonicity_proj", 0
+
+    # Step 2.5b: Full native candidate-library 2D interval subdivision + directional-monotonicity diagonal
+    # exclusion + 2D Krawczyk existence/uniqueness verification at >=113-bit precision.
+    work_prec = max(113, prec_bits)
+    work_tables = _get_bernstein_candidate_tables(candidate_library, work_prec)
+    if candidate_library == "mpmath_iv":
+        iv.prec = work_prec
+        mpmath.mp.prec = work_prec
+    elif candidate_library == "python_flint":
+        flint.ctx.prec = work_prec
+
+    p0_q = (_to_exact_fraction(p0[0]), _to_exact_fraction(p0[1]))
+    p1_q = (_to_exact_fraction(p1[0]), _to_exact_fraction(p1[1]))
+    p2_q = (_to_exact_fraction(p2[0]), _to_exact_fraction(p2[1]))
+    p3_q = (_to_exact_fraction(p3[0]), _to_exact_fraction(p3[1]))
+
+    ax_q = [
+        p0_q[0],
+        Fraction(3) * (p1_q[0] - p0_q[0]),
+        Fraction(3) * (p2_q[0] - Fraction(2) * p1_q[0] + p0_q[0]),
+        p3_q[0] - Fraction(3) * p2_q[0] + Fraction(3) * p1_q[0] - p0_q[0],
+    ]
+    ay_q = [
+        p0_q[1],
+        Fraction(3) * (p1_q[1] - p0_q[1]),
+        Fraction(3) * (p2_q[1] - Fraction(2) * p1_q[1] + p0_q[1]),
+        p3_q[1] - Fraction(3) * p2_q[1] + Fraction(3) * p1_q[1] - p0_q[1],
+    ]
+
+    # Candidate-library arithmetic primitives (all operations stay strictly in candidate_library)
+    if candidate_library == "decimal_interval":
+        cf, cc = work_tables["cf"], work_tables["cc"]
+        zero_d = work_tables["zero_dec"]
+        half_iv = work_tables["half"]
+        one_iv = DecimalInterval(decimal.Decimal(1), decimal.Decimal(1))
+        two_iv = work_tables["two"]
+        three_iv = work_tables["three"]
+        six_iv = DecimalInterval(decimal.Decimal(6), decimal.Decimal(6))
+
+        def _from_q(q: Fraction) -> Any:
+            return _coord_to_candidate_iv(q, "decimal_interval", work_tables)
+
+        def _make_iv(lo_q: Fraction, hi_q: Fraction) -> Any:
+            a_iv = _from_q(lo_q)
+            b_iv = _from_q(hi_q)
+            return DecimalInterval(a_iv.lo, b_iv.hi)
+
+        def _add(a: Any, b: Any) -> Any:
+            return a.add(b, cf, cc)
+
+        def _sub(a: Any, b: Any) -> Any:
+            return a.sub(b, cf, cc)
+
+        def _mul(a: Any, b: Any) -> Any:
+            return a.mul(b, cf, cc)
+
+        def _div(a: Any, b: Any) -> Any:
+            return a.div(b, cf, cc)
+
+        def _neg(a: Any) -> Any:
+            return DecimalInterval(-a.hi, -a.lo)
+
+        def _sqr(a: Any) -> Any:
+            return a.sqr(cf, cc)
+
+        def _sqrt(a: Any) -> Any:
+            return a.sqrt(cf, cc)
+
+        def _abs_iv(a: Any) -> Any:
+            if a.lo >= zero_d:
+                return a
+            if a.hi <= zero_d:
+                return DecimalInterval(-a.hi, -a.lo)
+            return DecimalInterval(zero_d, max(-a.lo, a.hi))
+
+        def _contains_zero(a: Any) -> bool:
+            return bool(a.lo <= zero_d <= a.hi)
+
+        def _strictly_pos(a: Any) -> bool:
+            return bool(a.lo > zero_d)
+
+        def _bounds_q(a: Any) -> Tuple[Fraction, Fraction]:
+            return Fraction(a.lo), Fraction(a.hi)
+
+    elif candidate_library == "mpmath_iv":
+        half_iv = work_tables["half"]
+        one_iv = iv.mpf(1)
+        two_iv = work_tables["two"]
+        three_iv = work_tables["three"]
+        six_iv = iv.mpf(6)
+
+        def _from_q(q: Fraction) -> Any:
+            return _coord_to_candidate_iv(q, "mpmath_iv", work_tables)
+
+        def _make_iv(lo_q: Fraction, hi_q: Fraction) -> Any:
+            a_iv = _from_q(lo_q)
+            b_iv = _from_q(hi_q)
+            return iv.mpf([a_iv.a, b_iv.b])
+
+        def _add(a: Any, b: Any) -> Any:
+            return a + b
+
+        def _sub(a: Any, b: Any) -> Any:
+            return a - b
+
+        def _mul(a: Any, b: Any) -> Any:
+            return a * b
+
+        def _div(a: Any, b: Any) -> Any:
+            return a / b
+
+        def _neg(a: Any) -> Any:
+            return -a
+
+        def _sqr(a: Any) -> Any:
+            return a ** 2
+
+        def _sqrt(a: Any) -> Any:
+            return iv.sqrt(a)
+
+        def _abs_iv(a: Any) -> Any:
+            return abs(a)
+
+        def _contains_zero(a: Any) -> bool:
+            return bool(0 in a)
+
+        def _strictly_pos(a: Any) -> bool:
+            lo_t = a._mpi_[0]
+            return bool(lo_t != mpmath.libmp.fnan and lo_t != mpmath.libmp.fninf and lo_t[0] == 0 and lo_t[1] != 0)
+
+        def _bounds_q(a: Any) -> Tuple[Fraction, Fraction]:
+            return mpf_to_exact_fraction(a._mpi_[0]), mpf_to_exact_fraction(a._mpi_[1])
+
+    else:
+        half_iv = work_tables["half"]
+        one_iv = flint.arb(1)
+        two_iv = work_tables["two"]
+        three_iv = work_tables["three"]
+        six_iv = flint.arb(6)
+
+        def _from_q(q: Fraction) -> Any:
+            return _coord_to_candidate_iv(q, "python_flint", work_tables)
+
+        def _make_iv(lo_q: Fraction, hi_q: Fraction) -> Any:
+            a_iv = _from_q(lo_q)
+            b_iv = _from_q(hi_q)
+            return a_iv.union(b_iv)
+
+        def _add(a: Any, b: Any) -> Any:
+            return a + b
+
+        def _sub(a: Any, b: Any) -> Any:
+            return a - b
+
+        def _mul(a: Any, b: Any) -> Any:
+            return a * b
+
+        def _div(a: Any, b: Any) -> Any:
+            return a / b
+
+        def _neg(a: Any) -> Any:
+            return -a
+
+        def _sqr(a: Any) -> Any:
+            if not a.is_finite():
+                return a
+            if a.contains(0):
+                u = abs(a).upper()
+                return flint.arb(0).union(u * u)
+            return a * a
+
+        def _sqrt(a: Any) -> Any:
+            return a.sqrt()
+
+        def _abs_iv(a: Any) -> Any:
+            return abs(a)
+
+        def _contains_zero(a: Any) -> bool:
+            return bool((not a.is_finite()) or a.contains(0))
+
+        def _strictly_pos(a: Any) -> bool:
+            return bool(a.is_finite() and (a > 0))
+
+        def _bounds_q(a: Any) -> Tuple[Fraction, Fraction]:
+            return arb_bounds_to_exact_fractions(a, work_prec)
+
+    ax_iv = [_from_q(c) for c in ax_q]
+    ay_iv = [_from_q(c) for c in ay_q]
+    sd_iv = _from_q(Fraction(s_sign) * d_q)
+
+    def _is_finite_iv(a: Any) -> bool:
+        if candidate_library == "python_flint":
+            return bool(a.is_finite())
+        if candidate_library == "mpmath_iv":
+            lo_t, hi_t = a._mpi_
+            return bool(
+                lo_t != mpmath.libmp.fnan
+                and hi_t != mpmath.libmp.fnan
+                and lo_t != mpmath.libmp.fninf
+                and hi_t != mpmath.libmp.finf
+            )
+        return bool(a.lo.is_finite() and a.hi.is_finite())
+
+    def _mid_q(a: Any) -> Fraction:
+        lo_q, hi_q = _bounds_q(a)
+        return (lo_q + hi_q) / Fraction(2)
+
+    def _eval_offset_and_deriv(lo_q: Fraction, hi_q: Fraction) -> Optional[Tuple[Any, Any, Any, Any]]:
+        tm_q = (lo_q + hi_q) / Fraction(2)
+        tm_iv = _from_q(tm_q)
+        hw_q = (hi_q - lo_q) / Fraction(2)
+        dt_iv = _make_iv(-hw_q, hw_q)
+        dt2_iv = _sqr(dt_iv)
+        dt3_iv = _mul(dt2_iv, dt_iv)
+
+        bx_m = _add(ax_iv[0], _mul(tm_iv, _add(ax_iv[1], _mul(tm_iv, _add(ax_iv[2], _mul(tm_iv, ax_iv[3]))))))
+        dx_m = _add(ax_iv[1], _mul(tm_iv, _add(_mul(two_iv, ax_iv[2]), _mul(_mul(three_iv, ax_iv[3]), tm_iv))))
+        ddx_m = _add(_mul(two_iv, ax_iv[2]), _mul(_mul(six_iv, ax_iv[3]), tm_iv))
+        bx = _add(
+            _add(bx_m, _mul(dx_m, dt_iv)),
+            _add(_mul(_mul(half_iv, ddx_m), dt2_iv), _mul(ax_iv[3], dt3_iv)),
+        )
+        dx = _add(_add(dx_m, _mul(ddx_m, dt_iv)), _mul(_mul(three_iv, ax_iv[3]), dt2_iv))
+        ddx = _add(ddx_m, _mul(_mul(six_iv, ax_iv[3]), dt_iv))
+
+        by_m = _add(ay_iv[0], _mul(tm_iv, _add(ay_iv[1], _mul(tm_iv, _add(ay_iv[2], _mul(tm_iv, ay_iv[3]))))))
+        dy_m = _add(ay_iv[1], _mul(tm_iv, _add(_mul(two_iv, ay_iv[2]), _mul(_mul(three_iv, ay_iv[3]), tm_iv))))
+        ddy_m = _add(_mul(two_iv, ay_iv[2]), _mul(_mul(six_iv, ay_iv[3]), tm_iv))
+        by = _add(
+            _add(by_m, _mul(dy_m, dt_iv)),
+            _add(_mul(_mul(half_iv, ddy_m), dt2_iv), _mul(ay_iv[3], dt3_iv)),
+        )
+        dy = _add(_add(dy_m, _mul(ddy_m, dt_iv)), _mul(_mul(three_iv, ay_iv[3]), dt2_iv))
+        ddy = _add(ddy_m, _mul(_mul(six_iv, ay_iv[3]), dt_iv))
+
+        q_iv = _add(_sqr(dx), _sqr(dy))
+        if not _strictly_pos(q_iv):
+            return None
+        if d_q == 0:
+            return bx, by, dx, dy
+        spd = _sqrt(q_iv)
+        if not _strictly_pos(spd):
+            return None
+        q_spd = _mul(q_iv, spd)
+        if not _strictly_pos(q_spd):
+            return None
+        c_iv = _sub(_mul(dx, ddy), _mul(dy, ddx))
+        f_iv = _sub(one_iv, _div(_mul(sd_iv, c_iv), q_spd))
+        ox = _add(bx, _mul(sd_iv, _div(_neg(dy), spd)))
+        oy = _add(by, _mul(sd_iv, _div(dx, spd)))
+        odx = _mul(f_iv, dx)
+        ody = _mul(f_iv, dy)
+        if not (_is_finite_iv(ox) and _is_finite_iv(oy) and _is_finite_iv(odx) and _is_finite_iv(ody)):
+            return None
+        return ox, oy, odx, ody
+
+    # Check exact endpoint coincidence O(0) == O(1)
+    ev0 = _eval_offset_and_deriv(Fraction(0), Fraction(0))
+    ev1 = _eval_offset_and_deriv(Fraction(1), Fraction(1))
+    if ev0 is not None and ev1 is not None:
+        if _contains_zero(_sub(ev0[0], ev1[0])) and _contains_zero(_sub(ev0[1], ev1[1])):
+            # Check exact rational closed-loop coincidence B(0) == B(1) and parallel same-direction tangent
+            if p0_q == p3_q:
+                dx0_q, dy0_q = ax_q[1], ay_q[1]
+                dx1_q = ax_q[1] + Fraction(2) * ax_q[2] + Fraction(3) * ax_q[3]
+                dy1_q = ay_q[1] + Fraction(2) * ay_q[2] + Fraction(3) * ay_q[3]
+                if d_q == 0 or ((dx0_q * dy1_q - dy0_q * dx1_q == 0) and (dx0_q * dx1_q + dy0_q * dy1_q > 0)):
+                    return "CERTIFIED_INTERSECTION_FOUND", "candidate_exact_endpoint_coincidence", 1
+
+    det_min_q = Fraction(1, 10**18)
+
+    def _krawczyk_step(
+        a1: Fraction, b1: Fraction, a2: Fraction, b2: Fraction
+    ) -> Optional[Tuple[Fraction, Fraction, Fraction, Fraction, bool, bool, bool]]:
+        m1_q = (a1 + b1) / Fraction(2)
+        m2_q = (a2 + b2) / Fraction(2)
+        ev_m1 = _eval_offset_and_deriv(m1_q, m1_q)
+        ev_m2 = _eval_offset_and_deriv(m2_q, m2_q)
+        ev_j1 = _eval_offset_and_deriv(a1, b1)
+        ev_j2 = _eval_offset_and_deriv(a2, b2)
+        if not (ev_m1 and ev_m2 and ev_j1 and ev_j2):
+            return None
+
+        fx_m = _sub(ev_m1[0], ev_m2[0])
+        fy_m = _sub(ev_m1[1], ev_m2[1])
+
+        jm00 = _mid_q(ev_m1[2])
+        jm01 = -_mid_q(ev_m2[2])
+        jm10 = _mid_q(ev_m1[3])
+        jm11 = -_mid_q(ev_m2[3])
+        det_q = jm00 * jm11 - jm01 * jm10
+        if abs(det_q) <= det_min_q:
+            return None
+
+        y00 = _from_q(jm11 / det_q)
+        y01 = _from_q(-jm01 / det_q)
+        y10 = _from_q(-jm10 / det_q)
+        y11 = _from_q(jm00 / det_q)
+
+        j00, j01 = ev_j1[2], _neg(ev_j2[2])
+        j10, j11 = ev_j1[3], _neg(ev_j2[3])
+
+        m00 = _sub(one_iv, _add(_mul(y00, j00), _mul(y01, j10)))
+        m01 = _neg(_add(_mul(y00, j01), _mul(y01, j11)))
+        m10 = _neg(_add(_mul(y10, j00), _mul(y11, j10)))
+        m11 = _sub(one_iv, _add(_mul(y10, j01), _mul(y11, j11)))
+
+        row0 = _add(_abs_iv(m00), _abs_iv(m01))
+        row1 = _add(_abs_iv(m10), _abs_iv(m11))
+        _, r0_hi = _bounds_q(row0)
+        _, r1_hi = _bounds_q(row1)
+        norm_lt_1 = max(r0_hi, r1_hi) < Fraction(1)
+
+        dx1 = _make_iv(a1 - m1_q, b1 - m1_q)
+        dx2 = _make_iv(a2 - m2_q, b2 - m2_q)
+        m1_iv = _from_q(m1_q)
+        m2_iv = _from_q(m2_q)
+        k1 = _add(_sub(m1_iv, _add(_mul(y00, fx_m), _mul(y01, fy_m))), _add(_mul(m00, dx1), _mul(m01, dx2)))
+        k2 = _add(_sub(m2_iv, _add(_mul(y10, fx_m), _mul(y11, fy_m))), _add(_mul(m10, dx1), _mul(m11, dx2)))
+
+        k1_lo, k1_hi = _bounds_q(k1)
+        k2_lo, k2_hi = _bounds_q(k2)
+        disjoint = (k1_hi < a1) or (k1_lo > b1) or (k2_hi < a2) or (k2_lo > b2)
+        inside = (k1_lo > a1) and (k1_hi < b1) and (k2_lo > a2) and (k2_hi < b2)
+        return k1_lo, k1_hi, k2_lo, k2_hi, norm_lt_1, inside, disjoint
+
+    initial_panels = 16
+    panel_evals: List[Tuple[Fraction, Fraction, Optional[Tuple[Any, Any, Any, Any]]]] = []
+    for k in range(initial_panels):
+        pa = Fraction(k, initial_panels)
+        pb = Fraction(k + 1, initial_panels)
+        panel_evals.append((pa, pb, _eval_offset_and_deriv(pa, pb)))
+
+    stack: List[Tuple[Fraction, Fraction, Fraction, Fraction, int]] = []
+    for i in range(initial_panels):
+        a1, b1, ev1_p = panel_evals[i]
+        for j in range(i, initial_panels):
+            a2, b2, ev2_p = panel_evals[j]
+            if ev1_p is None or ev2_p is None:
+                stack.append((a1, b1, a2, b2, 0))
+            elif _contains_zero(_sub(ev1_p[0], ev2_p[0])) and _contains_zero(_sub(ev1_p[1], ev2_p[1])):
+                stack.append((a1, b1, a2, b2, 0))
+
+    nodes_visited = 0
+    unresolved_count = 0
+    zero_q = Fraction(0)
+    one_q = Fraction(1)
+    quarter_q = Fraction(1, 4)
+    tiny_q = Fraction(1, 10**7)
+
+    while stack:
+        a1, b1, a2, b2, depth = stack.pop()
+        nodes_visited += 1
+        if nodes_visited > max_nodes:
+            unresolved_count += 1
+            break
+
+        if a1 > b2:
+            continue
+
+        # Rigorous directional-monotonicity diagonal exclusion on hull [min(a1,a2), max(b1,b2)]
+        hull_lo = min(a1, a2)
+        hull_hi = max(b1, b2)
+        boxes_overlap = (b1 >= a2) and (b2 >= a1)
+        if boxes_overlap or (hull_hi - hull_lo) <= quarter_q:
+            ev_hull = _eval_offset_and_deriv(hull_lo, hull_hi)
+            if ev_hull is not None:
+                if (not _contains_zero(ev_hull[2])) or (not _contains_zero(ev_hull[3])):
+                    continue
+                vhx_q = _mid_q(ev_hull[2])
+                vhy_q = _mid_q(ev_hull[3])
+                if vhx_q != 0 or vhy_q != 0:
+                    proj_h = _add(_mul(_from_q(vhx_q), ev_hull[2]), _mul(_from_q(vhy_q), ev_hull[3]))
+                    if _strictly_pos(proj_h):
+                        continue
+
+        ev_a = _eval_offset_and_deriv(a1, b1)
+        ev_b = _eval_offset_and_deriv(a2, b2)
+        if ev_a is not None and ev_b is not None:
+            if not (_contains_zero(_sub(ev_a[0], ev_b[0])) and _contains_zero(_sub(ev_a[1], ev_b[1]))):
+                continue
+
+        kr = _krawczyk_step(a1, b1, a2, b2) if (ev_a is not None and ev_b is not None) else None
+        if kr is not None:
+            k1_lo, k1_hi, k2_lo, k2_hi, norm_lt_1, inside, disjoint = kr
+            if disjoint:
+                continue
+            if inside and norm_lt_1:
+                if zero_q <= k1_lo and k1_hi <= one_q and zero_q <= k2_lo and k2_hi <= one_q:
+                    if k1_hi < k2_lo or k2_hi < k1_lo:
+                        return "CERTIFIED_INTERSECTION_FOUND", "candidate_krawczyk_2d", 1
+
+        # Tiny-box inflation for dyadic split-boundary crossings
+        w1 = b1 - a1
+        w2 = b2 - a2
+        if w1 <= tiny_q and w2 <= tiny_q and ev_a is not None and ev_b is not None:
+            inf_a1 = a1 - w1 * quarter_q
+            inf_b1 = b1 + w1 * quarter_q
+            inf_a2 = a2 - w2 * quarter_q
+            inf_b2 = b2 + w2 * quarter_q
+            kr_inf = _krawczyk_step(inf_a1, inf_b1, inf_a2, inf_b2)
+            if kr_inf is not None:
+                k1_lo, k1_hi, k2_lo, k2_hi, norm_lt_1, inside, _disj = kr_inf
+                if inside and norm_lt_1:
+                    if zero_q <= k1_lo and k1_hi <= one_q and zero_q <= k2_lo and k2_hi <= one_q:
+                        if k1_hi < k2_lo or k2_hi < k1_lo:
+                            return "CERTIFIED_INTERSECTION_FOUND", "candidate_krawczyk_2d_inflated", 1
+
+        if depth >= max_depth:
+            unresolved_count += 1
+            continue
+
+        if w1 >= w2:
+            m1 = (a1 + b1) / Fraction(2)
+            stack.append((m1, b1, a2, b2, depth + 1))
+            stack.append((a1, m1, a2, b2, depth + 1))
+        else:
+            m2 = (a2 + b2) / Fraction(2)
+            stack.append((a1, b1, m2, b2, depth + 1))
+            stack.append((a1, b1, a2, m2, depth + 1))
+
+    if unresolved_count > 0:
+        return "UNRESOLVED", "candidate_krawczyk_unresolved", 0
+    return "CERTIFIED_DISJOINT", "candidate_krawczyk_2d", 0
+
+
 def certify_cubic_segment_bernstein_candidate(
     p0: Tuple[Any, Any],
     p1: Tuple[Any, Any],
@@ -2702,14 +3200,66 @@ def certify_cubic_segment_bernstein_candidate(
         q_pos_d0, _, _ = _bernstein_sign_predicates(q_b, candidate_library, tables)
         _, _, sc_le0_d0 = _bernstein_sign_predicates(sc_b, candidate_library, tables)
         ia_elapsed_ms += (time.perf_counter() - t_ia_start) * 1000.0
+        dx_b_cur = [dx0, dx1, dx2]
+        dy_b_cur = [dy0, dy1, dy2]
 
-        # Step 2.1 + Step 2.2 Depth-0 Fast Certificate: Q(t) > 0 AND s*d*C(t) <= 0 => f(t) >= 1 > eps_reg
-        if q_pos_d0 and sc_le0_d0:
-            escalation_trace.append(f"{prec_bits}-bit:convex-sign-gate-certified-d0")
+        def _finalize_regular_valid(reason_tag: str) -> Dict[str, Any]:
+            nonlocal iso_elapsed_ms
+            t_si_0 = time.perf_counter()
+            si_status, si_method, si_cnt = _certify_local_self_intersection_candidate(
+                p0,
+                p1,
+                p2,
+                p3,
+                dx_b_cur,
+                dy_b_cur,
+                d_q,
+                s_sign,
+                candidate_library,
+                tables,
+                prec_bits,
+            )
+            iso_elapsed_ms += (time.perf_counter() - t_si_0) * 1000.0
+            escalation_trace.append(reason_tag)
+            escalation_trace.append(f"{prec_bits}-bit:step2.5-local-si:{si_status}:{si_method}")
+            if si_status == "CERTIFIED_DISJOINT":
+                return {
+                    "available": True,
+                    "verificationOutcome": "CERTIFIED_VALID",
+                    "failureCategory": "NONE",
+                    "localSelfIntersectionStatus": "NONE",
+                    "stationaryStatus": stationary_status,
+                    "maxDepthReached": max_depth_reached,
+                    "subdivisionsPerformed": subdivisions_performed,
+                    "straddlingPanelsFound": straddling_panels_encountered,
+                    "isolatedCuspCount": isolated_cusp_count,
+                    "workingPrecisionBits": prec_bits,
+                    "escalationTrace": escalation_trace,
+                    "intervalArithmeticMs": ia_elapsed_ms,
+                    "rootIsolationMs": iso_elapsed_ms,
+                }
+            if si_status == "CERTIFIED_INTERSECTION_FOUND":
+                return {
+                    "available": True,
+                    "verificationOutcome": "CERTIFIED_INVALID",
+                    "failureCategory": "LOCAL_OFFSET_SELF_INTERSECTION",
+                    "localSelfIntersectionStatus": "DETECTED",
+                    "stationaryStatus": stationary_status,
+                    "maxDepthReached": max_depth_reached,
+                    "subdivisionsPerformed": subdivisions_performed,
+                    "straddlingPanelsFound": straddling_panels_encountered,
+                    "isolatedCuspCount": isolated_cusp_count,
+                    "isolatedLocalSelfIntersectionCount": si_cnt,
+                    "workingPrecisionBits": prec_bits,
+                    "escalationTrace": escalation_trace,
+                    "intervalArithmeticMs": ia_elapsed_ms,
+                    "rootIsolationMs": iso_elapsed_ms,
+                }
             return {
                 "available": True,
-                "verificationOutcome": "CERTIFIED_VALID",
-                "failureCategory": "NONE",
+                "verificationOutcome": "INCONCLUSIVE",
+                "failureCategory": "INCONCLUSIVE_VERIFICATION",
+                "localSelfIntersectionStatus": "UNRESOLVED",
                 "stationaryStatus": stationary_status,
                 "maxDepthReached": max_depth_reached,
                 "subdivisionsPerformed": subdivisions_performed,
@@ -2720,6 +3270,11 @@ def certify_cubic_segment_bernstein_candidate(
                 "intervalArithmeticMs": ia_elapsed_ms,
                 "rootIsolationMs": iso_elapsed_ms,
             }
+
+        # Step 2.1 + Step 2.2 Depth-0 Fast Certificate: Q(t) > 0 AND s*d*C(t) <= 0 => f(t) >= 1 > eps_reg
+        # Unconditionally verified by Step 2.5 local self-intersection certification (K-01).
+        if q_pos_d0 and sc_le0_d0:
+            return _finalize_regular_valid(f"{prec_bits}-bit:convex-sign-gate-certified-d0")
 
         # Step 2.1: If Q(t) does not certify strictly positive at depth 0, subdivide Q(t) via De Casteljau
         if not q_pos_d0:
@@ -2793,21 +3348,7 @@ def certify_cubic_segment_bernstein_candidate(
                     }
 
             if sc_le0_d0:
-                escalation_trace.append(f"{prec_bits}-bit:q-certified-convex-gate")
-                return {
-                    "available": True,
-                    "verificationOutcome": "CERTIFIED_VALID",
-                    "failureCategory": "NONE",
-                    "stationaryStatus": stationary_status,
-                    "maxDepthReached": max_depth_reached,
-                    "subdivisionsPerformed": subdivisions_performed,
-                    "straddlingPanelsFound": straddling_panels_encountered,
-                    "isolatedCuspCount": 0,
-                    "workingPrecisionBits": prec_bits,
-                    "escalationTrace": escalation_trace,
-                    "intervalArithmeticMs": ia_elapsed_ms,
-                    "rootIsolationMs": iso_elapsed_ms,
-                }
+                return _finalize_regular_valid(f"{prec_bits}-bit:q-certified-convex-gate")
 
         # Step 2.3: Construct exact degree-12 Bernstein enclosures of P_exact = Q^3 - d^2*C^2 and P_margin = (1-eps)^2*Q^3 - d^2*C^2
         t_ia2_start = time.perf_counter()
@@ -2895,22 +3436,9 @@ def certify_cubic_segment_bernstein_candidate(
         ia_elapsed_ms += (time.perf_counter() - t_ia2_start) * 1000.0
 
         # Depth-0 Regularity Margin Certificate: min P_margin > 0 => f(t) > eps_reg everywhere on [0, 1]
+        # Unconditionally verified by Step 2.5 local self-intersection certification (K-01).
         if pm_pos_d0:
-            escalation_trace.append(f"{prec_bits}-bit:bernstein-p-margin-certified-d0")
-            return {
-                "available": True,
-                "verificationOutcome": "CERTIFIED_VALID",
-                "failureCategory": "NONE",
-                "stationaryStatus": stationary_status,
-                "maxDepthReached": max_depth_reached,
-                "subdivisionsPerformed": subdivisions_performed,
-                "straddlingPanelsFound": straddling_panels_encountered,
-                "isolatedCuspCount": 0,
-                "workingPrecisionBits": prec_bits,
-                "escalationTrace": escalation_trace,
-                "intervalArithmeticMs": ia_elapsed_ms,
-                "rootIsolationMs": iso_elapsed_ms,
-            }
+            return _finalize_regular_valid(f"{prec_bits}-bit:bernstein-p-margin-certified-d0")
 
         # Adaptive De Casteljau subdivision on concave/straddling sub-intervals
         t_iso_p0 = time.perf_counter()
@@ -2995,21 +3523,7 @@ def certify_cubic_segment_bernstein_candidate(
             }
 
         if not unresolved_p_exact and not unresolved_p_margin:
-            escalation_trace.append(f"{prec_bits}-bit:subdivided-certified-valid")
-            return {
-                "available": True,
-                "verificationOutcome": "CERTIFIED_VALID",
-                "failureCategory": "NONE",
-                "stationaryStatus": stationary_status,
-                "maxDepthReached": max_depth_reached,
-                "subdivisionsPerformed": subdivisions_performed,
-                "straddlingPanelsFound": straddling_panels_encountered,
-                "isolatedCuspCount": 0,
-                "workingPrecisionBits": prec_bits,
-                "escalationTrace": escalation_trace,
-                "intervalArithmeticMs": ia_elapsed_ms,
-                "rootIsolationMs": iso_elapsed_ms,
-            }
+            return _finalize_regular_valid(f"{prec_bits}-bit:subdivided-certified-valid")
 
         # Escalate working precision on unresolved panels (ADR-009 §5.2 Step 1)
         if tier_idx < len(precision_ladder) - 1:
