@@ -19,3 +19,27 @@ h1, h2, h3, .font-serif {
 .font-mono {
   font-family: var(--font-mono);
 }
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.studio-viewport-frame {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+@media print {
+  html,
+  body,
+  #root,
+  .studio-viewport-frame {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
+

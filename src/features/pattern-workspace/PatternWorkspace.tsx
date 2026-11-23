@@ -84,6 +84,14 @@ interface PatternWorkspaceProps {
   onNavigateToProduction: () => void;
   onNavigateToMeasurements: () => void;
   onUpdateSpec?: (nextSpec: DesignSpecification) => void;
+  selectedPieceId?: string | null;
+  onSelectPieceId?: (pieceId: string) => void;
+  onSelectSeam?: (
+    piece: PatternPiece,
+    seam: { id: string; name: string; lengthCm: number; pairedSeamName?: string }
+  ) => void;
+  externalZoom?: number;
+  onChangeZoom?: (nextZoom: number) => void;
 }
 
 export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
@@ -108,7 +116,12 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   onSyncWorkingDraftSnapshot,
   onNavigateToProduction,
   onNavigateToMeasurements,
-  onUpdateSpec
+  onUpdateSpec,
+  selectedPieceId: externalSelectedPieceId,
+  onSelectPieceId: externalOnSelectPieceId,
+  onSelectSeam,
+  externalZoom,
+  onChangeZoom
 }) => {
   // Standalone fallbacks when rendered outside App.tsx (App.tsx is the authoritative owner)
   const [localBodiceDartStyle, setLocalBodiceDartStyle] = useState<BodiceDartStyle>(
@@ -146,8 +159,16 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const [showDarts, setShowDarts] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
   
-  // Canvas zoom & pan state
-  const [zoom, setZoom] = useState(1.0);
+  // Canvas zoom & pan state (optionally synchronized with ViewportInteractionContext)
+  const [localZoom, setLocalZoom] = useState(1.0);
+  const zoom = externalZoom ?? localZoom;
+  const setZoomValue = (next: number) => {
+    if (onChangeZoom) {
+      onChangeZoom(next);
+    } else {
+      setLocalZoom(next);
+    }
+  };
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [cadViewMode, setCadViewMode] = useState<'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation'>('pieces');
   const [assemblyScenario, setAssemblyScenario] = useState<AssemblyScenarioMode>('active-draft');
@@ -160,9 +181,14 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     XL: true,
     XXL: true
   });
-  const [selectedPieceId, setSelectedPieceId] = useState<string>(
+  const [localSelectedPieceId, setLocalSelectedPieceId] = useState<string>(
     currentSpec.garmentCategory === 'bodice' ? 'piece-bodice-front' : 'piece-skirt-front'
   );
+  const selectedPieceId = externalSelectedPieceId ?? localSelectedPieceId;
+  const setSelectedPieceId = (nextId: string) => {
+    setLocalSelectedPieceId(nextId);
+    externalOnSelectPieceId?.(nextId);
+  };
 
   // Milestone 04.5 / 04.5.1: Prototype fit validation and fabric-aware calculations
   const activePrototypeRecord: PhysicalPrototypeRecord = React.useMemo(() => {
@@ -312,11 +338,12 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
       : cadViewMode;
 
   const handleZoom = (delta: number) => {
-    setZoom(prev => Math.min(3.5, Math.max(0.6, Number((prev + delta).toFixed(1)))));
+    const nextZoom = Math.min(3.5, Math.max(0.6, Number((zoom + delta).toFixed(1))));
+    setZoomValue(nextZoom);
   };
 
   const handleResetView = () => {
-    setZoom(1.0);
+    setZoomValue(1.0);
     setPan({ x: 0, y: 0 });
   };
 
@@ -2084,9 +2111,18 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   </span>
                   <div className="space-y-1.5 font-mono text-xs">
                     {selectedPiece.seams.map(seam => (
-                      <div
+                      <button
                         key={seam.id}
-                        className="p-2 border border-neutral-200 rounded-xs bg-white flex items-center justify-between"
+                        type="button"
+                        onClick={() =>
+                          onSelectSeam?.(selectedPiece, {
+                            id: seam.id,
+                            name: seam.name,
+                            lengthCm: seam.lengthCm,
+                            pairedSeamName: seam.pairedSeamName
+                          })
+                        }
+                        className="w-full p-2 border border-neutral-200 hover:border-neutral-400 rounded-xs bg-white flex items-center justify-between text-left cursor-pointer transition-colors"
                       >
                         <div>
                           <span className="font-medium text-neutral-900 block">{seam.name}</span>
@@ -2096,8 +2132,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                             </span>
                           )}
                         </div>
-                        <span className="font-bold text-neutral-900">{seam.lengthCm} cm</span>
-                      </div>
+                        <span className="font-bold text-neutral-900 tabular-nums">{seam.lengthCm} cm</span>
+                      </button>
                     ))}
                   </div>
                 </div>

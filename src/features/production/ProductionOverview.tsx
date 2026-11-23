@@ -249,11 +249,11 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-8 print:p-0 print:max-w-none">
+    <div className="w-full min-w-0 max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-8 print:p-0 print:max-w-none">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-neutral-200 pb-6 gap-4 print:hidden">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between border-b border-neutral-200 pb-6 gap-4 print:hidden">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="text-xs uppercase tracking-widest text-neutral-500 font-mono">Module 05</span>
             <span className="text-neutral-300">/</span>
             <Badge variant="dark" size="sm">Production Engineering</Badge>
@@ -267,7 +267,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-col items-start md:items-end gap-1.5 shrink-0">
+        <div className="flex flex-col items-start xl:items-end gap-1.5 min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="outline"
@@ -298,7 +298,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
           {!canPrintTechPack && (
             <span
               data-testid="m05-print-blocked-hint"
-              className="text-[11px] font-mono text-amber-800"
+              className="text-[11px] font-mono text-amber-800 break-words"
             >
               Tech Pack print/export disabled: {workspaceBundle.exportGate.rejectionCode ?? 'EXPORT_BLOCKED'}
             </span>
@@ -316,7 +316,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       {/* Independent Export Gate Status Banner */}
       <div
         data-testid="m05-export-gate-banner"
-        className={`p-3 rounded border text-xs font-mono flex flex-col lg:flex-row lg:items-center justify-between gap-2 ${
+        className={`p-3 rounded border text-xs font-mono flex flex-col xl:flex-row xl:items-center justify-between gap-2 ${
           liveExportValidation.isExportPermitted
             ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
             : 'bg-amber-50 border-amber-300 text-amber-950'
@@ -340,7 +340,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
               : liveExportValidation.rejectionReason}
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           <Badge variant={categoryPolicy.supportsMultiSizeGrading ? 'accent' : 'neutral'} size="sm">
             {categoryPolicy.policyMode}
           </Badge>
@@ -369,8 +369,8 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 font-mono text-[11px]">
-            <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 font-mono text-[11px]">
+            <div className="min-w-0 p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
               <div className="text-neutral-500 uppercase text-[10px]">1. Geometry Fingerprint</div>
               <div className="font-bold text-neutral-900 truncate" title={liveSnapshot.geometryFingerprint}>
                 {liveSnapshot.geometryFingerprint?.slice(0, 16)}…
@@ -379,7 +379,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                 Drafting Config: {liveSnapshot.draftingConfigFingerprint?.slice(0, 10)}…
               </div>
             </div>
-            <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
+            <div className="min-w-0 p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
               <div className="text-neutral-500 uppercase text-[10px]">2. Base Pattern Content FP</div>
               <div className="font-bold text-neutral-900 truncate" title={liveSnapshot.basePatternFingerprint}>
                 {liveSnapshot.basePatternFingerprint?.slice(0, 16)}…
@@ -388,7 +388,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                 Immutable across lifecycle (Acyclic)
               </div>
             </div>
-            <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
+            <div className="min-w-0 p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
               <div className="text-neutral-500 uppercase text-[10px]">3. Grading Content FP</div>
               <div className="font-bold text-neutral-900 truncate" title={liveGradingArtifact?.contentFingerprint}>
                 {liveGradingArtifact?.contentFingerprint ? `${liveGradingArtifact.contentFingerprint.slice(0, 16)}…` : 'N/A'}
@@ -397,7 +397,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
                 Binds upstream to Base Pattern FP
               </div>
             </div>
-            <div className="p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
+            <div className="min-w-0 p-2.5 bg-neutral-50 border border-neutral-200 rounded-xs">
               <div className="text-neutral-500 uppercase text-[10px]">4. Derived Lifecycle State FP</div>
               <div className="font-bold text-neutral-900 truncate" title={liveSnapshot.currentStateFingerprint}>
                 {liveSnapshot.currentStateFingerprint?.slice(0, 16)}…
@@ -456,9 +456,9 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
       </div>
 
       {/* Production Spec Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Garment Bill of Materials & Cutting Specs */}
-        <div className="bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-4">
+        <div className="min-w-0 bg-white border border-neutral-200 rounded-sm p-6 shadow-2xs space-y-4">
           <h4 className="text-xs font-semibold uppercase tracking-wider font-mono text-neutral-900 border-b border-neutral-100 pb-3">
             Material &amp; Cutting Requirements
           </h4>
@@ -831,15 +831,15 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
           </span>
         </h4>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {m05Package.manufacturingDocs.sewingSequence.map(step => (
             <div
               key={step.operationCode}
-              className="p-4 border border-neutral-200 rounded-xs bg-neutral-50/50 space-y-2 text-xs"
+              className="min-w-0 p-4 border border-neutral-200 rounded-xs bg-neutral-50/50 space-y-2 text-xs"
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-neutral-900 text-white font-mono text-[10px] flex items-center justify-center font-bold">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-5 h-5 shrink-0 rounded-full bg-neutral-900 text-white font-mono text-[10px] flex items-center justify-center font-bold">
                     {step.sequenceOrder}
                   </span>
                   <h5 className="font-semibold text-neutral-900">{step.title}</h5>
@@ -1030,7 +1030,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 text-xs font-mono">
             <div className="p-3.5 border border-neutral-200 rounded-sm bg-neutral-50/60 space-y-1">
               <span className="text-[10px] uppercase font-bold text-neutral-500 block">Export Grading Policy</span>
               <span className="font-bold text-neutral-900 block">{categoryPolicy.policyMode}</span>
@@ -1085,7 +1085,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
         </div>
 
         {/* Fabric Physical Property & Provenance Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 font-mono text-xs">
           <div className="p-4 border border-neutral-200 rounded-sm bg-neutral-50/50 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block">
@@ -1231,7 +1231,7 @@ export const ProductionOverview: React.FC<ProductionOverviewProps> = ({
 
         {/* Directional Ease Allocation Matrix */}
         <div className="space-y-2 font-mono text-xs">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500 block">
               DETERMINISTIC CIRCUMFERENCE EASE ALLOCATION (FINISHED GARMENT VS PRE-SHRINK CUTTING)
             </span>
