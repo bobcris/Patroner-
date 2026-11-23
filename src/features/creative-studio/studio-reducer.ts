@@ -1247,7 +1247,9 @@ export function creativeStudioReducer(
 
       const nextMap: Record<string, StudioLayer> = { ...doc.layersById };
       reordered.forEach((item, index) => {
-        nextMap[item.id] = { ...item, order: index, updatedAt: now };
+        if (item.order !== index || item.id === target.id) {
+          nextMap[item.id] = { ...item, order: index, updatedAt: now };
+        }
       });
 
       return {

@@ -11,6 +11,7 @@ import {
   ReferenceImageLayer,
   StudioLayer
 } from './types';
+import { recordLayerRendererExecution } from './perf-probe';
 
 export interface StudioLayerRendererProps {
   layer: StudioLayer;
@@ -177,6 +178,7 @@ export const StudioLayerRenderer: React.FC<StudioLayerRendererProps> = React.mem
     onContextMenu,
     onRequestReplaceAsset
   }) => {
+    recordLayerRendererExecution();
     if (layer.type === 'group') return null;
 
     const style: React.CSSProperties = {
@@ -188,7 +190,7 @@ export const StudioLayerRenderer: React.FC<StudioLayerRendererProps> = React.mem
       opacity: layer.opacity,
       transform: `translate3d(${worldTransform.x}px, ${worldTransform.y}px, 0) rotate(${worldTransform.rotationDeg}deg)`,
       transformOrigin: 'center center',
-      willChange: isSelected ? 'transform' : 'auto'
+      contain: 'layout style'
     };
 
     return (

@@ -16,6 +16,7 @@ import { ContextualInspector } from './ContextualInspector';
 import { CollapsibleBottomDock } from './CollapsibleBottomDock';
 import { WorkspaceErrorBoundary } from '../layout/WorkspaceErrorBoundary';
 import { SimulationFitPanel } from '../../features/simulation/SimulationFitPanel';
+import { StudioPerfBoundary } from '../../features/creative-studio/perf-probe';
 
 export interface VisualStudioShellProps {
   renderCreativeStudio: () => React.ReactNode;
@@ -81,7 +82,9 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
       className="studio-viewport-frame w-full flex flex-col bg-[#F5F4F0] text-neutral-900 font-sans antialiased selection:bg-neutral-900 selection:text-white"
     >
       {/* Persistent Top Studio Bar (48px) */}
-      <StudioTopBar />
+      <StudioPerfBoundary id="StudioTopBar">
+        <StudioTopBar />
+      </StudioPerfBoundary>
 
       {/* Main Horizontal Workspace Frame: Tool Rail + Dominant Center Viewport + Right Inspector */}
       <div className="flex-1 min-h-0 flex relative overflow-hidden">
@@ -398,7 +401,9 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
         </div>
 
         {/* Contextual Right Inspector (Desktop Docked / Tablet Slide-Over) */}
-        <ContextualInspector />
+        <StudioPerfBoundary id="ContextualInspector">
+          <ContextualInspector />
+        </StudioPerfBoundary>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -25,6 +25,7 @@ import { StudioLayersPanel } from './StudioLayersPanel';
 import { StudioVisualCanvas } from './StudioVisualCanvas';
 import { StudioBriefAndAiDrawer } from './StudioBriefAndAiDrawer';
 import { PromoteToAtelierModal } from './PromoteToAtelierModal';
+import { StudioPerfBoundary } from './perf-probe';
 
 export interface CreativeStudioWorkspaceProps {
   currentSpec: DesignSpecification;
@@ -41,6 +42,7 @@ export const CreativeStudioWorkspace: React.FC<CreativeStudioWorkspaceProps> = (
 }) => {
   const {
     document: studioDoc,
+    activeCollectionLayers,
     persistenceMode,
     storageWarning,
     recoveryBanner,
@@ -69,9 +71,13 @@ export const CreativeStudioWorkspace: React.FC<CreativeStudioWorkspaceProps> = (
   const [confirmClearOpen, setConfirmClearOpen] = useState<boolean>(false);
   const [promoteModalOpen, setPromoteModalOpen] = useState<boolean>(false);
 
-  const handleTriggerUpload = () => {
+  const handleTriggerUpload = useCallback(() => {
     fileInputRef.current?.click();
-  };
+  }, []);
+
+  const handleOpenPromoteModal = useCallback(() => {
+    setPromoteModalOpen(true);
+  }, []);
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -88,10 +94,10 @@ export const CreativeStudioWorkspace: React.FC<CreativeStudioWorkspaceProps> = (
     e.target.value = '';
   };
 
-  const handleRequestReplaceAsset = (layerId: string) => {
+  const handleRequestReplaceAsset = useCallback((layerId: string) => {
     setReplacingLayerId(layerId);
     replaceInputRef.current?.click();
-  };
+  }, []);
 
   const handleReplaceFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -115,9 +121,7 @@ export const CreativeStudioWorkspace: React.FC<CreativeStudioWorkspaceProps> = (
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const activeLayerCount = Object.values(studioDoc.layersById).filter(
-    l => l.collectionId === studioDoc.activeCollectionId
-  ).length;
+  const activeLayerCount = activeCollectionLayers.length;
 
   return (
     <div
@@ -308,15 +312,19 @@ export const CreativeStudioWorkspace: React.FC<CreativeStudioWorkspaceProps> = (
 
       {/* Main Dominant Visual Workspace Frame */}
       <div className="flex-1 min-h-0 flex relative overflow-hidden">
-        <StudioLayersPanel onRequestUploadDialog={handleTriggerUpload} />
+        <StudioPerfBoundary id="StudioLayersPanel">
+          <StudioLayersPanel onRequestUploadDialog={handleTriggerUpload} />
+        </StudioPerfBoundary>
 
-        <StudioVisualCanvas
-          onRequestUploadDialog={handleTriggerUpload}
-          onRequestReplaceAsset={handleRequestReplaceAsset}
-          onUploadMessage={setUploadError}
-        />
+        <StudioPerfBoundary id="StudioVisualCanvas">
+          <StudioVisualCanvas
+            onRequestUploadDialog={handleTriggerUpload}
+            onRequestReplaceAsset={handleRequestReplaceAsset}
+            onUploadMessage={setUploadError}
+          />
+        </StudioPerfBoundary>
 
-        <StudioBriefAndAiDrawer onOpenPromoteModal={() => setPromoteModalOpen(true)} />
+        <StudioBriefAndAiDrawer onOpenPromoteModal={handleOpenPromoteModal} />
       </div>
 
       {/* Hidden File Inputs */}

@@ -662,3 +662,38 @@ test('UX-2.2 Phase 4-5: 100-layer collection invariants, multi-selection alignme
   assert.ok(legacySource.includes('data-testid="reference-image-preview"'));
 });
 
+test('UX-2.2 C7: REORDER_LAYER preserves referential identity of untouched sibling layers and SET_CAMERA leaves layersById/history untouched', () => {
+  const spec = INITIAL_CONCEPTS[0];
+  let state = createInitialStudioState({ projectId: 'proj-perf-identity', spec });
+  const batch: StudioLayer[] = [];
+  for (let i = 0; i < 50; i++) {
+    batch.push(makeCardLayer(`perf-${i}`, (i % 10) * 200, Math.floor(i / 10) * 160));
+  }
+  state = creativeStudioReducer(state, { type: 'ADD_LAYERS_BATCH', layers: batch });
+  const beforeLayers = state.document.layersById;
+
+  // Adjacent reorder ('up' from order 10 -> 11) should only replace the 2 swapped layers
+  const reordered = creativeStudioReducer(state, {
+    type: 'REORDER_LAYER',
+    layerId: 'perf-10',
+    direction: 'up'
+  });
+  let preservedCount = 0;
+  for (let i = 0; i < 50; i++) {
+    const id = `perf-${i}`;
+    if (reordered.document.layersById[id] === beforeLayers[id]) {
+      preservedCount += 1;
+    }
+  }
+  assert.equal(preservedCount, 48);
+
+  // Camera commit leaves layersById, collections, and undo history untouched
+  const afterCamera = creativeStudioReducer(reordered, {
+    type: 'SET_CAMERA',
+    camera: { zoom: 1.5, panX: -120, panY: 80 }
+  });
+  assert.equal(afterCamera.document.layersById, reordered.document.layersById);
+  assert.equal(afterCamera.historyPast, reordered.historyPast);
+});
+
+

@@ -80,7 +80,7 @@ function studioLayerTypeLabel(type: StudioLayer['type']): string {
  * Intentionally excludes internal digest hashes, raw gate configuration, and low-level
  * engineering dumps; those remain accessible via the dedicated Engineering Health dock tab.
  */
-export const ContextualInspector: React.FC = () => {
+export const ContextualInspector: React.FC = React.memo(() => {
   const {
     currentSpec,
     activeSize,
@@ -1447,4 +1447,6 @@ export const ContextualInspector: React.FC = () => {
       </aside>
     </>
   );
-};
+});
+
+ContextualInspector.displayName = 'ContextualInspector';

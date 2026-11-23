@@ -32,7 +32,7 @@ const ENVIRONMENT_ITEMS: ReadonlyArray<{
   { id: 'simulation-production', label: '3D & Production', shortLabel: '3D & Prod', icon: Box }
 ];
 
-export const StudioTopBar: React.FC = () => {
+export const StudioTopBar: React.FC = React.memo(() => {
   const { currentSpec, activeSize, workspaceBundle, isPackageStale, isSynchronized } =
     useProjectWorkspace();
   const {
@@ -291,4 +291,6 @@ export const StudioTopBar: React.FC = () => {
       </div>
     </header>
   );
-};
+});
+
+StudioTopBar.displayName = 'StudioTopBar';
