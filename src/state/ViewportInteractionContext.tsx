@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useCallback, useContext, useMemo, useReducer } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import type { WorkspaceTab } from '../components/layout/Header';
 
 /**
@@ -90,6 +90,11 @@ export type WorkspaceToolId =
   | 'zoom-out'
   | 'visual-note'
   | 'moodboard-focus'
+  | 'crop-image'
+  | 'freehand-sketch'
+  | 'place-note'
+  | 'add-mood-card'
+  | 'add-palette'
   | 'measure-preview'
   | 'orbit-camera'
   | 'inspect-fit';
@@ -108,35 +113,75 @@ export const ENVIRONMENT_TOOLS: Record<StudioEnvironment, readonly ToolDefinitio
   'creative-studio': [
     {
       id: 'select',
-      label: 'Select Element',
+      label: 'Select & Transform',
       shortKey: 'V',
-      description: 'Select garment concept, silhouette, or reference image',
+      description: 'Select, drag, resize, rotate, or marquee-select board layers',
       available: true,
       actionType: 'mode'
     },
     {
-      id: 'moodboard-focus',
-      label: 'Reference Focus',
-      shortKey: 'R',
-      description: 'Focus and inspect attached moodboard reference image',
+      id: 'pan',
+      label: 'Pan Canvas',
+      shortKey: 'H',
+      description: 'Pan the Creative Studio board (or hold Space + drag)',
       available: true,
       actionType: 'mode'
     },
     {
-      id: 'visual-note',
-      label: 'Drop Visual Pin',
+      id: 'crop-image',
+      label: 'Non-Destructive Crop',
+      shortKey: 'C',
+      description: 'Crop selected reference image without altering the original asset',
+      available: true,
+      actionType: 'mode'
+    },
+    {
+      id: 'freehand-sketch',
+      label: 'Freehand Visual Sketch',
+      shortKey: 'B',
+      description: 'Draw an explicitly unverified visual overlay stroke (non-CAD)',
+      available: true,
+      actionType: 'mode'
+    },
+    {
+      id: 'place-note',
+      label: 'Place Visual Note',
       shortKey: 'N',
-      description: 'Place an unverified visual brief note (undoable, non-canonical)',
+      description: 'Place an unverified styling callout note on the board',
+      available: true,
+      actionType: 'mode'
+    },
+    {
+      id: 'add-mood-card',
+      label: 'Add Direction Card',
+      shortKey: 'M',
+      description: 'Insert a moodboard editorial direction card',
       available: true,
       actionType: 'instant'
     },
     {
-      id: 'bezier-pen-upcoming',
-      label: 'Freehand Sketch',
-      description: 'Interactive vector sketching planned for UX-2.2',
-      available: false,
-      unavailableReason: 'Planned for UX-2.2 Creative Studio',
-      actionType: 'mode'
+      id: 'add-palette',
+      label: 'Add Color Palette',
+      shortKey: 'P',
+      description: 'Insert an editable colorway swatch card',
+      available: true,
+      actionType: 'instant'
+    },
+    {
+      id: 'zoom-in',
+      label: 'Zoom In',
+      shortKey: '+',
+      description: 'Zoom into studio canvas (+15%)',
+      available: true,
+      actionType: 'instant'
+    },
+    {
+      id: 'zoom-out',
+      label: 'Zoom Out',
+      shortKey: '-',
+      description: 'Zoom out of studio canvas (-15%)',
+      available: true,
+      actionType: 'instant'
     }
   ],
   'pattern-atelier': [
@@ -281,9 +326,14 @@ export interface ViewportInteractionState {
   simProdSubView: SimulationProductionSubView;
   selectedEntity: SelectedEntity | null;
   hoveredEntity: HoveredEntityRef | null;
+  selectedLayerIds: readonly string[];
   activeToolByEnv: Record<StudioEnvironment, WorkspaceToolId>;
   camera: ViewportCameraState;
   inspectorOpen: boolean;
+  layersPanelOpen: boolean;
+  briefDrawerOpen: boolean;
+  snapEnabled: boolean;
+  gridMode: 'dots' | 'grid' | 'off';
   dockOpen: boolean;
   activeDockTab: DockTabId;
   ephemeralOverlays: readonly EphemeralOverlayNote[];
@@ -344,12 +394,14 @@ export function extractSelectedPieceId(entity: SelectedEntity | null): string | 
 export function createInitialViewportState(options?: {
   initialEnvironment?: StudioEnvironment;
   initialInspectorOpen?: boolean;
+  initialLayersPanelOpen?: boolean;
 }): ViewportInteractionState {
   return {
     activeEnvironment: options?.initialEnvironment ?? 'creative-studio',
     simProdSubView: 'production-overview',
     selectedEntity: null,
     hoveredEntity: null,
+    selectedLayerIds: [],
     activeToolByEnv: {
       'creative-studio': 'select',
       'pattern-atelier': 'select',
@@ -365,6 +417,10 @@ export function createInitialViewportState(options?: {
       showOverlayNotes: true
     },
     inspectorOpen: options?.initialInspectorOpen ?? true,
+    layersPanelOpen: options?.initialLayersPanelOpen ?? true,
+    briefDrawerOpen: false,
+    snapEnabled: true,
+    gridMode: 'dots',
     dockOpen: false,
     activeDockTab: 'tech-spec',
     ephemeralOverlays: [],
@@ -404,11 +460,20 @@ export type ViewportInteractionAction =
   | { type: 'SET_SIM_PROD_SUBVIEW'; subView: SimulationProductionSubView }
   | { type: 'SELECT_ENTITY'; entity: SelectedEntity | null; recordHistory?: boolean }
   | { type: 'SET_HOVERED_ENTITY'; entity: HoveredEntityRef | null }
+  | { type: 'SET_SELECTED_LAYER_IDS'; layerIds: readonly string[] }
+  | { type: 'TOGGLE_LAYER_SELECTION'; layerId: string }
   | { type: 'SET_ACTIVE_TOOL'; tool: WorkspaceToolId; environment?: StudioEnvironment }
   | { type: 'UPDATE_CAMERA'; patch: Partial<ViewportCameraState>; label?: string }
   | { type: 'RESET_CAMERA' }
   | { type: 'SET_INSPECTOR_OPEN'; open: boolean }
   | { type: 'TOGGLE_INSPECTOR' }
+  | { type: 'SET_LAYERS_PANEL_OPEN'; open: boolean }
+  | { type: 'TOGGLE_LAYERS_PANEL' }
+  | { type: 'SET_BRIEF_DRAWER_OPEN'; open: boolean }
+  | { type: 'TOGGLE_BRIEF_DRAWER' }
+  | { type: 'SET_SNAP_ENABLED'; enabled: boolean }
+  | { type: 'TOGGLE_SNAP' }
+  | { type: 'SET_GRID_MODE'; mode: 'dots' | 'grid' | 'off' }
   | { type: 'SET_DOCK_OPEN'; open: boolean }
   | { type: 'TOGGLE_DOCK' }
   | { type: 'OPEN_DOCK_TAB'; tab: DockTabId }
@@ -481,6 +546,25 @@ export function viewportInteractionReducer(
       };
     }
 
+    case 'SET_SELECTED_LAYER_IDS': {
+      const next = Array.from(new Set(action.layerIds));
+      if (
+        next.length === state.selectedLayerIds.length &&
+        next.every((id, i) => id === state.selectedLayerIds[i])
+      ) {
+        return state;
+      }
+      return { ...state, selectedLayerIds: next };
+    }
+
+    case 'TOGGLE_LAYER_SELECTION': {
+      const exists = state.selectedLayerIds.includes(action.layerId);
+      const next = exists
+        ? state.selectedLayerIds.filter(id => id !== action.layerId)
+        : [...state.selectedLayerIds, action.layerId];
+      return { ...state, selectedLayerIds: next };
+    }
+
     case 'SET_ACTIVE_TOOL': {
       const targetEnv = action.environment ?? state.activeEnvironment;
       if (state.activeToolByEnv[targetEnv] === action.tool) return state;
@@ -543,6 +627,37 @@ export function viewportInteractionReducer(
 
     case 'TOGGLE_INSPECTOR':
       return { ...state, inspectorOpen: !state.inspectorOpen };
+
+    case 'SET_LAYERS_PANEL_OPEN':
+      return state.layersPanelOpen === action.open
+        ? state
+        : { ...state, layersPanelOpen: action.open };
+
+    case 'TOGGLE_LAYERS_PANEL':
+      return { ...state, layersPanelOpen: !state.layersPanelOpen };
+
+    case 'SET_BRIEF_DRAWER_OPEN':
+      return state.briefDrawerOpen === action.open
+        ? state
+        : { ...state, briefDrawerOpen: action.open };
+
+    case 'TOGGLE_BRIEF_DRAWER':
+      return { ...state, briefDrawerOpen: !state.briefDrawerOpen };
+
+    case 'SET_SNAP_ENABLED':
+      return state.snapEnabled === action.enabled
+        ? state
+        : { ...state, snapEnabled: action.enabled };
+
+    case 'TOGGLE_SNAP':
+      return { ...state, snapEnabled: !state.snapEnabled };
+
+    case 'SET_GRID_MODE':
+      return {
+        ...state,
+        gridMode: action.mode,
+        camera: { ...state.camera, showGrid: action.mode !== 'off' }
+      };
 
     case 'SET_DOCK_OPEN':
       return state.dockOpen === action.open ? state : { ...state, dockOpen: action.open };
@@ -664,9 +779,14 @@ export interface ViewportInteractionContextValue {
   selectedEntity: SelectedEntity | null;
   selectedPieceId: string | null;
   hoveredEntity: HoveredEntityRef | null;
+  selectedLayerIds: readonly string[];
   activeTool: WorkspaceToolId;
   camera: ViewportCameraState;
   inspectorOpen: boolean;
+  layersPanelOpen: boolean;
+  briefDrawerOpen: boolean;
+  snapEnabled: boolean;
+  gridMode: 'dots' | 'grid' | 'off';
   dockOpen: boolean;
   activeDockTab: DockTabId;
   ephemeralOverlays: readonly EphemeralOverlayNote[];
@@ -679,11 +799,21 @@ export interface ViewportInteractionContextValue {
   setSimProdSubView: (subView: SimulationProductionSubView) => void;
   selectEntity: (entity: SelectedEntity | null, recordHistory?: boolean) => void;
   setHoveredEntity: (entity: HoveredEntityRef | null) => void;
+  setSelectedLayerIds: (layerIds: readonly string[]) => void;
+  toggleLayerSelection: (layerId: string) => void;
+  clearLayerSelection: () => void;
   setActiveTool: (tool: WorkspaceToolId, env?: StudioEnvironment) => void;
   updateCamera: (patch: Partial<ViewportCameraState>, label?: string) => void;
   resetCamera: () => void;
   setInspectorOpen: (open: boolean) => void;
   toggleInspector: () => void;
+  setLayersPanelOpen: (open: boolean) => void;
+  toggleLayersPanel: () => void;
+  setBriefDrawerOpen: (open: boolean) => void;
+  toggleBriefDrawer: () => void;
+  setSnapEnabled: (enabled: boolean) => void;
+  toggleSnap: () => void;
+  setGridMode: (mode: 'dots' | 'grid' | 'off') => void;
   setDockOpen: (open: boolean) => void;
   toggleDock: () => void;
   openDockTab: (tab: DockTabId) => void;
@@ -702,6 +832,11 @@ function detectDesktopInitialInspector(): boolean {
   return window.innerWidth >= 1024;
 }
 
+function detectDesktopInitialLayersPanel(): boolean {
+  if (typeof window === 'undefined') return true;
+  return window.innerWidth >= 1280;
+}
+
 export interface ViewportInteractionProviderProps {
   children: React.ReactNode;
   initialEnvironment?: StudioEnvironment;
@@ -715,10 +850,32 @@ export const ViewportInteractionProvider: React.FC<ViewportInteractionProviderPr
     viewportInteractionReducer,
     {
       initialEnvironment,
-      initialInspectorOpen: detectDesktopInitialInspector()
+      initialInspectorOpen: detectDesktopInitialInspector(),
+      initialLayersPanelOpen: detectDesktopInitialLayersPanel()
     },
     createInitialViewportState
   );
+
+  const prevWidthRef = useRef<number>(
+    typeof window !== 'undefined' ? window.innerWidth : 1440
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => {
+      const nextWidth = window.innerWidth;
+      const prevWidth = prevWidthRef.current;
+      prevWidthRef.current = nextWidth;
+      if (prevWidth >= 1280 && nextWidth < 1280) {
+        dispatch({ type: 'SET_LAYERS_PANEL_OPEN', open: false });
+      }
+      if (prevWidth >= 1024 && nextWidth < 1024) {
+        dispatch({ type: 'SET_INSPECTOR_OPEN', open: false });
+      }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const setEnvironment = useCallback((environment: StudioEnvironment) => {
     dispatch({ type: 'SET_ENVIRONMENT', environment });
@@ -734,6 +891,18 @@ export const ViewportInteractionProvider: React.FC<ViewportInteractionProviderPr
 
   const setHoveredEntity = useCallback((entity: HoveredEntityRef | null) => {
     dispatch({ type: 'SET_HOVERED_ENTITY', entity });
+  }, []);
+
+  const setSelectedLayerIds = useCallback((layerIds: readonly string[]) => {
+    dispatch({ type: 'SET_SELECTED_LAYER_IDS', layerIds });
+  }, []);
+
+  const toggleLayerSelection = useCallback((layerId: string) => {
+    dispatch({ type: 'TOGGLE_LAYER_SELECTION', layerId });
+  }, []);
+
+  const clearLayerSelection = useCallback(() => {
+    dispatch({ type: 'SET_SELECTED_LAYER_IDS', layerIds: [] });
   }, []);
 
   const setActiveTool = useCallback((tool: WorkspaceToolId, environment?: StudioEnvironment) => {
@@ -754,6 +923,34 @@ export const ViewportInteractionProvider: React.FC<ViewportInteractionProviderPr
 
   const toggleInspector = useCallback(() => {
     dispatch({ type: 'TOGGLE_INSPECTOR' });
+  }, []);
+
+  const setLayersPanelOpen = useCallback((open: boolean) => {
+    dispatch({ type: 'SET_LAYERS_PANEL_OPEN', open });
+  }, []);
+
+  const toggleLayersPanel = useCallback(() => {
+    dispatch({ type: 'TOGGLE_LAYERS_PANEL' });
+  }, []);
+
+  const setBriefDrawerOpen = useCallback((open: boolean) => {
+    dispatch({ type: 'SET_BRIEF_DRAWER_OPEN', open });
+  }, []);
+
+  const toggleBriefDrawer = useCallback(() => {
+    dispatch({ type: 'TOGGLE_BRIEF_DRAWER' });
+  }, []);
+
+  const setSnapEnabled = useCallback((enabled: boolean) => {
+    dispatch({ type: 'SET_SNAP_ENABLED', enabled });
+  }, []);
+
+  const toggleSnap = useCallback(() => {
+    dispatch({ type: 'TOGGLE_SNAP' });
+  }, []);
+
+  const setGridMode = useCallback((mode: 'dots' | 'grid' | 'off') => {
+    dispatch({ type: 'SET_GRID_MODE', mode });
   }, []);
 
   const setDockOpen = useCallback((open: boolean) => {
@@ -800,9 +997,14 @@ export const ViewportInteractionProvider: React.FC<ViewportInteractionProviderPr
       selectedEntity: state.selectedEntity,
       selectedPieceId: extractSelectedPieceId(state.selectedEntity),
       hoveredEntity: state.hoveredEntity,
+      selectedLayerIds: state.selectedLayerIds,
       activeTool: state.activeToolByEnv[state.activeEnvironment],
       camera: state.camera,
       inspectorOpen: state.inspectorOpen,
+      layersPanelOpen: state.layersPanelOpen,
+      briefDrawerOpen: state.briefDrawerOpen,
+      snapEnabled: state.snapEnabled,
+      gridMode: state.gridMode,
       dockOpen: state.dockOpen,
       activeDockTab: state.activeDockTab,
       ephemeralOverlays: state.ephemeralOverlays,
@@ -814,11 +1016,21 @@ export const ViewportInteractionProvider: React.FC<ViewportInteractionProviderPr
       setSimProdSubView,
       selectEntity,
       setHoveredEntity,
+      setSelectedLayerIds,
+      toggleLayerSelection,
+      clearLayerSelection,
       setActiveTool,
       updateCamera,
       resetCamera,
       setInspectorOpen,
       toggleInspector,
+      setLayersPanelOpen,
+      toggleLayersPanel,
+      setBriefDrawerOpen,
+      toggleBriefDrawer,
+      setSnapEnabled,
+      toggleSnap,
+      setGridMode,
       setDockOpen,
       toggleDock,
       openDockTab,
@@ -835,11 +1047,21 @@ export const ViewportInteractionProvider: React.FC<ViewportInteractionProviderPr
       setSimProdSubView,
       selectEntity,
       setHoveredEntity,
+      setSelectedLayerIds,
+      toggleLayerSelection,
+      clearLayerSelection,
       setActiveTool,
       updateCamera,
       resetCamera,
       setInspectorOpen,
       toggleInspector,
+      setLayersPanelOpen,
+      toggleLayersPanel,
+      setBriefDrawerOpen,
+      toggleBriefDrawer,
+      setSnapEnabled,
+      toggleSnap,
+      setGridMode,
       setDockOpen,
       toggleDock,
       openDockTab,

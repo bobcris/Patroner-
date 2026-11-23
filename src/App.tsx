@@ -9,8 +9,9 @@ import {
   ViewportInteractionProvider,
   useViewportInteraction
 } from './state/ViewportInteractionContext';
+import { CreativeStudioProvider } from './features/creative-studio/CreativeStudioContext';
+import { CreativeStudioWorkspace } from './features/creative-studio/CreativeStudioWorkspace';
 import { VisualStudioShell } from './components/studio-shell/VisualStudioShell';
-import { FashionStudio } from './features/fashion-studio/FashionStudio';
 import { PatternWorkspace } from './features/pattern-workspace/PatternWorkspace';
 import { ProductionOverview } from './features/production/ProductionOverview';
 
@@ -56,10 +57,9 @@ const ConnectedVisualWorkspace: React.FC = () => {
   return (
     <VisualStudioShell
       renderCreativeStudio={() => (
-        <FashionStudio
+        <CreativeStudioWorkspace
           currentSpec={currentSpec}
           onUpdateSpec={updateSpec}
-          onNavigateToSpec={() => openDockTab('tech-spec')}
           referenceImage={referenceImage}
           onChangeReferenceImage={asset => {
             setReferenceImage(asset);
@@ -156,9 +156,11 @@ const ConnectedVisualWorkspace: React.FC = () => {
 export default function App() {
   return (
     <ProjectWorkspaceProvider>
-      <ViewportInteractionProvider>
-        <ConnectedVisualWorkspace />
-      </ViewportInteractionProvider>
+      <CreativeStudioProvider>
+        <ViewportInteractionProvider>
+          <ConnectedVisualWorkspace />
+        </ViewportInteractionProvider>
+      </CreativeStudioProvider>
     </ProjectWorkspaceProvider>
   );
 }

@@ -17,7 +17,11 @@ import {
   Activity,
   Pin,
   Grid3x3,
-  RotateCcw
+  RotateCcw,
+  Crop,
+  LayoutGrid,
+  Palette,
+  Magnet
 } from 'lucide-react';
 import {
   ENVIRONMENT_TOOLS,
@@ -26,6 +30,7 @@ import {
   WorkspaceToolId
 } from '../../state/ViewportInteractionContext';
 import { useProjectWorkspace } from '../../state/ProjectWorkspaceContext';
+import { useOptionalCreativeStudio } from '../../features/creative-studio/CreativeStudioContext';
 
 function renderToolIcon(toolId: ToolDefinition['id']) {
   switch (toolId) {
@@ -33,6 +38,16 @@ function renderToolIcon(toolId: ToolDefinition['id']) {
       return <MousePointer2 className="w-4 h-4" />;
     case 'pan':
       return <Hand className="w-4 h-4" />;
+    case 'crop-image':
+      return <Crop className="w-4 h-4" />;
+    case 'freehand-sketch':
+      return <PenTool className="w-4 h-4" />;
+    case 'place-note':
+      return <StickyNote className="w-4 h-4" />;
+    case 'add-mood-card':
+      return <LayoutGrid className="w-4 h-4" />;
+    case 'add-palette':
+      return <Palette className="w-4 h-4" />;
     case 'zoom-in':
       return <ZoomIn className="w-4 h-4" />;
     case 'zoom-out':
@@ -58,6 +73,7 @@ function renderToolIcon(toolId: ToolDefinition['id']) {
 
 export const ContextualToolRail: React.FC = () => {
   const { referenceImage, currentSpec } = useProjectWorkspace();
+  const studio = useOptionalCreativeStudio();
   const {
     activeEnvironment,
     activeTool,
@@ -67,7 +83,12 @@ export const ContextualToolRail: React.FC = () => {
     resetCamera,
     addEphemeralOverlay,
     selectEntity,
-    setSimProdSubView
+    setSelectedLayerIds,
+    setSimProdSubView,
+    snapEnabled,
+    toggleSnap,
+    gridMode,
+    setGridMode
   } = useViewportInteraction();
 
   const tools = ENVIRONMENT_TOOLS[activeEnvironment];
@@ -76,6 +97,29 @@ export const ContextualToolRail: React.FC = () => {
     if (!tool.available) return;
 
     const id = tool.id as WorkspaceToolId;
+    if (activeEnvironment === 'creative-studio' && studio) {
+      if (id === 'zoom-in') {
+        studio.setStudioCamera({ zoom: studio.document.camera.zoom + 0.15 });
+        return;
+      }
+      if (id === 'zoom-out') {
+        studio.setStudioCamera({ zoom: studio.document.camera.zoom - 0.15 });
+        return;
+      }
+      if (id === 'add-mood-card') {
+        const newId = studio.addMoodboardCard();
+        setSelectedLayerIds([newId]);
+        return;
+      }
+      if (id === 'add-palette') {
+        const newId = studio.addColorPaletteLayer();
+        setSelectedLayerIds([newId]);
+        return;
+      }
+      setActiveTool(id);
+      return;
+    }
+
     if (id === 'zoom-in') {
       updateCamera({ zoom: camera.zoom + 0.15 }, 'Zoom in viewport');
       return;
@@ -126,6 +170,26 @@ export const ContextualToolRail: React.FC = () => {
     setActiveTool(id);
   };
 
+  const handleCycleGrid = () => {
+    if (activeEnvironment === 'creative-studio') {
+      const next = gridMode === 'dots' ? 'grid' : gridMode === 'grid' ? 'off' : 'dots';
+      setGridMode(next);
+      return;
+    }
+    updateCamera(
+      { showGrid: !camera.showGrid },
+      camera.showGrid ? 'Hide viewport grid' : 'Show viewport grid'
+    );
+  };
+
+  const handleResetView = () => {
+    if (activeEnvironment === 'creative-studio' && studio) {
+      studio.setStudioCamera({ zoom: 1, panX: 48, panY: 48 });
+      return;
+    }
+    resetCamera();
+  };
+
   return (
     <aside
       aria-label="Contextual Workspace Tool Rail"
@@ -168,19 +232,41 @@ export const ContextualToolRail: React.FC = () => {
         })}
       </div>
 
-      {/* Bottom Viewport Utility Actions (Grid & Camera Reset) */}
+      {/* Bottom Viewport Utility Actions (Snap, Grid & Camera Reset) */}
       <div className="flex flex-col items-center gap-1.5 w-full px-1.5 pt-2 border-t border-neutral-800">
+        {activeEnvironment === 'creative-studio' && (
+          <button
+            type="button"
+            onClick={toggleSnap}
+            aria-pressed={snapEnabled}
+            data-testid="tool-toggle-snap"
+            title={snapEnabled ? 'Disable smart snapping (hold Alt while dragging)' : 'Enable smart snapping'}
+            aria-label="Toggle smart snapping"
+            className={`w-9 h-9 rounded-sm flex items-center justify-center transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 ${
+              snapEnabled
+                ? 'bg-neutral-800 text-neutral-100'
+                : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'
+            }`}
+          >
+            <Magnet className="w-4 h-4" />
+          </button>
+        )}
+
         <button
           type="button"
-          onClick={() =>
-            updateCamera({ showGrid: !camera.showGrid }, camera.showGrid ? 'Hide viewport grid' : 'Show viewport grid')
-          }
-          aria-pressed={camera.showGrid}
+          onClick={handleCycleGrid}
+          aria-pressed={activeEnvironment === 'creative-studio' ? gridMode !== 'off' : camera.showGrid}
           data-testid="tool-toggle-grid"
-          title={camera.showGrid ? 'Hide drafting grid' : 'Show drafting grid'}
+          title={
+            activeEnvironment === 'creative-studio'
+              ? `Grid overlay: ${gridMode} (click to cycle)`
+              : camera.showGrid
+                ? 'Hide drafting grid'
+                : 'Show drafting grid'
+          }
           aria-label="Toggle drafting grid"
           className={`w-9 h-9 rounded-sm flex items-center justify-center transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 ${
-            camera.showGrid
+            (activeEnvironment === 'creative-studio' ? gridMode !== 'off' : camera.showGrid)
               ? 'bg-neutral-800 text-neutral-100'
               : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'
           }`}
@@ -190,7 +276,7 @@ export const ContextualToolRail: React.FC = () => {
 
         <button
           type="button"
-          onClick={resetCamera}
+          onClick={handleResetView}
           data-testid="tool-reset-camera"
           title="Reset ephemeral zoom, pan & camera view"
           aria-label="Reset viewport camera"

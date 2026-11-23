@@ -250,9 +250,13 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
           {/* Main Environment Work Surface (Internal Scroll Only — Zero Document Scroll) */}
           <main
             data-testid="workspace-stage-main"
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative"
+            className={`flex-1 min-h-0 relative ${
+              activeEnvironment === 'creative-studio'
+                ? 'overflow-hidden flex flex-col'
+                : 'overflow-y-auto overflow-x-hidden'
+            }`}
             style={
-              camera.showGrid
+              activeEnvironment !== 'creative-studio' && camera.showGrid
                 ? {
                     backgroundImage:
                       'radial-gradient(rgba(24, 24, 27, 0.08) 1px, transparent 1px)',
@@ -292,7 +296,10 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
 
             <WorkspaceErrorBoundary onResetWorkspace={resetWorkspace}>
               {activeEnvironment === 'creative-studio' && (
-                <div data-testid="env-surface-creative-studio" className="w-full min-w-0">
+                <div
+                  data-testid="env-surface-creative-studio"
+                  className="w-full h-full flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
+                >
                   {renderCreativeStudio()}
                 </div>
               )}

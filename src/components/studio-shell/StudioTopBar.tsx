@@ -19,6 +19,7 @@ import {
   StudioEnvironment,
   useViewportInteraction
 } from '../../state/ViewportInteractionContext';
+import { useOptionalCreativeStudio } from '../../features/creative-studio/CreativeStudioContext';
 
 const ENVIRONMENT_ITEMS: ReadonlyArray<{
   id: StudioEnvironment;
@@ -37,10 +38,10 @@ export const StudioTopBar: React.FC = () => {
   const {
     activeEnvironment,
     setEnvironment,
-    canUndo,
-    canRedo,
-    undo,
-    redo,
+    canUndo: vpCanUndo,
+    canRedo: vpCanRedo,
+    undo: vpUndo,
+    redo: vpRedo,
     historyPast,
     historyFuture,
     inspectorOpen,
@@ -49,6 +50,40 @@ export const StudioTopBar: React.FC = () => {
     toggleDock,
     openDockTab
   } = useViewportInteraction();
+  const studio = useOptionalCreativeStudio();
+
+  const isStudioEnv = activeEnvironment === 'creative-studio' && Boolean(studio);
+  const canUndo = isStudioEnv ? Boolean(studio?.canUndo) : vpCanUndo;
+  const canRedo = isStudioEnv ? Boolean(studio?.canRedo) : vpCanRedo;
+  const handleUndo = isStudioEnv ? () => studio?.undoStudio() : vpUndo;
+  const handleRedo = isStudioEnv ? () => studio?.redoStudio() : vpRedo;
+  const undoTitle = isStudioEnv
+    ? studio?.canUndo
+      ? `Undo: ${studio.lastUndoLabel ?? 'Studio edit'}`
+      : 'Nothing to undo in Creative Studio'
+    : vpCanUndo
+      ? `Undo: ${historyPast[historyPast.length - 1]?.actionLabel ?? 'Last viewport action'}`
+      : 'Nothing to undo (ephemeral workspace history)';
+  const redoTitle = isStudioEnv
+    ? studio?.canRedo
+      ? `Redo: ${studio.lastRedoLabel ?? 'Studio edit'}`
+      : 'Nothing to redo'
+    : vpCanRedo
+      ? `Redo: ${historyFuture[0]?.actionLabel ?? 'Next viewport action'}`
+      : 'Nothing to redo';
+
+  const studioSaveLabel =
+    !isStudioEnv || !studio
+      ? null
+      : studio.autosaveStatus === 'saving'
+        ? 'Saving…'
+        : studio.autosaveStatus === 'saved-indexeddb'
+          ? 'Saved locally'
+          : studio.autosaveStatus === 'session-only-memory'
+            ? 'Session only'
+            : studio.autosaveStatus === 'save-error'
+              ? 'Save error'
+              : null;
 
   const { isCadSupported, approvalVerification, draftValidation } = workspaceBundle;
 
@@ -98,7 +133,7 @@ export const StudioTopBar: React.FC = () => {
 
         <div className="hidden md:flex items-center gap-2 min-w-0 text-xs">
           <span
-            className="hidden xl:inline text-neutral-200 font-medium truncate max-w-[240px]"
+            className="hidden xl:inline text-neutral-200 font-medium truncate max-w-[220px]"
             title={currentSpec.name}
           >
             {currentSpec.name}
@@ -121,6 +156,24 @@ export const StudioTopBar: React.FC = () => {
           <span className={`font-medium whitespace-nowrap shrink-0 ${statusTone}`}>
             {statusText}
           </span>
+          {studioSaveLabel && (
+            <>
+              <span className="hidden xl:inline text-neutral-600 shrink-0" aria-hidden="true">
+                ·
+              </span>
+              <span
+                data-testid="studio-autosave-status"
+                className={`hidden xl:inline text-[11px] whitespace-nowrap shrink-0 ${
+                  studio?.autosaveStatus === 'session-only-memory' ||
+                  studio?.autosaveStatus === 'save-error'
+                    ? 'text-amber-300'
+                    : 'text-neutral-400'
+                }`}
+              >
+                {studioSaveLabel}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -157,38 +210,30 @@ export const StudioTopBar: React.FC = () => {
         })}
       </nav>
 
-      {/* Zone 3: Ephemeral History, Panel Toggles & Engineering View */}
+      {/* Zone 3: History, Panel Toggles & Engineering View */}
       <div className="flex items-center gap-1 shrink-0">
         <div
           className="flex items-center border-r border-neutral-800 pr-1.5 mr-0.5 gap-0.5"
-          aria-label="Viewport History Controls"
+          aria-label="Workspace History Controls"
         >
           <button
             type="button"
-            onClick={undo}
+            onClick={handleUndo}
             disabled={!canUndo}
             data-testid="viewport-undo-btn"
-            title={
-              canUndo
-                ? `Undo: ${historyPast[historyPast.length - 1]?.actionLabel ?? 'Last viewport action'}`
-                : 'Nothing to undo (ephemeral workspace history)'
-            }
-            aria-label="Undo viewport action"
+            title={undoTitle}
+            aria-label={isStudioEnv ? 'Undo studio action' : 'Undo viewport action'}
             className="h-8 w-8 flex items-center justify-center rounded-sm text-neutral-300 hover:bg-neutral-800 hover:text-white disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
           >
             <Undo2 className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
-            onClick={redo}
+            onClick={handleRedo}
             disabled={!canRedo}
             data-testid="viewport-redo-btn"
-            title={
-              canRedo
-                ? `Redo: ${historyFuture[0]?.actionLabel ?? 'Next viewport action'}`
-                : 'Nothing to redo'
-            }
-            aria-label="Redo viewport action"
+            title={redoTitle}
+            aria-label={isStudioEnv ? 'Redo studio action' : 'Redo viewport action'}
             className="h-8 w-8 flex items-center justify-center rounded-sm text-neutral-300 hover:bg-neutral-800 hover:text-white disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
           >
             <Redo2 className="w-3.5 h-3.5" />
