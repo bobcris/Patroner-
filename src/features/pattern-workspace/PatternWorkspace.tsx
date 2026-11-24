@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BodiceDartStyle,
   BodyMeasurements,
@@ -36,7 +36,13 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
-  Compass
+  Compass,
+  FolderPlus,
+  Layers,
+  Magnet,
+  Redo2,
+  Undo2,
+  Ungroup
 } from 'lucide-react';
 import {
   SYNTHETIC_TEST_PROTOTYPE_CONFORMING,
@@ -53,6 +59,8 @@ import {
 } from './PatternAtelierViewContext';
 import { PatternCadCanvas } from './PatternCadCanvas';
 import { PatternAtelierStatusBar } from './PatternAtelierStatusBar';
+import { PatternLayersDrawer } from './PatternLayersDrawer';
+import { SNAP_INTERVAL_OPTIONS_CM } from './board-arrangement';
 import type { RenderPoint2D } from './contracts/pattern-render-artifact';
 
 interface PatternWorkspaceProps {
@@ -268,6 +276,27 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     [workspaceBundle, liveSnapshot?.revisionId, currentSpec.id, currentSpec.version, activeSize]
   );
 
+  // Reconcile UX-2.3.2 CAD board presentation state with the active immutable artifact
+  useEffect(() => {
+    atelierCtx?.syncArtifact(renderArtifact);
+  }, [atelierCtx, renderArtifact]);
+
+  // Synchronize external entity strip piece selection ONLY when externalSelectedPieceId changes,
+  // so clearing board selection (Escape, empty canvas click, Clear) is never immediately overridden.
+  const lastSyncedExternalPieceRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!atelierCtx) return;
+    if (externalSelectedPieceId === lastSyncedExternalPieceRef.current) return;
+    lastSyncedExternalPieceRef.current = externalSelectedPieceId;
+    if (!externalSelectedPieceId) return;
+    if (
+      atelierCtx.boardState.placementsByPieceId[externalSelectedPieceId] &&
+      !atelierCtx.boardState.selectedPieceIds.includes(externalSelectedPieceId)
+    ) {
+      atelierCtx.selectPiece(externalSelectedPieceId, { expandGroup: false });
+    }
+  }, [atelierCtx, externalSelectedPieceId]);
+
   // Interactive assembly diagnostic preview (diverges locally only for explicit incompatible-xs-flat toggle)
   const { assemblyResult, assemblyError } = useMemo(() => {
     let resolvedResult: BodiceSleeveAssemblyResult | undefined = authoritativeAssemblyResult;
@@ -327,7 +356,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     return validatePhysicalFit(activePrototypeRecord);
   }, [activePrototypeRecord]);
 
-  const selectedPiece = pieces.find(p => p.id === selectedPieceId) ?? pieces[0];
+  const primaryBoardSelectedId = atelierCtx?.boardState.selectedPieceIds[0] ?? selectedPieceId;
+  const selectedPiece = pieces.find(p => p.id === primaryBoardSelectedId) ?? pieces[0];
 
   const effectiveViewMode: PatternCadViewMode =
     (currentSpec.garmentCategory !== 'bodice' ||
@@ -350,63 +380,71 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     return (
       <div
         data-testid="pattern-atelier-unsupported"
-        className="w-full h-full flex-1 min-h-0 overflow-y-auto px-4 lg:px-8 py-8 bg-[#F5F4F0]"
+        className="w-full h-full flex-1 min-h-0 flex overflow-hidden bg-[#F5F4F0]"
       >
-        <div className="max-w-3xl mx-auto space-y-5">
-          <div className="border-b border-neutral-300 pb-4">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-[11px] uppercase tracking-widest text-neutral-500 font-mono">
-                Pattern Atelier
-              </span>
-              <span className="text-neutral-300">/</span>
-              <Badge variant="neutral" size="sm">SPECS ONLY CATEGORY</Badge>
+        {atelierCtx && (
+          <PatternLayersDrawer
+            isCadSupported={false}
+            garmentCategory={currentSpec.garmentCategory}
+          />
+        )}
+        <div className="flex-1 min-w-0 overflow-y-auto px-4 lg:px-8 py-8">
+          <div className="max-w-3xl mx-auto space-y-5">
+            <div className="border-b border-neutral-300 pb-4">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[11px] uppercase tracking-widest text-neutral-500 font-mono">
+                  Pattern Atelier
+                </span>
+                <span className="text-neutral-300">/</span>
+                <Badge variant="neutral" size="sm">SPECS ONLY CATEGORY</Badge>
+              </div>
+              <h2 className="text-xl font-serif font-bold text-neutral-900 tracking-tight">
+                Deterministic CAD Block Pending
+              </h2>
             </div>
-            <h2 className="text-xl font-serif font-bold text-neutral-900 tracking-tight">
-              Deterministic CAD Block Pending
-            </h2>
-          </div>
 
-          <div className="bg-white border border-amber-300 rounded-sm p-5 shadow-2xs space-y-4">
-            <div className="flex items-center gap-2 text-amber-900 font-mono text-xs uppercase font-bold">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>
-                Deterministic CAD Block Pending for "{currentSpec.garmentCategory.toUpperCase()}"
-              </span>
-            </div>
-            <p className="text-sm text-neutral-700 leading-relaxed">
-              {getUnsupportedCategoryMessage(currentSpec.garmentCategory)} Patroner refuses to
-              silently substitute a skirt block for a{' '}
-              <strong className="uppercase">{currentSpec.garmentCategory}</strong> specification.
-            </p>
-            <div className="flex flex-wrap items-center gap-2.5 pt-1">
-              {onUpdateSpec && (
-                <>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => onUpdateSpec(INITIAL_CONCEPTS[0])}
-                    className="font-mono text-xs uppercase"
-                  >
-                    Load Midi Skirt Block (CAD Ready)
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onUpdateSpec(INITIAL_CONCEPTS[2])}
-                    className="font-mono text-xs uppercase"
-                  >
-                    Load Tailored Bodice + Sleeve (CAD Ready)
-                  </Button>
-                </>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onNavigateToMeasurements}
-                icon={<Compass className="w-3.5 h-3.5" />}
-              >
-                Adjust Body Measurements
-              </Button>
+            <div className="bg-white border border-amber-300 rounded-sm p-5 shadow-2xs space-y-4">
+              <div className="flex items-center gap-2 text-amber-900 font-mono text-xs uppercase font-bold">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>
+                  Deterministic CAD Block Pending for "{currentSpec.garmentCategory.toUpperCase()}"
+                </span>
+              </div>
+              <p className="text-sm text-neutral-700 leading-relaxed">
+                {getUnsupportedCategoryMessage(currentSpec.garmentCategory)} Patroner refuses to
+                silently substitute a skirt block for a{' '}
+                <strong className="uppercase">{currentSpec.garmentCategory}</strong> specification.
+              </p>
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                {onUpdateSpec && (
+                  <>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => onUpdateSpec(INITIAL_CONCEPTS[0])}
+                      className="font-mono text-xs uppercase"
+                    >
+                      Load Midi Skirt Block (CAD Ready)
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onUpdateSpec(INITIAL_CONCEPTS[2])}
+                      className="font-mono text-xs uppercase"
+                    >
+                      Load Tailored Bodice + Sleeve (CAD Ready)
+                    </Button>
+                  </>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onNavigateToMeasurements}
+                  icon={<Compass className="w-3.5 h-3.5" />}
+                >
+                  Adjust Body Measurements
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -415,19 +453,43 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   }
 
   const layoutResetKey = `${currentSpec.id}:${currentSpec.garmentCategory}:${bodiceDartStyle}:${sleeveEaseStrategy}:${activeSize}:${effectiveViewMode}`;
+  const selectedIds = atelierCtx?.boardState.selectedPieceIds ?? [];
+  const hasGroupedInSelection = Boolean(
+    atelierCtx &&
+      selectedIds.some(id => Boolean(atelierCtx.boardState.placementsByPieceId[id]?.groupId))
+  );
+  const overlapCount = atelierCtx?.overlapAdvisories.length ?? 0;
 
   return (
     <div
       data-testid="pattern-atelier-workspace"
       className="w-full h-full flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[#F5F4F0]"
     >
-      {/* Compact 36px CAD Sub-Bar — replaces oversized 400px header */}
+      {/* Compact CAD Sub-Bar */}
       <div
         data-testid="pattern-atelier-subbar"
         className="min-h-9 px-3 py-1 bg-[#F7F6F2] border-b border-neutral-300/90 flex flex-wrap items-center justify-between gap-2 shrink-0 text-[11px]"
       >
-        {/* Left: View mode switcher */}
+        {/* Left: Layers Drawer Toggle, View Mode Switcher & Contextual Controls */}
         <div className="flex items-center gap-2 flex-wrap">
+          {atelierCtx && effectiveViewMode === 'pieces' && (
+            <button
+              type="button"
+              aria-pressed={atelierCtx.layersDrawerOpen}
+              data-testid="atelier-toggle-layers-btn"
+              onClick={() => atelierCtx.setLayersDrawerOpen(!atelierCtx.layersDrawerOpen)}
+              className={`px-2 py-0.5 rounded-xs border text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                atelierCtx.layersDrawerOpen
+                  ? 'bg-neutral-900 text-white border-neutral-900'
+                  : 'bg-white text-neutral-700 border-neutral-300 hover:text-neutral-900'
+              }`}
+              title="Toggle Pattern-Piece Layers Drawer"
+            >
+              <Layers className="w-3 h-3" />
+              <span>Layers</span>
+            </button>
+          )}
+
           <div
             role="tablist"
             aria-label="Pattern Atelier View Mode"
@@ -512,6 +574,103 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               3D Drape
             </button>
           </div>
+
+          {/* Dedicated Board Arrangement Undo/Redo & Centimeter Snapping Controls (Pieces Mode) */}
+          {atelierCtx && effectiveViewMode === 'pieces' && (
+            <div className="flex items-center gap-1 border-l border-neutral-300 pl-2">
+              <button
+                type="button"
+                disabled={!atelierCtx.canUndoBoard}
+                onClick={atelierCtx.undoBoard}
+                data-testid="atelier-undo-btn"
+                title="Undo CAD board arrangement (does not alter pattern geometry)"
+                aria-label="Undo board arrangement"
+                className={`p-1 rounded-xs border transition-colors ${
+                  atelierCtx.canUndoBoard
+                    ? 'bg-white text-neutral-800 border-neutral-300 hover:bg-neutral-100 cursor-pointer'
+                    : 'bg-neutral-100 text-neutral-400 border-neutral-200 cursor-not-allowed'
+                }`}
+              >
+                <Undo2 className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                disabled={!atelierCtx.canRedoBoard}
+                onClick={atelierCtx.redoBoard}
+                data-testid="atelier-redo-btn"
+                title="Redo CAD board arrangement"
+                aria-label="Redo board arrangement"
+                className={`p-1 rounded-xs border transition-colors ${
+                  atelierCtx.canRedoBoard
+                    ? 'bg-white text-neutral-800 border-neutral-300 hover:bg-neutral-100 cursor-pointer'
+                    : 'bg-neutral-100 text-neutral-400 border-neutral-200 cursor-not-allowed'
+                }`}
+              >
+                <Redo2 className="w-3 h-3" />
+              </button>
+
+              <span className="text-neutral-300 mx-0.5" aria-hidden="true">|</span>
+
+              <button
+                type="button"
+                aria-pressed={atelierCtx.snapConfig.enabled}
+                data-testid="atelier-snap-toggle"
+                onClick={() =>
+                  atelierCtx.updateSnapConfig({ enabled: !atelierCtx.snapConfig.enabled })
+                }
+                title="Toggle centimeter grid & feature snapping (hold Alt while dragging to bypass)"
+                className={`px-1.5 py-0.5 rounded-xs border text-[10px] font-mono inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                  atelierCtx.snapConfig.enabled
+                    ? 'bg-neutral-900 text-white border-neutral-900'
+                    : 'bg-white text-neutral-500 border-neutral-300 hover:text-neutral-900'
+                }`}
+              >
+                <Magnet className="w-3 h-3" />
+                <span>Snap</span>
+              </button>
+              <select
+                aria-label="Snap grid interval in centimeters"
+                data-testid="atelier-snap-interval"
+                value={atelierCtx.snapConfig.gridIntervalCm}
+                disabled={!atelierCtx.snapConfig.enabled}
+                onChange={e =>
+                  atelierCtx.updateSnapConfig({ gridIntervalCm: Number(e.target.value) })
+                }
+                className="h-6 px-1 bg-white border border-neutral-300 rounded-xs text-[10px] font-mono text-neutral-800 cursor-pointer disabled:opacity-50"
+              >
+                {SNAP_INTERVAL_OPTIONS_CM.map(v => (
+                  <option key={v} value={v}>
+                    {v} cm
+                  </option>
+                ))}
+              </select>
+
+              {selectedIds.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => atelierCtx.groupSelectedPieces()}
+                  data-testid="atelier-group-btn"
+                  title="Group selected pieces (Ctrl/Cmd+G)"
+                  className="px-1.5 py-0.5 rounded-xs border border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-800 text-[10px] font-medium inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <FolderPlus className="w-3 h-3" />
+                  <span>Group</span>
+                </button>
+              )}
+              {hasGroupedInSelection && (
+                <button
+                  type="button"
+                  onClick={atelierCtx.ungroupSelectedPieces}
+                  data-testid="atelier-ungroup-btn"
+                  title="Ungroup selected pieces (Ctrl/Cmd+Shift+G)"
+                  className="px-1.5 py-0.5 rounded-xs border border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-800 text-[10px] font-medium inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Ungroup className="w-3 h-3" />
+                  <span>Ungroup</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Inline Bodice Drafting Controls */}
           {currentSpec.garmentCategory === 'bodice' && effectiveViewMode !== 'simulation' && (
@@ -634,8 +793,19 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           )}
         </div>
 
-        {/* Right: Quiet validation indicator + Measurements & Production shortcuts */}
+        {/* Right: Overlap advisory badge, draft status, Measurements & Production shortcuts */}
         <div className="flex items-center gap-2 shrink-0">
+          {effectiveViewMode === 'pieces' && overlapCount > 0 && (
+            <span
+              data-testid="subbar-overlap-advisory"
+              className="inline-flex items-center gap-1 font-mono text-[10px] text-rose-800 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-xs"
+              title="Advisory visual board overlap detected — see inspector for details"
+            >
+              <AlertTriangle className="w-3 h-3" />
+              {overlapCount} Overlap Adv.
+            </span>
+          )}
+
           {validationReport && (() => {
             const noticeCount = validationReport.checks.filter(c => c.status !== 'pass').length;
             return (
@@ -711,27 +881,51 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
         </div>
       ) : (
         <>
-          <PatternCadCanvas
-            artifact={renderArtifact}
-            activeSize={activeSize}
-            effectiveViewMode={effectiveViewMode}
-            selectedPieceId={selectedPiece?.id ?? null}
-            onSelectPieceId={setSelectedPieceId}
-            activeTool={activeTool}
-            showGrid={showGrid}
-            layerVisibility={layerVisibility}
-            camera={camera}
-            onChangeCamera={setCamera}
-            fitRequestVersion={fitRequestVersion}
-            cursorCm={cursorCm}
-            onChangeCursorCm={setCursorCm}
-            assemblyResult={assemblyResult}
-            gradedPatternSet={gradedPatternSet ?? undefined}
-            enabledGradingSizes={enabledGradingSizes}
-            activePrototypeRecord={activePrototypeRecord}
-            activePrototypeReport={activePrototypeReport}
-            layoutResetKey={layoutResetKey}
-          />
+          <div className="flex-1 min-h-0 flex relative overflow-hidden">
+            {atelierCtx && effectiveViewMode === 'pieces' && (
+              <PatternLayersDrawer
+                isCadSupported={isCadSupported}
+                garmentCategory={currentSpec.garmentCategory}
+                onSyncPrimaryPiece={setSelectedPieceId}
+              />
+            )}
+
+            <PatternCadCanvas
+              artifact={renderArtifact}
+              activeSize={activeSize}
+              effectiveViewMode={effectiveViewMode}
+              selectedPieceId={selectedPiece?.id ?? null}
+              onSelectPieceId={setSelectedPieceId}
+              activeTool={activeTool}
+              showGrid={showGrid}
+              layerVisibility={layerVisibility}
+              camera={camera}
+              onChangeCamera={setCamera}
+              fitRequestVersion={fitRequestVersion}
+              cursorCm={cursorCm}
+              onChangeCursorCm={setCursorCm}
+              assemblyResult={assemblyResult}
+              gradedPatternSet={gradedPatternSet ?? undefined}
+              enabledGradingSizes={enabledGradingSizes}
+              activePrototypeRecord={activePrototypeRecord}
+              activePrototypeReport={activePrototypeReport}
+              layoutResetKey={layoutResetKey}
+              boardState={atelierCtx?.boardState}
+              overlapAdvisories={atelierCtx?.overlapAdvisories}
+              snapConfig={atelierCtx?.snapConfig}
+              activeSnapGuides={atelierCtx?.activeSnapGuides}
+              onSetActiveSnapGuides={atelierCtx?.setActiveSnapGuides}
+              onSelectBoardPiece={atelierCtx?.selectPiece}
+              onToggleBoardPiece={atelierCtx?.toggleSelectPiece}
+              onSelectMarqueeRect={atelierCtx?.selectMarqueeRect}
+              onClearBoardSelection={atelierCtx?.clearPieceSelection}
+              onCommitMovePieces={atelierCtx?.commitMovePieces}
+              onUndoBoard={atelierCtx?.undoBoard}
+              onRedoBoard={atelierCtx?.redoBoard}
+              onGroupSelected={atelierCtx?.groupSelectedPieces}
+              onUngroupSelected={atelierCtx?.ungroupSelectedPieces}
+            />
+          </div>
 
           <PatternAtelierStatusBar
             camera={camera}
@@ -742,6 +936,9 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
             selectedPieceLabel={
               selectedPiece ? `${selectedPiece.pieceCode} · ${selectedPiece.name}` : null
             }
+            selectedPieceCount={selectedIds.length}
+            snapConfig={atelierCtx?.snapConfig}
+            activeSnapCount={atelierCtx?.activeSnapGuides.length ?? 0}
             onZoomIn={() => handleZoomStep(1.2)}
             onZoomOut={() => handleZoomStep(1 / 1.2)}
             onFitAll={requestFitAll}

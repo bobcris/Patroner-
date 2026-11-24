@@ -11,6 +11,7 @@ import type {
   GeometryAuthorityTier,
   RenderPoint2D
 } from './contracts/pattern-render-artifact';
+import type { SnapConfig } from './board-arrangement';
 
 export interface PatternAtelierStatusBarProps {
   readonly camera: CadCamera;
@@ -19,6 +20,9 @@ export interface PatternAtelierStatusBarProps {
   readonly authorityTier: GeometryAuthorityTier;
   readonly isProductionReady: boolean;
   readonly selectedPieceLabel?: string | null;
+  readonly selectedPieceCount?: number;
+  readonly snapConfig?: SnapConfig;
+  readonly activeSnapCount?: number;
   readonly onZoomIn: () => void;
   readonly onZoomOut: () => void;
   readonly onFitAll: () => void;
@@ -33,6 +37,9 @@ export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = R
     authorityTier,
     isProductionReady,
     selectedPieceLabel,
+    selectedPieceCount = 0,
+    snapConfig,
+    activeSnapCount = 0,
     onZoomIn,
     onZoomOut,
     onFitAll,
@@ -49,14 +56,17 @@ export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = R
           ? 'Unverified External Artifact'
           : 'C0-Legacy Preview';
 
+    const selectionSummary =
+      selectedPieceCount >= 2 ? `${selectedPieceCount} pieces selected` : selectedPieceLabel;
+
     return (
       <div
         data-testid="pattern-atelier-status-bar"
         className="h-7 px-3 bg-[#ECEAE4] border-t border-neutral-300 flex items-center justify-between gap-3 text-[11px] text-neutral-700 shrink-0 select-none overflow-x-auto"
       >
-        {/* Left: Live cursor coordinates, true cm scale, grid interval */}
-        <div className="flex items-center gap-3 font-mono tabular-nums whitespace-nowrap shrink-0">
-          <span data-testid="cad-cursor-readout" className="text-neutral-900 min-w-[144px]">
+        {/* Left: Live cursor coordinates, true cm scale, grid interval, snap readout */}
+        <div className="flex items-center gap-2.5 font-mono tabular-nums whitespace-nowrap shrink-0">
+          <span data-testid="cad-cursor-readout" className="text-neutral-900 min-w-[140px]">
             {cursorCm
               ? `X ${cursorCm.x.toFixed(1)} cm · Y ${cursorCm.y.toFixed(1)} cm`
               : 'X — · Y — cm'}
@@ -69,17 +79,40 @@ export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = R
           <span className="hidden md:inline text-neutral-600">
             Grid {gridSpacing.minorCm}/{gridSpacing.majorCm} cm
           </span>
-          <span className="hidden lg:inline text-neutral-400" aria-hidden="true">·</span>
-          <span className="hidden lg:inline text-neutral-600">
+          {snapConfig && (
+            <>
+              <span className="hidden lg:inline text-neutral-400" aria-hidden="true">·</span>
+              <span
+                data-testid="cad-snap-readout"
+                className={`hidden lg:inline ${
+                  activeSnapCount > 0
+                    ? 'text-blue-700 font-semibold'
+                    : snapConfig.enabled
+                      ? 'text-neutral-700'
+                      : 'text-neutral-400'
+                }`}
+              >
+                {activeSnapCount > 0
+                  ? `Snapped (${snapConfig.gridIntervalCm} cm)`
+                  : snapConfig.enabled
+                    ? `Snap ${snapConfig.gridIntervalCm} cm`
+                    : 'Snap Off'}
+              </span>
+            </>
+          )}
+          <span className="hidden xl:inline text-neutral-400" aria-hidden="true">·</span>
+          <span className="hidden xl:inline text-neutral-600">
             {yAxisDirection === 'cartesian-y-up' ? 'Cartesian Y-Up' : 'SVG Y-Down'}
           </span>
         </div>
 
         {/* Center: Active selection summary + honest authority disclosure */}
         <div className="hidden sm:flex items-center gap-2 min-w-0 truncate text-neutral-600">
-          {selectedPieceLabel && (
+          {selectionSummary && (
             <>
-              <span className="hidden lg:inline truncate font-medium text-neutral-800">{selectedPieceLabel}</span>
+              <span className="hidden lg:inline truncate font-medium text-neutral-800">
+                {selectionSummary}
+              </span>
               <span className="hidden lg:inline text-neutral-400" aria-hidden="true">·</span>
             </>
           )}
@@ -124,14 +157,14 @@ export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = R
           >
             <Plus className="w-3 h-3" />
           </button>
-          <span className="text-neutral-400 mx-0.5" aria-hidden="true">|</span>
+          <span className="text-neutral-300 mx-0.5" aria-hidden="true">|</span>
           <button
             type="button"
             onClick={onFitAll}
             data-testid="cad-fit-all-btn"
             aria-label="Fit all pattern pieces in viewport"
-            title="Fit all pieces"
-            className="px-1.5 h-5 rounded-xs text-[11px] text-neutral-700 hover:bg-neutral-200 hover:text-neutral-950 flex items-center gap-1 cursor-pointer"
+            title="Fit All pieces to viewport"
+            className="px-1.5 h-5 rounded-xs text-[11px] font-medium text-neutral-800 hover:bg-neutral-200 inline-flex items-center gap-1 cursor-pointer"
           >
             <Maximize2 className="w-3 h-3" />
             <span>Fit</span>
@@ -141,5 +174,3 @@ export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = R
     );
   }
 );
-
-PatternAtelierStatusBar.displayName = 'PatternAtelierStatusBar';

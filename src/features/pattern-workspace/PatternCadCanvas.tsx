@@ -31,6 +31,20 @@ import { formatSignedCm } from '../../engine/assembly';
 import { DEFAULT_SIZE_RANGE } from '../../engine/grading';
 import type { GradedPatternSet } from '../../engine/grading';
 import type { FitValidationReport, PhysicalPrototypeRecord } from '../../engine/prototype/prototype-types';
+import {
+  BoardOverlapAdvisory,
+  createInitialBoardSnapshot,
+  DEFAULT_SNAP_CONFIG,
+  evaluateBoardSnapCm,
+  expandSelectionWithGroups,
+  getBoardUnionBoundsCm,
+  getPieceBoardBoundsCm,
+  getPieceLocalVisualBoundsCm,
+  isPieceEffectivelyVisible,
+  PatternBoardSnapshot,
+  SnapCandidateGuide,
+  SnapConfig
+} from './board-arrangement';
 
 const SIZE_PALETTE: Record<string, { stroke: string; label: string }> = {
   XS: { stroke: '#9333ea', label: 'XS (EU 34)' },
@@ -76,18 +90,31 @@ export interface PatternCadCanvasProps {
   readonly activePrototypeRecord: PhysicalPrototypeRecord;
   readonly activePrototypeReport: FitValidationReport;
   readonly layoutResetKey: string;
+  // UX-2.3.2 board arrangement props (optional fallbacks preserve standalone compatibility)
+  readonly boardState?: PatternBoardSnapshot;
+  readonly overlapAdvisories?: readonly BoardOverlapAdvisory[];
+  readonly snapConfig?: SnapConfig;
+  readonly activeSnapGuides?: readonly SnapCandidateGuide[];
+  readonly onSetActiveSnapGuides?: (guides: readonly SnapCandidateGuide[]) => void;
+  readonly onSelectBoardPiece?: (pieceId: string, options?: { expandGroup?: boolean }) => void;
+  readonly onToggleBoardPiece?: (pieceId: string, options?: { expandGroup?: boolean }) => void;
+  readonly onSelectMarqueeRect?: (rectCm: CadRectCm, mode?: 'replace' | 'add') => void;
+  readonly onClearBoardSelection?: () => void;
+  readonly onCommitMovePieces?: (pieceIds: readonly string[], dxCm: number, dyCm: number) => void;
+  readonly onUndoBoard?: () => void;
+  readonly onRedoBoard?: () => void;
+  readonly onGroupSelected?: () => void;
+  readonly onUngroupSelected?: () => void;
 }
 
 /**
- * UX-2.3.1 — Full-Bleed Interactive 2D CAD Canvas for Pattern Atelier.
+ * UX-2.3.1 + UX-2.3.2 — Full-Bleed Interactive 2D CAD Canvas for Pattern Atelier.
  *
- * Pure presentation & viewport interaction layer:
- * - Synchronized horizontal/vertical centimeter rulers (`CadRulers`).
- * - Adaptive centimeter grid scaled and phase-aligned with the camera.
- * - Cursor-anchored wheel zoom (`0.15x..12.0x`) and smooth pan (`Pan` tool,
- *   `Space+Drag`, `Middle-Drag`, or dragging empty canvas background).
- * - Explicit support for both Y-down SVG and Y-up Cartesian coordinate frames.
- * - Strictly read-only geometry rendering; never performs authoritative pattern math.
+ * Maintains strict three-layer coordinate separation:
+ * 1. Original Pattern Geometry (`artifact.pieces`): strictly read-only, never mutated.
+ * 2. CAD Board Placement (`boardState.placementsByPieceId`): ephemeral visual arrangement
+ *    offsets, stacking order, visibility, and grouping keyed by stable `pieceId`.
+ * 3. Screen Projection (`camera` + `cad-math.ts`): camera pan/zoom never pollutes arrangement undo.
  */
 export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   artifact,
@@ -108,24 +135,74 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   enabledGradingSizes,
   activePrototypeRecord,
   activePrototypeReport,
-  layoutResetKey
+  layoutResetKey,
+  boardState: externalBoardState,
+  overlapAdvisories = [],
+  snapConfig = DEFAULT_SNAP_CONFIG,
+  activeSnapGuides = [],
+  onSetActiveSnapGuides,
+  onSelectBoardPiece,
+  onToggleBoardPiece,
+  onSelectMarqueeRect,
+  onClearBoardSelection,
+  onCommitMovePieces,
+  onUndoBoard,
+  onRedoBoard,
+  onGroupSelected,
+  onUngroupSelected
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({
     width: 0,
     height: 0
   });
   const [spacePressed, setSpacePressed] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
+  const [dragPreview, setDragPreview] = useState<{
+    pieceIds: readonly string[];
+    dxCm: number;
+    dyCm: number;
+  } | null>(null);
+  const [marqueePreviewCm, setMarqueePreviewCm] = useState<{
+    start: RenderPoint2D;
+    current: RenderPoint2D;
+  } | null>(null);
+
+  const fallbackBoardState = useMemo(() => createInitialBoardSnapshot(artifact, 8), [artifact]);
+  const boardState = externalBoardState ?? fallbackBoardState;
 
   const cameraRef = useRef<CadCamera>(camera);
   cameraRef.current = camera;
+  const boardStateRef = useRef<PatternBoardSnapshot>(boardState);
+  boardStateRef.current = boardState;
 
   const panSessionRef = useRef<{
     pointerId: number;
     startClientX: number;
     startClientY: number;
     startCamera: CadCamera;
+  } | null>(null);
+
+  const dragSessionRef = useRef<{
+    pointerId: number;
+    pieceIds: readonly string[];
+    startClientX: number;
+    startClientY: number;
+    startWorldCm: RenderPoint2D;
+    lastSnappedDxCm: number;
+    lastSnappedDyCm: number;
+    moved: boolean;
+  } | null>(null);
+
+  const marqueeSessionRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startWorldCm: RenderPoint2D;
+    currentWorldCm: RenderPoint2D;
+    shiftKey: boolean;
+    moved: boolean;
   } | null>(null);
 
   const projection: CadCoordinateProjection = useMemo(
@@ -136,19 +213,19 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     [artifact.coordinateFrame.yAxisDirection]
   );
 
-  // Deterministic cm-native cutting-table placement for pieces
+  // Fallback auto layout used by Fit mode caliper pins
   const tableLayout = useMemo(
     () => computeAutoTableLayoutCm(artifact.pieces, 8),
     [artifact.pieces]
   );
 
-  const placementByPieceId = useMemo(() => {
-    const map = new Map<string, { offsetXCm: number; offsetYCm: number }>();
-    for (const p of tableLayout.placements) {
-      map.set(p.pieceId, { offsetXCm: p.offsetXCm, offsetYCm: p.offsetYCm });
+  const piecesById = useMemo(() => {
+    const map = new Map<string, PatternPieceRenderModel>();
+    for (const p of artifact.pieces) {
+      map.set(p.pieceId, p);
     }
     return map;
-  }, [tableLayout.placements]);
+  }, [artifact.pieces]);
 
   // Mode-aware world bounds (cm) for Fit All framing
   const activeBoundsCm: CadRectCm | null = useMemo(() => {
@@ -169,8 +246,11 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         maxY: 74
       };
     }
+    if (effectiveViewMode === 'pieces') {
+      return getBoardUnionBoundsCm(boardState, artifact) ?? tableLayout.unionBoundsCm;
+    }
     return tableLayout.unionBoundsCm;
-  }, [effectiveViewMode, assemblyResult, gradedPatternSet, tableLayout.unionBoundsCm]);
+  }, [effectiveViewMode, assemblyResult, gradedPatternSet, boardState, artifact, tableLayout.unionBoundsCm]);
 
   // Observe full-bleed stage inner dimensions (excluding 24px rulers)
   useEffect(() => {
@@ -196,15 +276,58 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     return () => window.removeEventListener('resize', updateSize);
   }, []);
 
-  // Spacebar temporary hand-pan shortcut
+  // Keyboard shortcuts: Space hand-pan, Escape clear, Undo/Redo, Group/Ungroup, Arrow nudge
   useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) =>
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable);
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.code === 'Space' &&
-        !e.repeat &&
-        !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement)
-      ) {
+      if (isTypingTarget(e.target)) return;
+
+      if (e.code === 'Space' && !e.repeat) {
         setSpacePressed(true);
+        return;
+      }
+
+      if (effectiveViewMode !== 'pieces') return;
+
+      const mod = e.metaKey || e.ctrlKey;
+      if (e.key === 'Escape') {
+        onClearBoardSelection?.();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        onUndoBoard?.();
+        return;
+      }
+      if ((mod && e.key.toLowerCase() === 'z' && e.shiftKey) || (mod && e.key.toLowerCase() === 'y')) {
+        e.preventDefault();
+        onRedoBoard?.();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'g' && !e.shiftKey) {
+        e.preventDefault();
+        onGroupSelected?.();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'g' && e.shiftKey) {
+        e.preventDefault();
+        onUngroupSelected?.();
+        return;
+      }
+
+      const sel = boardStateRef.current.selectedPieceIds;
+      if (sel.length > 0 && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        e.preventDefault();
+        const step = e.shiftKey ? 2.0 : 0.5;
+        const yDir = artifact.coordinateFrame.yAxisDirection === 'cartesian-y-up' ? 1 : -1;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? step * yDir : e.key === 'ArrowDown' ? -step * yDir : 0;
+        onCommitMovePieces?.(sel, dx, dy);
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -221,7 +344,16 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, []);
+  }, [
+    effectiveViewMode,
+    artifact.coordinateFrame.yAxisDirection,
+    onClearBoardSelection,
+    onUndoBoard,
+    onRedoBoard,
+    onGroupSelected,
+    onUngroupSelected,
+    onCommitMovePieces
+  ]);
 
   // Fit All when explicitly requested, garment changes, mode changes, or initial size measured
   const lastFitSigRef = useRef<string>('');
@@ -251,7 +383,6 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   ]);
 
   // Cursor-anchored wheel zoom & trackpad pan (non-passive listener so page never scrolls)
-  const stageRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const stageEl = stageRef.current;
     if (!stageEl) return;
@@ -264,7 +395,6 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         y: e.clientY - rect.top
       };
 
-      // Shift+wheel pans horizontally/vertically; standard wheel or ctrl+pinch zooms at cursor
       if (e.shiftKey && !e.ctrlKey && !e.metaKey) {
         onChangeCamera(panCadByScreenDelta(cameraRef.current, -e.deltaX - e.deltaY, 0));
         return;
@@ -282,31 +412,108 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const localPx = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const worldPt = screenToWorldCm(localPx, cameraRef.current, projection);
+
       const target = e.target as HTMLElement | SVGElement | null;
-      const clickedPiece = target?.closest?.('[data-cad-piece-id]');
+      const pieceNode = target?.closest?.('[data-cad-piece-id]') as Element | null;
+      const clickedPieceId = pieceNode?.getAttribute('data-cad-piece-id') ?? null;
+
+      // 1. Camera pan (middle button, Pan tool, Space+Drag, or background drag in non-pieces modes)
       const shouldPan =
         e.button === 1 ||
         activeTool === 'pan' ||
         spacePressed ||
-        (e.button === 0 && !clickedPiece);
+        (effectiveViewMode !== 'pieces' && e.button === 0 && !clickedPieceId);
 
-      if (!shouldPan) return;
+      if (shouldPan) {
+        e.preventDefault();
+        panSessionRef.current = {
+          pointerId: e.pointerId,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startCamera: cameraRef.current
+        };
+        setIsPanning(true);
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // Synthetic pointer events in tests may not support pointer capture
+        }
+        return;
+      }
 
+      if (e.button !== 0 || effectiveViewMode !== 'pieces') return;
+
+      // 2. Clicked a pattern piece -> selection & optional drag-to-reposition
+      if (clickedPieceId) {
+        e.preventDefault();
+        const isToggleModifier = e.shiftKey || e.metaKey || e.ctrlKey;
+        const expandGroup = !e.altKey;
+
+        if (isToggleModifier) {
+          onToggleBoardPiece?.(clickedPieceId, { expandGroup });
+          onSelectPieceId(clickedPieceId);
+          return;
+        }
+
+        const currentSelected = boardStateRef.current.selectedPieceIds;
+        let movingIds: readonly string[];
+        if (currentSelected.includes(clickedPieceId)) {
+          movingIds = currentSelected;
+        } else {
+          movingIds = expandGroup
+            ? expandSelectionWithGroups(boardStateRef.current, [clickedPieceId])
+            : [clickedPieceId];
+          onSelectBoardPiece?.(clickedPieceId, { expandGroup });
+          onSelectPieceId(clickedPieceId);
+        }
+
+        dragSessionRef.current = {
+          pointerId: e.pointerId,
+          pieceIds: movingIds,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startWorldCm: worldPt,
+          lastSnappedDxCm: 0,
+          lastSnappedDyCm: 0,
+          moved: false
+        };
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // Safe no-op
+        }
+        return;
+      }
+
+      // 3. Clicked empty canvas background in Select mode -> marquee rectangle or clear selection
       e.preventDefault();
-      panSessionRef.current = {
+      marqueeSessionRef.current = {
         pointerId: e.pointerId,
         startClientX: e.clientX,
         startClientY: e.clientY,
-        startCamera: cameraRef.current
+        startWorldCm: worldPt,
+        currentWorldCm: worldPt,
+        shiftKey: e.shiftKey,
+        moved: false
       };
-      setIsPanning(true);
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
-        // Synthetic pointer events in tests may not have native capture handles
+        // Safe no-op
       }
     },
-    [activeTool, spacePressed]
+    [
+      activeTool,
+      spacePressed,
+      effectiveViewMode,
+      projection,
+      onToggleBoardPiece,
+      onSelectBoardPiece,
+      onSelectPieceId
+    ]
   );
 
   const handlePointerMove = useCallback(
@@ -317,35 +524,129 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         y: e.clientY - rect.top
       };
 
-      const session = panSessionRef.current;
-      if (session && session.pointerId === e.pointerId) {
-        const dx = e.clientX - session.startClientX;
-        const dy = e.clientY - session.startClientY;
-        const nextCam = panCadByScreenDelta(session.startCamera, dx, dy);
+      // Active pan
+      const panSession = panSessionRef.current;
+      if (panSession && panSession.pointerId === e.pointerId) {
+        const dx = e.clientX - panSession.startClientX;
+        const dy = e.clientY - panSession.startClientY;
+        const nextCam = panCadByScreenDelta(panSession.startCamera, dx, dy);
         onChangeCamera(nextCam);
         onChangeCursorCm(screenToWorldCm(localPx, nextCam, projection));
         return;
       }
 
-      onChangeCursorCm(screenToWorldCm(localPx, cameraRef.current, projection));
+      const worldPt = screenToWorldCm(localPx, cameraRef.current, projection);
+      onChangeCursorCm(worldPt);
+
+      // Active piece drag with live centimeter grid & feature snapping
+      const dragSession = dragSessionRef.current;
+      if (dragSession && dragSession.pointerId === e.pointerId) {
+        const screenDist = Math.hypot(
+          e.clientX - dragSession.startClientX,
+          e.clientY - dragSession.startClientY
+        );
+        if (!dragSession.moved && screenDist < 3) return;
+        dragSession.moved = true;
+
+        const rawDxCm = worldPt.x - dragSession.startWorldCm.x;
+        const rawDyCm = worldPt.y - dragSession.startWorldCm.y;
+        const effectiveSnap: SnapConfig = e.altKey
+          ? { ...snapConfig, enabled: false }
+          : snapConfig;
+
+        const snapRes = evaluateBoardSnapCm(
+          boardStateRef.current,
+          artifact,
+          dragSession.pieceIds,
+          rawDxCm,
+          rawDyCm,
+          effectiveSnap
+        );
+
+        dragSession.lastSnappedDxCm = snapRes.dxCm;
+        dragSession.lastSnappedDyCm = snapRes.dyCm;
+        setDragPreview({
+          pieceIds: dragSession.pieceIds,
+          dxCm: snapRes.dxCm,
+          dyCm: snapRes.dyCm
+        });
+        onSetActiveSnapGuides?.(snapRes.guides);
+        return;
+      }
+
+      // Active marquee selection rectangle
+      const marqueeSession = marqueeSessionRef.current;
+      if (marqueeSession && marqueeSession.pointerId === e.pointerId) {
+        const screenDist = Math.hypot(
+          e.clientX - marqueeSession.startClientX,
+          e.clientY - marqueeSession.startClientY
+        );
+        if (!marqueeSession.moved && screenDist < 4) return;
+        marqueeSession.moved = true;
+        marqueeSession.currentWorldCm = worldPt;
+        setMarqueePreviewCm({
+          start: marqueeSession.startWorldCm,
+          current: worldPt
+        });
+      }
     },
-    [onChangeCamera, onChangeCursorCm, projection]
+    [onChangeCamera, onChangeCursorCm, projection, snapConfig, artifact, onSetActiveSnapGuides]
   );
 
-  const handlePointerUpOrCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (panSessionRef.current && panSessionRef.current.pointerId === e.pointerId) {
-      panSessionRef.current = null;
-      setIsPanning(false);
+  const handlePointerUpOrCancel = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (panSessionRef.current && panSessionRef.current.pointerId === e.pointerId) {
+        panSessionRef.current = null;
+        setIsPanning(false);
+      }
+
+      if (dragSessionRef.current && dragSessionRef.current.pointerId === e.pointerId) {
+        const finished = dragSessionRef.current;
+        dragSessionRef.current = null;
+        setDragPreview(null);
+        onSetActiveSnapGuides?.([]);
+        if (
+          finished.moved &&
+          (Math.abs(finished.lastSnappedDxCm) > 0.005 || Math.abs(finished.lastSnappedDyCm) > 0.005)
+        ) {
+          onCommitMovePieces?.(
+            finished.pieceIds,
+            finished.lastSnappedDxCm,
+            finished.lastSnappedDyCm
+          );
+        }
+      }
+
+      if (marqueeSessionRef.current && marqueeSessionRef.current.pointerId === e.pointerId) {
+        const finished = marqueeSessionRef.current;
+        marqueeSessionRef.current = null;
+        setMarqueePreviewCm(null);
+        if (finished.moved) {
+          onSelectMarqueeRect?.(
+            {
+              minX: finished.startWorldCm.x,
+              minY: finished.startWorldCm.y,
+              maxX: finished.currentWorldCm.x,
+              maxY: finished.currentWorldCm.y
+            },
+            finished.shiftKey ? 'add' : 'replace'
+          );
+        } else {
+          onClearBoardSelection?.();
+        }
+      }
+
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {
         // Safe no-op
       }
-    }
-  }, []);
+    },
+    [onCommitMovePieces, onSetActiveSnapGuides, onSelectMarqueeRect, onClearBoardSelection]
+  );
 
   const handlePointerLeave = useCallback(() => {
-    if (!panSessionRef.current) {
+    if (!panSessionRef.current && !dragSessionRef.current && !marqueeSessionRef.current) {
       onChangeCursorCm(null);
     }
   }, [onChangeCursorCm]);
@@ -361,7 +662,6 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     ? `translate(${camera.panX}, ${camera.panY}) scale(${scalePxPerCm}, ${-scalePxPerCm})`
     : `translate(${camera.panX}, ${camera.panY}) scale(${scalePxPerCm})`;
 
-  // Constant visual stroke weight in cm units so lines remain crisp at all zoom levels
   const invScale = 1 / Math.max(0.5, scalePxPerCm);
   const cutStrokeCm = 1.5 * invScale;
   const sewStrokeCm = 1.0 * invScale;
@@ -371,31 +671,53 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
   const panCursorClass = isPanning
     ? 'cursor-grabbing'
-    : activeTool === 'pan' || spacePressed
-      ? 'cursor-grab'
-      : 'cursor-crosshair';
+    : dragPreview
+      ? 'cursor-move'
+      : activeTool === 'pan' || spacePressed
+        ? 'cursor-grab'
+        : 'cursor-default';
+
+  const selectedSet = useMemo(() => {
+    if (effectiveViewMode === 'pieces') {
+      return new Set(boardState.selectedPieceIds);
+    }
+    return selectedPieceId ? new Set([selectedPieceId]) : new Set<string>();
+  }, [effectiveViewMode, boardState.selectedPieceIds, selectedPieceId]);
+
+  const dragPreviewSet = useMemo(
+    () => new Set(dragPreview?.pieceIds ?? []),
+    [dragPreview]
+  );
+
+  const getEffectiveOffset = (pieceId: string): { offsetXCm: number; offsetYCm: number } => {
+    const pl = boardState.placementsByPieceId[pieceId];
+    const baseX = pl?.offsetXCm ?? 0;
+    const baseY = pl?.offsetYCm ?? 0;
+    if (dragPreview && dragPreviewSet.has(pieceId)) {
+      return {
+        offsetXCm: baseX + dragPreview.dxCm,
+        offsetYCm: baseY + dragPreview.dyCm
+      };
+    }
+    return { offsetXCm: baseX, offsetYCm: baseY };
+  };
 
   const renderStandardPiece = (piece: PatternPieceRenderModel) => {
-    const placement = placementByPieceId.get(piece.pieceId) ?? { offsetXCm: 0, offsetYCm: 0 };
-    const isSelected = selectedPieceId === piece.pieceId;
+    const placement =
+      effectiveViewMode === 'pieces'
+        ? getEffectiveOffset(piece.pieceId)
+        : (() => {
+            const auto = tableLayout.placements.find(p => p.pieceId === piece.pieceId);
+            return { offsetXCm: auto?.offsetXCm ?? 0, offsetYCm: auto?.offsetYCm ?? 0 };
+          })();
+    const isSelected = selectedSet.has(piece.pieceId);
+    const isGrouped = Boolean(boardState.placementsByPieceId[piece.pieceId]?.groupId);
     const cutD = segmentsToSvgPath(piece.cutSegments, piece.fallbackCutSvgPath);
     const sewD = segmentsToSvgPath(piece.sewSegments, piece.fallbackSewSvgPath);
 
     const centerX = piece.boundingBoxCm.minX + piece.boundingBoxCm.widthCm * 0.5;
     const labelY = piece.boundingBoxCm.minY + piece.boundingBoxCm.heightCm * 0.34;
-    let visMinX = piece.boundingBoxCm.minX;
-    let visMinY = piece.boundingBoxCm.minY;
-    let visMaxX = piece.boundingBoxCm.maxX;
-    let visMaxY = piece.boundingBoxCm.maxY;
-    for (const seg of piece.cutSegments) {
-      const pts = seg.p1 && seg.p2 ? [seg.p0, seg.p1, seg.p2, seg.p3] : [seg.p0, seg.p3];
-      for (const pt of pts) {
-        if (pt.x < visMinX) visMinX = pt.x;
-        if (pt.y < visMinY) visMinY = pt.y;
-        if (pt.x > visMaxX) visMaxX = pt.x;
-        if (pt.y > visMaxY) visMaxY = pt.y;
-      }
-    }
+    const vis = getPieceLocalVisualBoundsCm(piece);
     const labelBoxW = Math.max(12, subLabelFontCm * 15.5);
     const labelBoxH = layerVisibility.showDimensions ? labelFontCm * 4.2 : labelFontCm * 3.0;
 
@@ -404,26 +726,30 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         key={piece.pieceId}
         data-cad-piece-id={piece.pieceId}
         data-testid={`cad-piece-${piece.pieceId}`}
+        data-selected={isSelected ? 'true' : 'false'}
+        data-board-x={placement.offsetXCm.toFixed(2)}
+        data-board-y={placement.offsetYCm.toFixed(2)}
         transform={`translate(${placement.offsetXCm}, ${placement.offsetYCm})`}
         onClick={e => {
+          if (effectiveViewMode === 'pieces') return; // handled in pointerDown/Up for drag+marquee
           if (activeTool === 'pan' || spacePressed) return;
           e.stopPropagation();
           onSelectPieceId(piece.pieceId);
         }}
-        className="cursor-pointer"
-        opacity={isSelected ? 1 : 0.88}
+        className={effectiveViewMode === 'pieces' && activeTool !== 'pan' && !spacePressed ? 'cursor-move' : 'cursor-pointer'}
+        opacity={isSelected ? 1 : 0.9}
       >
-        {/* Bounding box guide framed around full cut+sew geometry */}
-        {layerVisibility.showDimensions && isSelected && (
+        {/* Selection outline framed cleanly around full cut+sew bounds */}
+        {isSelected && (
           <rect
-            x={visMinX - 0.8}
-            y={visMinY - 0.8}
-            width={visMaxX - visMinX + 1.6}
-            height={visMaxY - visMinY + 1.6}
+            x={vis.minX - 0.8}
+            y={vis.minY - 0.8}
+            width={vis.maxX - vis.minX + 1.6}
+            height={vis.maxY - vis.minY + 1.6}
             fill="none"
-            stroke="#64748b"
-            strokeWidth={0.8 * invScale}
-            strokeDasharray={`${3 * invScale} ${2.5 * invScale}`}
+            stroke={isGrouped ? '#7c3aed' : '#2563eb'}
+            strokeWidth={1.2 * invScale}
+            strokeDasharray={`${4 * invScale} ${2.5 * invScale}`}
           />
         )}
 
@@ -529,7 +855,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
             </g>
           ))}
 
-        {/* Piece Identification Labels (upright in both Y-down and Y-up frames, paper-backed to clear grainline) */}
+        {/* Piece Identification Labels (paper-backed to clear grainline) */}
         <g
           transform={
             isYUp ? `translate(${centerX}, ${labelY}) scale(1, -1)` : `translate(${centerX}, ${labelY})`
@@ -595,11 +921,57 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     );
   };
 
+  // Ordered visible pieces for `pieces` mode (bottom-to-top render order)
+  const orderedVisiblePieces = useMemo(() => {
+    const ordered: PatternPieceRenderModel[] = [];
+    for (const pid of boardState.layerOrder) {
+      if (!isPieceEffectivelyVisible(boardState, pid)) continue;
+      const piece = piecesById.get(pid);
+      if (piece) ordered.push(piece);
+    }
+    return ordered;
+  }, [boardState, piecesById]);
+
+  // Group boundary outlines in board cm
+  const groupFrames = useMemo(() => {
+    if (effectiveViewMode !== 'pieces') return [];
+    const frames: { id: string; name: string; bounds: CadRectCm }[] = [];
+    for (const gid of boardState.groupOrder) {
+      const grp = boardState.groupsById[gid];
+      if (!grp || !grp.visible) continue;
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let count = 0;
+      for (const pid of grp.memberPieceIds) {
+        if (!isPieceEffectivelyVisible(boardState, pid)) continue;
+        const piece = piecesById.get(pid);
+        if (!piece) continue;
+        const offset = getEffectiveOffset(pid);
+        const b = getPieceBoardBoundsCm(piece, offset);
+        if (b.minX < minX) minX = b.minX;
+        if (b.minY < minY) minY = b.minY;
+        if (b.maxX > maxX) maxX = b.maxX;
+        if (b.maxY > maxY) maxY = b.maxY;
+        count += 1;
+      }
+      if (count >= 2) {
+        frames.push({
+          id: grp.id,
+          name: grp.name,
+          bounds: { minX: minX - 1.6, minY: minY - 1.6, maxX: maxX + 1.6, maxY: maxY + 1.6 }
+        });
+      }
+    }
+    return frames;
+  }, [effectiveViewMode, boardState, piecesById, dragPreview]);
+
   return (
     <div
       ref={containerRef}
       data-testid="pattern-cad-canvas-container"
-      className="flex-1 min-h-0 relative overflow-hidden bg-[#F7F5F0] select-none"
+      className="flex-1 min-w-0 min-h-0 relative overflow-hidden bg-[#F7F5F0] select-none"
     >
       {/* Synchronized Centimeter Rulers */}
       <CadRulers
@@ -956,7 +1328,162 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
               </g>
             ) : (
               <g data-testid="cad-mode-pieces">
-                {artifact.pieces.map(piece => renderStandardPiece(piece))}
+                {/* Group Boundary Frames */}
+                {groupFrames.map(gf => (
+                  <g
+                    key={gf.id}
+                    data-testid={`cad-group-frame-${gf.id}`}
+                    className="pointer-events-none"
+                  >
+                    <rect
+                      x={gf.bounds.minX}
+                      y={gf.bounds.minY}
+                      width={gf.bounds.maxX - gf.bounds.minX}
+                      height={gf.bounds.maxY - gf.bounds.minY}
+                      fill="rgba(124, 58, 237, 0.03)"
+                      stroke="#7c3aed"
+                      strokeWidth={1.0 * invScale}
+                      strokeDasharray={`${6 * invScale} ${3 * invScale}`}
+                    />
+                    <text
+                      x={gf.bounds.minX + 0.8}
+                      y={gf.bounds.minY - 0.6}
+                      fontSize={subLabelFontCm}
+                      fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                      fontWeight="700"
+                      fill="#6d28d9"
+                    >
+                      {gf.name}
+                    </text>
+                  </g>
+                ))}
+
+                {/* Pattern Pieces in Authoritative Layer Order */}
+                {orderedVisiblePieces.map(piece => renderStandardPiece(piece))}
+
+                {/* Visual Overlap Advisory Overlays (Advisory Only — Never Certification) */}
+                {overlapAdvisories.length > 0 && (
+                  <g data-testid="cad-overlap-overlays" className="pointer-events-none">
+                    {overlapAdvisories.map(adv => {
+                      if (!adv.overlapBoundsCm) return null;
+                      const b = adv.overlapBoundsCm;
+                      const style =
+                        adv.classification === 'unintentional-overlap'
+                          ? { fill: 'rgba(225, 29, 72, 0.14)', stroke: '#e11d48', tag: 'OVERLAP · ADVISORY' }
+                          : adv.classification === 'intentional-overlap'
+                            ? { fill: 'rgba(79, 70, 229, 0.08)', stroke: '#4f46e5', tag: 'INTENTIONAL' }
+                            : adv.classification === 'containment'
+                              ? { fill: 'rgba(217, 119, 6, 0.10)', stroke: '#d97706', tag: 'CONTAINED' }
+                              : adv.classification === 'touching-boundaries'
+                                ? { fill: 'none', stroke: '#059669', tag: 'TOUCHING' }
+                                : { fill: 'rgba(245, 158, 11, 0.12)', stroke: '#b45309', tag: 'UNRESOLVED' };
+
+                      const w = Math.max(0.6, b.maxX - b.minX);
+                      const h = Math.max(0.6, b.maxY - b.minY);
+                      return (
+                        <g
+                          key={adv.id}
+                          data-testid={`cad-overlap-${adv.classification}`}
+                        >
+                          <rect
+                            x={b.minX}
+                            y={b.minY}
+                            width={w}
+                            height={h}
+                            fill={style.fill}
+                            stroke={style.stroke}
+                            strokeWidth={1.4 * invScale}
+                            strokeDasharray={`${3 * invScale} ${2 * invScale}`}
+                          />
+                          <text
+                            x={b.minX + w * 0.5}
+                            y={b.minY + Math.min(h * 0.5, labelFontCm * 1.1)}
+                            textAnchor="middle"
+                            fontSize={subLabelFontCm * 0.9}
+                            fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                            fontWeight="700"
+                            fill={style.stroke}
+                          >
+                            {style.tag}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </g>
+                )}
+
+                {/* Live Centimeter Snap Alignment Guides */}
+                {activeSnapGuides.length > 0 && (
+                  <g data-testid="cad-snap-guides" className="pointer-events-none">
+                    {activeSnapGuides.map((g, idx) => {
+                      const stroke = g.kind === 'feature' ? '#0284c7' : '#0ea5e9';
+                      if (g.axis === 'vertical') {
+                        return (
+                          <g key={`snap-v-${idx}`}>
+                            <line
+                              x1={g.positionCm}
+                              y1={g.startCm}
+                              x2={g.positionCm}
+                              y2={g.endCm}
+                              stroke={stroke}
+                              strokeWidth={1.3 * invScale}
+                              strokeDasharray={g.kind === 'grid' ? `${3 * invScale} ${3 * invScale}` : undefined}
+                            />
+                            <text
+                              x={g.positionCm + 0.6}
+                              y={g.startCm + labelFontCm}
+                              fontSize={subLabelFontCm * 0.9}
+                              fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                              fontWeight="600"
+                              fill={stroke}
+                            >
+                              {g.label}
+                            </text>
+                          </g>
+                        );
+                      }
+                      return (
+                        <g key={`snap-h-${idx}`}>
+                          <line
+                            x1={g.startCm}
+                            y1={g.positionCm}
+                            x2={g.endCm}
+                            y2={g.positionCm}
+                            stroke={stroke}
+                            strokeWidth={1.3 * invScale}
+                            strokeDasharray={g.kind === 'grid' ? `${3 * invScale} ${3 * invScale}` : undefined}
+                          />
+                          <text
+                            x={g.startCm + 0.6}
+                            y={g.positionCm - 0.5}
+                            fontSize={subLabelFontCm * 0.9}
+                            fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                            fontWeight="600"
+                            fill={stroke}
+                          >
+                            {g.label}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </g>
+                )}
+
+                {/* Marquee Selection Rectangle */}
+                {marqueePreviewCm && (
+                  <rect
+                    data-testid="cad-selection-marquee"
+                    x={Math.min(marqueePreviewCm.start.x, marqueePreviewCm.current.x)}
+                    y={Math.min(marqueePreviewCm.start.y, marqueePreviewCm.current.y)}
+                    width={Math.abs(marqueePreviewCm.current.x - marqueePreviewCm.start.x)}
+                    height={Math.abs(marqueePreviewCm.current.y - marqueePreviewCm.start.y)}
+                    fill="rgba(37, 99, 235, 0.08)"
+                    stroke="#2563eb"
+                    strokeWidth={1.2 * invScale}
+                    strokeDasharray={`${4 * invScale} ${2.5 * invScale}`}
+                    className="pointer-events-none"
+                  />
+                )}
               </g>
             )}
           </g>

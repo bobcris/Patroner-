@@ -158,6 +158,10 @@ export const ContextualInspector: React.FC = React.memo(() => {
       if (mode === 'grading') return 'Grading Matrix';
       if (mode === 'fit') return 'Prototype Fit';
       if (mode === 'simulation') return '3D Drape Preview';
+      const boardSelCount = patternAtelier?.boardState.selectedPieceIds.length ?? 0;
+      if (boardSelCount >= 2) {
+        return `Multi-Selection (${boardSelCount} pieces)`;
+      }
       return 'Pattern Piece';
     }
     if (!entity) return 'Project Overview';

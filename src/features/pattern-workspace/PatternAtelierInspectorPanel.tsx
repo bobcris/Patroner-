@@ -3,11 +3,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, Scissors, Sliders } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalSpaceAround,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalSpaceAround,
+  ArrowDown,
+  ArrowUp,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  FolderPlus,
+  Layers,
+  Scissors,
+  Sliders,
+  Ungroup
+} from 'lucide-react';
 import { useProjectWorkspace } from '../../state/ProjectWorkspaceContext';
 import { useViewportInteraction } from '../../state/ViewportInteractionContext';
 import { useOptionalPatternAtelierView } from './PatternAtelierViewContext';
+import type { OverlapClassification } from './board-arrangement';
 import { AssemblyInspectionPanel } from './AssemblyInspectionPanel';
 import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
 import { assembleBodiceSleeve, formatSignedCm } from '../../engine/assembly';
@@ -36,8 +55,39 @@ const SIZE_STROKE: Record<string, string> = {
   XXL: '#7c3aed'
 };
 
+const OVERLAP_META: Record<
+  OverlapClassification,
+  { label: string; badgeClass: string; borderClass: string }
+> = {
+  'unintentional-overlap': {
+    label: 'Unintentional Overlap',
+    badgeClass: 'text-rose-800 bg-rose-100',
+    borderClass: 'border-rose-200 bg-rose-50/60'
+  },
+  containment: {
+    label: 'Containment',
+    badgeClass: 'text-rose-800 bg-rose-100',
+    borderClass: 'border-rose-200 bg-rose-50/60'
+  },
+  'touching-boundaries': {
+    label: 'Touching Boundaries',
+    badgeClass: 'text-amber-800 bg-amber-100',
+    borderClass: 'border-amber-200 bg-amber-50/50'
+  },
+  'intentional-overlap': {
+    label: 'Intentional Overlap',
+    badgeClass: 'text-sky-800 bg-sky-100',
+    borderClass: 'border-sky-200 bg-sky-50/50'
+  },
+  unresolved: {
+    label: 'Unresolved',
+    badgeClass: 'text-neutral-700 bg-neutral-200',
+    borderClass: 'border-neutral-300 bg-neutral-100/70'
+  }
+};
+
 /**
- * UX-2.3.1 — Consolidated Right Inspector Panel for Pattern Atelier.
+ * UX-2.3.1 / UX-2.3.2 — Consolidated Right Inspector Panel for Pattern Atelier.
  *
  * Mounted inside `ContextualInspector` when `activeEnvironment === 'pattern-atelier'`,
  * replacing the duplicated embedded `lg:col-span-4` column previously inside `PatternWorkspace.tsx`.
@@ -88,12 +138,54 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
       ? 'pieces'
       : cadViewMode;
 
+  const boardSelectedIds = atelier?.boardState.selectedPieceIds ?? [];
+  const isMultiBoardSelection = boardSelectedIds.length >= 2;
+  const primaryBoardSelectedId = boardSelectedIds.length === 1 ? boardSelectedIds[0] : null;
+
   const selectedPieceId =
-    selectedEntity?.kind === 'pattern-piece' || selectedEntity?.kind === 'seam'
+    selectedEntity?.kind === 'seam'
       ? selectedEntity.pieceId
-      : pieces[0]?.id ?? null;
+      : primaryBoardSelectedId ??
+        (selectedEntity?.kind === 'pattern-piece' ? selectedEntity.pieceId : pieces[0]?.id ?? null);
 
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) ?? pieces[0];
+  const selectedPlacement =
+    selectedPiece && atelier
+      ? atelier.boardState.placementsByPieceId[selectedPiece.id] ?? null
+      : null;
+
+  const selectedGroup =
+    selectedPlacement?.groupId && atelier
+      ? atelier.boardState.groupsById[selectedPlacement.groupId] ?? null
+      : null;
+
+  const hasGroupedSelection = useMemo(() => {
+    if (!atelier) return false;
+    return boardSelectedIds.some(id => Boolean(atelier.boardState.placementsByPieceId[id]?.groupId));
+  }, [atelier, boardSelectedIds]);
+
+  const [draftBoardX, setDraftBoardX] = useState<string>('');
+  const [draftBoardY, setDraftBoardY] = useState<string>('');
+
+  useEffect(() => {
+    if (selectedPlacement) {
+      setDraftBoardX(selectedPlacement.offsetXCm.toFixed(2));
+      setDraftBoardY(selectedPlacement.offsetYCm.toFixed(2));
+    }
+  }, [selectedPlacement?.pieceId, selectedPlacement?.offsetXCm, selectedPlacement?.offsetYCm]);
+
+  const commitBoardCoordinate = (axis: 'x' | 'y', rawValue: string) => {
+    if (!atelier || !selectedPlacement) return;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+      setDraftBoardX(selectedPlacement.offsetXCm.toFixed(2));
+      setDraftBoardY(selectedPlacement.offsetYCm.toFixed(2));
+      return;
+    }
+    const nextX = axis === 'x' ? parsed : selectedPlacement.offsetXCm;
+    const nextY = axis === 'y' ? parsed : selectedPlacement.offsetYCm;
+    atelier.setPiecePositionCm(selectedPlacement.pieceId, nextX, nextY);
+  };
 
   const { assemblyResult, assemblyError } = useMemo(() => {
     if (
@@ -439,6 +531,293 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
         </section>
       )}
 
+      {/* UX-2.3.2: Multi-Selection CAD Board Arrangement Controls */}
+      {atelier && isMultiBoardSelection && (
+        <section
+          className="pb-3.5 border-b border-neutral-200 space-y-3"
+          data-testid="inspector-board-multi"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-semibold text-neutral-700 flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-neutral-500" />
+              {boardSelectedIds.length} Pieces Selected
+            </span>
+            <button
+              type="button"
+              onClick={() => atelier.clearPieceSelection()}
+              data-testid="inspector-clear-board-selection"
+              className="text-[11px] text-neutral-600 hover:text-neutral-900 hover:underline cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+
+          <p className="text-[10px] text-neutral-500 leading-relaxed">
+            Visual board arrangement only — repositions pieces in CAD table cm without modifying
+            original pattern contours.
+          </p>
+
+          {/* Align Controls */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-medium text-neutral-500 block">
+              Align Selected Pieces
+            </span>
+            <div className="grid grid-cols-4 gap-1">
+              <button
+                type="button"
+                onClick={() => atelier.alignSelectedPieces('left')}
+                title="Align Left Edges"
+                aria-label="Align Left"
+                data-testid="board-align-left"
+                className="h-7 flex items-center justify-center gap-1 border border-neutral-200 rounded-xs hover:bg-neutral-100 text-[10px] font-medium text-neutral-700 cursor-pointer"
+              >
+                <AlignStartVertical className="w-3.5 h-3.5" />
+                <span>L</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => atelier.alignSelectedPieces('right')}
+                title="Align Right Edges"
+                aria-label="Align Right"
+                data-testid="board-align-right"
+                className="h-7 flex items-center justify-center gap-1 border border-neutral-200 rounded-xs hover:bg-neutral-100 text-[10px] font-medium text-neutral-700 cursor-pointer"
+              >
+                <AlignEndVertical className="w-3.5 h-3.5" />
+                <span>R</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => atelier.alignSelectedPieces('top')}
+                title="Align Top Edges"
+                aria-label="Align Top"
+                data-testid="board-align-top"
+                className="h-7 flex items-center justify-center gap-1 border border-neutral-200 rounded-xs hover:bg-neutral-100 text-[10px] font-medium text-neutral-700 cursor-pointer"
+              >
+                <AlignStartHorizontal className="w-3.5 h-3.5" />
+                <span>T</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => atelier.alignSelectedPieces('bottom')}
+                title="Align Bottom Edges"
+                aria-label="Align Bottom"
+                data-testid="board-align-bottom"
+                className="h-7 flex items-center justify-center gap-1 border border-neutral-200 rounded-xs hover:bg-neutral-100 text-[10px] font-medium text-neutral-700 cursor-pointer"
+              >
+                <AlignEndHorizontal className="w-3.5 h-3.5" />
+                <span>B</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Distribute Controls */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              disabled={boardSelectedIds.length < 3}
+              onClick={() => atelier.distributeSelectedPieces('horizontal')}
+              data-testid="board-distribute-horizontal"
+              className="h-7 px-2 flex items-center justify-center gap-1.5 border border-neutral-200 rounded-xs text-[11px] font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <AlignHorizontalSpaceAround className="w-3.5 h-3.5" />
+              Distribute H
+            </button>
+            <button
+              type="button"
+              disabled={boardSelectedIds.length < 3}
+              onClick={() => atelier.distributeSelectedPieces('vertical')}
+              data-testid="board-distribute-vertical"
+              className="h-7 px-2 flex items-center justify-center gap-1.5 border border-neutral-200 rounded-xs text-[11px] font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <AlignVerticalSpaceAround className="w-3.5 h-3.5" />
+              Distribute V
+            </button>
+          </div>
+
+          {/* Group / Ungroup */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => atelier.groupSelectedPieces()}
+              data-testid="inspector-group-btn"
+              className="h-7 px-2.5 flex items-center justify-center gap-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xs text-[11px] font-medium cursor-pointer"
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+              Group
+            </button>
+            <button
+              type="button"
+              disabled={!hasGroupedSelection}
+              onClick={() => atelier.ungroupSelectedPieces()}
+              data-testid="inspector-ungroup-btn"
+              className="h-7 px-2.5 flex items-center justify-center gap-1.5 border border-neutral-300 hover:bg-neutral-100 text-neutral-800 rounded-xs text-[11px] font-medium disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <Ungroup className="w-3.5 h-3.5" />
+              Ungroup
+            </button>
+          </div>
+
+          {/* Selected Piece Members */}
+          <ul className="space-y-1 pt-1 border-t border-neutral-100">
+            {boardSelectedIds.map(id => {
+              const p = pieces.find(piece => piece.id === id);
+              if (!p) return null;
+              const pl = atelier.boardState.placementsByPieceId[id];
+              return (
+                <li key={id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      atelier.selectPiece(id, { expandGroup: false });
+                      selectEntity({
+                        kind: 'pattern-piece',
+                        id: p.id,
+                        pieceId: p.id,
+                        pieceCode: p.pieceCode,
+                        label: p.name
+                      });
+                    }}
+                    className="w-full px-2 py-1 text-left text-[11px] text-neutral-800 hover:bg-neutral-100 rounded-xs border border-neutral-100 flex items-center justify-between gap-2 cursor-pointer"
+                  >
+                    <span className="truncate font-medium">
+                      {p.pieceCode} · {p.name}
+                    </span>
+                    {pl && (
+                      <span className="font-mono tabular-nums text-[10px] text-neutral-500 shrink-0">
+                        ({pl.offsetXCm.toFixed(1)}, {pl.offsetYCm.toFixed(1)})
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {/* UX-2.3.2: Single-Piece CAD Board Placement (strictly separate from source geometry) */}
+      {atelier && !isMultiBoardSelection && selectedPiece && selectedPlacement && (
+        <section
+          className="pb-3.5 border-b border-neutral-200 space-y-2.5"
+          data-testid="inspector-board-placement"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[11px] font-semibold text-neutral-600">
+              CAD Board Placement (cm)
+            </h3>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => atelier.togglePieceVisible(selectedPiece.id)}
+                title={selectedPlacement.visible ? 'Hide piece on board' : 'Show piece on board'}
+                aria-label={selectedPlacement.visible ? 'Hide piece' : 'Show piece'}
+                data-testid="inspector-piece-visibility-btn"
+                className="p-1 border border-neutral-200 rounded-xs text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 cursor-pointer"
+              >
+                {selectedPlacement.visible ? (
+                  <Eye className="w-3 h-3" />
+                ) : (
+                  <EyeOff className="w-3 h-3 text-neutral-400" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => atelier.reorderPiece(selectedPiece.id, 'forward')}
+                title="Bring layer forward"
+                aria-label="Bring layer forward"
+                data-testid="inspector-piece-forward-btn"
+                className="p-1 border border-neutral-200 rounded-xs text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 cursor-pointer"
+              >
+                <ArrowUp className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => atelier.reorderPiece(selectedPiece.id, 'backward')}
+                title="Send layer backward"
+                aria-label="Send layer backward"
+                data-testid="inspector-piece-backward-btn"
+                className="p-1 border border-neutral-200 rounded-xs text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 cursor-pointer"
+              >
+                <ArrowDown className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          <p className="text-[10px] text-neutral-500 leading-relaxed">
+            Ephemeral board offset only — original piece geometry and seam dimensions remain
+            unchanged.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-neutral-500 block">Board X (cm)</span>
+              <input
+                type="number"
+                step="0.5"
+                data-testid="inspector-board-x"
+                aria-label="Board X in centimeters"
+                value={draftBoardX}
+                onChange={e => setDraftBoardX(e.target.value)}
+                onBlur={e => commitBoardCoordinate('x', e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    commitBoardCoordinate('x', draftBoardX);
+                  }
+                }}
+                className="w-full px-2 py-1 font-mono tabular-nums text-xs text-neutral-900 bg-neutral-50 border border-neutral-200 rounded-xs focus:outline-none focus:border-neutral-900"
+              />
+            </label>
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-neutral-500 block">Board Y (cm)</span>
+              <input
+                type="number"
+                step="0.5"
+                data-testid="inspector-board-y"
+                aria-label="Board Y in centimeters"
+                value={draftBoardY}
+                onChange={e => setDraftBoardY(e.target.value)}
+                onBlur={e => commitBoardCoordinate('y', e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    commitBoardCoordinate('y', draftBoardY);
+                  }
+                }}
+                className="w-full px-2 py-1 font-mono tabular-nums text-xs text-neutral-900 bg-neutral-50 border border-neutral-200 rounded-xs focus:outline-none focus:border-neutral-900"
+              />
+            </label>
+          </div>
+
+          {selectedGroup && (
+            <div className="flex items-center justify-between px-2 py-1.5 rounded-xs bg-neutral-50 border border-neutral-200 text-[11px]">
+              <span className="text-neutral-700 font-medium truncate">
+                Group: {selectedGroup.name} ({selectedGroup.memberPieceIds.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => atelier.ungroupById(selectedGroup.id)}
+                data-testid="inspector-ungroup-single-btn"
+                className="text-[10px] font-medium text-neutral-700 hover:text-neutral-950 hover:underline shrink-0 cursor-pointer"
+              >
+                Ungroup
+              </button>
+            </div>
+          )}
+
+          <label className="flex items-start gap-2 pt-0.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              data-testid="inspector-intentional-overlap-toggle"
+              checked={selectedPlacement.allowIntentionalOverlap}
+              onChange={() => atelier.togglePieceIntentionalOverlap(selectedPiece.id)}
+              className="mt-0.5 accent-neutral-900 cursor-pointer"
+            />
+            <span className="text-[11px] text-neutral-700 leading-snug">
+              Mark overlap as intentional (visual comparison overlay)
+            </span>
+          </label>
+        </section>
+      )}
+
       {/* Selected Pattern Piece Geometry Summary */}
       {selectedPiece && (
         <section className="space-y-2.5" data-testid="inspector-pattern-piece">
@@ -554,6 +933,62 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
                 <span className="text-neutral-500 font-sans">Inseam Parity</span>
                 <span className="text-emerald-700">{sleeveDiag.inseamParityDeltaCm} cm</span>
               </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* UX-2.3.2: Advisory Visual Overlap Feedback (never geometric certification) */}
+      {atelier && (
+        <section
+          className="pt-3 border-t border-neutral-200 space-y-2"
+          data-testid="inspector-overlap-advisories"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-[11px] font-semibold text-neutral-500">
+              Visual Overlap Advisories
+            </h3>
+            <span className="font-mono tabular-nums text-[10px] font-semibold text-neutral-700">
+              {atelier.overlapAdvisories.length}
+            </span>
+          </div>
+
+          <p className="text-[10px] text-neutral-500 leading-relaxed">
+            Advisory visual arrangement feedback only — does not validate seam construction or
+            certify geometry.
+          </p>
+
+          {atelier.overlapAdvisories.length === 0 ? (
+            <div
+              className="px-2.5 py-2 rounded-xs border border-neutral-200 bg-neutral-50 text-[11px] text-neutral-600"
+              data-testid="inspector-overlap-empty"
+            >
+              No overlapping piece regions detected on the CAD board.
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {atelier.overlapAdvisories.map(adv => {
+                const meta = OVERLAP_META[adv.classification];
+                return (
+                  <div
+                    key={adv.id}
+                    data-testid={`inspector-overlap-item-${adv.classification}`}
+                    className={`p-2 rounded-xs border text-[11px] space-y-1 ${meta.borderClass}`}
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="font-mono font-semibold text-neutral-900">
+                        {adv.pieceACode} ↔ {adv.pieceBCode}
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded-xs text-[10px] font-semibold shrink-0 ${meta.badgeClass}`}
+                      >
+                        {meta.label}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-neutral-700 leading-snug">{adv.message}</p>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
