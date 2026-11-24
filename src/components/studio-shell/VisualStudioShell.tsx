@@ -17,6 +17,7 @@ import { CollapsibleBottomDock } from './CollapsibleBottomDock';
 import { WorkspaceErrorBoundary } from '../layout/WorkspaceErrorBoundary';
 import { SimulationFitPanel } from '../../features/simulation/SimulationFitPanel';
 import { StudioPerfBoundary } from '../../features/creative-studio/perf-probe';
+import { useOptionalPatternAtelierView } from '../../features/pattern-workspace/PatternAtelierViewContext';
 
 export interface VisualStudioShellProps {
   renderCreativeStudio: () => React.ReactNode;
@@ -72,9 +73,16 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
     removeEphemeralOverlay
   } = useViewportInteraction();
 
+  const patternAtelier = useOptionalPatternAtelierView();
   const envMeta = ENV_CONTEXT_COPY[activeEnvironment];
   const pieces = workspaceBundle.pieces;
   const activeEnvNotes = ephemeralOverlays.filter(n => n.environment === activeEnvironment);
+  const isFullBleedEnv =
+    activeEnvironment === 'creative-studio' || activeEnvironment === 'pattern-atelier';
+  const stripZoomPct =
+    activeEnvironment === 'pattern-atelier' && patternAtelier
+      ? Math.round(patternAtelier.camera.zoom * 100)
+      : Math.round(camera.zoom * 100);
 
   return (
     <div
@@ -245,7 +253,7 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
               )}
 
               <span className="font-mono tabular-nums text-[10px] text-neutral-500 pl-1 whitespace-nowrap shrink-0">
-                {Math.round(camera.zoom * 100)}%
+                {stripZoomPct}%
               </span>
             </div>
           </div>
@@ -254,12 +262,12 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
           <main
             data-testid="workspace-stage-main"
             className={`flex-1 min-h-0 relative ${
-              activeEnvironment === 'creative-studio'
+              isFullBleedEnv
                 ? 'overflow-hidden flex flex-col'
                 : 'overflow-y-auto overflow-x-hidden'
             }`}
             style={
-              activeEnvironment !== 'creative-studio' && camera.showGrid
+              !isFullBleedEnv && camera.showGrid
                 ? {
                     backgroundImage:
                       'radial-gradient(rgba(24, 24, 27, 0.08) 1px, transparent 1px)',
@@ -308,7 +316,10 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
               )}
 
               {activeEnvironment === 'pattern-atelier' && (
-                <div data-testid="env-surface-pattern-atelier" className="w-full min-w-0">
+                <div
+                  data-testid="env-surface-pattern-atelier"
+                  className="w-full h-full flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
+                >
                   {renderPatternAtelier()}
                 </div>
               )}

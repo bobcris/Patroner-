@@ -13,6 +13,7 @@ import { CreativeStudioProvider } from './features/creative-studio/CreativeStudi
 import { CreativeStudioWorkspace } from './features/creative-studio/CreativeStudioWorkspace';
 import { VisualStudioShell } from './components/studio-shell/VisualStudioShell';
 import { PatternWorkspace } from './features/pattern-workspace/PatternWorkspace';
+import { PatternAtelierViewProvider } from './features/pattern-workspace/PatternAtelierViewContext';
 import { ProductionOverview } from './features/production/ProductionOverview';
 
 const ConnectedVisualWorkspace: React.FC = () => {
@@ -45,6 +46,7 @@ const ConnectedVisualWorkspace: React.FC = () => {
   } = useProjectWorkspace();
 
   const {
+    activeTool,
     setEnvironment,
     setSimProdSubView,
     openDockTab,
@@ -131,6 +133,8 @@ const ConnectedVisualWorkspace: React.FC = () => {
           }}
           externalZoom={camera.zoom}
           onChangeZoom={nextZoom => updateCamera({ zoom: nextZoom }, `Set zoom ${Math.round(nextZoom * 100)}%`)}
+          activeTool={activeTool}
+          showGrid={camera.showGrid}
         />
       )}
       renderProductionOverview={() => (
@@ -157,9 +161,11 @@ export default function App() {
   return (
     <ProjectWorkspaceProvider>
       <CreativeStudioProvider>
-        <ViewportInteractionProvider>
-          <ConnectedVisualWorkspace />
-        </ViewportInteractionProvider>
+        <PatternAtelierViewProvider>
+          <ViewportInteractionProvider>
+            <ConnectedVisualWorkspace />
+          </ViewportInteractionProvider>
+        </PatternAtelierViewProvider>
       </CreativeStudioProvider>
     </ProjectWorkspaceProvider>
   );

@@ -31,6 +31,7 @@ import {
 } from '../../state/ViewportInteractionContext';
 import { useProjectWorkspace } from '../../state/ProjectWorkspaceContext';
 import { useOptionalCreativeStudio } from '../../features/creative-studio/CreativeStudioContext';
+import { useOptionalPatternAtelierView } from '../../features/pattern-workspace/PatternAtelierViewContext';
 
 function renderToolIcon(toolId: ToolDefinition['id']) {
   switch (toolId) {
@@ -74,6 +75,7 @@ function renderToolIcon(toolId: ToolDefinition['id']) {
 export const ContextualToolRail: React.FC = () => {
   const { referenceImage, currentSpec } = useProjectWorkspace();
   const studio = useOptionalCreativeStudio();
+  const patternAtelier = useOptionalPatternAtelierView();
   const {
     activeEnvironment,
     activeTool,
@@ -118,6 +120,17 @@ export const ContextualToolRail: React.FC = () => {
       }
       setActiveTool(id);
       return;
+    }
+
+    if (activeEnvironment === 'pattern-atelier' && patternAtelier) {
+      if (id === 'zoom-in') {
+        patternAtelier.zoomByFactor(1.2);
+        return;
+      }
+      if (id === 'zoom-out') {
+        patternAtelier.zoomByFactor(1 / 1.2);
+        return;
+      }
     }
 
     if (id === 'zoom-in') {
@@ -185,6 +198,10 @@ export const ContextualToolRail: React.FC = () => {
   const handleResetView = () => {
     if (activeEnvironment === 'creative-studio' && studio) {
       studio.setStudioCamera({ zoom: 1, panX: 48, panY: 48 });
+      return;
+    }
+    if (activeEnvironment === 'pattern-atelier' && patternAtelier) {
+      patternAtelier.requestFitAll();
       return;
     }
     resetCamera();

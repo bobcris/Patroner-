@@ -41,6 +41,8 @@ import {
   SelectedEntity
 } from '../../state/ViewportInteractionContext';
 import { useOptionalCreativeStudio } from '../../features/creative-studio/CreativeStudioContext';
+import { useOptionalPatternAtelierView } from '../../features/pattern-workspace/PatternAtelierViewContext';
+import { PatternAtelierInspectorPanel } from '../../features/pattern-workspace/PatternAtelierInspectorPanel';
 import type {
   AlignmentAxis,
   PaletteSwatch,
@@ -108,10 +110,18 @@ export const ContextualInspector: React.FC = React.memo(() => {
   } = useViewportInteraction();
 
   const studio = useOptionalCreativeStudio();
+  const patternAtelier = useOptionalPatternAtelierView();
 
   if (!inspectorOpen) return null;
 
   const isStudioEnv = activeEnvironment === 'creative-studio' && Boolean(studio);
+  const isPatternAtelierEnv = activeEnvironment === 'pattern-atelier';
+  const showConsolidatedPatternInspector =
+    isPatternAtelierEnv &&
+    (!selectedEntity ||
+      selectedEntity.kind === 'pattern-piece' ||
+      selectedEntity.kind === 'seam' ||
+      selectedEntity.kind === 'garment-element');
   const selectedStudioLayers: StudioLayer[] =
     isStudioEnv && studio
       ? selectedLayerIds
@@ -140,6 +150,15 @@ export const ContextualInspector: React.FC = React.memo(() => {
     }
     if (isStudioEnv && primaryStudioLayer) {
       return studioLayerTypeLabel(primaryStudioLayer.type);
+    }
+    if (showConsolidatedPatternInspector) {
+      if (entity?.kind === 'seam') return 'Seamline';
+      const mode = patternAtelier?.cadViewMode ?? 'pieces';
+      if (mode === 'assembly') return 'Assembly Inspection';
+      if (mode === 'grading') return 'Grading Matrix';
+      if (mode === 'fit') return 'Prototype Fit';
+      if (mode === 'simulation') return '3D Drape Preview';
+      return 'Pattern Piece';
     }
     if (!entity) return 'Project Overview';
     switch (entity.kind) {
@@ -183,7 +202,9 @@ export const ContextualInspector: React.FC = React.memo(() => {
   const activeZoomPct =
     isStudioEnv && studio
       ? Math.round(studio.document.camera.zoom * 100)
-      : Math.round(camera.zoom * 100);
+      : isPatternAtelierEnv && patternAtelier
+        ? Math.round(patternAtelier.camera.zoom * 100)
+        : Math.round(camera.zoom * 100);
 
   return (
     <>
@@ -1005,8 +1026,11 @@ export const ContextualInspector: React.FC = React.memo(() => {
             </section>
           )}
 
+          {/* 0C. Consolidated Pattern Atelier Inspector (UX-2.3.1) */}
+          {showConsolidatedPatternInspector && <PatternAtelierInspectorPanel />}
+
           {/* 1. Selected Entity Details (Non-Studio OR No Studio Layer Selected) */}
-          {!primaryStudioLayer && !isMultiStudioSelection && !selectedEntity && (
+          {!showConsolidatedPatternInspector && !primaryStudioLayer && !isMultiStudioSelection && !selectedEntity && (
             <section className="space-y-2.5">
               <h3 className="text-[11px] font-semibold text-neutral-500 tracking-wide">
                 Active Garment
@@ -1115,7 +1139,7 @@ export const ContextualInspector: React.FC = React.memo(() => {
             </section>
           )}
 
-          {!primaryStudioLayer && !isMultiStudioSelection && selectedEntity?.kind === 'garment-element' && (
+          {!showConsolidatedPatternInspector && !primaryStudioLayer && !isMultiStudioSelection && selectedEntity?.kind === 'garment-element' && (
             <section className="space-y-3" data-testid="inspector-garment-element">
               <div className="flex items-center gap-2 text-neutral-900 font-medium">
                 <Layers className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
@@ -1160,7 +1184,7 @@ export const ContextualInspector: React.FC = React.memo(() => {
             </section>
           )}
 
-          {!primaryStudioLayer && !isMultiStudioSelection && selectedEntity?.kind === 'pattern-piece' && (
+          {!showConsolidatedPatternInspector && !primaryStudioLayer && !isMultiStudioSelection && selectedEntity?.kind === 'pattern-piece' && (
             <section className="space-y-3" data-testid="inspector-pattern-piece">
               <div className="flex items-center gap-2 text-neutral-900 font-medium">
                 <Scissors className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
@@ -1248,7 +1272,7 @@ export const ContextualInspector: React.FC = React.memo(() => {
             </section>
           )}
 
-          {!primaryStudioLayer && !isMultiStudioSelection && selectedEntity?.kind === 'seam' && (
+          {!showConsolidatedPatternInspector && !primaryStudioLayer && !isMultiStudioSelection && selectedEntity?.kind === 'seam' && (
             <section className="space-y-3" data-testid="inspector-seam">
               <div className="flex items-center gap-2 text-neutral-900 font-medium">
                 <Sliders className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
