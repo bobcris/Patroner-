@@ -45,6 +45,14 @@ import {
   SnapCandidateGuide,
   SnapConfig
 } from './board-arrangement';
+import {
+  CadInspectableEntity,
+  DEFAULT_HIT_RADIUS_PX,
+  extractActiveCurveReference,
+  extractContourVertices,
+  hitTestPatternEntities,
+  TOUCH_HIT_RADIUS_PX
+} from './entity-hit-test';
 
 const SIZE_PALETTE: Record<string, { stroke: string; label: string }> = {
   XS: { stroke: '#9333ea', label: 'XS (EU 34)' },
@@ -105,6 +113,12 @@ export interface PatternCadCanvasProps {
   readonly onRedoBoard?: () => void;
   readonly onGroupSelected?: () => void;
   readonly onUngroupSelected?: () => void;
+  // UX-2.3.3.1 read-only geometric entity inspection props
+  readonly hoveredEntity?: CadInspectableEntity | null;
+  readonly inspectedEntity?: CadInspectableEntity | null;
+  readonly showControlPolygon?: boolean;
+  readonly onHoverEntity?: (entity: CadInspectableEntity | null) => void;
+  readonly onInspectEntity?: (entity: CadInspectableEntity | null) => void;
 }
 
 /**
@@ -149,7 +163,12 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   onUndoBoard,
   onRedoBoard,
   onGroupSelected,
-  onUngroupSelected
+  onUngroupSelected,
+  hoveredEntity = null,
+  inspectedEntity = null,
+  showControlPolygon = true,
+  onHoverEntity,
+  onInspectEntity
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -176,6 +195,14 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   cameraRef.current = camera;
   const boardStateRef = useRef<PatternBoardSnapshot>(boardState);
   boardStateRef.current = boardState;
+  const artifactRef = useRef<PatternArtifactBundle>(artifact);
+  artifactRef.current = artifact;
+  const layerVisibilityRef = useRef<PatternCadLayerVisibility>(layerVisibility);
+  layerVisibilityRef.current = layerVisibility;
+  const hoveredEntityRef = useRef<CadInspectableEntity | null>(hoveredEntity);
+  hoveredEntityRef.current = hoveredEntity;
+  const inspectedEntityRef = useRef<CadInspectableEntity | null>(inspectedEntity);
+  inspectedEntityRef.current = inspectedEntity;
 
   const panSessionRef = useRef<{
     pointerId: number;
@@ -294,6 +321,15 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
       if (effectiveViewMode !== 'pieces') return;
 
+      // Strict UX-2.3.3.1 interaction isolation: inspection mode never mutates board layout
+      if (activeTool === 'inspect-entity') {
+        if (e.key === 'Escape') {
+          onInspectEntity?.(null);
+          onHoverEntity?.(null);
+        }
+        return;
+      }
+
       const mod = e.metaKey || e.ctrlKey;
       if (e.key === 'Escape') {
         onClearBoardSelection?.();
@@ -346,13 +382,16 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     };
   }, [
     effectiveViewMode,
+    activeTool,
     artifact.coordinateFrame.yAxisDirection,
     onClearBoardSelection,
     onUndoBoard,
     onRedoBoard,
     onGroupSelected,
     onUngroupSelected,
-    onCommitMovePieces
+    onCommitMovePieces,
+    onInspectEntity,
+    onHoverEntity
   ]);
 
   // Fit All when explicitly requested, garment changes, mode changes, or initial size measured
@@ -446,6 +485,27 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
       if (e.button !== 0 || effectiveViewMode !== 'pieces') return;
 
+      // 1b. UX-2.3.3.1 Read-only geometric entity inspection mode (strictly isolated from drag/marquee)
+      if (activeTool === 'inspect-entity') {
+        e.preventDefault();
+        const hitRadiusPx =
+          e.pointerType === 'touch' ? TOUCH_HIT_RADIUS_PX : DEFAULT_HIT_RADIUS_PX;
+        const hitRes = hitTestPatternEntities(
+          localPx,
+          cameraRef.current,
+          projection,
+          artifactRef.current,
+          boardStateRef.current,
+          layerVisibilityRef.current,
+          {
+            hitRadiusPx,
+            activeCurve: extractActiveCurveReference(inspectedEntityRef.current)
+          }
+        );
+        onInspectEntity?.(hitRes.hit?.entity ?? null);
+        return;
+      }
+
       // 2. Clicked a pattern piece -> selection & optional drag-to-reposition
       if (clickedPieceId) {
         e.preventDefault();
@@ -512,7 +572,8 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
       projection,
       onToggleBoardPiece,
       onSelectBoardPiece,
-      onSelectPieceId
+      onSelectPieceId,
+      onInspectEntity
     ]
   );
 
@@ -537,6 +598,38 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
       const worldPt = screenToWorldCm(localPx, cameraRef.current, projection);
       onChangeCursorCm(worldPt);
+
+      // UX-2.3.3.1: Hover entity hit-testing in inspection mode (strictly isolated from drag/marquee)
+      if (effectiveViewMode === 'pieces' && activeTool === 'inspect-entity') {
+        const hitRadiusPx =
+          e.pointerType === 'touch' ? TOUCH_HIT_RADIUS_PX : DEFAULT_HIT_RADIUS_PX;
+        const hitRes = hitTestPatternEntities(
+          localPx,
+          cameraRef.current,
+          projection,
+          artifactRef.current,
+          boardStateRef.current,
+          layerVisibilityRef.current,
+          {
+            hitRadiusPx,
+            activeCurve: extractActiveCurveReference(inspectedEntityRef.current)
+          }
+        );
+        const nextEntity = hitRes.hit?.entity ?? null;
+        const prevEntity = hoveredEntityRef.current;
+        const unchanged =
+          prevEntity === null && nextEntity === null
+            ? true
+            : prevEntity !== null &&
+                nextEntity !== null &&
+                prevEntity.presentationRef === nextEntity.presentationRef &&
+                Math.abs(prevEntity.localPointCm.x - nextEntity.localPointCm.x) < 1e-3 &&
+                Math.abs(prevEntity.localPointCm.y - nextEntity.localPointCm.y) < 1e-3;
+        if (!unchanged) {
+          onHoverEntity?.(nextEntity);
+        }
+        return;
+      }
 
       // Active piece drag with live centimeter grid & feature snapping
       const dragSession = dragSessionRef.current;
@@ -590,7 +683,17 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         });
       }
     },
-    [onChangeCamera, onChangeCursorCm, projection, snapConfig, artifact, onSetActiveSnapGuides]
+    [
+      onChangeCamera,
+      onChangeCursorCm,
+      projection,
+      effectiveViewMode,
+      activeTool,
+      onHoverEntity,
+      snapConfig,
+      artifact,
+      onSetActiveSnapGuides
+    ]
   );
 
   const handlePointerUpOrCancel = useCallback(
@@ -648,8 +751,9 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   const handlePointerLeave = useCallback(() => {
     if (!panSessionRef.current && !dragSessionRef.current && !marqueeSessionRef.current) {
       onChangeCursorCm(null);
+      onHoverEntity?.(null);
     }
-  }, [onChangeCursorCm]);
+  }, [onChangeCursorCm, onHoverEntity]);
 
   const scalePxPerCm = getPixelsPerCm(camera.zoom, BASE_PX_PER_CM);
   const gridSpacing = useMemo(
@@ -669,13 +773,17 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   const labelFontCm = Math.max(1.2, 11 * invScale);
   const subLabelFontCm = Math.max(0.95, 9 * invScale);
 
+  const isInspectMode = effectiveViewMode === 'pieces' && activeTool === 'inspect-entity';
+
   const panCursorClass = isPanning
     ? 'cursor-grabbing'
     : dragPreview
       ? 'cursor-move'
       : activeTool === 'pan' || spacePressed
         ? 'cursor-grab'
-        : 'cursor-default';
+        : isInspectMode
+          ? 'cursor-crosshair'
+          : 'cursor-default';
 
   const selectedSet = useMemo(() => {
     if (effectiveViewMode === 'pieces') {
@@ -736,7 +844,13 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
           e.stopPropagation();
           onSelectPieceId(piece.pieceId);
         }}
-        className={effectiveViewMode === 'pieces' && activeTool !== 'pan' && !spacePressed ? 'cursor-move' : 'cursor-pointer'}
+        className={
+          isInspectMode && !spacePressed
+            ? 'cursor-crosshair'
+            : effectiveViewMode === 'pieces' && activeTool !== 'pan' && !spacePressed
+              ? 'cursor-move'
+              : 'cursor-pointer'
+        }
         opacity={isSelected ? 1 : 0.9}
       >
         {/* Selection outline framed cleanly around full cut+sew bounds */}
@@ -966,6 +1080,229 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     }
     return frames;
   }, [effectiveViewMode, boardState, piecesById, dragPreview]);
+
+  // Subtle inspectable vertex hints rendered only while inspect-entity mode is active
+  const inspectVertexHints = useMemo(() => {
+    if (!isInspectMode) return [];
+    const hints: { key: string; x: number; y: number }[] = [];
+    for (const piece of orderedVisiblePieces) {
+      const off = getEffectiveOffset(piece.pieceId);
+      if (layerVisibility.showSewLines) {
+        const { vertices } = extractContourVertices(piece.pieceId, 'sew', piece.sewSegments);
+        for (const v of vertices) {
+          hints.push({
+            key: v.presentationRef,
+            x: v.localPointCm.x + off.offsetXCm,
+            y: v.localPointCm.y + off.offsetYCm
+          });
+        }
+      }
+      if (layerVisibility.showSeamAllowance) {
+        const { vertices } = extractContourVertices(piece.pieceId, 'cut', piece.cutSegments);
+        for (const v of vertices) {
+          hints.push({
+            key: v.presentationRef,
+            x: v.localPointCm.x + off.offsetXCm,
+            y: v.localPointCm.y + off.offsetYCm
+          });
+        }
+      }
+    }
+    return hints;
+  }, [isInspectMode, orderedVisiblePieces, layerVisibility.showSewLines, layerVisibility.showSeamAllowance, boardState, dragPreview]);
+
+  // Resolve active Bézier segment for optional control-polygon overlay
+  const activeControlPolygonSpec = useMemo(() => {
+    if (!showControlPolygon || !inspectedEntity) return null;
+    if (inspectedEntity.entityKind !== 'curve' && inspectedEntity.entityKind !== 'bezier-handle') {
+      return null;
+    }
+    const piece = piecesById.get(inspectedEntity.pieceId);
+    if (!piece) return null;
+    const segs = inspectedEntity.contour === 'sew' ? piece.sewSegments : piece.cutSegments;
+    const seg = segs.find(s => s.id === inspectedEntity.segmentId);
+    if (!seg || seg.kind !== 'cubic-bezier' || !seg.p1 || !seg.p2) return null;
+    const off = getEffectiveOffset(piece.pieceId);
+    return {
+      pieceId: piece.pieceId,
+      contour: inspectedEntity.contour,
+      segmentId: seg.id,
+      p0: { x: seg.p0.x + off.offsetXCm, y: seg.p0.y + off.offsetYCm },
+      p1: { x: seg.p1.x + off.offsetXCm, y: seg.p1.y + off.offsetYCm },
+      p2: { x: seg.p2.x + off.offsetXCm, y: seg.p2.y + off.offsetYCm },
+      p3: { x: seg.p3.x + off.offsetXCm, y: seg.p3.y + off.offsetYCm }
+    };
+  }, [showControlPolygon, inspectedEntity, piecesById, boardState, dragPreview]);
+
+  const renderEntityHighlight = (entity: CadInspectableEntity, variant: 'hover' | 'selected') => {
+    const off = getEffectiveOffset(entity.pieceId);
+    const isSelectedVariant = variant === 'selected';
+    const primaryStroke = isSelectedVariant ? '#0f766e' : '#0284c7';
+    const strokeWidth = (isSelectedVariant ? 3.2 : 2.3) * invScale;
+    const dash = isSelectedVariant ? undefined : `${4 * invScale} ${2.5 * invScale}`;
+    const testId = isSelectedVariant ? 'cad-inspect-selected' : 'cad-inspect-hover';
+    const bx = entity.localPointCm.x + off.offsetXCm;
+    const by = entity.localPointCm.y + off.offsetYCm;
+
+    const pointMarker = (
+      <>
+        <circle
+          cx={bx}
+          cy={by}
+          r={(isSelectedVariant ? 6.5 : 5.5) * invScale}
+          fill={isSelectedVariant ? '#ffffff' : 'rgba(2, 132, 199, 0.14)'}
+          fillOpacity={isSelectedVariant ? 0.92 : 1}
+          stroke={primaryStroke}
+          strokeWidth={(isSelectedVariant ? 2.1 : 1.5) * invScale}
+          strokeDasharray={isSelectedVariant ? undefined : `${3 * invScale} ${2 * invScale}`}
+        />
+        <circle
+          cx={bx}
+          cy={by}
+          r={(isSelectedVariant ? 3.1 : 2.3) * invScale}
+          fill={primaryStroke}
+        />
+      </>
+    );
+
+    const selectedTag = isSelectedVariant ? (
+      <g
+        transform={
+          isYUp
+            ? `translate(${bx + 8 * invScale}, ${by + 6 * invScale}) scale(1, -1)`
+            : `translate(${bx + 8 * invScale}, ${by - 6 * invScale})`
+        }
+      >
+        <text
+          x={0}
+          y={0}
+          fontSize={Math.max(0.85, 9.5 * invScale)}
+          fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+          fontWeight="700"
+          fill="#0f766e"
+          stroke="#ffffff"
+          strokeWidth={2.4 * invScale}
+          paintOrder="stroke"
+        >
+          {entity.entityKind === 'bezier-handle'
+            ? entity.handleSlot.toUpperCase()
+            : entity.entityKind === 'vertex'
+              ? entity.isSharedJunction
+                ? 'SHARED VTX'
+                : 'VTX'
+              : entity.entityKind.toUpperCase()}{' '}
+          ({entity.localPointCm.x.toFixed(2)}, {entity.localPointCm.y.toFixed(2)})
+        </text>
+      </g>
+    ) : null;
+
+    switch (entity.entityKind) {
+      case 'vertex':
+      case 'bezier-handle':
+      case 'notch':
+      case 'dart-landmark':
+        return (
+          <g
+            key={`${variant}-${entity.presentationRef}`}
+            data-testid={testId}
+            data-entity-kind={entity.entityKind}
+            data-presentation-ref={entity.presentationRef}
+          >
+            {pointMarker}
+            {selectedTag}
+          </g>
+        );
+
+      case 'edge':
+        return (
+          <g
+            key={`${variant}-${entity.presentationRef}`}
+            data-testid={testId}
+            data-entity-kind={entity.entityKind}
+            data-presentation-ref={entity.presentationRef}
+          >
+            <line
+              x1={entity.startLocalCm.x + off.offsetXCm}
+              y1={entity.startLocalCm.y + off.offsetYCm}
+              x2={entity.endLocalCm.x + off.offsetXCm}
+              y2={entity.endLocalCm.y + off.offsetYCm}
+              stroke={primaryStroke}
+              strokeWidth={strokeWidth}
+              strokeDasharray={dash}
+              strokeLinecap="round"
+            />
+            <circle
+              cx={bx}
+              cy={by}
+              r={(isSelectedVariant ? 4.2 : 3.2) * invScale}
+              fill="#ffffff"
+              stroke={primaryStroke}
+              strokeWidth={1.7 * invScale}
+            />
+            {selectedTag}
+          </g>
+        );
+
+      case 'curve': {
+        const d = `M ${entity.p0LocalCm.x + off.offsetXCm} ${entity.p0LocalCm.y + off.offsetYCm} C ${entity.p1LocalCm.x + off.offsetXCm} ${entity.p1LocalCm.y + off.offsetYCm}, ${entity.p2LocalCm.x + off.offsetXCm} ${entity.p2LocalCm.y + off.offsetYCm}, ${entity.p3LocalCm.x + off.offsetXCm} ${entity.p3LocalCm.y + off.offsetYCm}`;
+        return (
+          <g
+            key={`${variant}-${entity.presentationRef}`}
+            data-testid={testId}
+            data-entity-kind={entity.entityKind}
+            data-presentation-ref={entity.presentationRef}
+          >
+            <path
+              d={d}
+              fill="none"
+              stroke={primaryStroke}
+              strokeWidth={strokeWidth}
+              strokeDasharray={dash}
+              strokeLinecap="round"
+            />
+            <circle
+              cx={bx}
+              cy={by}
+              r={(isSelectedVariant ? 4.2 : 3.2) * invScale}
+              fill="#ffffff"
+              stroke={primaryStroke}
+              strokeWidth={1.7 * invScale}
+            />
+            {selectedTag}
+          </g>
+        );
+      }
+
+      case 'dart':
+        return (
+          <g
+            key={`${variant}-${entity.presentationRef}`}
+            data-testid={testId}
+            data-entity-kind={entity.entityKind}
+            data-presentation-ref={entity.presentationRef}
+          >
+            <polyline
+              points={`${entity.legLeftLocalCm.x + off.offsetXCm},${entity.legLeftLocalCm.y + off.offsetYCm} ${entity.apexLocalCm.x + off.offsetXCm},${entity.apexLocalCm.y + off.offsetYCm} ${entity.legRightLocalCm.x + off.offsetXCm},${entity.legRightLocalCm.y + off.offsetYCm}`}
+              fill="none"
+              stroke={primaryStroke}
+              strokeWidth={strokeWidth}
+              strokeDasharray={dash}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <circle
+              cx={bx}
+              cy={by}
+              r={(isSelectedVariant ? 4.2 : 3.2) * invScale}
+              fill="#ffffff"
+              stroke={primaryStroke}
+              strokeWidth={1.7 * invScale}
+            />
+            {selectedTag}
+          </g>
+        );
+    }
+  };
 
   return (
     <div
@@ -1360,6 +1697,125 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
                 {/* Pattern Pieces in Authoritative Layer Order */}
                 {orderedVisiblePieces.map(piece => renderStandardPiece(piece))}
+
+                {/* UX-2.3.3.1: Dedicated Read-Only Entity Inspection Overlay (pointer-events-none) */}
+                {(isInspectMode || hoveredEntity || inspectedEntity) && (
+                  <g data-testid="cad-inspection-overlay" className="pointer-events-none">
+                    {/* Subtle inspectable contour vertex markers while inspect-entity tool is active */}
+                    {isInspectMode && inspectVertexHints.length > 0 && (
+                      <g data-testid="cad-inspect-vertex-hints" opacity="0.72">
+                        {inspectVertexHints.map(v => (
+                          <circle
+                            key={v.key}
+                            cx={v.x}
+                            cy={v.y}
+                            r={2.4 * invScale}
+                            fill="#ffffff"
+                            stroke="#475569"
+                            strokeWidth={1.0 * invScale}
+                          />
+                        ))}
+                      </g>
+                    )}
+
+                    {/* Optional Bézier Control Polygon (p0-p1, p3-p2 tangent arms & P1/P2 handles) */}
+                    {activeControlPolygonSpec && (
+                      <g data-testid="cad-inspect-control-polygon">
+                        <line
+                          x1={activeControlPolygonSpec.p0.x}
+                          y1={activeControlPolygonSpec.p0.y}
+                          x2={activeControlPolygonSpec.p1.x}
+                          y2={activeControlPolygonSpec.p1.y}
+                          stroke="#d97706"
+                          strokeWidth={1.4 * invScale}
+                          strokeDasharray={`${4 * invScale} ${2.5 * invScale}`}
+                        />
+                        <line
+                          x1={activeControlPolygonSpec.p3.x}
+                          y1={activeControlPolygonSpec.p3.y}
+                          x2={activeControlPolygonSpec.p2.x}
+                          y2={activeControlPolygonSpec.p2.y}
+                          stroke="#d97706"
+                          strokeWidth={1.4 * invScale}
+                          strokeDasharray={`${4 * invScale} ${2.5 * invScale}`}
+                        />
+                        {/* Endpoint anchors P0 & P3 */}
+                        <circle
+                          cx={activeControlPolygonSpec.p0.x}
+                          cy={activeControlPolygonSpec.p0.y}
+                          r={3.2 * invScale}
+                          fill="#ffffff"
+                          stroke="#d97706"
+                          strokeWidth={1.4 * invScale}
+                        />
+                        <circle
+                          cx={activeControlPolygonSpec.p3.x}
+                          cy={activeControlPolygonSpec.p3.y}
+                          r={3.2 * invScale}
+                          fill="#ffffff"
+                          stroke="#d97706"
+                          strokeWidth={1.4 * invScale}
+                        />
+                        {/* Control Handles P1 & P2 */}
+                        {(
+                          [
+                            { slot: 'P1', pt: activeControlPolygonSpec.p1 },
+                            { slot: 'P2', pt: activeControlPolygonSpec.p2 }
+                          ] as const
+                        ).map(h => {
+                          const half = 3.6 * invScale;
+                          const isHandleSelected =
+                            inspectedEntity?.entityKind === 'bezier-handle' &&
+                            inspectedEntity.handleSlot.toUpperCase() === h.slot;
+                          return (
+                            <g key={h.slot} data-testid={`cad-control-handle-${h.slot.toLowerCase()}`}>
+                              <rect
+                                x={h.pt.x - half}
+                                y={h.pt.y - half}
+                                width={half * 2}
+                                height={half * 2}
+                                fill={isHandleSelected ? '#0f766e' : '#fef3c7'}
+                                stroke={isHandleSelected ? '#0f766e' : '#b45309'}
+                                strokeWidth={1.6 * invScale}
+                              />
+                              {!isHandleSelected && (
+                                <g
+                                  transform={
+                                    isYUp
+                                      ? `translate(${h.pt.x + 6 * invScale}, ${h.pt.y + 4 * invScale}) scale(1, -1)`
+                                      : `translate(${h.pt.x + 6 * invScale}, ${h.pt.y - 4 * invScale})`
+                                  }
+                                >
+                                  <text
+                                    x={0}
+                                    y={0}
+                                    fontSize={Math.max(0.8, 9 * invScale)}
+                                    fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                                    fontWeight="700"
+                                    fill="#b45309"
+                                    stroke="#ffffff"
+                                    strokeWidth={2 * invScale}
+                                    paintOrder="stroke"
+                                  >
+                                    {h.slot}
+                                  </text>
+                                </g>
+                              )}
+                            </g>
+                          );
+                        })}
+                      </g>
+                    )}
+
+                    {/* Hovered Entity Highlight (distinct sky dashed style) */}
+                    {hoveredEntity &&
+                      hoveredEntity.presentationRef !== inspectedEntity?.presentationRef &&
+                      renderEntityHighlight(hoveredEntity, 'hover')}
+
+                    {/* Selected / Inspected Entity Highlight (distinct solid teal style) */}
+                    {inspectedEntity && renderEntityHighlight(inspectedEntity, 'selected')}
+                  </g>
+                )}
 
                 {/* Visual Overlap Advisory Overlays (Advisory Only — Never Certification) */}
                 {overlapAdvisories.length > 0 && (

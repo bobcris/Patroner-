@@ -85,6 +85,7 @@ export interface HoveredEntityRef {
 
 export type WorkspaceToolId =
   | 'select'
+  | 'inspect-entity'
   | 'pan'
   | 'zoom-in'
   | 'zoom-out'
@@ -187,9 +188,17 @@ export const ENVIRONMENT_TOOLS: Record<StudioEnvironment, readonly ToolDefinitio
   'pattern-atelier': [
     {
       id: 'select',
-      label: 'Select Piece / Seam',
+      label: 'Select & Arrange Piece',
       shortKey: 'V',
-      description: 'Select pattern pieces and seams with synchronized inspector',
+      description: 'Select, drag, group, or marquee-select pattern pieces on the CAD board',
+      available: true,
+      actionType: 'mode'
+    },
+    {
+      id: 'inspect-entity',
+      label: 'Inspect Geometry',
+      shortKey: 'I',
+      description: 'Read-only inspection of vertices, edges, cubic curves, control handles, notches & darts',
       available: true,
       actionType: 'mode'
     },
@@ -1080,6 +1089,10 @@ export const ViewportInteractionProvider: React.FC<ViewportInteractionProviderPr
     </ViewportInteractionContext.Provider>
   );
 };
+
+export function useOptionalViewportInteraction(): ViewportInteractionContextValue | null {
+  return useContext(ViewportInteractionContext);
+}
 
 export function useViewportInteraction(): ViewportInteractionContextValue {
   const ctx = useContext(ViewportInteractionContext);

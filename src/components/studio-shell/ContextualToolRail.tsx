@@ -21,7 +21,8 @@ import {
   Crop,
   LayoutGrid,
   Palette,
-  Magnet
+  Magnet,
+  Crosshair
 } from 'lucide-react';
 import {
   ENVIRONMENT_TOOLS,
@@ -37,6 +38,8 @@ function renderToolIcon(toolId: ToolDefinition['id']) {
   switch (toolId) {
     case 'select':
       return <MousePointer2 className="w-4 h-4" />;
+    case 'inspect-entity':
+      return <Crosshair className="w-4 h-4" />;
     case 'pan':
       return <Hand className="w-4 h-4" />;
     case 'crop-image':

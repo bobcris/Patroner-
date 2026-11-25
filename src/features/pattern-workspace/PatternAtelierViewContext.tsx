@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import {
   CadCamera,
   CadRectCm,
@@ -50,6 +50,10 @@ import {
   ungroupBoardSelection,
   updateBoardSelectionWithoutHistory
 } from './board-arrangement';
+import {
+  CadInspectableEntity,
+  reconcileInspectedEntityWithArtifact
+} from './entity-hit-test';
 
 export type PatternCadViewMode = 'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation';
 
@@ -142,6 +146,16 @@ export interface PatternAtelierViewContextValue {
   // Dedicated Pattern-Piece Layers Drawer visibility
   readonly layersDrawerOpen: boolean;
   readonly setLayersDrawerOpen: (open: boolean) => void;
+
+  // UX-2.3.3.1: Ephemeral Read-Only Geometric Entity Inspection State
+  // Strictly outside boardHistory and ProjectWorkspaceContext; never mutates PatternArtifactBundle.
+  readonly hoveredEntity: CadInspectableEntity | null;
+  readonly setHoveredEntity: (entity: CadInspectableEntity | null) => void;
+  readonly inspectedEntity: CadInspectableEntity | null;
+  readonly setInspectedEntity: (entity: CadInspectableEntity | null) => void;
+  readonly clearInspectedEntity: () => void;
+  readonly showControlPolygon: boolean;
+  readonly setShowControlPolygon: (show: boolean) => void;
 }
 
 const DEFAULT_CAMERA: CadCamera = { zoom: 1.0, panX: 48, panY: 48 };
@@ -193,6 +207,12 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     }
     return true;
   });
+
+  // UX-2.3.3.1 Ephemeral Entity Inspection State (strictly outside boardHistory)
+  const [hoveredEntity, setHoveredEntity] = useState<CadInspectableEntity | null>(null);
+  const [rawInspectedEntity, setRawInspectedEntity] = useState<CadInspectableEntity | null>(null);
+  const [showControlPolygon, setShowControlPolygon] = useState<boolean>(true);
+  const lastSyncedArtifactRef = useRef<PatternArtifactBundle | null>(null);
 
   // Camera actions (never touch boardHistory)
   const setCamera = useCallback((next: CadCamera) => {
@@ -256,10 +276,22 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     setLayerVisibility(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  // Reconcile board arrangement deterministically when artifact updates
+  // Reconcile board arrangement & entity inspection deterministically when artifact updates
   const syncArtifact = useCallback((artifact: PatternArtifactBundle) => {
-    setActiveArtifact(prev => (prev === artifact ? prev : artifact));
+    if (lastSyncedArtifactRef.current === artifact) return;
+    lastSyncedArtifactRef.current = artifact;
+    setActiveArtifact(artifact);
+    setHoveredEntity(null);
     setBoardHistory(prev => reconcileBoardHistoryWithArtifact(prev, artifact));
+  }, []);
+
+  const setInspectedEntity = useCallback((entity: CadInspectableEntity | null) => {
+    setRawInspectedEntity(entity);
+  }, []);
+
+  const clearInspectedEntity = useCallback(() => {
+    setRawInspectedEntity(null);
+    setHoveredEntity(null);
   }, []);
 
   // Selection actions (ephemeral — do not push to arrangement undo stack)
@@ -467,6 +499,14 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     return analyzeBoardOverlaps(boardHistory.present, activeArtifact);
   }, [boardHistory.present, activeArtifact]);
 
+  const inspectedEntity = useMemo<CadInspectableEntity | null>(() => {
+    return reconcileInspectedEntityWithArtifact(
+      rawInspectedEntity,
+      activeArtifact,
+      boardHistory.present
+    );
+  }, [rawInspectedEntity, activeArtifact, boardHistory.present]);
+
   const value = useMemo<PatternAtelierViewContextValue>(
     () => ({
       camera,
@@ -519,7 +559,14 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       activeSnapGuides,
       setActiveSnapGuides,
       layersDrawerOpen,
-      setLayersDrawerOpen
+      setLayersDrawerOpen,
+      hoveredEntity,
+      setHoveredEntity,
+      inspectedEntity,
+      setInspectedEntity,
+      clearInspectedEntity,
+      showControlPolygon,
+      setShowControlPolygon
     }),
     [
       camera,
@@ -563,7 +610,12 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       snapConfig,
       updateSnapConfig,
       activeSnapGuides,
-      layersDrawerOpen
+      layersDrawerOpen,
+      hoveredEntity,
+      inspectedEntity,
+      setInspectedEntity,
+      clearInspectedEntity,
+      showControlPolygon
     ]
   );
 

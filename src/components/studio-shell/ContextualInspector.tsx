@@ -158,6 +158,25 @@ export const ContextualInspector: React.FC = React.memo(() => {
       if (mode === 'grading') return 'Grading Matrix';
       if (mode === 'fit') return 'Prototype Fit';
       if (mode === 'simulation') return '3D Drape Preview';
+      const inspected = patternAtelier?.inspectedEntity;
+      if (inspected) {
+        switch (inspected.entityKind) {
+          case 'vertex':
+            return inspected.isSharedJunction ? 'Inspect · Shared Vertex' : 'Inspect · Vertex';
+          case 'bezier-handle':
+            return 'Inspect · Bézier Handle';
+          case 'edge':
+            return 'Inspect · Straight Edge';
+          case 'curve':
+            return 'Inspect · Cubic Curve';
+          case 'notch':
+            return 'Inspect · Notch';
+          case 'dart':
+            return 'Inspect · Dart';
+          case 'dart-landmark':
+            return 'Inspect · Dart Landmark';
+        }
+      }
       const boardSelCount = patternAtelier?.boardState.selectedPieceIds.length ?? 0;
       if (boardSelCount >= 2) {
         return `Multi-Selection (${boardSelCount} pieces)`;

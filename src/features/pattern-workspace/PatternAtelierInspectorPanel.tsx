@@ -15,18 +15,21 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  Crosshair,
   Eye,
   EyeOff,
   FolderPlus,
   Layers,
   Scissors,
   Sliders,
-  Ungroup
+  Ungroup,
+  X
 } from 'lucide-react';
 import { useProjectWorkspace } from '../../state/ProjectWorkspaceContext';
 import { useViewportInteraction } from '../../state/ViewportInteractionContext';
 import { useOptionalPatternAtelierView } from './PatternAtelierViewContext';
 import type { OverlapClassification } from './board-arrangement';
+import type { CadInspectableEntity } from './entity-hit-test';
 import { AssemblyInspectionPanel } from './AssemblyInspectionPanel';
 import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
 import { assembleBodiceSleeve, formatSignedCm } from '../../engine/assembly';
@@ -86,8 +89,32 @@ const OVERLAP_META: Record<
   }
 };
 
+function formatUnroundedCm(value: number): string {
+  if (!Number.isFinite(value)) return 'NaN';
+  return Object.is(value, -0) ? '0' : String(value);
+}
+
+function getEntityKindDisplayLabel(entity: CadInspectableEntity): string {
+  switch (entity.entityKind) {
+    case 'vertex':
+      return entity.isSharedJunction ? 'Shared Contour Vertex' : 'Contour Vertex';
+    case 'bezier-handle':
+      return `Bézier Control Handle (${entity.handleSlot.toUpperCase()})`;
+    case 'edge':
+      return 'Straight Edge Segment';
+    case 'curve':
+      return 'Cubic Bézier Curve';
+    case 'notch':
+      return 'Pattern Notch';
+    case 'dart':
+      return 'Dart Path';
+    case 'dart-landmark':
+      return `Dart Landmark (${entity.landmarkRole})`;
+  }
+}
+
 /**
- * UX-2.3.1 / UX-2.3.2 — Consolidated Right Inspector Panel for Pattern Atelier.
+ * UX-2.3.1 / UX-2.3.2 / UX-2.3.3.1 — Consolidated Right Inspector Panel for Pattern Atelier.
  *
  * Mounted inside `ContextualInspector` when `activeEnvironment === 'pattern-atelier'`,
  * replacing the duplicated embedded `lg:col-span-4` column previously inside `PatternWorkspace.tsx`.
@@ -106,7 +133,7 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
     setRequireApprovedGovernance
   } = useProjectWorkspace();
 
-  const { selectedEntity, selectEntity, openDockTab } = useViewportInteraction();
+  const { selectedEntity, selectEntity, openDockTab, activeTool } = useViewportInteraction();
   const atelier = useOptionalPatternAtelierView();
 
   const {
@@ -149,6 +176,12 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
         (selectedEntity?.kind === 'pattern-piece' ? selectedEntity.pieceId : pieces[0]?.id ?? null);
 
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) ?? pieces[0];
+  const activeArtifact = atelier?.activeArtifact ?? null;
+  const inspectedEntity = atelier?.inspectedEntity ?? null;
+  const selectedArtifactPiece =
+    activeArtifact && selectedPiece
+      ? activeArtifact.pieces.find(p => p.pieceId === selectedPiece.id) ?? null
+      : null;
   const selectedPlacement =
     selectedPiece && atelier
       ? atelier.boardState.placementsByPieceId[selectedPiece.id] ?? null
@@ -502,9 +535,339 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
     );
   }
 
-  // Default: Pieces Mode — Consolidated Piece Inspector, Seamlines, Sleeve Diagnostics, Validation Engine
+  // Default: Pieces Mode — Entity Inspection, Board Placement, Piece Summary, Overlap Advisories & Validation Engine
   return (
     <div className="space-y-4 text-xs" data-testid="inspector-atelier-pieces">
+      {/* UX-2.3.3.1: Read-Only Geometric Entity Inspection Card */}
+      {atelier && inspectedEntity && activeArtifact && (
+        <section
+          className="pb-3.5 border-b border-teal-200/90 space-y-2.5 bg-teal-50/35 -mx-3.5 px-3.5 pt-2.5 -mt-2.5"
+          data-testid="inspector-cad-entity"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-teal-900 font-semibold">
+                <Crosshair className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                <span className="truncate" data-testid="inspector-entity-type">
+                  {getEntityKindDisplayLabel(inspectedEntity)}
+                </span>
+              </div>
+              <p className="text-[10px] text-teal-800/80 mt-0.5">
+                Read-only entity inspection · Zero source mutation
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={atelier.clearInspectedEntity}
+              aria-label="Clear inspected entity"
+              data-testid="inspector-clear-entity-btn"
+              className="p-1 rounded-xs text-teal-800 hover:bg-teal-100 cursor-pointer shrink-0"
+              title="Clear inspected entity (Esc)"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Presentation Reference (Explicitly Non-Authoritative) */}
+          <div className="space-y-1 bg-white border border-teal-200/80 rounded-xs p-2">
+            <span className="text-[10px] font-medium text-neutral-500 block">
+              Presentation Reference (Non-Authoritative)
+            </span>
+            <code
+              data-testid="inspector-entity-ref"
+              className="block font-mono text-[10px] text-neutral-900 break-all leading-snug"
+            >
+              {inspectedEntity.presentationRef}
+            </code>
+            <p className="text-[10px] text-amber-800 leading-snug">
+              Presentation address only — NOT an authoritative engineering vertex ID.
+            </p>
+          </div>
+
+          {/* Parent Piece & Topology Identity */}
+          <dl className="space-y-1.5 text-[11px]">
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-neutral-500 shrink-0">Parent Piece</dt>
+              <dd
+                data-testid="inspector-entity-piece"
+                className="font-medium text-neutral-900 text-right truncate"
+                title={`${inspectedEntity.pieceCode} · ${inspectedEntity.pieceName} (${inspectedEntity.pieceId})`}
+              >
+                {inspectedEntity.pieceCode} · {inspectedEntity.pieceName}
+              </dd>
+            </div>
+
+            <div data-testid="inspector-entity-topology" className="space-y-1 pt-1 border-t border-teal-100">
+              {'contour' in inspectedEntity && (
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-neutral-500">Contour / Segment</dt>
+                  <dd className="font-mono text-[10px] text-neutral-900 text-right break-all">
+                    {inspectedEntity.contour} · {inspectedEntity.segmentId}
+                  </dd>
+                </div>
+              )}
+
+              {inspectedEntity.entityKind === 'vertex' && (
+                <>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-neutral-500">Endpoint Slot</dt>
+                    <dd className="font-mono text-[10px] text-neutral-900">
+                      {inspectedEntity.endpointSlot}
+                      {inspectedEntity.isSharedJunction ? ' (deduplicated junction)' : ''}
+                    </dd>
+                  </div>
+                  <div className="pt-1 space-y-1">
+                    <dt className="text-[10px] text-neutral-500">
+                      Incident Segments ({inspectedEntity.incidentSegments.length})
+                    </dt>
+                    <dd className="space-y-1">
+                      {inspectedEntity.incidentSegments.map((inc, idx) => (
+                        <div
+                          key={`${inc.direction}-${inc.segmentId}-${idx}`}
+                          className="px-1.5 py-1 rounded-xs bg-white border border-neutral-200 font-mono text-[10px] text-neutral-800 flex items-center justify-between gap-1.5"
+                        >
+                          <span className="truncate">
+                            {inc.direction === 'incoming' ? 'in' : 'out'}: {inc.segmentId}
+                          </span>
+                          <span className="text-neutral-500 shrink-0">
+                            {inc.segmentKind === 'cubic-bezier' ? 'cubic' : 'line'} · {inc.endpointSlot}
+                          </span>
+                        </div>
+                      ))}
+                    </dd>
+                  </div>
+                </>
+              )}
+
+              {(inspectedEntity.entityKind === 'edge' || inspectedEntity.entityKind === 'curve') && (
+                <>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-neutral-500">Segment Kind / Role</dt>
+                    <dd className="font-mono text-[10px] text-neutral-900">
+                      {inspectedEntity.segmentKind} · {inspectedEntity.segmentRole}
+                    </dd>
+                  </div>
+                  {inspectedEntity.seamId && (
+                    <div className="flex items-baseline justify-between gap-2">
+                      <dt className="text-neutral-500">Seam ID</dt>
+                      <dd className="font-mono text-[10px] text-neutral-900 truncate">
+                        {inspectedEntity.seamId}
+                      </dd>
+                    </div>
+                  )}
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-neutral-500">Sample Parameter t</dt>
+                    <dd className="font-mono tabular-nums text-[10px] text-neutral-900">
+                      {inspectedEntity.parameterT.toFixed(4)}
+                    </dd>
+                  </div>
+                </>
+              )}
+
+              {inspectedEntity.entityKind === 'bezier-handle' && (
+                <>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-neutral-500">Handle / Role</dt>
+                    <dd className="font-mono text-[10px] text-neutral-900">
+                      {inspectedEntity.handleSlot.toUpperCase()} · {inspectedEntity.segmentRole}
+                    </dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-neutral-500">Anchor (Local cm)</dt>
+                    <dd className="font-mono tabular-nums text-[10px] text-neutral-900">
+                      ({formatUnroundedCm(inspectedEntity.anchorLocalCm.x)},{' '}
+                      {formatUnroundedCm(inspectedEntity.anchorLocalCm.y)})
+                    </dd>
+                  </div>
+                </>
+              )}
+
+              {inspectedEntity.entityKind === 'notch' && (
+                <>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-neutral-500">Notch ID / Type</dt>
+                    <dd className="font-mono text-[10px] text-neutral-900">
+                      {inspectedEntity.notchId} · {inspectedEntity.notchType}
+                    </dd>
+                  </div>
+                  {inspectedEntity.linkedSegmentId && (
+                    <div className="flex items-baseline justify-between gap-2">
+                      <dt className="text-neutral-500">Linked Segment</dt>
+                      <dd className="font-mono text-[10px] text-neutral-900">
+                        {inspectedEntity.linkedSegmentId}
+                      </dd>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {inspectedEntity.entityKind === 'dart' && (
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-neutral-500">Dart ID</dt>
+                  <dd className="font-mono text-[10px] text-neutral-900">
+                    {inspectedEntity.dartId} (source intake {inspectedEntity.widthCm} cm)
+                  </dd>
+                </div>
+              )}
+
+              {inspectedEntity.entityKind === 'dart-landmark' && (
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-neutral-500">Dart / Landmark</dt>
+                  <dd className="font-mono text-[10px] text-neutral-900">
+                    {inspectedEntity.dartId} · {inspectedEntity.landmarkRole}
+                  </dd>
+                </div>
+              )}
+            </div>
+          </dl>
+
+          {/* Optional Bézier Control Polygon Toggle */}
+          {(inspectedEntity.entityKind === 'curve' ||
+            inspectedEntity.entityKind === 'bezier-handle') && (
+            <div className="space-y-1.5 pt-1 border-t border-teal-100">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-medium text-neutral-600">
+                  Bézier Control Polygon
+                </span>
+                <button
+                  type="button"
+                  data-testid="inspector-toggle-control-polygon"
+                  aria-pressed={atelier.showControlPolygon}
+                  onClick={() => atelier.setShowControlPolygon(!atelier.showControlPolygon)}
+                  className={`px-2 py-0.5 rounded-xs border text-[10px] font-mono cursor-pointer transition-colors ${
+                    atelier.showControlPolygon
+                      ? 'bg-amber-700 text-white border-amber-700'
+                      : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                  }`}
+                >
+                  {atelier.showControlPolygon ? 'Visible' : 'Hidden'}
+                </button>
+              </div>
+              {inspectedEntity.entityKind === 'curve' && (
+                <div className="grid grid-cols-2 gap-1 font-mono text-[10px] text-neutral-700 bg-white border border-neutral-200 rounded-xs p-1.5">
+                  <div>
+                    P0: ({formatUnroundedCm(inspectedEntity.p0LocalCm.x)},{' '}
+                    {formatUnroundedCm(inspectedEntity.p0LocalCm.y)})
+                  </div>
+                  <div>
+                    P1: ({formatUnroundedCm(inspectedEntity.p1LocalCm.x)},{' '}
+                    {formatUnroundedCm(inspectedEntity.p1LocalCm.y)})
+                  </div>
+                  <div>
+                    P2: ({formatUnroundedCm(inspectedEntity.p2LocalCm.x)},{' '}
+                    {formatUnroundedCm(inspectedEntity.p2LocalCm.y)})
+                  </div>
+                  <div>
+                    P3: ({formatUnroundedCm(inspectedEntity.p3LocalCm.x)},{' '}
+                    {formatUnroundedCm(inspectedEntity.p3LocalCm.y)})
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Unrounded Piece-Local Coordinates (cm) */}
+          <div
+            data-testid="inspector-entity-local-coords"
+            className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1"
+          >
+            <span className="text-[10px] font-semibold text-neutral-600 block">
+              Piece-Local Coordinates (cm · Unrounded Source)
+            </span>
+            <div className="space-y-0.5 font-mono tabular-nums text-[10.5px] text-neutral-900">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-neutral-400 shrink-0">X</span>
+                <span className="text-right truncate">
+                  {formatUnroundedCm(inspectedEntity.localPointCm.x)} cm
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-neutral-400 shrink-0">Y</span>
+                <span className="text-right truncate">
+                  {formatUnroundedCm(inspectedEntity.localPointCm.y)} cm
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Separate CAD Board Table Coordinates (cm) */}
+          <div
+            data-testid="inspector-entity-board-coords"
+            className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1"
+          >
+            <span className="text-[10px] font-semibold text-neutral-600 block">
+              CAD Board Table Coordinates (cm · Ephemeral Offset)
+            </span>
+            <div className="space-y-0.5 font-mono tabular-nums text-[10.5px] text-neutral-900">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-neutral-400 shrink-0">X</span>
+                <span className="text-right truncate">
+                  {formatUnroundedCm(inspectedEntity.boardPointCm.x)} cm
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-neutral-400 shrink-0">Y</span>
+                <span className="text-right truncate">
+                  {formatUnroundedCm(inspectedEntity.boardPointCm.y)} cm
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Coordinate Frame, Authority Tier & Certification Disclosure */}
+          <dl className="space-y-1 pt-1 border-t border-teal-200/70 text-[10px]">
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-neutral-500 shrink-0">Coordinate Frame</dt>
+              <dd
+                data-testid="inspector-entity-coord-frame"
+                className="font-mono text-neutral-900 text-right whitespace-nowrap"
+              >
+                {activeArtifact.coordinateFrame.yAxisDirection === 'cartesian-y-up'
+                  ? `Cartesian Y-Up (${activeArtifact.coordinateFrame.exteriorWinding} · ${activeArtifact.coordinateFrame.geometryUnit})`
+                  : `SVG Y-Down (${activeArtifact.coordinateFrame.exteriorWinding} · ${activeArtifact.coordinateFrame.geometryUnit})`}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-neutral-500">Artifact Authority</dt>
+              <dd
+                data-testid="inspector-entity-authority-tier"
+                className="font-mono font-semibold text-neutral-900 text-right"
+              >
+                {activeArtifact.authorityTier}
+              </dd>
+            </div>
+            <div
+              data-testid="inspector-entity-certification"
+              className="mt-1 p-1.5 rounded-xs bg-amber-50 border border-amber-200 text-amber-900 space-y-0.5 leading-snug"
+            >
+              <div className="font-medium">{activeArtifact.provenance.disclosureLabel}</div>
+              <div className="font-mono text-[9.5px] text-amber-800">
+                isCertified: {String(activeArtifact.isCertified)} · isProductionReady:{' '}
+                {String(activeArtifact.isProductionReady)} · externalCadInteroperabilityVerified:{' '}
+                {String(activeArtifact.externalCadInteroperabilityVerified)}
+              </div>
+            </div>
+          </dl>
+        </section>
+      )}
+
+      {/* Prompt when in Inspect Geometry mode with no entity clicked yet */}
+      {atelier && !inspectedEntity && activeTool === 'inspect-entity' && (
+        <section
+          data-testid="inspector-cad-entity-prompt"
+          className="pb-3 border-b border-teal-200/80 space-y-1"
+        >
+          <div className="flex items-center gap-1.5 text-teal-900 font-semibold text-[11px]">
+            <Crosshair className="w-3.5 h-3.5 text-teal-700" />
+            <span>Inspect Geometry Mode (Read-Only)</span>
+          </div>
+          <p className="text-[11px] text-neutral-600 leading-relaxed">
+            Hover and click any vertex, straight edge, cubic curve, control handle, notch, or dart
+            on the canvas to inspect its unrounded coordinates and topology without moving pieces.
+          </p>
+        </section>
+      )}
+
       {/* Seam selection summary if a seam is active */}
       {selectedEntity?.kind === 'seam' && (
         <section className="pb-3 border-b border-neutral-200 space-y-2" data-testid="inspector-seam">
@@ -818,38 +1181,57 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
         </section>
       )}
 
-      {/* Selected Pattern Piece Geometry Summary */}
+      {/* Selected Pattern Piece Geometry Summary (sourced from read-only activeArtifact when available) */}
       {selectedPiece && (
         <section className="space-y-2.5" data-testid="inspector-pattern-piece">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
               <Scissors className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
               <span className="font-semibold text-neutral-900 truncate">
-                {selectedPiece.pieceCode} · {selectedPiece.name}
+                {selectedArtifactPiece?.pieceCode ?? selectedPiece.pieceCode} ·{' '}
+                {selectedArtifactPiece?.name ?? selectedPiece.name}
               </span>
             </div>
             <span className="font-mono text-[10px] text-neutral-600 shrink-0">
-              {selectedPiece.onFold ? 'Fold' : `Cut ${selectedPiece.cutCount}`}
+              {(selectedArtifactPiece?.onFold ?? selectedPiece.onFold)
+                ? 'Fold'
+                : `Cut ${selectedArtifactPiece?.cutCount ?? selectedPiece.cutCount}`}
             </span>
           </div>
 
           <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xs px-2.5 py-1.5">
-            C0-Legacy prototype geometry · Non-authoritative preview (isProductionReady: false).
+            {activeArtifact
+              ? `${activeArtifact.authorityTier} · ${activeArtifact.provenance.disclosureLabel} (isProductionReady: ${String(activeArtifact.isProductionReady)}).`
+              : 'C0-Legacy prototype geometry · Non-authoritative preview (isProductionReady: false).'}
           </p>
 
           <dl className="grid grid-cols-2 gap-y-2 gap-x-3 pt-1 border-t border-neutral-100 text-[11px]">
             <div>
               <dt className="text-neutral-500">Bounding Box</dt>
               <dd className="font-mono tabular-nums text-neutral-900 font-medium">
-                {selectedPiece.boundingBox.widthCm} × {selectedPiece.boundingBox.heightCm} cm
+                {selectedArtifactPiece
+                  ? `${selectedArtifactPiece.boundingBoxCm.widthCm} × ${selectedArtifactPiece.boundingBoxCm.heightCm} cm`
+                  : `${selectedPiece.boundingBox.widthCm} × ${selectedPiece.boundingBox.heightCm} cm`}
               </dd>
             </div>
             <div>
               <dt className="text-neutral-500">Seam Allowance</dt>
               <dd className="font-mono tabular-nums text-neutral-900 font-medium">
-                {selectedPiece.seamAllowanceWidthCm} cm
+                {selectedArtifactPiece?.seamAllowanceWidthCm ?? selectedPiece.seamAllowanceWidthCm} cm
               </dd>
             </div>
+            {selectedArtifactPiece && (
+              <div className="col-span-2 flex items-center justify-between pt-1 border-t border-neutral-100 text-[10px] font-mono text-neutral-600">
+                <span>
+                  Sew {selectedArtifactPiece.sewSegments.length} · Cut{' '}
+                  {selectedArtifactPiece.cutSegments.length}
+                </span>
+                <span>
+                  Notches {selectedArtifactPiece.notches.length} · Darts{' '}
+                  {selectedArtifactPiece.darts.length}
+                </span>
+              </div>
+            )}
             {selectedPiece.offsetResult && (
               <div className="col-span-2 flex items-center justify-between pt-1 border-t border-neutral-100">
                 <dt className="text-neutral-500">Offset Preview</dt>

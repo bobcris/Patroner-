@@ -37,6 +37,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Compass,
+  Crosshair,
   FolderPlus,
   Layers,
   Magnet,
@@ -62,6 +63,8 @@ import { PatternAtelierStatusBar } from './PatternAtelierStatusBar';
 import { PatternLayersDrawer } from './PatternLayersDrawer';
 import { SNAP_INTERVAL_OPTIONS_CM } from './board-arrangement';
 import type { RenderPoint2D } from './contracts/pattern-render-artifact';
+import type { CadInspectableEntity } from './entity-hit-test';
+import { useOptionalViewportInteraction } from '../../state/ViewportInteractionContext';
 
 interface PatternWorkspaceProps {
   currentSpec: DesignSpecification;
@@ -145,6 +148,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   showGrid = true
 }) => {
   const atelierCtx = useOptionalPatternAtelierView();
+  const viewportCtx = useOptionalViewportInteraction();
 
   // Standalone fallbacks when rendered outside App.tsx / PatternAtelierViewProvider
   const [localBodiceDartStyle, setLocalBodiceDartStyle] = useState<BodiceDartStyle>(
@@ -177,6 +181,9 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const [localSelectedPieceId, setLocalSelectedPieceId] = useState<string>(
     currentSpec.garmentCategory === 'bodice' ? 'piece-bodice-front' : 'piece-skirt-front'
   );
+  const [localHoveredEntity, setLocalHoveredEntity] = useState<CadInspectableEntity | null>(null);
+  const [localInspectedEntity, setLocalInspectedEntity] = useState<CadInspectableEntity | null>(null);
+  const [localShowControlPolygon] = useState<boolean>(true);
 
   const bodiceDartStyle = externalBodiceDartStyle ?? localBodiceDartStyle;
   const setBodiceDartStyle = externalOnChangeBodiceDartStyle ?? setLocalBodiceDartStyle;
@@ -209,12 +216,48 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     ((key: keyof PatternCadLayerVisibility) =>
       setLocalLayerVisibility(prev => ({ ...prev, [key]: !prev[key] })));
   const enabledGradingSizes = atelierCtx?.enabledGradingSizes ?? localEnabledGradingSizes;
+  const hoveredEntity = atelierCtx?.hoveredEntity ?? localHoveredEntity;
+  const setHoveredEntity = atelierCtx?.setHoveredEntity ?? setLocalHoveredEntity;
+  const inspectedEntity = atelierCtx?.inspectedEntity ?? localInspectedEntity;
+  const setInspectedEntity = atelierCtx?.setInspectedEntity ?? setLocalInspectedEntity;
+  const showControlPolygon = atelierCtx?.showControlPolygon ?? localShowControlPolygon;
 
   const selectedPieceId = externalSelectedPieceId ?? localSelectedPieceId;
   const setSelectedPieceId = (nextId: string) => {
     setLocalSelectedPieceId(nextId);
     externalOnSelectPieceId?.(nextId);
   };
+
+  // Keyboard shortcuts for Pattern Atelier tool modes (V = Select, I = Inspect Geometry, H = Pan)
+  useEffect(() => {
+    if (!viewportCtx) return;
+    const isTypingTarget = (target: EventTarget | null) =>
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable);
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'i') {
+        viewportCtx.setActiveTool('inspect-entity', 'pattern-atelier');
+      } else if (key === 'v') {
+        viewportCtx.setActiveTool('select', 'pattern-atelier');
+      } else if (key === 'h') {
+        viewportCtx.setActiveTool('pan', 'pattern-atelier');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [viewportCtx]);
+
+  // Clear ephemeral hover state whenever leaving inspect-entity tool or pieces view mode
+  useEffect(() => {
+    if (activeTool !== 'inspect-entity' || cadViewMode !== 'pieces') {
+      setHoveredEntity(null);
+    }
+  }, [activeTool, cadViewMode, setHoveredEntity]);
 
   // Single authoritative production workspace bundle (shared with Module 05)
   const fallbackBundle = useMemo(() => {
@@ -277,9 +320,10 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   );
 
   // Reconcile UX-2.3.2 CAD board presentation state with the active immutable artifact
+  const syncAtelierArtifact = atelierCtx?.syncArtifact;
   useEffect(() => {
-    atelierCtx?.syncArtifact(renderArtifact);
-  }, [atelierCtx, renderArtifact]);
+    syncAtelierArtifact?.(renderArtifact);
+  }, [syncAtelierArtifact, renderArtifact]);
 
   // Synchronize external entity strip piece selection ONLY when externalSelectedPieceId changes,
   // so clearing board selection (Escape, empty canvas click, Clear) is never immediately overridden.
@@ -487,6 +531,29 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
             >
               <Layers className="w-3 h-3" />
               <span>Layers</span>
+            </button>
+          )}
+
+          {viewportCtx && effectiveViewMode === 'pieces' && (
+            <button
+              type="button"
+              aria-pressed={activeTool === 'inspect-entity'}
+              data-testid="atelier-inspect-mode-btn"
+              onClick={() =>
+                viewportCtx.setActiveTool(
+                  activeTool === 'inspect-entity' ? 'select' : 'inspect-entity',
+                  'pattern-atelier'
+                )
+              }
+              className={`px-2 py-0.5 rounded-xs border text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                activeTool === 'inspect-entity'
+                  ? 'bg-teal-700 text-white border-teal-700'
+                  : 'bg-white text-neutral-700 border-neutral-300 hover:text-neutral-900'
+              }`}
+              title="Toggle Read-Only Geometry Inspection Mode (I)"
+            >
+              <Crosshair className="w-3 h-3" />
+              <span>{activeTool === 'inspect-entity' ? 'Inspecting (Read-Only)' : 'Inspect'}</span>
             </button>
           )}
 
@@ -924,6 +991,11 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               onRedoBoard={atelierCtx?.redoBoard}
               onGroupSelected={atelierCtx?.groupSelectedPieces}
               onUngroupSelected={atelierCtx?.ungroupSelectedPieces}
+              hoveredEntity={hoveredEntity}
+              inspectedEntity={inspectedEntity}
+              showControlPolygon={showControlPolygon}
+              onHoverEntity={setHoveredEntity}
+              onInspectEntity={setInspectedEntity}
             />
           </div>
 
