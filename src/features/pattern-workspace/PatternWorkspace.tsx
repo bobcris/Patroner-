@@ -57,7 +57,6 @@ import { CadCamera, clampCadZoom } from './cad-math';
 import {
   PatternCadLayerVisibility,
   PatternCadViewMode,
-  useOptionalPatternAtelierCamera,
   useOptionalPatternAtelierView
 } from './PatternAtelierViewContext';
 import { PatternCadCanvas } from './PatternCadCanvas';
@@ -164,7 +163,6 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   showGrid = true
 }) => {
   const atelierCtx = useOptionalPatternAtelierView();
-  const atelierCamera = useOptionalPatternAtelierCamera();
   const viewportCtx = useOptionalViewportInteraction();
 
   // Standalone fallbacks when rendered outside App.tsx / PatternAtelierViewProvider
@@ -221,7 +219,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const requireApprovedGovernance = externalRequireApprovedGovernance ?? false;
   const strictUncertaintyGate = externalStrictUncertaintyGate ?? true;
 
-  const camera = atelierCamera ?? localCamera;
+  const standaloneCamera = atelierCtx ? undefined : localCamera;
   const setCamera = atelierCtx?.setCamera ?? setLocalCamera;
   const fitRequestVersion = atelierCtx?.fitRequestVersion ?? localFitVersion;
   const requestFitAll =
@@ -1162,7 +1160,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               activeTool={activeTool}
               showGrid={showGrid}
               layerVisibility={layerVisibility}
-              camera={camera}
+              camera={standaloneCamera}
               onChangeCamera={setCamera}
               fitRequestVersion={fitRequestVersion}
               cursorCm={standaloneCursorCm}
@@ -1224,7 +1222,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           </div>
 
           <PatternAtelierStatusBar
-            camera={camera}
+            camera={standaloneCamera}
             cursorCm={standaloneCursorCm}
             yAxisDirection={renderArtifact.coordinateFrame.yAxisDirection}
             authorityTier={renderArtifact.authorityTier}

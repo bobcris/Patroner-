@@ -28,6 +28,7 @@ import type {
 import {
   PatternCadLayerVisibility,
   PatternCadViewMode,
+  useOptionalPatternAtelierCamera,
   useOptionalPatternAtelierCursor
 } from './PatternAtelierViewContext';
 import { PatternDiagnosticsOverlay } from './PatternDiagnosticsOverlay';
@@ -109,7 +110,7 @@ export interface PatternCadCanvasProps {
   readonly activeTool: string;
   readonly showGrid: boolean;
   readonly layerVisibility: PatternCadLayerVisibility;
-  readonly camera: CadCamera;
+  readonly camera?: CadCamera;
   readonly onChangeCamera: (next: CadCamera) => void;
   readonly fitRequestVersion: number;
   readonly cursorCm?: RenderPoint2D | null;
@@ -242,7 +243,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   activeTool,
   showGrid,
   layerVisibility,
-  camera,
+  camera: propCamera,
   onChangeCamera,
   fitRequestVersion,
   cursorCm,
@@ -287,6 +288,8 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   onSelectDiagnostic,
   onHoverDiagnostic
 }) => {
+  const contextCamera = useOptionalPatternAtelierCamera();
+  const camera: CadCamera = contextCamera ?? propCamera ?? { zoom: 1, panX: 48, panY: 48 };
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({

@@ -12,10 +12,15 @@ import type {
   RenderPoint2D
 } from './contracts/pattern-render-artifact';
 import type { SnapConfig } from './board-arrangement';
-import { useOptionalPatternAtelierCursor } from './PatternAtelierViewContext';
+import {
+  useOptionalPatternAtelierCamera,
+  useOptionalPatternAtelierCursor
+} from './PatternAtelierViewContext';
+
+const FALLBACK_STATUS_CAMERA: CadCamera = { zoom: 1, panX: 0, panY: 0 };
 
 export interface PatternAtelierStatusBarProps {
-  readonly camera: CadCamera;
+  readonly camera?: CadCamera;
   readonly cursorCm?: RenderPoint2D | null;
   readonly yAxisDirection: CoordinateYAxisDirection;
   readonly authorityTier: GeometryAuthorityTier;
@@ -46,6 +51,51 @@ const CadCursorReadout: React.FC<{ readonly fallbackCursorCm?: RenderPoint2D | n
 
 CadCursorReadout.displayName = 'CadCursorReadout';
 
+const CadScaleAndGridReadout: React.FC<{ readonly fallbackCamera?: CadCamera }> = React.memo(
+  ({ fallbackCamera }) => {
+    const contextCamera = useOptionalPatternAtelierCamera();
+    const zoom = (contextCamera ?? fallbackCamera ?? FALLBACK_STATUS_CAMERA).zoom;
+    const pxPerCm = getPixelsPerCm(zoom);
+    const gridSpacing = computeAdaptiveGridSpacingCm(zoom);
+    return (
+      <>
+        <span data-testid="cad-scale-readout" className="text-neutral-600">
+          1 cm = {pxPerCm.toFixed(1)} px
+        </span>
+        <span className="hidden md:inline text-neutral-400" aria-hidden="true">·</span>
+        <span className="hidden md:inline text-neutral-600">
+          Grid {gridSpacing.minorCm}/{gridSpacing.majorCm} cm
+        </span>
+      </>
+    );
+  }
+);
+
+CadScaleAndGridReadout.displayName = 'CadScaleAndGridReadout';
+
+const CadZoomPercentButton: React.FC<{
+  readonly fallbackCamera?: CadCamera;
+  readonly onReset100: () => void;
+}> = React.memo(({ fallbackCamera, onReset100 }) => {
+  const contextCamera = useOptionalPatternAtelierCamera();
+  const zoom = (contextCamera ?? fallbackCamera ?? FALLBACK_STATUS_CAMERA).zoom;
+  const zoomPct = Math.round(zoom * 100);
+  return (
+    <button
+      type="button"
+      onClick={onReset100}
+      aria-label="Reset zoom to 100 percent"
+      title="Reset zoom to 100%"
+      data-testid="cad-zoom-readout"
+      className="px-1.5 h-5 rounded-xs text-[11px] font-semibold text-neutral-900 hover:bg-neutral-200 cursor-pointer min-w-[46px] text-center"
+    >
+      {zoomPct}%
+    </button>
+  );
+});
+
+CadZoomPercentButton.displayName = 'CadZoomPercentButton';
+
 export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = React.memo(
   ({
     camera,
@@ -62,9 +112,6 @@ export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = R
     onFitAll,
     onReset100
   }) => {
-    const pxPerCm = getPixelsPerCm(camera.zoom);
-    const gridSpacing = computeAdaptiveGridSpacingCm(camera.zoom);
-    const zoomPct = Math.round(camera.zoom * 100);
 
     const authoritySummary =
       authorityTier === 'C1_PYTHON_CERTIFIED'
@@ -85,13 +132,7 @@ export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = R
         <div className="flex items-center gap-2.5 font-mono tabular-nums whitespace-nowrap shrink-0">
           <CadCursorReadout fallbackCursorCm={cursorCm} />
           <span className="text-neutral-400" aria-hidden="true">|</span>
-          <span data-testid="cad-scale-readout" className="text-neutral-600">
-            1 cm = {pxPerCm.toFixed(1)} px
-          </span>
-          <span className="hidden md:inline text-neutral-400" aria-hidden="true">·</span>
-          <span className="hidden md:inline text-neutral-600">
-            Grid {gridSpacing.minorCm}/{gridSpacing.majorCm} cm
-          </span>
+          <CadScaleAndGridReadout fallbackCamera={camera} />
           {snapConfig && (
             <>
               <span className="hidden lg:inline text-neutral-400" aria-hidden="true">·</span>
@@ -151,16 +192,7 @@ export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = R
           >
             <Minus className="w-3 h-3" />
           </button>
-          <button
-            type="button"
-            onClick={onReset100}
-            aria-label="Reset zoom to 100 percent"
-            title="Reset zoom to 100%"
-            data-testid="cad-zoom-readout"
-            className="px-1.5 h-5 rounded-xs text-[11px] font-semibold text-neutral-900 hover:bg-neutral-200 cursor-pointer min-w-[46px] text-center"
-          >
-            {zoomPct}%
-          </button>
+          <CadZoomPercentButton fallbackCamera={camera} onReset100={onReset100} />
           <button
             type="button"
             onClick={onZoomIn}
