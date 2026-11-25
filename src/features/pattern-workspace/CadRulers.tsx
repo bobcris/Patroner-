@@ -78,6 +78,48 @@ export const CadRulers: React.FC<CadRulersProps> = React.memo(
       [viewportHeightPx, camera, projection]
     );
 
+    const xGeometry = useMemo(() => {
+      const majorParts: string[] = [];
+      const minorParts: string[] = [];
+      const labels: Array<{ readonly key: number; readonly screenPx: number; readonly label: string }> = [];
+      for (const tick of xTicks) {
+        if (tick.isMajor) {
+          majorParts.push(`M${tick.screenPx} 7V${RULER_THICKNESS_PX}`);
+          if (tick.label !== undefined) {
+            labels.push({ key: tick.valueCm, screenPx: tick.screenPx, label: tick.label });
+          }
+        } else {
+          minorParts.push(`M${tick.screenPx} 16V${RULER_THICKNESS_PX}`);
+        }
+      }
+      return {
+        majorD: majorParts.join(' '),
+        minorD: minorParts.join(' '),
+        labels
+      };
+    }, [xTicks]);
+
+    const yGeometry = useMemo(() => {
+      const majorParts: string[] = [];
+      const minorParts: string[] = [];
+      const labels: Array<{ readonly key: number; readonly screenPx: number; readonly label: string }> = [];
+      for (const tick of yTicks) {
+        if (tick.isMajor) {
+          majorParts.push(`M7 ${tick.screenPx}H${RULER_THICKNESS_PX}`);
+          if (tick.label !== undefined) {
+            labels.push({ key: tick.valueCm, screenPx: tick.screenPx, label: tick.label });
+          }
+        } else {
+          minorParts.push(`M16 ${tick.screenPx}H${RULER_THICKNESS_PX}`);
+        }
+      }
+      return {
+        majorD: majorParts.join(' '),
+        minorD: minorParts.join(' '),
+        labels
+      };
+    }, [yTicks]);
+
     return (
       <>
         {/* Top-left cm unit corner */}
@@ -102,28 +144,23 @@ export const CadRulers: React.FC<CadRulersProps> = React.memo(
             height={RULER_THICKNESS_PX}
             className="block"
           >
-            {xTicks.map(tick => (
-              <g key={`rx-${tick.valueCm}`}>
-                <line
-                  x1={tick.screenPx}
-                  y1={tick.isMajor ? 7 : 16}
-                  x2={tick.screenPx}
-                  y2={RULER_THICKNESS_PX}
-                  stroke={tick.isMajor ? '#52525b' : '#a1a1aa'}
-                  strokeWidth={tick.isMajor ? 1 : 0.75}
-                />
-                {tick.isMajor && tick.label !== undefined && (
-                  <text
-                    x={tick.screenPx + 3}
-                    y={11}
-                    fontSize="9"
-                    fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-                    fill="#3f3f46"
-                  >
-                    {tick.label}
-                  </text>
-                )}
-              </g>
+            {xGeometry.minorD && (
+              <path d={xGeometry.minorD} stroke="#a1a1aa" strokeWidth={0.75} fill="none" />
+            )}
+            {xGeometry.majorD && (
+              <path d={xGeometry.majorD} stroke="#52525b" strokeWidth={1} fill="none" />
+            )}
+            {xGeometry.labels.map(t => (
+              <text
+                key={`rx-${t.key}`}
+                x={t.screenPx + 3}
+                y={11}
+                fontSize="9"
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                fill="#3f3f46"
+              >
+                {t.label}
+              </text>
             ))}
             <CadRulerCursorLine
               axis="x"
@@ -147,30 +184,25 @@ export const CadRulers: React.FC<CadRulersProps> = React.memo(
             height={Math.max(1, viewportHeightPx)}
             className="block"
           >
-            {yTicks.map(tick => (
-              <g key={`ry-${tick.valueCm}`}>
-                <line
-                  x1={tick.isMajor ? 7 : 16}
-                  y1={tick.screenPx}
-                  x2={RULER_THICKNESS_PX}
-                  y2={tick.screenPx}
-                  stroke={tick.isMajor ? '#52525b' : '#a1a1aa'}
-                  strokeWidth={tick.isMajor ? 1 : 0.75}
-                />
-                {tick.isMajor && tick.label !== undefined && (
-                  <text
-                    x={10}
-                    y={tick.screenPx + 3}
-                    fontSize="9"
-                    fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-                    fill="#3f3f46"
-                    transform={`rotate(-90 10 ${tick.screenPx + 3})`}
-                    textAnchor="end"
-                  >
-                    {tick.label}
-                  </text>
-                )}
-              </g>
+            {yGeometry.minorD && (
+              <path d={yGeometry.minorD} stroke="#a1a1aa" strokeWidth={0.75} fill="none" />
+            )}
+            {yGeometry.majorD && (
+              <path d={yGeometry.majorD} stroke="#52525b" strokeWidth={1} fill="none" />
+            )}
+            {yGeometry.labels.map(t => (
+              <text
+                key={`ry-${t.key}`}
+                x={10}
+                y={t.screenPx + 3}
+                fontSize="9"
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                fill="#3f3f46"
+                transform={`rotate(-90 10 ${t.screenPx + 3})`}
+                textAnchor="end"
+              >
+                {t.label}
+              </text>
             ))}
             <CadRulerCursorLine
               axis="y"

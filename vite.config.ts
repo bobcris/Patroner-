@@ -65,9 +65,13 @@ export function resolveAllowedPreviewHosts(
 
 export const ALLOWED_PREVIEW_HOSTS: readonly string[] = Object.freeze(resolveAllowedPreviewHosts());
 
-export default defineConfig(() => {
+export default defineConfig(({ command, mode }) => {
+  const isDevArtifactOverrideEnabled = command === 'serve' && mode !== 'production';
   return {
     plugins: [react(), tailwindcss()],
+    define: {
+      __PATRONER_DEV_ARTIFACT_OVERRIDE__: JSON.stringify(isDevArtifactOverrideEnabled),
+    },
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),

@@ -26,15 +26,25 @@ function useDevArtifactOverrideDisabled(): PatternArtifactBundle | null {
   return null;
 }
 
+declare const __PATRONER_DEV_ARTIFACT_OVERRIDE__: boolean | undefined;
+
+const IS_DEV_ARTIFACT_OVERRIDE_ENABLED =
+  typeof __PATRONER_DEV_ARTIFACT_OVERRIDE__ === 'boolean' &&
+  __PATRONER_DEV_ARTIFACT_OVERRIDE__ &&
+  import.meta.env.DEV;
+
 /**
  * Development-only non-UI artifact override hook used exclusively for offline
  * Python contract & spatial diagnostic verification in headless Chromium.
  *
- * Because `import.meta.env.DEV` is statically replaced with `false` during
- * `vite build`, Vite/Rollup tree-shakes `useDevArtifactOverrideActive` and the
- * `patroner:dev-artifact-override` listener completely out of production bundles.
- * Rules of Hooks are preserved because the branch is a compile-time constant.
+ * Because `__PATRONER_DEV_ARTIFACT_OVERRIDE__` is statically replaced with
+ * `false` during every `vite build` (even if `NODE_ENV=development` is set in
+ * the shell environment), Vite/Rolldown unconditionally dead-code-eliminates
+ * `useDevArtifactOverrideActive` and the `patroner:dev-artifact-override`
+ * listener from production bundles. Rules of Hooks are preserved because the
+ * branch is a compile-time constant.
  */
-export const useDevArtifactOverride: () => PatternArtifactBundle | null = import.meta.env.DEV
-  ? useDevArtifactOverrideActive
-  : useDevArtifactOverrideDisabled;
+export const useDevArtifactOverride: () => PatternArtifactBundle | null =
+  IS_DEV_ARTIFACT_OVERRIDE_ENABLED
+    ? useDevArtifactOverrideActive
+    : useDevArtifactOverrideDisabled;
