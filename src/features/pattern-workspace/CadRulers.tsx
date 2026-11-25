@@ -11,6 +11,7 @@ import {
   worldCmToScreen
 } from './cad-math';
 import type { RenderPoint2D } from './contracts/pattern-render-artifact';
+import { useOptionalPatternAtelierCursor } from './PatternAtelierViewContext';
 
 export const RULER_THICKNESS_PX = 24;
 
@@ -19,8 +20,47 @@ export interface CadRulersProps {
   readonly viewportHeightPx: number;
   readonly camera: CadCamera;
   readonly projection: CadCoordinateProjection;
-  readonly cursorCm: RenderPoint2D | null;
+  readonly cursorCm?: RenderPoint2D | null;
 }
+
+const CadRulerCursorLine: React.FC<{
+  readonly axis: 'x' | 'y';
+  readonly viewportLimitPx: number;
+  readonly camera: CadCamera;
+  readonly projection: CadCoordinateProjection;
+  readonly fallbackCursorCm?: RenderPoint2D | null;
+}> = React.memo(({ axis, viewportLimitPx, camera, projection, fallbackCursorCm }) => {
+  const contextCursorCm = useOptionalPatternAtelierCursor();
+  const effectiveCursor = contextCursorCm ?? fallbackCursorCm ?? null;
+  if (!effectiveCursor) return null;
+  const screen = worldCmToScreen(effectiveCursor, camera, projection);
+  if (axis === 'x') {
+    if (screen.x < 0 || screen.x > viewportLimitPx) return null;
+    return (
+      <line
+        x1={screen.x}
+        y1={0}
+        x2={screen.x}
+        y2={RULER_THICKNESS_PX}
+        stroke="#2563eb"
+        strokeWidth={1.5}
+      />
+    );
+  }
+  if (screen.y < 0 || screen.y > viewportLimitPx) return null;
+  return (
+    <line
+      x1={0}
+      y1={screen.y}
+      x2={RULER_THICKNESS_PX}
+      y2={screen.y}
+      stroke="#2563eb"
+      strokeWidth={1.5}
+    />
+  );
+});
+
+CadRulerCursorLine.displayName = 'CadRulerCursorLine';
 
 /**
  * Synchronized horizontal and vertical centimeter rulers for the Pattern Atelier CAD canvas.
@@ -37,11 +77,6 @@ export const CadRulers: React.FC<CadRulersProps> = React.memo(
       () => generateRulerTicks('y', viewportHeightPx, camera, projection),
       [viewportHeightPx, camera, projection]
     );
-
-    const cursorScreen = useMemo(() => {
-      if (!cursorCm) return null;
-      return worldCmToScreen(cursorCm, camera, projection);
-    }, [cursorCm, camera, projection]);
 
     return (
       <>
@@ -90,16 +125,13 @@ export const CadRulers: React.FC<CadRulersProps> = React.memo(
                 )}
               </g>
             ))}
-            {cursorScreen && cursorScreen.x >= 0 && cursorScreen.x <= viewportWidthPx && (
-              <line
-                x1={cursorScreen.x}
-                y1={0}
-                x2={cursorScreen.x}
-                y2={RULER_THICKNESS_PX}
-                stroke="#2563eb"
-                strokeWidth={1.5}
-              />
-            )}
+            <CadRulerCursorLine
+              axis="x"
+              viewportLimitPx={viewportWidthPx}
+              camera={camera}
+              projection={projection}
+              fallbackCursorCm={cursorCm}
+            />
           </svg>
         </div>
 
@@ -140,16 +172,13 @@ export const CadRulers: React.FC<CadRulersProps> = React.memo(
                 )}
               </g>
             ))}
-            {cursorScreen && cursorScreen.y >= 0 && cursorScreen.y <= viewportHeightPx && (
-              <line
-                x1={0}
-                y1={cursorScreen.y}
-                x2={RULER_THICKNESS_PX}
-                y2={cursorScreen.y}
-                stroke="#2563eb"
-                strokeWidth={1.5}
-              />
-            )}
+            <CadRulerCursorLine
+              axis="y"
+              viewportLimitPx={viewportHeightPx}
+              camera={camera}
+              projection={projection}
+              fallbackCursorCm={cursorCm}
+            />
           </svg>
         </div>
       </>

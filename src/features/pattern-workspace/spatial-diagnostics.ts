@@ -151,6 +151,7 @@ export interface ResolvedArtifactDiagnostics {
   readonly items: readonly ResolvedSpatialDiagnostic[];
   readonly byKey: ReadonlyMap<string, ResolvedSpatialDiagnostic>;
   readonly mappedItems: readonly ResolvedSpatialDiagnostic[];
+  readonly preSortedMappedItems?: readonly ResolvedSpatialDiagnostic[];
   readonly unmappedItems: readonly ResolvedSpatialDiagnostic[];
   readonly staleOrInvalidItems: readonly ResolvedSpatialDiagnostic[];
   readonly summary: ResolvedDiagnosticsSummary;
@@ -526,6 +527,7 @@ export const EMPTY_RESOLVED_DIAGNOSTICS: ResolvedArtifactDiagnostics = {
   items: [],
   byKey: new Map<string, ResolvedSpatialDiagnostic>(),
   mappedItems: [],
+  preSortedMappedItems: [],
   unmappedItems: [],
   staleOrInvalidItems: [],
   summary: {
@@ -1089,11 +1091,28 @@ export function resolveArtifactDiagnostics(
     summaryByPieceId[pieceId] = { pieceId, ...acc };
   }
 
+  // Pre-compute deterministic Stage-2 clustering order once per artifact so pan/zoom
+  // frames avoid O(N log N) localeCompare sorting on every camera update.
+  const preSortedMappedItems =
+    mappedItems.length > 1
+      ? [...mappedItems].sort((a, b) => {
+          const sevDiff =
+            DIAGNOSTIC_SEVERITY_RANK[b.source.severity] -
+            DIAGNOSTIC_SEVERITY_RANK[a.source.severity];
+          if (sevDiff !== 0) return sevDiff;
+          if (a.isInconclusive !== b.isInconclusive) {
+            return a.isInconclusive ? -1 : 1;
+          }
+          return a.diagnosticKey.localeCompare(b.diagnosticKey);
+        })
+      : mappedItems;
+
   return {
     artifactIdentityKey,
     items,
     byKey,
     mappedItems,
+    preSortedMappedItems,
     unmappedItems,
     staleOrInvalidItems,
     summary: {
@@ -1200,7 +1219,8 @@ export function projectDiagnosticsForCanvas(
   let culledOffscreenCount = 0;
   const visibleItems: ProjectedDiagnosticItem[] = [];
 
-  for (const item of resolved.mappedItems) {
+  const sourceMappedItems = resolved.preSortedMappedItems ?? resolved.mappedItems;
+  for (const item of sourceMappedItems) {
     if (!options.severityFilter[item.source.severity]) {
       hiddenByFilterCount += 1;
       continue;
@@ -1279,16 +1299,19 @@ export function projectDiagnosticsForCanvas(
   }
 
   // Deterministic ordering before clustering: severity desc, inconclusive desc, diagnosticKey asc
-  visibleItems.sort((a, b) => {
-    const sevDiff =
-      DIAGNOSTIC_SEVERITY_RANK[b.resolved.source.severity] -
-      DIAGNOSTIC_SEVERITY_RANK[a.resolved.source.severity];
-    if (sevDiff !== 0) return sevDiff;
-    if (a.resolved.isInconclusive !== b.resolved.isInconclusive) {
-      return a.resolved.isInconclusive ? -1 : 1;
-    }
-    return a.resolved.diagnosticKey.localeCompare(b.resolved.diagnosticKey);
-  });
+  // Skipped when Stage 1 already pre-sorted mappedItems in this exact order.
+  if (!resolved.preSortedMappedItems && visibleItems.length > 1) {
+    visibleItems.sort((a, b) => {
+      const sevDiff =
+        DIAGNOSTIC_SEVERITY_RANK[b.resolved.source.severity] -
+        DIAGNOSTIC_SEVERITY_RANK[a.resolved.source.severity];
+      if (sevDiff !== 0) return sevDiff;
+      if (a.resolved.isInconclusive !== b.resolved.isInconclusive) {
+        return a.resolved.isInconclusive ? -1 : 1;
+      }
+      return a.resolved.diagnosticKey.localeCompare(b.resolved.diagnosticKey);
+    });
+  }
 
   // O(N) spatial hash clustering in screen space
   const clusters = clusterProjectedDiagnostics(visibleItems, clusterRadiusPx);
@@ -1329,9 +1352,13 @@ export function clusterProjectedDiagnostics(
   }
 
   const clusters: MutableCluster[] = [];
-  const grid = new Map<string, number[]>();
+  const grid = new Map<number, number[]>();
 
-  const cellKey = (cx: number, cy: number) => `${cx},${cy}`;
+  // Exact integer packing for grid indices in [-2_097_152, +2_097_151] avoids
+  // per-cell string allocations inside the 3x3 neighborhood loop.
+  const GRID_BIAS = 0x200000;
+  const GRID_STRIDE = 0x400000;
+  const cellKey = (cx: number, cy: number) => (cx + GRID_BIAS) * GRID_STRIDE + (cy + GRID_BIAS);
 
   for (const item of sortedItems) {
     const sx = item.screenAnchorPx.x;

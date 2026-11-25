@@ -12,10 +12,11 @@ import type {
   RenderPoint2D
 } from './contracts/pattern-render-artifact';
 import type { SnapConfig } from './board-arrangement';
+import { useOptionalPatternAtelierCursor } from './PatternAtelierViewContext';
 
 export interface PatternAtelierStatusBarProps {
   readonly camera: CadCamera;
-  readonly cursorCm: RenderPoint2D | null;
+  readonly cursorCm?: RenderPoint2D | null;
   readonly yAxisDirection: CoordinateYAxisDirection;
   readonly authorityTier: GeometryAuthorityTier;
   readonly isProductionReady: boolean;
@@ -28,6 +29,22 @@ export interface PatternAtelierStatusBarProps {
   readonly onFitAll: () => void;
   readonly onReset100: () => void;
 }
+
+const CadCursorReadout: React.FC<{ readonly fallbackCursorCm?: RenderPoint2D | null }> = React.memo(
+  ({ fallbackCursorCm }) => {
+    const contextCursorCm = useOptionalPatternAtelierCursor();
+    const effective = contextCursorCm ?? fallbackCursorCm ?? null;
+    return (
+      <span data-testid="cad-cursor-readout" className="text-neutral-900 min-w-[140px]">
+        {effective
+          ? `X ${effective.x.toFixed(1)} cm · Y ${effective.y.toFixed(1)} cm`
+          : 'X — · Y — cm'}
+      </span>
+    );
+  }
+);
+
+CadCursorReadout.displayName = 'CadCursorReadout';
 
 export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = React.memo(
   ({
@@ -66,11 +83,7 @@ export const PatternAtelierStatusBar: React.FC<PatternAtelierStatusBarProps> = R
       >
         {/* Left: Live cursor coordinates, true cm scale, grid interval, snap readout */}
         <div className="flex items-center gap-2.5 font-mono tabular-nums whitespace-nowrap shrink-0">
-          <span data-testid="cad-cursor-readout" className="text-neutral-900 min-w-[140px]">
-            {cursorCm
-              ? `X ${cursorCm.x.toFixed(1)} cm · Y ${cursorCm.y.toFixed(1)} cm`
-              : 'X — · Y — cm'}
-          </span>
+          <CadCursorReadout fallbackCursorCm={cursorCm} />
           <span className="text-neutral-400" aria-hidden="true">|</span>
           <span data-testid="cad-scale-readout" className="text-neutral-600">
             1 cm = {pxPerCm.toFixed(1)} px

@@ -41,13 +41,33 @@ import {
   SelectedEntity
 } from '../../state/ViewportInteractionContext';
 import { useOptionalCreativeStudio } from '../../features/creative-studio/CreativeStudioContext';
-import { useOptionalPatternAtelierView } from '../../features/pattern-workspace/PatternAtelierViewContext';
+import {
+  useOptionalPatternAtelierCamera,
+  useOptionalPatternAtelierView
+} from '../../features/pattern-workspace/PatternAtelierViewContext';
 import { PatternAtelierInspectorPanel } from '../../features/pattern-workspace/PatternAtelierInspectorPanel';
 import type {
   AlignmentAxis,
   PaletteSwatch,
   StudioLayer
 } from '../../features/creative-studio/types';
+
+const InspectorZoomReadout: React.FC<{
+  readonly isStudioEnv: boolean;
+  readonly studioZoom?: number;
+  readonly isPatternAtelierEnv: boolean;
+  readonly fallbackZoom: number;
+}> = React.memo(({ isStudioEnv, studioZoom, isPatternAtelierEnv, fallbackZoom }) => {
+  const atelierCamera = useOptionalPatternAtelierCamera();
+  const activeZoomPct =
+    isStudioEnv && studioZoom !== undefined
+      ? Math.round(studioZoom * 100)
+      : isPatternAtelierEnv && atelierCamera
+        ? Math.round(atelierCamera.zoom * 100)
+        : Math.round(fallbackZoom * 100);
+  return <span className="font-mono tabular-nums text-neutral-900">{activeZoomPct}%</span>;
+});
+InspectorZoomReadout.displayName = 'InspectorZoomReadout';
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -237,13 +257,6 @@ export const ContextualInspector: React.FC = React.memo(() => {
     );
   };
 
-  const activeZoomPct =
-    isStudioEnv && studio
-      ? Math.round(studio.document.camera.zoom * 100)
-      : isPatternAtelierEnv && patternAtelier
-        ? Math.round(patternAtelier.camera.zoom * 100)
-        : Math.round(camera.zoom * 100);
-
   return (
     <>
       {/* Tablet backdrop when inspector renders as slide-over (< 1024px) */}
@@ -277,7 +290,7 @@ export const ContextualInspector: React.FC = React.memo(() => {
         </div>
 
         {/* Scrollable Inspector Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-5 text-xs">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-5 text-xs [contain:layout_style]">
           {/* 0A. Creative Studio Multi-Selection Inspector (UX-2.2) */}
           {isStudioEnv && studio && isMultiStudioSelection && (
             <section className="space-y-3.5" data-testid="inspector-studio-multi">
@@ -1484,9 +1497,12 @@ export const ContextualInspector: React.FC = React.memo(() => {
             </h3>
             <div className="flex items-center justify-between text-[11px] text-neutral-600">
               <span>Zoom</span>
-              <span className="font-mono tabular-nums text-neutral-900">
-                {activeZoomPct}%
-              </span>
+              <InspectorZoomReadout
+                isStudioEnv={isStudioEnv}
+                studioZoom={studio?.document.camera.zoom}
+                isPatternAtelierEnv={isPatternAtelierEnv}
+                fallbackZoom={camera.zoom}
+              />
             </div>
             <div className="flex items-center justify-between text-[11px] text-neutral-600">
               <span>Grid Overlay</span>

@@ -29,7 +29,10 @@ import {
 } from 'lucide-react';
 import { useProjectWorkspace } from '../../state/ProjectWorkspaceContext';
 import { useViewportInteraction } from '../../state/ViewportInteractionContext';
-import { useOptionalPatternAtelierView } from './PatternAtelierViewContext';
+import {
+  PatternCadLayerVisibility,
+  useOptionalPatternAtelierView
+} from './PatternAtelierViewContext';
 import type { OverlapClassification } from './board-arrangement';
 import type { CadInspectableEntity } from './entity-hit-test';
 import {
@@ -41,6 +44,8 @@ import {
 } from './precision-measurement';
 import type {
   DiagnosticSeverity,
+  DiagnosticSeverityFilter,
+  ResolvedArtifactDiagnostics,
   ResolvedSpatialDiagnostic,
   SpatialMappingOutcome
 } from './spatial-diagnostics';
@@ -409,6 +414,532 @@ function getEntityKindDisplayLabel(entity: CadInspectableEntity): string {
       return `Dart Landmark (${entity.landmarkRole})`;
   }
 }
+
+function getDiagnosticOutcomeLabel(outcome: SpatialMappingOutcome): string {
+  switch (outcome) {
+    case 'mapped-point':
+      return 'Point';
+    case 'mapped-parameter':
+      return 'Parameter';
+    case 'mapped-interval':
+      return 'Interval';
+    case 'mapped-segment':
+      return 'Segment';
+    case 'mapped-piece':
+      return 'Piece';
+    case 'unmapped':
+      return 'Unmapped';
+    case 'stale-reference':
+      return 'Stale Ref';
+    case 'invalid-reference':
+      return 'Invalid Ref';
+  }
+}
+
+function getDiagnosticSeverityBadgeClass(
+  sev: DiagnosticSeverity,
+  isInconclusive: boolean
+): string {
+  if (isInconclusive) return 'bg-violet-100 text-violet-900 border-violet-300';
+  switch (sev) {
+    case 'CRITICAL_BLOCKING':
+      return 'bg-rose-100 text-rose-900 border-rose-300';
+    case 'ERROR':
+      return 'bg-red-100 text-red-900 border-red-300';
+    case 'WARNING':
+      return 'bg-amber-100 text-amber-900 border-amber-300';
+    case 'INFO':
+      return 'bg-indigo-100 text-indigo-900 border-indigo-300';
+  }
+}
+
+function getHiddenHostLayerLabel(
+  item: ResolvedSpatialDiagnostic,
+  layerVisibility: PatternCadLayerVisibility
+): string | null {
+  if (!item.contourScope) return null;
+  if (item.contourScope === 'sew' && !layerVisibility.showSewLines) return 'Sew';
+  if (item.contourScope === 'cut' && !layerVisibility.showSeamAllowance) return 'Cut';
+  return null;
+}
+
+const DiagnosticRowCard: React.FC<{
+  readonly item: ResolvedSpatialDiagnostic;
+  readonly isSelected: boolean;
+  readonly hiddenHost: string | null;
+  readonly onSelect: (key: string | null) => void;
+  readonly onLocate: (key: string) => void;
+}> = React.memo(({ item, isSelected, hiddenHost, onSelect, onLocate }) => (
+  <div
+    data-testid={`inspector-diag-row-${item.outcome}`}
+    data-diagnostic-key={item.diagnosticKey}
+    data-selected={isSelected ? 'true' : 'false'}
+    className={`p-2 rounded-xs border text-[10.5px] space-y-1 transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_68px] ${
+      isSelected
+        ? 'bg-neutral-900 text-white border-neutral-900'
+        : item.isInconclusive
+          ? 'bg-violet-50/60 border-violet-200 hover:border-violet-400'
+          : item.source.severity === 'CRITICAL_BLOCKING' || item.source.severity === 'ERROR'
+            ? 'bg-rose-50/50 border-rose-200 hover:border-rose-400'
+            : item.source.severity === 'WARNING'
+              ? 'bg-amber-50/50 border-amber-200 hover:border-amber-400'
+              : 'bg-indigo-50/40 border-indigo-200 hover:border-indigo-400'
+    }`}
+  >
+    <div className="flex items-start justify-between gap-1.5">
+      <button
+        type="button"
+        onClick={() => onSelect(isSelected ? null : item.diagnosticKey)}
+        className="flex-1 min-w-0 text-left cursor-pointer space-y-0.5"
+      >
+        <div className="flex items-center gap-1 flex-wrap">
+          <span
+            className={`px-1 py-0.25 rounded-xs border font-mono text-[9px] font-bold ${
+              isSelected
+                ? 'bg-white/15 text-white border-white/30'
+                : getDiagnosticSeverityBadgeClass(item.source.severity, item.isInconclusive)
+            }`}
+          >
+            {item.isInconclusive ? 'INCONCLUSIVE' : item.source.severity}
+          </span>
+          <span
+            className={`px-1 py-0.25 rounded-xs font-mono text-[9px] ${
+              isSelected ? 'bg-white/15 text-neutral-200' : 'bg-neutral-200/80 text-neutral-700'
+            }`}
+          >
+            {getDiagnosticOutcomeLabel(item.outcome)}
+          </span>
+          {hiddenHost && (
+            <span
+              className={`px-1 py-0.25 rounded-xs font-mono text-[9px] ${
+                isSelected ? 'bg-amber-400/20 text-amber-200' : 'bg-neutral-800 text-white'
+              }`}
+            >
+              {hiddenHost} hidden
+            </span>
+          )}
+        </div>
+        <div className="font-mono font-semibold truncate text-[10.5px]">{item.source.code}</div>
+        <p
+          className={`text-[10px] leading-snug line-clamp-2 ${
+            isSelected ? 'text-neutral-200' : 'text-neutral-700'
+          }`}
+        >
+          {item.source.message}
+        </p>
+      </button>
+
+      {item.isMapped && (
+        <button
+          type="button"
+          data-testid={`inspector-diag-locate-${item.source.id}`}
+          onClick={() => onLocate(item.diagnosticKey)}
+          title="Center canvas camera on this diagnostic"
+          aria-label={`Locate ${item.source.code} on canvas`}
+          className={`px-1.5 py-0.5 rounded-xs border font-mono text-[9.5px] shrink-0 cursor-pointer transition-colors ${
+            isSelected
+              ? 'bg-white text-neutral-900 border-white hover:bg-neutral-200'
+              : 'bg-white text-neutral-800 border-neutral-300 hover:bg-neutral-100'
+          }`}
+        >
+          Locate
+        </button>
+      )}
+    </div>
+  </div>
+));
+
+DiagnosticRowCard.displayName = 'DiagnosticRowCard';
+
+interface SpatialDiagnosticsInspectorSectionProps {
+  readonly resolvedDiagnostics: ResolvedArtifactDiagnostics;
+  readonly showDiagnosticsOverlay: boolean;
+  readonly toggleDiagnosticsOverlay: () => void;
+  readonly diagnosticSeverityFilter: DiagnosticSeverityFilter;
+  readonly toggleDiagnosticSeverityFilter: (severity: DiagnosticSeverity) => void;
+  readonly selectedDiagnosticKey: string | null;
+  readonly selectDiagnostic: (key: string | null) => void;
+  readonly clearDiagnosticSelection: () => void;
+  readonly locateDiagnosticOnCanvas: (key: string) => void;
+  readonly diagnosticReconciliationNotice: string | null;
+  readonly dismissDiagnosticReconciliationNotice: () => void;
+  readonly layerVisibility: PatternCadLayerVisibility;
+}
+
+const SpatialDiagnosticsInspectorSection: React.FC<SpatialDiagnosticsInspectorSectionProps> =
+  React.memo(
+    ({
+      resolvedDiagnostics,
+      showDiagnosticsOverlay,
+      toggleDiagnosticsOverlay,
+      diagnosticSeverityFilter,
+      toggleDiagnosticSeverityFilter,
+      selectedDiagnosticKey,
+      selectDiagnostic,
+      clearDiagnosticSelection,
+      locateDiagnosticOnCanvas,
+      diagnosticReconciliationNotice,
+      dismissDiagnosticReconciliationNotice,
+      layerVisibility
+    }) => {
+      const summary = resolvedDiagnostics.summary;
+      const selectedDiag: ResolvedSpatialDiagnostic | undefined = selectedDiagnosticKey
+        ? resolvedDiagnostics.byKey.get(selectedDiagnosticKey)
+        : undefined;
+
+      const filteredMapped = useMemo(
+        () =>
+          resolvedDiagnostics.mappedItems.filter(
+            item => diagnosticSeverityFilter[item.source.severity]
+          ),
+        [resolvedDiagnostics.mappedItems, diagnosticSeverityFilter]
+      );
+      const filteredUnmapped = useMemo(
+        () =>
+          resolvedDiagnostics.unmappedItems.filter(
+            item => diagnosticSeverityFilter[item.source.severity]
+          ),
+        [resolvedDiagnostics.unmappedItems, diagnosticSeverityFilter]
+      );
+      const filteredStaleInvalid = useMemo(
+        () =>
+          resolvedDiagnostics.staleOrInvalidItems.filter(
+            item => diagnosticSeverityFilter[item.source.severity]
+          ),
+        [resolvedDiagnostics.staleOrInvalidItems, diagnosticSeverityFilter]
+      );
+
+      const selectedHiddenHost = selectedDiag
+        ? getHiddenHostLayerLabel(selectedDiag, layerVisibility)
+        : null;
+
+      return (
+        <div className="space-y-2" data-testid="inspector-spatial-diagnostics">
+          {/* Overlay toggle & summary strip */}
+          <div className="flex items-center justify-between gap-1.5 flex-wrap bg-neutral-50 border border-neutral-200 rounded-xs px-2 py-1.5">
+            <div className="flex items-center gap-1.5 font-mono text-[10px] text-neutral-700 flex-wrap">
+              <span data-testid="inspector-diag-mapped-count">
+                Mapped: <strong>{summary.mappedCount}</strong>
+              </span>
+              <span className="text-neutral-300">·</span>
+              <span data-testid="inspector-diag-unmapped-count">
+                Unmapped: <strong>{summary.unmappedCount}</strong>
+              </span>
+              {(summary.staleCount > 0 || summary.invalidCount > 0) && (
+                <>
+                  <span className="text-neutral-300">·</span>
+                  <span
+                    data-testid="inspector-diag-stale-count"
+                    className="text-rose-700 font-semibold"
+                  >
+                    Stale/Inv: {summary.staleCount + summary.invalidCount}
+                  </span>
+                </>
+              )}
+              {summary.inconclusiveCount > 0 && (
+                <>
+                  <span className="text-neutral-300">·</span>
+                  <span
+                    data-testid="inspector-diag-inconclusive-count"
+                    className="text-violet-800 font-semibold"
+                  >
+                    Inconclusive: {summary.inconclusiveCount}
+                  </span>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              aria-pressed={showDiagnosticsOverlay}
+              data-testid="inspector-diag-overlay-toggle"
+              onClick={toggleDiagnosticsOverlay}
+              className={`px-1.5 py-0.5 rounded-xs border text-[10px] font-mono inline-flex items-center gap-1 cursor-pointer ${
+                showDiagnosticsOverlay
+                  ? 'bg-neutral-900 text-white border-neutral-900'
+                  : 'bg-white text-neutral-600 border-neutral-300'
+              }`}
+            >
+              {showDiagnosticsOverlay ? (
+                <Eye className="w-3 h-3" />
+              ) : (
+                <EyeOff className="w-3 h-3" />
+              )}
+              <span>{showDiagnosticsOverlay ? 'On Canvas' : 'Hidden'}</span>
+            </button>
+          </div>
+
+          {/* Severity filter controls (shown when diagnostics exist) */}
+          {summary.total > 0 && (
+            <div
+              className="flex items-center gap-1 flex-wrap"
+              role="group"
+              aria-label="Diagnostic severity filters"
+            >
+              {(
+                [
+                  { key: 'CRITICAL_BLOCKING', label: 'CRIT' },
+                  { key: 'ERROR', label: 'ERR' },
+                  { key: 'WARNING', label: 'WARN' },
+                  { key: 'INFO', label: 'INFO' }
+                ] as const
+              ).map(f => {
+                const active = diagnosticSeverityFilter[f.key];
+                const count = summary.bySeverity[f.key];
+                return (
+                  <button
+                    key={f.key}
+                    type="button"
+                    aria-pressed={active}
+                    data-testid={`inspector-diag-filter-${f.key}`}
+                    onClick={() => toggleDiagnosticSeverityFilter(f.key)}
+                    className={`px-1.5 py-0.5 rounded-xs border font-mono text-[9.5px] cursor-pointer transition-colors ${
+                      active
+                        ? 'bg-neutral-800 text-white border-neutral-800'
+                        : 'bg-white text-neutral-400 border-neutral-200 hover:text-neutral-700'
+                    }`}
+                  >
+                    {f.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Stale selection reconciliation notice */}
+          {diagnosticReconciliationNotice && (
+            <div
+              data-testid="inspector-diag-reconcile-notice"
+              className="px-2 py-1.5 rounded-xs border border-amber-300 bg-amber-50 text-[10px] text-amber-900 flex items-start justify-between gap-1.5"
+            >
+              <span>{diagnosticReconciliationNotice}</span>
+              <button
+                type="button"
+                onClick={dismissDiagnosticReconciliationNotice}
+                aria-label="Dismiss diagnostic reconciliation notice"
+                className="p-0.5 text-amber-800 hover:text-amber-950 cursor-pointer shrink-0"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {/* Selected Diagnostic Detailed Card */}
+          {selectedDiag && (
+            <div
+              data-testid="inspector-diag-detail"
+              data-diagnostic-key={selectedDiag.diagnosticKey}
+              className="p-2.5 rounded-xs border border-neutral-300 bg-white space-y-1.5 text-[10.5px]"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-mono font-bold text-neutral-900 break-all">
+                    {selectedDiag.source.code}
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                    <span
+                      className={`px-1 py-0.25 rounded-xs border font-mono text-[9px] font-bold ${getDiagnosticSeverityBadgeClass(selectedDiag.source.severity, selectedDiag.isInconclusive)}`}
+                    >
+                      {selectedDiag.source.severity}
+                    </span>
+                    <span className="px-1 py-0.25 rounded-xs bg-neutral-100 border border-neutral-200 font-mono text-[9px] text-neutral-700">
+                      {selectedDiag.outcome}
+                    </span>
+                    {selectedDiag.source.verificationOutcome && (
+                      <span
+                        data-testid="inspector-diag-verification-outcome"
+                        className={`px-1 py-0.25 rounded-xs border font-mono text-[9px] font-semibold ${
+                          selectedDiag.source.verificationOutcome === 'INCONCLUSIVE'
+                            ? 'bg-violet-100 text-violet-900 border-violet-300'
+                            : selectedDiag.source.verificationOutcome === 'CERTIFIED_INVALID'
+                              ? 'bg-rose-100 text-rose-900 border-rose-300'
+                              : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                        }`}
+                      >
+                        {selectedDiag.source.verificationOutcome}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearDiagnosticSelection}
+                  aria-label="Clear selected diagnostic"
+                  className="p-0.5 text-neutral-500 hover:text-neutral-900 cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <p className="text-[10.5px] text-neutral-800 leading-snug">
+                {selectedDiag.source.message}
+              </p>
+
+              {selectedDiag.source.remediationAction && (
+                <div className="px-2 py-1 rounded-xs bg-neutral-50 border border-neutral-200 text-[10px] text-neutral-700">
+                  <strong className="text-neutral-900">Remediation:</strong>{' '}
+                  {selectedDiag.source.remediationAction}
+                </div>
+              )}
+
+              <dl className="space-y-0.5 pt-1 border-t border-neutral-100">
+                <MetricRow label="Mapping" value={selectedDiag.resolutionNote} />
+                {selectedDiag.pieceCode && (
+                  <MetricRow
+                    label="Piece"
+                    value={`${selectedDiag.pieceCode} (${selectedDiag.pieceId})`}
+                  />
+                )}
+                {selectedDiag.resolvedSegments.length > 0 && (
+                  <MetricRow
+                    label="Segment(s)"
+                    value={selectedDiag.resolvedSegments
+                      .map(s => `${s.segmentId} [${s.contour}]`)
+                      .join(', ')}
+                  />
+                )}
+                {selectedDiag.parameterT !== undefined && (
+                  <MetricRow label="Parameter t" value={String(selectedDiag.parameterT)} />
+                )}
+                {selectedDiag.source.parameterIntervals &&
+                  selectedDiag.source.parameterIntervals.length > 0 && (
+                    <MetricRow
+                      label="Interval(s)"
+                      value={selectedDiag.source.parameterIntervals
+                        .map(([a, b]) => `[${a}, ${b}]`)
+                        .join(', ')}
+                    />
+                  )}
+                {selectedDiag.localAnchorCm && (
+                  <MetricRow
+                    label="Local Coords"
+                    value={`(${formatUnroundedCm(selectedDiag.localAnchorCm.x)}, ${formatUnroundedCm(selectedDiag.localAnchorCm.y)}) cm`}
+                  />
+                )}
+                {selectedDiag.source.canonicalOffsetClassification && (
+                  <MetricRow
+                    label="Classification"
+                    value={selectedDiag.source.canonicalOffsetClassification}
+                  />
+                )}
+                {selectedDiag.source.maxGeometricDeviationBoundCm !== undefined && (
+                  <MetricRow
+                    label="Max Dev. Bound"
+                    value={`${selectedDiag.source.maxGeometricDeviationBoundCm} cm`}
+                  />
+                )}
+                {selectedDiag.source.residualDistanceCm !== undefined && (
+                  <MetricRow
+                    label="Residual"
+                    value={`${selectedDiag.source.residualDistanceCm} cm`}
+                  />
+                )}
+                {selectedDiag.source.workingPrecisionBits !== undefined && (
+                  <MetricRow
+                    label="Precision"
+                    value={`${selectedDiag.source.workingPrecisionBits}-bit`}
+                  />
+                )}
+                {selectedHiddenHost && (
+                  <MetricRow
+                    label="Layer State"
+                    value={`Host ${selectedHiddenHost} contour hidden (D5 blocking override)`}
+                  />
+                )}
+              </dl>
+
+              {selectedDiag.isMapped && (
+                <button
+                  type="button"
+                  data-testid="inspector-diag-locate-selected-btn"
+                  onClick={() => locateDiagnosticOnCanvas(selectedDiag.diagnosticKey)}
+                  className="w-full py-1 px-2 rounded-xs bg-neutral-900 hover:bg-neutral-800 text-white font-mono text-[10px] font-semibold cursor-pointer transition-colors"
+                >
+                  Locate on Canvas
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Mapped / Unmapped / Stale-Invalid Lists */}
+          {summary.total === 0 ? (
+            <div
+              data-testid="inspector-diag-clean"
+              className="px-2.5 py-2 rounded-xs border border-emerald-200 bg-emerald-50/40 text-[10.5px] text-emerald-900"
+            >
+              Clean draft — zero spatial diagnostics reported on the active artifact.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredMapped.length > 0 && (
+                <div className="space-y-1" data-testid="inspector-diag-mapped-list">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+                    Mapped on Canvas ({filteredMapped.length})
+                  </div>
+                  <div className="space-y-1 max-h-44 overflow-y-auto pr-0.5 [contain:layout_style_paint]">
+                    {filteredMapped.map(item => (
+                      <DiagnosticRowCard
+                        key={item.diagnosticKey}
+                        item={item}
+                        isSelected={item.diagnosticKey === selectedDiagnosticKey}
+                        hiddenHost={getHiddenHostLayerLabel(item, layerVisibility)}
+                        onSelect={selectDiagnostic}
+                        onLocate={locateDiagnosticOnCanvas}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {filteredUnmapped.length > 0 && (
+                <div className="space-y-1" data-testid="inspector-diag-unmapped-list">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+                    Unmapped Global Diagnostics ({filteredUnmapped.length})
+                  </div>
+                  <p className="text-[9.5px] text-neutral-500">
+                    Preserved without fabricated canvas pins.
+                  </p>
+                  <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5 [contain:layout_style_paint]">
+                    {filteredUnmapped.map(item => (
+                      <DiagnosticRowCard
+                        key={item.diagnosticKey}
+                        item={item}
+                        isSelected={item.diagnosticKey === selectedDiagnosticKey}
+                        hiddenHost={getHiddenHostLayerLabel(item, layerVisibility)}
+                        onSelect={selectDiagnostic}
+                        onLocate={locateDiagnosticOnCanvas}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {filteredStaleInvalid.length > 0 && (
+                <div className="space-y-1" data-testid="inspector-diag-stale-list">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                    Stale / Invalid References ({filteredStaleInvalid.length})
+                  </div>
+                  <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5 [contain:layout_style_paint]">
+                    {filteredStaleInvalid.map(item => (
+                      <DiagnosticRowCard
+                        key={item.diagnosticKey}
+                        item={item}
+                        isSelected={item.diagnosticKey === selectedDiagnosticKey}
+                        hiddenHost={getHiddenHostLayerLabel(item, layerVisibility)}
+                        onSelect={selectDiagnostic}
+                        onLocate={locateDiagnosticOnCanvas}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+  );
+
+SpatialDiagnosticsInspectorSection.displayName = 'SpatialDiagnosticsInspectorSection';
 
 /**
  * UX-2.3.1 / UX-2.3.2 / UX-2.3.3.1 — Consolidated Right Inspector Panel for Pattern Atelier.
@@ -2149,468 +2680,23 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
           );
         })()}
 
-        {/* Spatial Diagnostics Controls & Summary (when PatternAtelierViewContext is mounted) */}
-        {atelier && (() => {
-          const {
-            resolvedDiagnostics,
-            showDiagnosticsOverlay,
-            toggleDiagnosticsOverlay,
-            diagnosticSeverityFilter,
-            toggleDiagnosticSeverityFilter,
-            selectedDiagnosticKey,
-            selectDiagnostic,
-            clearDiagnosticSelection,
-            locateDiagnosticOnCanvas,
-            diagnosticReconciliationNotice,
-            dismissDiagnosticReconciliationNotice,
-            layerVisibility
-          } = atelier;
-          const summary = resolvedDiagnostics.summary;
-          const selectedDiag: ResolvedSpatialDiagnostic | undefined = selectedDiagnosticKey
-            ? resolvedDiagnostics.byKey.get(selectedDiagnosticKey)
-            : undefined;
-
-          const outcomeLabel = (outcome: SpatialMappingOutcome): string => {
-            switch (outcome) {
-              case 'mapped-point':
-                return 'Point';
-              case 'mapped-parameter':
-                return 'Parameter';
-              case 'mapped-interval':
-                return 'Interval';
-              case 'mapped-segment':
-                return 'Segment';
-              case 'mapped-piece':
-                return 'Piece';
-              case 'unmapped':
-                return 'Unmapped';
-              case 'stale-reference':
-                return 'Stale Ref';
-              case 'invalid-reference':
-                return 'Invalid Ref';
-            }
-          };
-
-          const severityBadgeClass = (sev: DiagnosticSeverity, isInconclusive: boolean): string => {
-            if (isInconclusive) return 'bg-violet-100 text-violet-900 border-violet-300';
-            switch (sev) {
-              case 'CRITICAL_BLOCKING':
-                return 'bg-rose-100 text-rose-900 border-rose-300';
-              case 'ERROR':
-                return 'bg-red-100 text-red-900 border-red-300';
-              case 'WARNING':
-                return 'bg-amber-100 text-amber-900 border-amber-300';
-              case 'INFO':
-                return 'bg-indigo-100 text-indigo-900 border-indigo-300';
-            }
-          };
-
-          const filteredMapped = resolvedDiagnostics.mappedItems.filter(
-            item => diagnosticSeverityFilter[item.source.severity]
-          );
-          const filteredUnmapped = resolvedDiagnostics.unmappedItems.filter(
-            item => diagnosticSeverityFilter[item.source.severity]
-          );
-          const filteredStaleInvalid = resolvedDiagnostics.staleOrInvalidItems.filter(
-            item => diagnosticSeverityFilter[item.source.severity]
-          );
-
-          const isSelectedHostLayerHidden = (item: ResolvedSpatialDiagnostic): string | null => {
-            if (!item.contourScope) return null;
-            if (item.contourScope === 'sew' && !layerVisibility.showSewLines) return 'Sew';
-            if (item.contourScope === 'cut' && !layerVisibility.showSeamAllowance) return 'Cut';
-            return null;
-          };
-
-          const renderDiagRow = (item: ResolvedSpatialDiagnostic) => {
-            const isSelected = item.diagnosticKey === selectedDiagnosticKey;
-            const hiddenHost = isSelectedHostLayerHidden(item);
-            return (
-              <div
-                key={item.diagnosticKey}
-                data-testid={`inspector-diag-row-${item.outcome}`}
-                data-diagnostic-key={item.diagnosticKey}
-                data-selected={isSelected ? 'true' : 'false'}
-                className={`p-2 rounded-xs border text-[10.5px] space-y-1 transition-colors ${
-                  isSelected
-                    ? 'bg-neutral-900 text-white border-neutral-900'
-                    : item.isInconclusive
-                      ? 'bg-violet-50/60 border-violet-200 hover:border-violet-400'
-                      : item.source.severity === 'CRITICAL_BLOCKING' ||
-                          item.source.severity === 'ERROR'
-                        ? 'bg-rose-50/50 border-rose-200 hover:border-rose-400'
-                        : item.source.severity === 'WARNING'
-                          ? 'bg-amber-50/50 border-amber-200 hover:border-amber-400'
-                          : 'bg-indigo-50/40 border-indigo-200 hover:border-indigo-400'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => selectDiagnostic(isSelected ? null : item.diagnosticKey)}
-                    className="flex-1 min-w-0 text-left cursor-pointer space-y-0.5"
-                  >
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <span
-                        className={`px-1 py-0.25 rounded-xs border font-mono text-[9px] font-bold ${
-                          isSelected
-                            ? 'bg-white/15 text-white border-white/30'
-                            : severityBadgeClass(item.source.severity, item.isInconclusive)
-                        }`}
-                      >
-                        {item.isInconclusive ? 'INCONCLUSIVE' : item.source.severity}
-                      </span>
-                      <span
-                        className={`px-1 py-0.25 rounded-xs font-mono text-[9px] ${
-                          isSelected
-                            ? 'bg-white/15 text-neutral-200'
-                            : 'bg-neutral-200/80 text-neutral-700'
-                        }`}
-                      >
-                        {outcomeLabel(item.outcome)}
-                      </span>
-                      {hiddenHost && (
-                        <span
-                          className={`px-1 py-0.25 rounded-xs font-mono text-[9px] ${
-                            isSelected
-                              ? 'bg-amber-400/20 text-amber-200'
-                              : 'bg-neutral-800 text-white'
-                          }`}
-                        >
-                          {hiddenHost} hidden
-                        </span>
-                      )}
-                    </div>
-                    <div className="font-mono font-semibold truncate text-[10.5px]">
-                      {item.source.code}
-                    </div>
-                    <p
-                      className={`text-[10px] leading-snug line-clamp-2 ${
-                        isSelected ? 'text-neutral-200' : 'text-neutral-700'
-                      }`}
-                    >
-                      {item.source.message}
-                    </p>
-                  </button>
-
-                  {item.isMapped && (
-                    <button
-                      type="button"
-                      data-testid={`inspector-diag-locate-${item.source.id}`}
-                      onClick={() => locateDiagnosticOnCanvas(item.diagnosticKey)}
-                      title="Center canvas camera on this diagnostic"
-                      aria-label={`Locate ${item.source.code} on canvas`}
-                      className={`px-1.5 py-0.5 rounded-xs border font-mono text-[9.5px] shrink-0 cursor-pointer transition-colors ${
-                        isSelected
-                          ? 'bg-white text-neutral-900 border-white hover:bg-neutral-200'
-                          : 'bg-white text-neutral-800 border-neutral-300 hover:bg-neutral-100'
-                      }`}
-                    >
-                      Locate
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          };
-
-          return (
-            <div className="space-y-2" data-testid="inspector-spatial-diagnostics">
-              {/* Overlay toggle & summary strip */}
-              <div className="flex items-center justify-between gap-1.5 flex-wrap bg-neutral-50 border border-neutral-200 rounded-xs px-2 py-1.5">
-                <div className="flex items-center gap-1.5 font-mono text-[10px] text-neutral-700 flex-wrap">
-                  <span data-testid="inspector-diag-mapped-count">
-                    Mapped: <strong>{summary.mappedCount}</strong>
-                  </span>
-                  <span className="text-neutral-300">·</span>
-                  <span data-testid="inspector-diag-unmapped-count">
-                    Unmapped: <strong>{summary.unmappedCount}</strong>
-                  </span>
-                  {(summary.staleCount > 0 || summary.invalidCount > 0) && (
-                    <>
-                      <span className="text-neutral-300">·</span>
-                      <span
-                        data-testid="inspector-diag-stale-count"
-                        className="text-rose-700 font-semibold"
-                      >
-                        Stale/Inv: {summary.staleCount + summary.invalidCount}
-                      </span>
-                    </>
-                  )}
-                  {summary.inconclusiveCount > 0 && (
-                    <>
-                      <span className="text-neutral-300">·</span>
-                      <span
-                        data-testid="inspector-diag-inconclusive-count"
-                        className="text-violet-800 font-semibold"
-                      >
-                        Inconclusive: {summary.inconclusiveCount}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  aria-pressed={showDiagnosticsOverlay}
-                  data-testid="inspector-diag-overlay-toggle"
-                  onClick={toggleDiagnosticsOverlay}
-                  className={`px-1.5 py-0.5 rounded-xs border text-[10px] font-mono inline-flex items-center gap-1 cursor-pointer ${
-                    showDiagnosticsOverlay
-                      ? 'bg-neutral-900 text-white border-neutral-900'
-                      : 'bg-white text-neutral-600 border-neutral-300'
-                  }`}
-                >
-                  {showDiagnosticsOverlay ? (
-                    <Eye className="w-3 h-3" />
-                  ) : (
-                    <EyeOff className="w-3 h-3" />
-                  )}
-                  <span>{showDiagnosticsOverlay ? 'On Canvas' : 'Hidden'}</span>
-                </button>
-              </div>
-
-              {/* Severity filter controls (shown when diagnostics exist) */}
-              {summary.total > 0 && (
-                <div
-                  className="flex items-center gap-1 flex-wrap"
-                  role="group"
-                  aria-label="Diagnostic severity filters"
-                >
-                  {(
-                    [
-                      { key: 'CRITICAL_BLOCKING', label: 'CRIT' },
-                      { key: 'ERROR', label: 'ERR' },
-                      { key: 'WARNING', label: 'WARN' },
-                      { key: 'INFO', label: 'INFO' }
-                    ] as const
-                  ).map(f => {
-                    const active = diagnosticSeverityFilter[f.key];
-                    const count = summary.bySeverity[f.key];
-                    return (
-                      <button
-                        key={f.key}
-                        type="button"
-                        aria-pressed={active}
-                        data-testid={`inspector-diag-filter-${f.key}`}
-                        onClick={() => toggleDiagnosticSeverityFilter(f.key)}
-                        className={`px-1.5 py-0.5 rounded-xs border font-mono text-[9.5px] cursor-pointer transition-colors ${
-                          active
-                            ? 'bg-neutral-800 text-white border-neutral-800'
-                            : 'bg-white text-neutral-400 border-neutral-200 hover:text-neutral-700'
-                        }`}
-                      >
-                        {f.label} ({count})
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Stale selection reconciliation notice */}
-              {diagnosticReconciliationNotice && (
-                <div
-                  data-testid="inspector-diag-reconcile-notice"
-                  className="px-2 py-1.5 rounded-xs border border-amber-300 bg-amber-50 text-[10px] text-amber-900 flex items-start justify-between gap-1.5"
-                >
-                  <span>{diagnosticReconciliationNotice}</span>
-                  <button
-                    type="button"
-                    onClick={dismissDiagnosticReconciliationNotice}
-                    aria-label="Dismiss diagnostic reconciliation notice"
-                    className="p-0.5 text-amber-800 hover:text-amber-950 cursor-pointer shrink-0"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
-
-              {/* Selected Diagnostic Detailed Card */}
-              {selectedDiag && (
-                <div
-                  data-testid="inspector-diag-detail"
-                  data-diagnostic-key={selectedDiag.diagnosticKey}
-                  className="p-2.5 rounded-xs border border-neutral-300 bg-white space-y-1.5 text-[10.5px]"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-mono font-bold text-neutral-900 break-all">
-                        {selectedDiag.source.code}
-                      </div>
-                      <div className="flex items-center gap-1 flex-wrap mt-0.5">
-                        <span
-                          className={`px-1 py-0.25 rounded-xs border font-mono text-[9px] font-bold ${severityBadgeClass(selectedDiag.source.severity, selectedDiag.isInconclusive)}`}
-                        >
-                          {selectedDiag.source.severity}
-                        </span>
-                        <span className="px-1 py-0.25 rounded-xs bg-neutral-100 border border-neutral-200 font-mono text-[9px] text-neutral-700">
-                          {selectedDiag.outcome}
-                        </span>
-                        {selectedDiag.source.verificationOutcome && (
-                          <span
-                            data-testid="inspector-diag-verification-outcome"
-                            className={`px-1 py-0.25 rounded-xs border font-mono text-[9px] font-semibold ${
-                              selectedDiag.source.verificationOutcome === 'INCONCLUSIVE'
-                                ? 'bg-violet-100 text-violet-900 border-violet-300'
-                                : selectedDiag.source.verificationOutcome === 'CERTIFIED_INVALID'
-                                  ? 'bg-rose-100 text-rose-900 border-rose-300'
-                                  : 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                            }`}
-                          >
-                            {selectedDiag.source.verificationOutcome}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={clearDiagnosticSelection}
-                      aria-label="Clear selected diagnostic"
-                      className="p-0.5 text-neutral-500 hover:text-neutral-900 cursor-pointer shrink-0"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <p className="text-[10.5px] text-neutral-800 leading-snug">
-                    {selectedDiag.source.message}
-                  </p>
-
-                  {selectedDiag.source.remediationAction && (
-                    <div className="px-2 py-1 rounded-xs bg-neutral-50 border border-neutral-200 text-[10px] text-neutral-700">
-                      <strong className="text-neutral-900">Remediation:</strong>{' '}
-                      {selectedDiag.source.remediationAction}
-                    </div>
-                  )}
-
-                  <dl className="space-y-0.5 pt-1 border-t border-neutral-100">
-                    <MetricRow label="Mapping" value={selectedDiag.resolutionNote} />
-                    {selectedDiag.pieceCode && (
-                      <MetricRow
-                        label="Piece"
-                        value={`${selectedDiag.pieceCode} (${selectedDiag.pieceId})`}
-                      />
-                    )}
-                    {selectedDiag.resolvedSegments.length > 0 && (
-                      <MetricRow
-                        label="Segment(s)"
-                        value={selectedDiag.resolvedSegments
-                          .map(s => `${s.segmentId} [${s.contour}]`)
-                          .join(', ')}
-                      />
-                    )}
-                    {selectedDiag.parameterT !== undefined && (
-                      <MetricRow label="Parameter t" value={String(selectedDiag.parameterT)} />
-                    )}
-                    {selectedDiag.source.parameterIntervals &&
-                      selectedDiag.source.parameterIntervals.length > 0 && (
-                        <MetricRow
-                          label="Interval(s)"
-                          value={selectedDiag.source.parameterIntervals
-                            .map(([a, b]) => `[${a}, ${b}]`)
-                            .join(', ')}
-                        />
-                      )}
-                    {selectedDiag.localAnchorCm && (
-                      <MetricRow
-                        label="Local Coords"
-                        value={`(${formatUnroundedCm(selectedDiag.localAnchorCm.x)}, ${formatUnroundedCm(selectedDiag.localAnchorCm.y)}) cm`}
-                      />
-                    )}
-                    {selectedDiag.source.canonicalOffsetClassification && (
-                      <MetricRow
-                        label="Classification"
-                        value={selectedDiag.source.canonicalOffsetClassification}
-                      />
-                    )}
-                    {selectedDiag.source.maxGeometricDeviationBoundCm !== undefined && (
-                      <MetricRow
-                        label="Max Dev. Bound"
-                        value={`${selectedDiag.source.maxGeometricDeviationBoundCm} cm`}
-                      />
-                    )}
-                    {selectedDiag.source.residualDistanceCm !== undefined && (
-                      <MetricRow
-                        label="Residual"
-                        value={`${selectedDiag.source.residualDistanceCm} cm`}
-                      />
-                    )}
-                    {selectedDiag.source.workingPrecisionBits !== undefined && (
-                      <MetricRow
-                        label="Precision"
-                        value={`${selectedDiag.source.workingPrecisionBits}-bit`}
-                      />
-                    )}
-                    {isSelectedHostLayerHidden(selectedDiag) && (
-                      <MetricRow
-                        label="Layer State"
-                        value={`Host ${isSelectedHostLayerHidden(selectedDiag)} contour hidden (D5 blocking override)`}
-                      />
-                    )}
-                  </dl>
-
-                  {selectedDiag.isMapped && (
-                    <button
-                      type="button"
-                      data-testid="inspector-diag-locate-selected-btn"
-                      onClick={() => locateDiagnosticOnCanvas(selectedDiag.diagnosticKey)}
-                      className="w-full py-1 px-2 rounded-xs bg-neutral-900 hover:bg-neutral-800 text-white font-mono text-[10px] font-semibold cursor-pointer transition-colors"
-                    >
-                      Locate on Canvas
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Mapped / Unmapped / Stale-Invalid Lists */}
-              {summary.total === 0 ? (
-                <div
-                  data-testid="inspector-diag-clean"
-                  className="px-2.5 py-2 rounded-xs border border-emerald-200 bg-emerald-50/40 text-[10.5px] text-emerald-900"
-                >
-                  Clean draft — zero spatial diagnostics reported on the active artifact.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredMapped.length > 0 && (
-                    <div className="space-y-1" data-testid="inspector-diag-mapped-list">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
-                        Mapped on Canvas ({filteredMapped.length})
-                      </div>
-                      <div className="space-y-1 max-h-44 overflow-y-auto pr-0.5">
-                        {filteredMapped.map(renderDiagRow)}
-                      </div>
-                    </div>
-                  )}
-
-                  {filteredUnmapped.length > 0 && (
-                    <div className="space-y-1" data-testid="inspector-diag-unmapped-list">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
-                        Unmapped Global Diagnostics ({filteredUnmapped.length})
-                      </div>
-                      <p className="text-[9.5px] text-neutral-500">
-                        Preserved without fabricated canvas pins.
-                      </p>
-                      <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5">
-                        {filteredUnmapped.map(renderDiagRow)}
-                      </div>
-                    </div>
-                  )}
-
-                  {filteredStaleInvalid.length > 0 && (
-                    <div className="space-y-1" data-testid="inspector-diag-stale-list">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-rose-700">
-                        Stale / Invalid References ({filteredStaleInvalid.length})
-                      </div>
-                      <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5">
-                        {filteredStaleInvalid.map(renderDiagRow)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {/* Spatial Diagnostics Controls & Summary (memoized so camera pan/zoom skips all diagnostic cards) */}
+        {atelier && (
+          <SpatialDiagnosticsInspectorSection
+            resolvedDiagnostics={atelier.resolvedDiagnostics}
+            showDiagnosticsOverlay={atelier.showDiagnosticsOverlay}
+            toggleDiagnosticsOverlay={atelier.toggleDiagnosticsOverlay}
+            diagnosticSeverityFilter={atelier.diagnosticSeverityFilter}
+            toggleDiagnosticSeverityFilter={atelier.toggleDiagnosticSeverityFilter}
+            selectedDiagnosticKey={atelier.selectedDiagnosticKey}
+            selectDiagnostic={atelier.selectDiagnostic}
+            clearDiagnosticSelection={atelier.clearDiagnosticSelection}
+            locateDiagnosticOnCanvas={atelier.locateDiagnosticOnCanvas}
+            diagnosticReconciliationNotice={atelier.diagnosticReconciliationNotice}
+            dismissDiagnosticReconciliationNotice={atelier.dismissDiagnosticReconciliationNotice}
+            layerVisibility={atelier.layerVisibility}
+          />
+        )}
 
         {/* Preserved C0 Deterministic Validation Checks Ledger (pass + non-pass summary) */}
         <details

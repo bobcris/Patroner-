@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BodiceDartStyle,
   BodyMeasurements,
@@ -57,13 +57,15 @@ import { CadCamera, clampCadZoom } from './cad-math';
 import {
   PatternCadLayerVisibility,
   PatternCadViewMode,
+  useOptionalPatternAtelierCamera,
   useOptionalPatternAtelierView
 } from './PatternAtelierViewContext';
 import { PatternCadCanvas } from './PatternCadCanvas';
 import { PatternAtelierStatusBar } from './PatternAtelierStatusBar';
 import { PatternLayersDrawer } from './PatternLayersDrawer';
 import { SNAP_INTERVAL_OPTIONS_CM } from './board-arrangement';
-import type { PatternArtifactBundle, RenderPoint2D } from './contracts/pattern-render-artifact';
+import type { RenderPoint2D } from './contracts/pattern-render-artifact';
+import { useDevArtifactOverride } from './dev-artifact-override';
 import type { CadInspectableEntity } from './entity-hit-test';
 import {
   EMPTY_MEASUREMENT_SESSION,
@@ -162,6 +164,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   showGrid = true
 }) => {
   const atelierCtx = useOptionalPatternAtelierView();
+  const atelierCamera = useOptionalPatternAtelierCamera();
   const viewportCtx = useOptionalViewportInteraction();
 
   // Standalone fallbacks when rendered outside App.tsx / PatternAtelierViewProvider
@@ -206,21 +209,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const [localShowDiagnosticsOverlay, setLocalShowDiagnosticsOverlay] = useState<boolean>(true);
   const [localSelectedDiagKey, setLocalSelectedDiagKey] = useState<string | null>(null);
   const [localHoveredDiagKey, setLocalHoveredDiagKey] = useState<string | null>(null);
-  // Dev-only non-UI artifact override slot for offline Python contract verification in headless Chromium
-  const [devArtifactOverride, setDevArtifactOverride] = useState<PatternArtifactBundle | null>(null);
-
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      if (typeof window === 'undefined') return;
-      const onOverride = (event: Event) => {
-        const custom = event as CustomEvent<PatternArtifactBundle | null>;
-        setDevArtifactOverride(custom.detail ?? null);
-      };
-      window.addEventListener('patroner:dev-artifact-override', onOverride);
-      return () => window.removeEventListener('patroner:dev-artifact-override', onOverride);
-    }
-    return undefined;
-  }, []);
+  const devArtifactOverride = useDevArtifactOverride();
 
   const bodiceDartStyle = externalBodiceDartStyle ?? localBodiceDartStyle;
   const setBodiceDartStyle = externalOnChangeBodiceDartStyle ?? setLocalBodiceDartStyle;
@@ -232,14 +221,14 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const requireApprovedGovernance = externalRequireApprovedGovernance ?? false;
   const strictUncertaintyGate = externalStrictUncertaintyGate ?? true;
 
-  const camera = atelierCtx?.camera ?? localCamera;
+  const camera = atelierCamera ?? localCamera;
   const setCamera = atelierCtx?.setCamera ?? setLocalCamera;
   const fitRequestVersion = atelierCtx?.fitRequestVersion ?? localFitVersion;
   const requestFitAll =
     atelierCtx?.requestFitAll ?? (() => setLocalFitVersion(v => v + 1));
   const resetCameraTo100 =
     atelierCtx?.resetCameraTo100 ?? (() => setLocalCamera(DEFAULT_LOCAL_CAMERA));
-  const cursorCm = atelierCtx?.cursorCm ?? localCursorCm;
+  const standaloneCursorCm = atelierCtx ? undefined : localCursorCm;
   const setCursorCm = atelierCtx?.setCursorCm ?? setLocalCursorCm;
   const cadViewMode = atelierCtx?.cadViewMode ?? localCadViewMode;
   const setCadViewMode = atelierCtx?.setCadViewMode ?? setLocalCadViewMode;
@@ -498,13 +487,22 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
       ? 'pieces'
       : cadViewMode;
 
-  const handleZoomStep = (factor: number) => {
-    if (atelierCtx) {
-      atelierCtx.zoomByFactor(factor);
+  const atelierZoomByFactor = atelierCtx?.zoomByFactor;
+  const handleZoomIn = useCallback(() => {
+    if (atelierZoomByFactor) {
+      atelierZoomByFactor(1.2);
       return;
     }
-    setLocalCamera(prev => ({ ...prev, zoom: clampCadZoom(prev.zoom * factor) }));
-  };
+    setLocalCamera(prev => ({ ...prev, zoom: clampCadZoom(prev.zoom * 1.2) }));
+  }, [atelierZoomByFactor]);
+
+  const handleZoomOut = useCallback(() => {
+    if (atelierZoomByFactor) {
+      atelierZoomByFactor(1 / 1.2);
+      return;
+    }
+    setLocalCamera(prev => ({ ...prev, zoom: clampCadZoom(prev.zoom / 1.2) }));
+  }, [atelierZoomByFactor]);
 
   // Fail-closed screen for unsupported garment categories (e.g., trouser, dress)
   if (!isCadSupported || !m05Package) {
@@ -1167,7 +1165,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               camera={camera}
               onChangeCamera={setCamera}
               fitRequestVersion={fitRequestVersion}
-              cursorCm={cursorCm}
+              cursorCm={standaloneCursorCm}
               onChangeCursorCm={setCursorCm}
               assemblyResult={assemblyResult}
               gradedPatternSet={gradedPatternSet ?? undefined}
@@ -1227,7 +1225,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
 
           <PatternAtelierStatusBar
             camera={camera}
-            cursorCm={cursorCm}
+            cursorCm={standaloneCursorCm}
             yAxisDirection={renderArtifact.coordinateFrame.yAxisDirection}
             authorityTier={renderArtifact.authorityTier}
             isProductionReady={renderArtifact.isProductionReady}
@@ -1237,8 +1235,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
             selectedPieceCount={selectedIds.length}
             snapConfig={atelierCtx?.snapConfig}
             activeSnapCount={atelierCtx?.activeSnapGuides.length ?? 0}
-            onZoomIn={() => handleZoomStep(1.2)}
-            onZoomOut={() => handleZoomStep(1 / 1.2)}
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
             onFitAll={requestFitAll}
             onReset100={resetCameraTo100}
           />

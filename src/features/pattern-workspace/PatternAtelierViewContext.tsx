@@ -87,9 +87,9 @@ export interface PatternCadLayerVisibility {
 }
 
 export interface PatternAtelierViewContextValue {
-  // Dedicated Pattern Atelier CAD camera (zoom 0.15..12.0, screen-px pan)
-  // Camera state is strictly isolated from board-arrangement history.
-  readonly camera: CadCamera;
+  // Dedicated Pattern Atelier CAD camera actions (zoom 0.15..12.0, screen-px pan)
+  // Camera state is isolated in PatternAtelierCameraContext (read via useOptionalPatternAtelierCamera)
+  // so pan/zoom never re-renders shell, inspector, tool rail, or layers drawer.
   readonly setCamera: (next: CadCamera) => void;
   readonly zoomByFactor: (
     factor: number,
@@ -106,8 +106,7 @@ export interface PatternAtelierViewContextValue {
   readonly fitRequestVersion: number;
   readonly resetCameraTo100: () => void;
 
-  // Live cursor coordinate telemetry in cm (ephemeral UI state only)
-  readonly cursorCm: RenderPoint2D | null;
+  // Live cursor coordinate telemetry setter (ephemeral UI state; read via useOptionalPatternAtelierCursor)
   readonly setCursorCm: (pt: RenderPoint2D | null) => void;
 
   // View mode & inspection coordination (single source shared with ContextualInspector)
@@ -233,14 +232,121 @@ const DEFAULT_LAYER_VISIBILITY: PatternCadLayerVisibility = {
   showDimensions: true
 };
 
-const PatternAtelierViewContext = createContext<PatternAtelierViewContextValue | null>(null);
+interface PatternAtelierCameraActions {
+  readonly setCamera: (next: CadCamera) => void;
+  readonly zoomByFactor: (
+    factor: number,
+    anchorScreenPx?: RenderPoint2D,
+    yAxisDirection?: CoordinateYAxisDirection
+  ) => void;
+  readonly zoomToValue: (
+    targetZoom: number,
+    anchorScreenPx?: RenderPoint2D,
+    yAxisDirection?: CoordinateYAxisDirection
+  ) => void;
+  readonly panByScreenDelta: (dxPx: number, dyPx: number) => void;
+  readonly resetCameraTo100: () => void;
+}
 
-export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }> = ({
+const PatternAtelierViewContext = createContext<PatternAtelierViewContextValue | null>(null);
+const PatternAtelierCameraContext = createContext<CadCamera | null>(null);
+const PatternAtelierCameraActionsContext = createContext<PatternAtelierCameraActions | null>(null);
+const PatternAtelierCursorContext = createContext<RenderPoint2D | null>(null);
+const PatternAtelierCursorSetterContext = createContext<((pt: RenderPoint2D | null) => void) | null>(
+  null
+);
+
+const PatternAtelierCameraProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [camera, setCameraState] = useState<CadCamera>(DEFAULT_CAMERA);
+
+  const setCamera = useCallback((next: CadCamera) => {
+    setCameraState({
+      zoom: clampCadZoom(next.zoom),
+      panX: Number.isFinite(next.panX) ? next.panX : 0,
+      panY: Number.isFinite(next.panY) ? next.panY : 0
+    });
+  }, []);
+
+  const zoomToValue = useCallback(
+    (
+      targetZoom: number,
+      anchorScreenPx?: RenderPoint2D,
+      yAxisDirection: CoordinateYAxisDirection = 'svg-y-down'
+    ) => {
+      setCameraState(prev => {
+        if (anchorScreenPx) {
+          return zoomCadAtScreenPoint(prev, targetZoom, anchorScreenPx, { yAxisDirection });
+        }
+        return { ...prev, zoom: clampCadZoom(targetZoom) };
+      });
+    },
+    []
+  );
+
+  const zoomByFactor = useCallback(
+    (
+      factor: number,
+      anchorScreenPx?: RenderPoint2D,
+      yAxisDirection: CoordinateYAxisDirection = 'svg-y-down'
+    ) => {
+      setCameraState(prev => {
+        const nextZoom = clampCadZoom(prev.zoom * factor);
+        if (anchorScreenPx) {
+          return zoomCadAtScreenPoint(prev, nextZoom, anchorScreenPx, { yAxisDirection });
+        }
+        return { ...prev, zoom: nextZoom };
+      });
+    },
+    []
+  );
+
+  const panByScreenDelta = useCallback((dxPx: number, dyPx: number) => {
+    setCameraState(prev => panCadByScreenDelta(prev, dxPx, dyPx));
+  }, []);
+
+  const resetCameraTo100 = useCallback(() => {
+    setCameraState(DEFAULT_CAMERA);
+  }, []);
+
+  const actions = useMemo<PatternAtelierCameraActions>(
+    () => ({
+      setCamera,
+      zoomByFactor,
+      zoomToValue,
+      panByScreenDelta,
+      resetCameraTo100
+    }),
+    [setCamera, zoomByFactor, zoomToValue, panByScreenDelta, resetCameraTo100]
+  );
+
+  return (
+    <PatternAtelierCameraActionsContext.Provider value={actions}>
+      <PatternAtelierCameraContext.Provider value={camera}>
+        {children}
+      </PatternAtelierCameraContext.Provider>
+    </PatternAtelierCameraActionsContext.Provider>
+  );
+};
+
+const PatternAtelierCursorProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [cursorCm, setCursorCm] = useState<RenderPoint2D | null>(null);
+  return (
+    <PatternAtelierCursorSetterContext.Provider value={setCursorCm}>
+      <PatternAtelierCursorContext.Provider value={cursorCm}>
+        {children}
+      </PatternAtelierCursorContext.Provider>
+    </PatternAtelierCursorSetterContext.Provider>
+  );
+};
+
+const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> = ({
   children
 }) => {
-  const [camera, setCameraState] = useState<CadCamera>(DEFAULT_CAMERA);
+  const setCursorCm = useContext(PatternAtelierCursorSetterContext)!;
+  const { setCamera, zoomByFactor, zoomToValue, panByScreenDelta, resetCameraTo100 } = useContext(
+    PatternAtelierCameraActionsContext
+  )!;
   const [fitRequestVersion, setFitRequestVersion] = useState<number>(1);
-  const [cursorCm, setCursorCm] = useState<RenderPoint2D | null>(null);
   const [cadViewMode, setCadViewMode] = useState<PatternCadViewMode>('pieces');
   const [assemblyScenario, setAssemblyScenario] = useState<AssemblyScenarioMode>('active-draft');
   const [selectedPrototypeId, setSelectedPrototypeId] = useState<string>('PROTO-BOD-2026-M-01');
@@ -291,58 +397,8 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     null
   );
 
-  // Camera actions (never touch boardHistory)
-  const setCamera = useCallback((next: CadCamera) => {
-    setCameraState({
-      zoom: clampCadZoom(next.zoom),
-      panX: Number.isFinite(next.panX) ? next.panX : 0,
-      panY: Number.isFinite(next.panY) ? next.panY : 0
-    });
-  }, []);
-
-  const zoomToValue = useCallback(
-    (
-      targetZoom: number,
-      anchorScreenPx?: RenderPoint2D,
-      yAxisDirection: CoordinateYAxisDirection = 'svg-y-down'
-    ) => {
-      setCameraState(prev => {
-        if (anchorScreenPx) {
-          return zoomCadAtScreenPoint(prev, targetZoom, anchorScreenPx, { yAxisDirection });
-        }
-        return { ...prev, zoom: clampCadZoom(targetZoom) };
-      });
-    },
-    []
-  );
-
-  const zoomByFactor = useCallback(
-    (
-      factor: number,
-      anchorScreenPx?: RenderPoint2D,
-      yAxisDirection: CoordinateYAxisDirection = 'svg-y-down'
-    ) => {
-      setCameraState(prev => {
-        const nextZoom = clampCadZoom(prev.zoom * factor);
-        if (anchorScreenPx) {
-          return zoomCadAtScreenPoint(prev, nextZoom, anchorScreenPx, { yAxisDirection });
-        }
-        return { ...prev, zoom: nextZoom };
-      });
-    },
-    []
-  );
-
-  const panByScreenDelta = useCallback((dxPx: number, dyPx: number) => {
-    setCameraState(prev => panCadByScreenDelta(prev, dxPx, dyPx));
-  }, []);
-
   const requestFitAll = useCallback(() => {
     setFitRequestVersion(v => v + 1);
-  }, []);
-
-  const resetCameraTo100 = useCallback(() => {
-    setCameraState(DEFAULT_CAMERA);
   }, []);
 
   const toggleGradingSize = useCallback((size: string) => {
@@ -684,7 +740,6 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
 
   const value = useMemo<PatternAtelierViewContextValue>(
     () => ({
-      camera,
       setCamera,
       zoomByFactor,
       zoomToValue,
@@ -692,7 +747,6 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       requestFitAll,
       fitRequestVersion,
       resetCameraTo100,
-      cursorCm,
       setCursorCm,
       cadViewMode,
       setCadViewMode,
@@ -770,7 +824,6 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       dismissDiagnosticReconciliationNotice
     }),
     [
-      camera,
       setCamera,
       zoomByFactor,
       zoomToValue,
@@ -778,7 +831,7 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       requestFitAll,
       fitRequestVersion,
       resetCameraTo100,
-      cursorCm,
+      setCursorCm,
       cadViewMode,
       assemblyScenario,
       selectedPrototypeId,
@@ -848,6 +901,24 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     </PatternAtelierViewContext.Provider>
   );
 };
+
+export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }> = ({
+  children
+}) => (
+  <PatternAtelierCameraProvider>
+    <PatternAtelierCursorProvider>
+      <PatternAtelierViewStateProvider>{children}</PatternAtelierViewStateProvider>
+    </PatternAtelierCursorProvider>
+  </PatternAtelierCameraProvider>
+);
+
+export function useOptionalPatternAtelierCamera(): CadCamera | null {
+  return useContext(PatternAtelierCameraContext);
+}
+
+export function useOptionalPatternAtelierCursor(): RenderPoint2D | null {
+  return useContext(PatternAtelierCursorContext);
+}
 
 export function useOptionalPatternAtelierView(): PatternAtelierViewContextValue | null {
   return useContext(PatternAtelierViewContext);

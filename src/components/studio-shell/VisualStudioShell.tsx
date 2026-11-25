@@ -17,7 +17,24 @@ import { CollapsibleBottomDock } from './CollapsibleBottomDock';
 import { WorkspaceErrorBoundary } from '../layout/WorkspaceErrorBoundary';
 import { SimulationFitPanel } from '../../features/simulation/SimulationFitPanel';
 import { StudioPerfBoundary } from '../../features/creative-studio/perf-probe';
-import { useOptionalPatternAtelierView } from '../../features/pattern-workspace/PatternAtelierViewContext';
+import { useOptionalPatternAtelierCamera } from '../../features/pattern-workspace/PatternAtelierViewContext';
+
+const StudioStripZoomReadout: React.FC<{
+  readonly activeEnvironment: StudioEnvironment;
+  readonly fallbackZoom: number;
+}> = React.memo(({ activeEnvironment, fallbackZoom }) => {
+  const atelierCamera = useOptionalPatternAtelierCamera();
+  const zoomPct =
+    activeEnvironment === 'pattern-atelier' && atelierCamera
+      ? Math.round(atelierCamera.zoom * 100)
+      : Math.round(fallbackZoom * 100);
+  return (
+    <span className="font-mono tabular-nums text-[10px] text-neutral-500 pl-1 whitespace-nowrap shrink-0">
+      {zoomPct}%
+    </span>
+  );
+});
+StudioStripZoomReadout.displayName = 'StudioStripZoomReadout';
 
 export interface VisualStudioShellProps {
   renderCreativeStudio: () => React.ReactNode;
@@ -73,16 +90,11 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
     removeEphemeralOverlay
   } = useViewportInteraction();
 
-  const patternAtelier = useOptionalPatternAtelierView();
   const envMeta = ENV_CONTEXT_COPY[activeEnvironment];
   const pieces = workspaceBundle.pieces;
   const activeEnvNotes = ephemeralOverlays.filter(n => n.environment === activeEnvironment);
   const isFullBleedEnv =
     activeEnvironment === 'creative-studio' || activeEnvironment === 'pattern-atelier';
-  const stripZoomPct =
-    activeEnvironment === 'pattern-atelier' && patternAtelier
-      ? Math.round(patternAtelier.camera.zoom * 100)
-      : Math.round(camera.zoom * 100);
 
   return (
     <div
@@ -252,9 +264,10 @@ export const VisualStudioShell: React.FC<VisualStudioShellProps> = ({
                 </>
               )}
 
-              <span className="font-mono tabular-nums text-[10px] text-neutral-500 pl-1 whitespace-nowrap shrink-0">
-                {stripZoomPct}%
-              </span>
+              <StudioStripZoomReadout
+                activeEnvironment={activeEnvironment}
+                fallbackZoom={camera.zoom}
+              />
             </div>
           </div>
 
