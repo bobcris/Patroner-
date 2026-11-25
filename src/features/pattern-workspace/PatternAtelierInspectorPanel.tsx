@@ -13,6 +13,7 @@ import {
   AlignStartVertical,
   AlignVerticalSpaceAround,
   ArrowDown,
+  ArrowLeftRight,
   ArrowUp,
   CheckCircle2,
   Crosshair,
@@ -20,6 +21,7 @@ import {
   EyeOff,
   FolderPlus,
   Layers,
+  Ruler,
   Scissors,
   Sliders,
   Ungroup,
@@ -30,6 +32,13 @@ import { useViewportInteraction } from '../../state/ViewportInteractionContext';
 import { useOptionalPatternAtelierView } from './PatternAtelierViewContext';
 import type { OverlapClassification } from './board-arrangement';
 import type { CadInspectableEntity } from './entity-hit-test';
+import {
+  ADVISORY_MEASUREMENT_DISCLOSURE,
+  CubicBezierArcLengthResult,
+  MeasurementClassification,
+  SpaceDistanceMetrics,
+  VertexAngleMeasurementResult
+} from './precision-measurement';
 import { AssemblyInspectionPanel } from './AssemblyInspectionPanel';
 import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
 import { assembleBodiceSleeve, formatSignedCm } from '../../engine/assembly';
@@ -93,6 +102,289 @@ function formatUnroundedCm(value: number): string {
   if (!Number.isFinite(value)) return 'NaN';
   return Object.is(value, -0) ? '0' : String(value);
 }
+
+function formatMetricCm(value: number | null, digits = 4): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  const normalized = Object.is(value, -0) ? 0 : value;
+  return `${normalized.toFixed(digits)} cm`;
+}
+
+function formatSignedMetricCm(value: number | null, digits = 4): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  const normalized = Object.is(value, -0) ? 0 : value;
+  const sign = normalized > 0 ? '+' : '';
+  return `${sign}${normalized.toFixed(digits)} cm`;
+}
+
+function formatDeg(value: number | null, digits = 2): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  const normalized = Object.is(value, -0) ? 0 : value;
+  return `${normalized.toFixed(digits)}°`;
+}
+
+function formatSciCm(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  if (value === 0) return '0 cm';
+  if (Math.abs(value) < 1e-3 || Math.abs(value) >= 1e4) {
+    return `${value.toExponential(2)} cm`;
+  }
+  return `${value.toFixed(6)} cm`;
+}
+
+function formatClassificationBadge(classification: MeasurementClassification): string {
+  switch (classification) {
+    case 'algebraic-float64':
+      return 'Algebraic Float64';
+    case 'numerical-approximation':
+      return 'Numerical Approx.';
+    case 'indeterminate':
+      return 'Indeterminate';
+  }
+}
+
+const MetricRow: React.FC<{
+  label: string;
+  value: React.ReactNode;
+  testId?: string;
+}> = ({ label, value, testId }) => (
+  <div className="flex items-baseline justify-between gap-2 text-[10.5px]">
+    <dt className="text-neutral-500 shrink-0">{label}</dt>
+    <dd
+      data-testid={testId}
+      className="font-mono tabular-nums text-neutral-900 text-right truncate"
+    >
+      {value}
+    </dd>
+  </div>
+);
+
+const SpaceDistanceBlock: React.FC<{
+  title: string;
+  subtitle: string;
+  metrics: SpaceDistanceMetrics | null;
+  unavailableReason?: string;
+  testId: string;
+}> = ({ title, subtitle, metrics, unavailableReason, testId }) => (
+  <div
+    data-testid={testId}
+    className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1"
+  >
+    <div className="flex items-baseline justify-between gap-1.5">
+      <span className="text-[10px] font-semibold text-neutral-700">{title}</span>
+      <span className="text-[9.5px] font-mono text-neutral-400 shrink-0">{subtitle}</span>
+    </div>
+    {!metrics ? (
+      <p className="text-[10px] text-neutral-500 leading-snug">
+        {unavailableReason ?? 'Unavailable in this coordinate space.'}
+      </p>
+    ) : (
+      <dl className="space-y-0.5 pt-0.5">
+        <MetricRow
+          label="Distance"
+          value={
+            <span className="font-semibold text-amber-900">
+              {formatMetricCm(metrics.distanceCm, 4)}
+            </span>
+          }
+          testId={`${testId}-distance`}
+        />
+        <MetricRow
+          label="ΔX"
+          value={formatSignedMetricCm(metrics.dxCm, 4)}
+          testId={`${testId}-dx`}
+        />
+        <MetricRow
+          label="ΔY"
+          value={formatSignedMetricCm(metrics.dyCm, 4)}
+          testId={`${testId}-dy`}
+        />
+        {metrics.isCoincident ? (
+          <p className="text-[10px] text-amber-800 pt-0.5 leading-snug">
+            {metrics.angleIndeterminateReason ?? 'Coincident points — direction angle indeterminate.'}
+          </p>
+        ) : (
+          metrics.angles && (
+            <>
+              <MetricRow
+                label="Visual Incl."
+                value={formatDeg(metrics.angles.visualInclinationDeg, 2)}
+              />
+              <MetricRow
+                label="Bearing (0° N)"
+                value={formatDeg(metrics.angles.compassBearingDeg, 2)}
+              />
+              <MetricRow
+                label="Line Orient."
+                value={formatDeg(metrics.angles.undirectedOrientationDeg, 2)}
+              />
+            </>
+          )
+        )}
+      </dl>
+    )}
+  </div>
+);
+
+const VertexAngleDetailsBlock: React.FC<{
+  result: VertexAngleMeasurementResult;
+  compact?: boolean;
+}> = ({ result, compact = false }) => (
+  <div className="space-y-2">
+    <div className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1">
+      <div className="flex items-center justify-between gap-1.5">
+        <span className="text-[10px] font-semibold text-neutral-700">
+          {compact ? 'Vertex Angle Preview' : 'Vertex Angle Breakdown'}
+        </span>
+        {result.usedHigherOrderEndpointTangent && (
+          <span className="text-[9px] font-mono font-semibold text-amber-800 bg-amber-100 px-1 py-0.5 rounded-xs">
+            L&apos;Hôpital
+          </span>
+        )}
+      </div>
+      <dl className="space-y-0.5">
+        <MetricRow
+          label="Included Angle"
+          value={
+            <span className="font-semibold text-neutral-900">
+              {formatDeg(result.includedAngleDeg, 2)}
+            </span>
+          }
+          testId="inspector-vertex-included-angle"
+        />
+        <MetricRow label="Turn Deflection" value={formatDeg(result.turnAngleDeg, 2)} />
+        {result.interiorExteriorStatus === 'determined' ? (
+          <>
+            <MetricRow
+              label="Interior Angle"
+              value={
+                <span className="font-semibold text-amber-900">
+                  {formatDeg(result.interiorAngleDeg, 2)}
+                  {result.isReflex ? ' (Reflex)' : ''}
+                </span>
+              }
+              testId="inspector-vertex-interior-angle"
+            />
+            <MetricRow
+              label="Exterior Angle"
+              value={formatDeg(result.exteriorAngleDeg, 2)}
+              testId="inspector-vertex-exterior-angle"
+            />
+          </>
+        ) : (
+          <div
+            data-testid="inspector-vertex-indeterminate-notice"
+            className="mt-1 p-1.5 rounded-xs bg-amber-50 border border-amber-200 text-[10px] text-amber-900 leading-snug"
+          >
+            <div className="font-semibold">Interior / Exterior: Indeterminate</div>
+            <div>
+              {result.indeterminateReason ??
+                'Contour orientation could not be verified; unsigned included angle preserved.'}
+            </div>
+          </div>
+        )}
+      </dl>
+    </div>
+
+    {!compact && (
+      <div className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1">
+        <span className="text-[10px] font-semibold text-neutral-700 block">
+          Contour Orientation (Green&apos;s Theorem)
+        </span>
+        <dl className="space-y-0.5">
+          <MetricRow label="Status" value={result.contourOrientation.status} />
+          <MetricRow
+            label="Signed Area"
+            value={
+              result.contourOrientation.algebraicSignedAreaCm2 !== null
+                ? `${result.contourOrientation.algebraicSignedAreaCm2.toFixed(3)} cm²`
+                : '—'
+            }
+          />
+          <MetricRow
+            label="Visual Winding"
+            value={result.contourOrientation.visualWinding ?? 'Indeterminate'}
+          />
+          <MetricRow
+            label="Incoming Seg"
+            value={result.incomingSegmentId ?? '—'}
+          />
+          <MetricRow
+            label="Outgoing Seg"
+            value={result.outgoingSegmentId ?? '—'}
+          />
+        </dl>
+      </div>
+    )}
+  </div>
+);
+
+const ArcLengthSubBlock: React.FC<{
+  title: string;
+  result: CubicBezierArcLengthResult;
+  testId: string;
+}> = ({ title, result, testId }) => (
+  <div
+    data-testid={testId}
+    className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1"
+  >
+    <div className="flex items-center justify-between gap-1.5">
+      <span className="text-[10px] font-semibold text-neutral-700">{title}</span>
+      <span
+        data-testid={`${testId}-convergence`}
+        className={`text-[9px] font-mono font-semibold px-1 py-0.5 rounded-xs shrink-0 ${
+          result.converged
+            ? 'text-emerald-800 bg-emerald-100'
+            : 'text-rose-800 bg-rose-100'
+        }`}
+      >
+        {result.converged ? 'Converged' : 'Non-Converged'}
+      </span>
+    </div>
+    <dl className="space-y-0.5">
+      <MetricRow
+        label="Approx. Length"
+        value={
+          <span className="font-semibold text-amber-900">
+            {formatMetricCm(result.arcLengthCm, 4)}
+          </span>
+        }
+        testId={`${testId}-value`}
+      />
+      <MetricRow
+        label="Quadrature Error Est."
+        value={formatSciCm(result.quadratureErrorEstimateCm)}
+        testId={`${testId}-quad-err`}
+      />
+      <MetricRow
+        label="Geom. Enclosure Width"
+        value={formatSciCm(result.geometricEnclosureWidthCm)}
+        testId={`${testId}-enclosure`}
+      />
+      <MetricRow
+        label="Tolerance (abs)"
+        value={formatSciCm(result.options.absoluteToleranceCm)}
+      />
+      <MetricRow
+        label="Subdivisions / Depth"
+        value={`${result.subdivisionsEvaluated} / d=${result.maxDepthReached}`}
+      />
+    </dl>
+    <p className="text-[9.5px] text-neutral-500 leading-snug pt-0.5">
+      Quadrature error is a numerical estimator (not a certified error bound); enclosure width is
+      control-polygon upper minus chord lower bound.
+    </p>
+    {result.warning && (
+      <div className="p-1.5 rounded-xs bg-rose-50 border border-rose-200 text-[10px] text-rose-900 leading-snug">
+        {result.warning}
+      </div>
+    )}
+    {result.geometricEnclosureNote && (
+      <div className="p-1.5 rounded-xs bg-amber-50 border border-amber-200 text-[10px] text-amber-900 leading-snug">
+        {result.geometricEnclosureNote}
+      </div>
+    )}
+  </div>
+);
 
 function getEntityKindDisplayLabel(entity: CadInspectableEntity): string {
   switch (entity.entityKind) {
@@ -178,6 +470,7 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) ?? pieces[0];
   const activeArtifact = atelier?.activeArtifact ?? null;
   const inspectedEntity = atelier?.inspectedEntity ?? null;
+  const measurementEvaluation = atelier?.measurementEvaluation ?? { kind: 'empty' as const };
   const selectedArtifactPiece =
     activeArtifact && selectedPiece
       ? activeArtifact.pieces.find(p => p.pieceId === selectedPiece.id) ?? null
@@ -535,9 +828,427 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
     );
   }
 
-  // Default: Pieces Mode — Entity Inspection, Board Placement, Piece Summary, Overlap Advisories & Validation Engine
+  // Default: Pieces Mode — Advisory Measurement, Entity Inspection, Board Placement, Piece Summary & Validation Engine
   return (
     <div className="space-y-4 text-xs" data-testid="inspector-atelier-pieces">
+      {/* UX-2.3.3.2: Advisory Precision Measurement Section */}
+      {atelier && activeArtifact && measurementEvaluation.kind !== 'empty' && (() => {
+        const frameLabel =
+          activeArtifact.coordinateFrame.yAxisDirection === 'cartesian-y-up'
+            ? 'Cartesian Y-Up'
+            : 'SVG Y-Down';
+
+        const headerTitle =
+          measurementEvaluation.kind === 'pair-distance'
+            ? 'Point-to-Point Distance'
+            : measurementEvaluation.kind === 'straight-edge'
+              ? 'Straight Edge Measurement'
+              : measurementEvaluation.kind === 'vertex-angle'
+                ? 'Vertex Angle Measurement'
+                : measurementEvaluation.kind === 'cubic-bezier'
+                  ? 'Cubic Bézier Analysis'
+                  : 'Select Second Anchor (B)';
+
+        const activeClassification: MeasurementClassification =
+          measurementEvaluation.kind === 'pair-distance'
+            ? measurementEvaluation.result.classification
+            : measurementEvaluation.kind === 'straight-edge'
+              ? measurementEvaluation.result.classification
+              : measurementEvaluation.kind === 'vertex-angle'
+                ? measurementEvaluation.result.classification
+                : measurementEvaluation.kind === 'cubic-bezier'
+                  ? 'numerical-approximation'
+                  : 'algebraic-float64';
+
+        return (
+          <section
+            className="pb-3.5 border-b border-amber-200/90 space-y-2.5 bg-amber-50/40 -mx-3.5 px-3.5 pt-2.5 -mt-2.5"
+            data-testid="inspector-cad-measurement"
+            data-measurement-kind={measurementEvaluation.kind}
+          >
+            {/* Header & Actions */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-amber-950 font-semibold">
+                  <Ruler className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                  <span className="truncate" data-testid="inspector-measurement-title">
+                    {headerTitle}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                  <span className="text-[9.5px] font-mono font-semibold text-amber-900 bg-amber-100 border border-amber-200/80 px-1.5 py-0.5 rounded-xs">
+                    {formatClassificationBadge(activeClassification)}
+                  </span>
+                  <span className="text-[9.5px] font-mono text-neutral-600">{frameLabel}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {measurementEvaluation.kind === 'pair-distance' && (
+                  <button
+                    type="button"
+                    onClick={atelier.swapMeasurementAnchors}
+                    aria-label="Swap Anchor A and Anchor B"
+                    data-testid="inspector-swap-measurement-btn"
+                    title="Swap Anchor A ↔ B"
+                    className="p-1 rounded-xs text-amber-900 hover:bg-amber-100 border border-amber-200/80 bg-white cursor-pointer"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={atelier.clearMeasurementSession}
+                  aria-label="Clear measurement"
+                  data-testid="inspector-clear-measurement-btn"
+                  title="Clear measurement (Esc)"
+                  className="p-1 rounded-xs text-amber-900 hover:bg-amber-100 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Mandatory Non-Certified Advisory Disclosure */}
+            <div
+              data-testid="inspector-measurement-disclosure"
+              className="p-1.5 rounded-xs bg-amber-100/75 border border-amber-300/90 text-amber-950 space-y-0.5 leading-snug"
+            >
+              <div className="text-[10px] font-semibold">
+                {ADVISORY_MEASUREMENT_DISCLOSURE}
+              </div>
+              <div className="font-mono text-[9.5px] text-amber-900">
+                isCertified: false · {activeArtifact.authorityTier} · isProductionReady:{' '}
+                {String(activeArtifact.isProductionReady)}
+              </div>
+            </div>
+
+            {/* Card 1: Awaiting Second Anchor */}
+            {measurementEvaluation.kind === 'awaiting-second-anchor' && (
+              <div data-testid="inspector-measure-pending" className="space-y-2">
+                <div className="bg-white border border-amber-200/80 rounded-xs p-2 space-y-1">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-[10px] font-semibold text-amber-900">
+                      Anchor A Locked
+                    </span>
+                    <span className="text-[9.5px] font-mono text-neutral-500 truncate">
+                      {measurementEvaluation.anchorA.pieceCode}
+                    </span>
+                  </div>
+                  <code className="block font-mono text-[9.5px] text-neutral-800 break-all leading-snug">
+                    {measurementEvaluation.anchorA.presentationRef}
+                  </code>
+                  <dl className="space-y-0.5 pt-1 border-t border-neutral-100">
+                    <MetricRow
+                      label="Local (cm)"
+                      value={`(${measurementEvaluation.anchorA.localPointCm.x.toFixed(3)}, ${measurementEvaluation.anchorA.localPointCm.y.toFixed(3)})`}
+                    />
+                    <MetricRow
+                      label="Board (cm)"
+                      value={`(${measurementEvaluation.anchorA.boardPointCm.x.toFixed(3)}, ${measurementEvaluation.anchorA.boardPointCm.y.toFixed(3)})`}
+                    />
+                  </dl>
+                  <p className="text-[10px] text-neutral-600 pt-1 leading-snug">
+                    Click a second entity on the canvas to complete pair-distance measurement
+                    {measurementEvaluation.anchorA.entityKind === 'vertex'
+                      ? ', or click the same vertex again to keep its vertex angle.'
+                      : '.'}
+                  </p>
+                </div>
+
+                {measurementEvaluation.previewVertexAngle && (
+                  <>
+                    <VertexAngleDetailsBlock
+                      result={measurementEvaluation.previewVertexAngle}
+                      compact
+                    />
+                    <button
+                      type="button"
+                      onClick={atelier.lockPendingVertexAngle}
+                      data-testid="inspector-lock-vertex-angle-btn"
+                      className="w-full h-7 px-2 rounded-xs border border-amber-700 bg-amber-700 hover:bg-amber-800 text-white text-[11px] font-medium cursor-pointer"
+                    >
+                      Keep Vertex Angle Measurement
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Card 2: Point-to-Point Pair Distance */}
+            {measurementEvaluation.kind === 'pair-distance' && (
+              <div data-testid="inspector-measure-pair" className="space-y-2">
+                <div className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1.5">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <span className="font-semibold text-amber-900">Anchor A</span>
+                      <span className="font-mono text-neutral-500">
+                        {measurementEvaluation.result.pieceACode}
+                      </span>
+                    </div>
+                    <code
+                      data-testid="inspector-measure-anchor-a-ref"
+                      className="block font-mono text-[9.5px] text-neutral-800 break-all leading-snug"
+                    >
+                      {measurementEvaluation.result.anchorARef}
+                    </code>
+                  </div>
+                  <div className="space-y-0.5 pt-1 border-t border-neutral-100">
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <span className="font-semibold text-amber-900">Anchor B</span>
+                      <span className="font-mono text-neutral-500">
+                        {measurementEvaluation.result.pieceBCode}
+                      </span>
+                    </div>
+                    <code
+                      data-testid="inspector-measure-anchor-b-ref"
+                      className="block font-mono text-[9.5px] text-neutral-800 break-all leading-snug"
+                    >
+                      {measurementEvaluation.result.anchorBRef}
+                    </code>
+                  </div>
+                </div>
+
+                <SpaceDistanceBlock
+                  title="Same-Piece Local Space"
+                  subtitle="Source cm"
+                  metrics={measurementEvaluation.result.local}
+                  unavailableReason={measurementEvaluation.result.localUnavailableReason}
+                  testId="inspector-measure-pair-local"
+                />
+
+                <SpaceDistanceBlock
+                  title="CAD Board Table Space"
+                  subtitle="Board cm"
+                  metrics={measurementEvaluation.result.board}
+                  testId="inspector-measure-pair-board"
+                />
+              </div>
+            )}
+
+            {/* Card 3: Straight Edge */}
+            {measurementEvaluation.kind === 'straight-edge' && (
+              <div data-testid="inspector-measure-edge" className="space-y-2">
+                <div className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1">
+                  <div className="flex items-baseline justify-between gap-2 text-[10px]">
+                    <span className="font-semibold text-neutral-700">Segment</span>
+                    <span className="font-mono text-neutral-900 truncate">
+                      {measurementEvaluation.result.pieceCode} · {measurementEvaluation.result.contour}
+                    </span>
+                  </div>
+                  <code className="block font-mono text-[9.5px] text-neutral-700 break-all leading-snug">
+                    {measurementEvaluation.entity.presentationRef}
+                  </code>
+                  <dl className="space-y-0.5 pt-1 border-t border-neutral-100">
+                    <MetricRow
+                      label="Edge Length"
+                      value={
+                        <span className="font-semibold text-amber-900">
+                          {formatMetricCm(measurementEvaluation.result.lengthCm, 4)}
+                        </span>
+                      }
+                      testId="inspector-measure-edge-length"
+                    />
+                    <MetricRow
+                      label="ΔX"
+                      value={formatSignedMetricCm(measurementEvaluation.result.dxCm, 4)}
+                    />
+                    <MetricRow
+                      label="ΔY"
+                      value={formatSignedMetricCm(measurementEvaluation.result.dyCm, 4)}
+                    />
+                    <MetricRow label="Role" value={measurementEvaluation.result.segmentRole} />
+                    {measurementEvaluation.result.angles ? (
+                      <>
+                        <MetricRow
+                          label="Frame Angle"
+                          value={formatDeg(measurementEvaluation.result.angles.frameAngleDeg, 2)}
+                        />
+                        <MetricRow
+                          label="Visual Incl."
+                          value={formatDeg(
+                            measurementEvaluation.result.angles.visualInclinationDeg,
+                            2
+                          )}
+                        />
+                        <MetricRow
+                          label="Bearing (0° N)"
+                          value={formatDeg(
+                            measurementEvaluation.result.angles.compassBearingDeg,
+                            2
+                          )}
+                        />
+                        <MetricRow
+                          label="Line Orient."
+                          value={formatDeg(
+                            measurementEvaluation.result.angles.undirectedOrientationDeg,
+                            2
+                          )}
+                        />
+                      </>
+                    ) : (
+                      <p className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xs p-1.5 mt-1 leading-snug">
+                        {measurementEvaluation.result.indeterminateReason ??
+                          'Zero-length edge — angle indeterminate.'}
+                      </p>
+                    )}
+                  </dl>
+                </div>
+              </div>
+            )}
+
+            {/* Card 4: Vertex Angle */}
+            {measurementEvaluation.kind === 'vertex-angle' && (
+              <div data-testid="inspector-measure-vertex" className="space-y-2">
+                <div className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1">
+                  <div className="flex items-baseline justify-between gap-2 text-[10px]">
+                    <span className="font-semibold text-neutral-700">Vertex</span>
+                    <span className="font-mono text-neutral-900">
+                      {measurementEvaluation.result.pieceCode} · {measurementEvaluation.result.contour}
+                    </span>
+                  </div>
+                  <code className="block font-mono text-[9.5px] text-neutral-700 break-all leading-snug">
+                    {measurementEvaluation.result.vertexRef}
+                  </code>
+                </div>
+                <VertexAngleDetailsBlock result={measurementEvaluation.result} />
+              </div>
+            )}
+
+            {/* Card 5: Cubic Bézier Differential & Numerical Arc-Length Approximation */}
+            {measurementEvaluation.kind === 'cubic-bezier' && (() => {
+              const { differential, fullArcLength, partialArcLength } = measurementEvaluation.result;
+              const radiusText =
+                differential.radiusState === 'finite'
+                  ? formatMetricCm(differential.radiusOfCurvatureCm, 3)
+                  : differential.radiusState === 'infinite'
+                    ? 'Infinite (flat/inflect)'
+                    : 'Undefined';
+
+              return (
+                <div data-testid="inspector-measure-cubic" className="space-y-2">
+                  {/* Differential Properties at t */}
+                  <div className="bg-white border border-neutral-200 rounded-xs p-2 space-y-1">
+                    <div className="flex items-baseline justify-between gap-2 text-[10px]">
+                      <span className="font-semibold text-neutral-700">
+                        Differential at t = {differential.parameterT.toFixed(4)}
+                      </span>
+                      <span className="font-mono text-neutral-500">
+                        {differential.pieceCode} · {differential.contour}
+                      </span>
+                    </div>
+                    <code className="block font-mono text-[9.5px] text-neutral-700 break-all leading-snug">
+                      {measurementEvaluation.entity.presentationRef}
+                    </code>
+                    <dl className="space-y-0.5 pt-1 border-t border-neutral-100">
+                      <MetricRow
+                        label="Point (Local)"
+                        value={
+                          differential.pointLocalCm
+                            ? `(${differential.pointLocalCm.x.toFixed(3)}, ${differential.pointLocalCm.y.toFixed(3)})`
+                            : '—'
+                        }
+                      />
+                      <MetricRow
+                        label="Speed |B'(t)|"
+                        value={
+                          differential.speedCmPerUnitT !== null
+                            ? `${differential.speedCmPerUnitT.toFixed(4)} cm/t`
+                            : '—'
+                        }
+                      />
+                      <MetricRow
+                        label="Unit Tangent"
+                        value={
+                          differential.unitTangent
+                            ? `(${differential.unitTangent.x.toFixed(3)}, ${differential.unitTangent.y.toFixed(3)})`
+                            : 'Undefined'
+                        }
+                      />
+                      {differential.tangentAngles && (
+                        <MetricRow
+                          label="Tangent Bearing"
+                          value={formatDeg(differential.tangentAngles.compassBearingDeg, 2)}
+                        />
+                      )}
+                      <MetricRow
+                        label="Signed κ (Frame)"
+                        value={
+                          differential.signedCurvatureInvCm !== null
+                            ? `${differential.signedCurvatureInvCm.toFixed(5)} cm⁻¹`
+                            : 'Undefined'
+                        }
+                        testId="inspector-cubic-kappa-frame"
+                      />
+                      <MetricRow
+                        label="Signed κ (Visual)"
+                        value={
+                          differential.visualSignedCurvatureInvCm !== null
+                            ? `${differential.visualSignedCurvatureInvCm.toFixed(5)} cm⁻¹`
+                            : 'Undefined'
+                        }
+                      />
+                      <MetricRow
+                        label="Radius R = 1/|κ|"
+                        value={radiusText}
+                        testId="inspector-cubic-radius"
+                      />
+                    </dl>
+                    {differential.warning && (
+                      <div className="mt-1 p-1.5 rounded-xs bg-amber-50 border border-amber-200 text-[10px] text-amber-900 leading-snug">
+                        {differential.warning}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Arc-Length Approximation (Explicitly Numerical / Uncertified) */}
+                  <div data-testid="inspector-measure-arc-length" className="space-y-1.5">
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-[10px] font-semibold text-amber-950">
+                        Arc Length · Numerical Approx. (Uncertified)
+                      </span>
+                    </div>
+                    <ArcLengthSubBlock
+                      title="Full Segment [0, 1]"
+                      result={fullArcLength}
+                      testId="inspector-cubic-arc-full"
+                    />
+                    <ArcLengthSubBlock
+                      title={`Partial [0, ${differential.parameterT.toFixed(4)}]`}
+                      result={partialArcLength}
+                      testId="inspector-cubic-arc-partial"
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+          </section>
+        );
+      })()}
+
+      {/* Prompt when in Measure Geometry mode with no active measurement yet */}
+      {atelier &&
+        activeArtifact &&
+        measurementEvaluation.kind === 'empty' &&
+        activeTool === 'measure-preview' && (
+          <section
+            data-testid="inspector-cad-measurement-prompt"
+            className="pb-3 border-b border-amber-200/80 space-y-1.5"
+          >
+            <div className="flex items-center gap-1.5 text-amber-950 font-semibold text-[11px]">
+              <Ruler className="w-3.5 h-3.5 text-amber-700" />
+              <span>Measure Geometry (Advisory)</span>
+            </div>
+            <p className="text-[10px] font-medium text-amber-900 bg-amber-50 border border-amber-200 rounded-xs px-2 py-1">
+              {ADVISORY_MEASUREMENT_DISCLOSURE}
+            </p>
+            <p className="text-[11px] text-neutral-600 leading-relaxed">
+              Click any straight edge or cubic curve for instant length, tangent &amp; curvature,
+              click two entities for local/board distance, or double-click a vertex (or switch to
+              Feature mode) for included &amp; interior angles.
+            </p>
+          </section>
+        )}
+
       {/* UX-2.3.3.1: Read-Only Geometric Entity Inspection Card */}
       {atelier && inspectedEntity && activeArtifact && (
         <section

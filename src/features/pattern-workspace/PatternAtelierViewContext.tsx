@@ -54,6 +54,18 @@ import {
   CadInspectableEntity,
   reconcileInspectedEntityWithArtifact
 } from './entity-hit-test';
+import {
+  EMPTY_MEASUREMENT_SESSION,
+  MeasureToolSubMode,
+  MeasurementEvaluation,
+  MeasurementSession,
+  applyMeasurementEntityClick,
+  evaluateMeasurementSession,
+  lockPendingVertexAngleMeasurement,
+  reconcileMeasurementSessionWithArtifact,
+  swapMeasurementAnchors,
+  transitionMeasurementSessionOnToolExit
+} from './precision-measurement';
 
 export type PatternCadViewMode = 'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation';
 
@@ -156,6 +168,20 @@ export interface PatternAtelierViewContextValue {
   readonly clearInspectedEntity: () => void;
   readonly showControlPolygon: boolean;
   readonly setShowControlPolygon: (show: boolean) => void;
+
+  // UX-2.3.3.2: Ephemeral Advisory Precision Measurement State
+  // Strictly outside boardHistory and ProjectWorkspaceContext; never mutates PatternArtifactBundle.
+  readonly measureSubMode: MeasureToolSubMode;
+  readonly setMeasureSubMode: (mode: MeasureToolSubMode) => void;
+  readonly measurementHoverEntity: CadInspectableEntity | null;
+  readonly setMeasurementHoverEntity: (entity: CadInspectableEntity | null) => void;
+  readonly measurementSession: MeasurementSession;
+  readonly measurementEvaluation: MeasurementEvaluation;
+  readonly recordMeasurementEntityClick: (entity: CadInspectableEntity) => void;
+  readonly swapMeasurementAnchors: () => void;
+  readonly lockPendingVertexAngle: () => void;
+  readonly clearMeasurementSession: () => void;
+  readonly handleMeasurementToolTransition: (nextTool: string) => void;
 }
 
 const DEFAULT_CAMERA: CadCamera = { zoom: 1.0, panX: 48, panY: 48 };
@@ -213,6 +239,14 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
   const [rawInspectedEntity, setRawInspectedEntity] = useState<CadInspectableEntity | null>(null);
   const [showControlPolygon, setShowControlPolygon] = useState<boolean>(true);
   const lastSyncedArtifactRef = useRef<PatternArtifactBundle | null>(null);
+
+  // UX-2.3.3.2 Ephemeral Precision Measurement State (strictly outside boardHistory)
+  const [measureSubMode, setMeasureSubMode] = useState<MeasureToolSubMode>('auto');
+  const [measurementHoverEntity, setMeasurementHoverEntity] =
+    useState<CadInspectableEntity | null>(null);
+  const [rawMeasurementSession, setRawMeasurementSession] = useState<MeasurementSession>(
+    EMPTY_MEASUREMENT_SESSION
+  );
 
   // Camera actions (never touch boardHistory)
   const setCamera = useCallback((next: CadCamera) => {
@@ -282,6 +316,7 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     lastSyncedArtifactRef.current = artifact;
     setActiveArtifact(artifact);
     setHoveredEntity(null);
+    setMeasurementHoverEntity(null);
     setBoardHistory(prev => reconcileBoardHistoryWithArtifact(prev, artifact));
   }, []);
 
@@ -292,6 +327,33 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
   const clearInspectedEntity = useCallback(() => {
     setRawInspectedEntity(null);
     setHoveredEntity(null);
+  }, []);
+
+  const recordMeasurementEntityClick = useCallback(
+    (entity: CadInspectableEntity) => {
+      setRawMeasurementSession(prev => applyMeasurementEntityClick(prev, entity, measureSubMode));
+    },
+    [measureSubMode]
+  );
+
+  const handleSwapMeasurementAnchors = useCallback(() => {
+    setRawMeasurementSession(prev => swapMeasurementAnchors(prev));
+  }, []);
+
+  const lockPendingVertexAngle = useCallback(() => {
+    setRawMeasurementSession(prev => lockPendingVertexAngleMeasurement(prev));
+  }, []);
+
+  const clearMeasurementSession = useCallback(() => {
+    setRawMeasurementSession(EMPTY_MEASUREMENT_SESSION);
+    setMeasurementHoverEntity(null);
+  }, []);
+
+  const handleMeasurementToolTransition = useCallback((nextTool: string) => {
+    if (nextTool !== 'measure-preview') {
+      setMeasurementHoverEntity(null);
+    }
+    setRawMeasurementSession(prev => transitionMeasurementSessionOnToolExit(prev, nextTool));
   }, []);
 
   // Selection actions (ephemeral — do not push to arrangement undo stack)
@@ -503,9 +565,23 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     return reconcileInspectedEntityWithArtifact(
       rawInspectedEntity,
       activeArtifact,
-      boardHistory.present
+      boardHistory.present,
+      layerVisibility
     );
-  }, [rawInspectedEntity, activeArtifact, boardHistory.present]);
+  }, [rawInspectedEntity, activeArtifact, boardHistory.present, layerVisibility]);
+
+  const measurementSession = useMemo<MeasurementSession>(() => {
+    return reconcileMeasurementSessionWithArtifact(
+      rawMeasurementSession,
+      activeArtifact,
+      boardHistory.present,
+      layerVisibility
+    );
+  }, [rawMeasurementSession, activeArtifact, boardHistory.present, layerVisibility]);
+
+  const measurementEvaluation = useMemo<MeasurementEvaluation>(() => {
+    return evaluateMeasurementSession(measurementSession, activeArtifact, boardHistory.present);
+  }, [measurementSession, activeArtifact, boardHistory.present]);
 
   const value = useMemo<PatternAtelierViewContextValue>(
     () => ({
@@ -566,7 +642,18 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       setInspectedEntity,
       clearInspectedEntity,
       showControlPolygon,
-      setShowControlPolygon
+      setShowControlPolygon,
+      measureSubMode,
+      setMeasureSubMode,
+      measurementHoverEntity,
+      setMeasurementHoverEntity,
+      measurementSession,
+      measurementEvaluation,
+      recordMeasurementEntityClick,
+      swapMeasurementAnchors: handleSwapMeasurementAnchors,
+      lockPendingVertexAngle,
+      clearMeasurementSession,
+      handleMeasurementToolTransition
     }),
     [
       camera,
@@ -615,7 +702,16 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       inspectedEntity,
       setInspectedEntity,
       clearInspectedEntity,
-      showControlPolygon
+      showControlPolygon,
+      measureSubMode,
+      measurementHoverEntity,
+      measurementSession,
+      measurementEvaluation,
+      recordMeasurementEntityClick,
+      handleSwapMeasurementAnchors,
+      lockPendingVertexAngle,
+      clearMeasurementSession,
+      handleMeasurementToolTransition
     ]
   );
 

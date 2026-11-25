@@ -1112,12 +1112,35 @@ export function hitTestPatternEntities(
  * - Returns `null` if the piece, segment, notch, dart, or placement disappeared or became
  *   non-finite (zero stale entity references).
  */
+function isEntityLayerVisible(
+  entity: CadInspectableEntity,
+  layerVisibility?: PatternCadLayerVisibility
+): boolean {
+  if (!layerVisibility) return true;
+  switch (entity.entityKind) {
+    case 'vertex':
+    case 'bezier-handle':
+    case 'edge':
+    case 'curve':
+      return entity.contour === 'sew'
+        ? layerVisibility.showSewLines
+        : layerVisibility.showSeamAllowance;
+    case 'notch':
+      return layerVisibility.showNotches;
+    case 'dart':
+    case 'dart-landmark':
+      return layerVisibility.showDarts;
+  }
+}
+
 export function reconcileInspectedEntityWithArtifact(
   prev: CadInspectableEntity | null,
   artifact: PatternArtifactBundle | null,
-  boardState: PatternBoardSnapshot
+  boardState: PatternBoardSnapshot,
+  layerVisibility?: PatternCadLayerVisibility
 ): CadInspectableEntity | null {
   if (!prev || !artifact) return null;
+  if (!isEntityLayerVisible(prev, layerVisibility)) return null;
 
   const piece = artifact.pieces.find(p => p.pieceId === prev.pieceId);
   const placement = boardState.placementsByPieceId[prev.pieceId];

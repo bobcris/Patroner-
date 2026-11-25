@@ -42,6 +42,7 @@ import {
   Layers,
   Magnet,
   Redo2,
+  Ruler,
   Undo2,
   Ungroup
 } from 'lucide-react';
@@ -64,6 +65,15 @@ import { PatternLayersDrawer } from './PatternLayersDrawer';
 import { SNAP_INTERVAL_OPTIONS_CM } from './board-arrangement';
 import type { RenderPoint2D } from './contracts/pattern-render-artifact';
 import type { CadInspectableEntity } from './entity-hit-test';
+import {
+  EMPTY_MEASUREMENT_SESSION,
+  MeasureToolSubMode,
+  MeasurementEvaluation,
+  MeasurementSession,
+  applyMeasurementEntityClick,
+  evaluateMeasurementSession,
+  transitionMeasurementSessionOnToolExit
+} from './precision-measurement';
 import { useOptionalViewportInteraction } from '../../state/ViewportInteractionContext';
 
 interface PatternWorkspaceProps {
@@ -184,6 +194,11 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const [localHoveredEntity, setLocalHoveredEntity] = useState<CadInspectableEntity | null>(null);
   const [localInspectedEntity, setLocalInspectedEntity] = useState<CadInspectableEntity | null>(null);
   const [localShowControlPolygon] = useState<boolean>(true);
+  const [localMeasureSubMode, setLocalMeasureSubMode] = useState<MeasureToolSubMode>('auto');
+  const [localMeasureHover, setLocalMeasureHover] = useState<CadInspectableEntity | null>(null);
+  const [localMeasureSession, setLocalMeasureSession] = useState<MeasurementSession>(
+    EMPTY_MEASUREMENT_SESSION
+  );
 
   const bodiceDartStyle = externalBodiceDartStyle ?? localBodiceDartStyle;
   const setBodiceDartStyle = externalOnChangeBodiceDartStyle ?? setLocalBodiceDartStyle;
@@ -221,6 +236,27 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const inspectedEntity = atelierCtx?.inspectedEntity ?? localInspectedEntity;
   const setInspectedEntity = atelierCtx?.setInspectedEntity ?? setLocalInspectedEntity;
   const showControlPolygon = atelierCtx?.showControlPolygon ?? localShowControlPolygon;
+  const measureSubMode = atelierCtx?.measureSubMode ?? localMeasureSubMode;
+  const setMeasureSubMode = atelierCtx?.setMeasureSubMode ?? setLocalMeasureSubMode;
+  const measurementHoverEntity = atelierCtx?.measurementHoverEntity ?? localMeasureHover;
+  const setMeasurementHoverEntity = atelierCtx?.setMeasurementHoverEntity ?? setLocalMeasureHover;
+  const measurementSession = atelierCtx?.measurementSession ?? localMeasureSession;
+  const recordMeasurementEntityClick =
+    atelierCtx?.recordMeasurementEntityClick ??
+    ((entity: CadInspectableEntity) =>
+      setLocalMeasureSession(prev => applyMeasurementEntityClick(prev, entity, localMeasureSubMode)));
+  const clearMeasurementSession =
+    atelierCtx?.clearMeasurementSession ??
+    (() => {
+      setLocalMeasureSession(EMPTY_MEASUREMENT_SESSION);
+      setLocalMeasureHover(null);
+    });
+  const handleMeasurementToolTransition =
+    atelierCtx?.handleMeasurementToolTransition ??
+    ((nextTool: string) => {
+      if (nextTool !== 'measure-preview') setLocalMeasureHover(null);
+      setLocalMeasureSession(prev => transitionMeasurementSessionOnToolExit(prev, nextTool));
+    });
 
   const selectedPieceId = externalSelectedPieceId ?? localSelectedPieceId;
   const setSelectedPieceId = (nextId: string) => {
@@ -228,7 +264,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     externalOnSelectPieceId?.(nextId);
   };
 
-  // Keyboard shortcuts for Pattern Atelier tool modes (V = Select, I = Inspect Geometry, H = Pan)
+  // Keyboard shortcuts for Pattern Atelier tool modes (V = Select, I = Inspect, M = Measure, H = Pan)
   useEffect(() => {
     if (!viewportCtx) return;
     const isTypingTarget = (target: EventTarget | null) =>
@@ -242,6 +278,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
       const key = e.key.toLowerCase();
       if (key === 'i') {
         viewportCtx.setActiveTool('inspect-entity', 'pattern-atelier');
+      } else if (key === 'm') {
+        viewportCtx.setActiveTool('measure-preview', 'pattern-atelier');
       } else if (key === 'v') {
         viewportCtx.setActiveTool('select', 'pattern-atelier');
       } else if (key === 'h') {
@@ -252,12 +290,22 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [viewportCtx]);
 
-  // Clear ephemeral hover state whenever leaving inspect-entity tool or pieces view mode
+  // Clear ephemeral hover state & enforce Binding Decision 2 tool transitions
   useEffect(() => {
     if (activeTool !== 'inspect-entity' || cadViewMode !== 'pieces') {
       setHoveredEntity(null);
     }
-  }, [activeTool, cadViewMode, setHoveredEntity]);
+    if (activeTool === 'measure-preview') {
+      setInspectedEntity(null);
+    }
+    handleMeasurementToolTransition(cadViewMode === 'pieces' ? activeTool : 'view-mode-exit');
+  }, [
+    activeTool,
+    cadViewMode,
+    setHoveredEntity,
+    setInspectedEntity,
+    handleMeasurementToolTransition
+  ]);
 
   // Single authoritative production workspace bundle (shared with Module 05)
   const fallbackBundle = useMemo(() => {
@@ -535,26 +583,82 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
           )}
 
           {viewportCtx && effectiveViewMode === 'pieces' && (
-            <button
-              type="button"
-              aria-pressed={activeTool === 'inspect-entity'}
-              data-testid="atelier-inspect-mode-btn"
-              onClick={() =>
-                viewportCtx.setActiveTool(
-                  activeTool === 'inspect-entity' ? 'select' : 'inspect-entity',
-                  'pattern-atelier'
-                )
-              }
-              className={`px-2 py-0.5 rounded-xs border text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer transition-colors ${
-                activeTool === 'inspect-entity'
-                  ? 'bg-teal-700 text-white border-teal-700'
-                  : 'bg-white text-neutral-700 border-neutral-300 hover:text-neutral-900'
-              }`}
-              title="Toggle Read-Only Geometry Inspection Mode (I)"
-            >
-              <Crosshair className="w-3 h-3" />
-              <span>{activeTool === 'inspect-entity' ? 'Inspecting (Read-Only)' : 'Inspect'}</span>
-            </button>
+            <>
+              <button
+                type="button"
+                aria-pressed={activeTool === 'inspect-entity'}
+                data-testid="atelier-inspect-mode-btn"
+                onClick={() =>
+                  viewportCtx.setActiveTool(
+                    activeTool === 'inspect-entity' ? 'select' : 'inspect-entity',
+                    'pattern-atelier'
+                  )
+                }
+                className={`px-2 py-0.5 rounded-xs border text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                  activeTool === 'inspect-entity'
+                    ? 'bg-teal-700 text-white border-teal-700'
+                    : 'bg-white text-neutral-700 border-neutral-300 hover:text-neutral-900'
+                }`}
+                title="Toggle Read-Only Geometry Inspection Mode (I)"
+              >
+                <Crosshair className="w-3 h-3" />
+                <span>{activeTool === 'inspect-entity' ? 'Inspecting (Read-Only)' : 'Inspect'}</span>
+              </button>
+
+              <button
+                type="button"
+                aria-pressed={activeTool === 'measure-preview'}
+                data-testid="atelier-measure-mode-btn"
+                onClick={() =>
+                  viewportCtx.setActiveTool(
+                    activeTool === 'measure-preview' ? 'select' : 'measure-preview',
+                    'pattern-atelier'
+                  )
+                }
+                className={`px-2 py-0.5 rounded-xs border text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                  activeTool === 'measure-preview'
+                    ? 'bg-amber-700 text-white border-amber-700'
+                    : 'bg-white text-neutral-700 border-neutral-300 hover:text-neutral-900'
+                }`}
+                title="Toggle Advisory Precision Measurement Mode (M) — Non-certified"
+              >
+                <Ruler className="w-3 h-3" />
+                <span>{activeTool === 'measure-preview' ? 'Measuring (Advisory)' : 'Measure'}</span>
+              </button>
+
+              {activeTool === 'measure-preview' && (
+                <div
+                  role="group"
+                  aria-label="Measurement target mode"
+                  data-testid="atelier-measure-submode-group"
+                  className="inline-flex items-center bg-white border border-amber-300 rounded-xs p-0.5"
+                >
+                  {(
+                    [
+                      { id: 'auto', label: 'Auto', title: 'Edges & curves measure directly; points start A→B distance (click vertex again to lock angle)' },
+                      { id: 'pair-distance', label: 'A→B', title: 'Measure point-to-point distance between any two clicked anchors' },
+                      { id: 'single-feature', label: 'Feature', title: 'Measure single vertex angle, straight edge, or cubic curve directly' }
+                    ] as const
+                  ).map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      aria-pressed={measureSubMode === opt.id}
+                      data-testid={`atelier-measure-submode-${opt.id}`}
+                      onClick={() => setMeasureSubMode(opt.id)}
+                      title={opt.title}
+                      className={`px-1.5 py-0.5 rounded-xs text-[10px] font-medium cursor-pointer transition-colors ${
+                        measureSubMode === opt.id
+                          ? 'bg-amber-700 text-white'
+                          : 'text-neutral-600 hover:text-neutral-900'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           <div
@@ -996,6 +1100,26 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               showControlPolygon={showControlPolygon}
               onHoverEntity={setHoveredEntity}
               onInspectEntity={setInspectedEntity}
+              measurementHoverEntity={measurementHoverEntity}
+              measurementSession={measurementSession}
+              measurementEvaluation={
+                atelierCtx?.measurementEvaluation ??
+                evaluateMeasurementSession(
+                  measurementSession,
+                  renderArtifact,
+                  atelierCtx?.boardState ?? {
+                    placementsByPieceId: {},
+                    layerOrder: [],
+                    groupsById: {},
+                    groupOrder: [],
+                    selectedPieceIds: [],
+                    nextGroupSequence: 1
+                  }
+                )
+              }
+              onMeasurementHoverEntity={setMeasurementHoverEntity}
+              onMeasureEntityClick={recordMeasurementEntityClick}
+              onClearMeasurement={clearMeasurementSession}
             />
           </div>
 

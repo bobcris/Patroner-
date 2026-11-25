@@ -53,6 +53,12 @@ import {
   hitTestPatternEntities,
   TOUCH_HIT_RADIUS_PX
 } from './entity-hit-test';
+import {
+  EMPTY_MEASUREMENT_SESSION,
+  MeasurementEvaluation,
+  MeasurementSession,
+  VertexAngleMeasurementResult
+} from './precision-measurement';
 
 const SIZE_PALETTE: Record<string, { stroke: string; label: string }> = {
   XS: { stroke: '#9333ea', label: 'XS (EU 34)' },
@@ -119,6 +125,13 @@ export interface PatternCadCanvasProps {
   readonly showControlPolygon?: boolean;
   readonly onHoverEntity?: (entity: CadInspectableEntity | null) => void;
   readonly onInspectEntity?: (entity: CadInspectableEntity | null) => void;
+  // UX-2.3.3.2 advisory precision drafting measurement props
+  readonly measurementHoverEntity?: CadInspectableEntity | null;
+  readonly measurementSession?: MeasurementSession;
+  readonly measurementEvaluation?: MeasurementEvaluation;
+  readonly onMeasurementHoverEntity?: (entity: CadInspectableEntity | null) => void;
+  readonly onMeasureEntityClick?: (entity: CadInspectableEntity) => void;
+  readonly onClearMeasurement?: () => void;
 }
 
 /**
@@ -168,7 +181,13 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   inspectedEntity = null,
   showControlPolygon = true,
   onHoverEntity,
-  onInspectEntity
+  onInspectEntity,
+  measurementHoverEntity = null,
+  measurementSession = EMPTY_MEASUREMENT_SESSION,
+  measurementEvaluation = { kind: 'empty' },
+  onMeasurementHoverEntity,
+  onMeasureEntityClick,
+  onClearMeasurement
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -203,6 +222,10 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   hoveredEntityRef.current = hoveredEntity;
   const inspectedEntityRef = useRef<CadInspectableEntity | null>(inspectedEntity);
   inspectedEntityRef.current = inspectedEntity;
+  const measurementHoverRef = useRef<CadInspectableEntity | null>(measurementHoverEntity);
+  measurementHoverRef.current = measurementHoverEntity;
+  const measurementSessionRef = useRef<MeasurementSession>(measurementSession);
+  measurementSessionRef.current = measurementSession;
 
   const panSessionRef = useRef<{
     pointerId: number;
@@ -330,8 +353,20 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         return;
       }
 
+      // Strict UX-2.3.3.2 interaction isolation: measure mode never mutates board layout
+      if (activeTool === 'measure-preview') {
+        if (e.key === 'Escape') {
+          onClearMeasurement?.();
+          onMeasurementHoverEntity?.(null);
+        }
+        return;
+      }
+
       const mod = e.metaKey || e.ctrlKey;
       if (e.key === 'Escape') {
+        if (measurementSessionRef.current.mode !== 'idle') {
+          onClearMeasurement?.();
+        }
         onClearBoardSelection?.();
         return;
       }
@@ -391,7 +426,9 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     onUngroupSelected,
     onCommitMovePieces,
     onInspectEntity,
-    onHoverEntity
+    onHoverEntity,
+    onClearMeasurement,
+    onMeasurementHoverEntity
   ]);
 
   // Fit All when explicitly requested, garment changes, mode changes, or initial size measured
@@ -506,6 +543,29 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         return;
       }
 
+      // 1c. UX-2.3.3.2 Advisory Precision Measurement mode (strictly isolated from drag/marquee)
+      if (activeTool === 'measure-preview') {
+        e.preventDefault();
+        const hitRadiusPx =
+          e.pointerType === 'touch' ? TOUCH_HIT_RADIUS_PX : DEFAULT_HIT_RADIUS_PX;
+        const hitRes = hitTestPatternEntities(
+          localPx,
+          cameraRef.current,
+          projection,
+          artifactRef.current,
+          boardStateRef.current,
+          layerVisibilityRef.current,
+          {
+            hitRadiusPx,
+            activeCurve: null
+          }
+        );
+        if (hitRes.hit?.entity) {
+          onMeasureEntityClick?.(hitRes.hit.entity);
+        }
+        return;
+      }
+
       // 2. Clicked a pattern piece -> selection & optional drag-to-reposition
       if (clickedPieceId) {
         e.preventDefault();
@@ -573,7 +633,8 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
       onToggleBoardPiece,
       onSelectBoardPiece,
       onSelectPieceId,
-      onInspectEntity
+      onInspectEntity,
+      onMeasureEntityClick
     ]
   );
 
@@ -627,6 +688,38 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
                 Math.abs(prevEntity.localPointCm.y - nextEntity.localPointCm.y) < 1e-3;
         if (!unchanged) {
           onHoverEntity?.(nextEntity);
+        }
+        return;
+      }
+
+      // UX-2.3.3.2: Hover entity hit-testing in measurement mode (strictly isolated from drag/marquee)
+      if (effectiveViewMode === 'pieces' && activeTool === 'measure-preview') {
+        const hitRadiusPx =
+          e.pointerType === 'touch' ? TOUCH_HIT_RADIUS_PX : DEFAULT_HIT_RADIUS_PX;
+        const hitRes = hitTestPatternEntities(
+          localPx,
+          cameraRef.current,
+          projection,
+          artifactRef.current,
+          boardStateRef.current,
+          layerVisibilityRef.current,
+          {
+            hitRadiusPx,
+            activeCurve: null
+          }
+        );
+        const nextEntity = hitRes.hit?.entity ?? null;
+        const prevEntity = measurementHoverRef.current;
+        const unchanged =
+          prevEntity === null && nextEntity === null
+            ? true
+            : prevEntity !== null &&
+                nextEntity !== null &&
+                prevEntity.presentationRef === nextEntity.presentationRef &&
+                Math.abs(prevEntity.localPointCm.x - nextEntity.localPointCm.x) < 1e-3 &&
+                Math.abs(prevEntity.localPointCm.y - nextEntity.localPointCm.y) < 1e-3;
+        if (!unchanged) {
+          onMeasurementHoverEntity?.(nextEntity);
         }
         return;
       }
@@ -690,6 +783,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
       effectiveViewMode,
       activeTool,
       onHoverEntity,
+      onMeasurementHoverEntity,
       snapConfig,
       artifact,
       onSetActiveSnapGuides
@@ -752,8 +846,9 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     if (!panSessionRef.current && !dragSessionRef.current && !marqueeSessionRef.current) {
       onChangeCursorCm(null);
       onHoverEntity?.(null);
+      onMeasurementHoverEntity?.(null);
     }
-  }, [onChangeCursorCm, onHoverEntity]);
+  }, [onChangeCursorCm, onHoverEntity, onMeasurementHoverEntity]);
 
   const scalePxPerCm = getPixelsPerCm(camera.zoom, BASE_PX_PER_CM);
   const gridSpacing = useMemo(
@@ -774,6 +869,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   const subLabelFontCm = Math.max(0.95, 9 * invScale);
 
   const isInspectMode = effectiveViewMode === 'pieces' && activeTool === 'inspect-entity';
+  const isMeasureMode = effectiveViewMode === 'pieces' && activeTool === 'measure-preview';
 
   const panCursorClass = isPanning
     ? 'cursor-grabbing'
@@ -781,7 +877,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
       ? 'cursor-move'
       : activeTool === 'pan' || spacePressed
         ? 'cursor-grab'
-        : isInspectMode
+        : isInspectMode || isMeasureMode
           ? 'cursor-crosshair'
           : 'cursor-default';
 
@@ -845,7 +941,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
           onSelectPieceId(piece.pieceId);
         }}
         className={
-          isInspectMode && !spacePressed
+          (isInspectMode || isMeasureMode) && !spacePressed
             ? 'cursor-crosshair'
             : effectiveViewMode === 'pieces' && activeTool !== 'pan' && !spacePressed
               ? 'cursor-move'
@@ -1081,9 +1177,9 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     return frames;
   }, [effectiveViewMode, boardState, piecesById, dragPreview]);
 
-  // Subtle inspectable vertex hints rendered only while inspect-entity mode is active
+  // Subtle inspectable/measurable vertex hints rendered while inspect or measure mode is active
   const inspectVertexHints = useMemo(() => {
-    if (!isInspectMode) return [];
+    if (!isInspectMode && !isMeasureMode) return [];
     const hints: { key: string; x: number; y: number }[] = [];
     for (const piece of orderedVisiblePieces) {
       const off = getEffectiveOffset(piece.pieceId);
@@ -1109,7 +1205,15 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
       }
     }
     return hints;
-  }, [isInspectMode, orderedVisiblePieces, layerVisibility.showSewLines, layerVisibility.showSeamAllowance, boardState, dragPreview]);
+  }, [
+    isInspectMode,
+    isMeasureMode,
+    orderedVisiblePieces,
+    layerVisibility.showSewLines,
+    layerVisibility.showSeamAllowance,
+    boardState,
+    dragPreview
+  ]);
 
   // Resolve active Bézier segment for optional control-polygon overlay
   const activeControlPolygonSpec = useMemo(() => {
@@ -1302,6 +1406,581 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
           </g>
         );
     }
+  };
+
+  // UX-2.3.3.2: Precision Drafting Measurement Overlays (amber/brass palette, reactive to live drags)
+  const renderMeasurementOverlay = () => {
+    const hasActiveMeasurement =
+      measurementSession.mode !== 'idle' && measurementEvaluation.kind !== 'empty';
+    if (!isMeasureMode && !hasActiveMeasurement && !measurementHoverEntity) {
+      return null;
+    }
+
+    const MEASURE_PRIMARY = '#b45309'; // warm drafting brass/amber (distinct from teal Inspect & blue Select)
+    const MEASURE_ACCENT = '#d97706';
+    const MEASURE_PREVIEW = '#92400e';
+
+    const resolveLivePoint = (entity: CadInspectableEntity): RenderPoint2D => {
+      const off = getEffectiveOffset(entity.pieceId);
+      return {
+        x: entity.localPointCm.x + off.offsetXCm,
+        y: entity.localPointCm.y + off.offsetYCm
+      };
+    };
+
+    const uprightTransform = (x: number, y: number) =>
+      isYUp ? `translate(${x}, ${y}) scale(1, -1)` : `translate(${x}, ${y})`;
+
+    const renderAnchorBadge = (pt: RenderPoint2D, badge: 'A' | 'B', testId: string) => {
+      const r = 6.5 * invScale;
+      return (
+        <g key={testId} data-testid={testId}>
+          <circle
+            cx={pt.x}
+            cy={pt.y}
+            r={r}
+            fill="#ffffff"
+            stroke={MEASURE_PRIMARY}
+            strokeWidth={2.0 * invScale}
+          />
+          <circle cx={pt.x} cy={pt.y} r={2.3 * invScale} fill={MEASURE_PRIMARY} />
+          <g
+            transform={uprightTransform(
+              pt.x + 8.5 * invScale,
+              isYUp ? pt.y + 7 * invScale : pt.y - 7 * invScale
+            )}
+          >
+            <rect
+              x={-2.5 * invScale}
+              y={-9.5 * invScale}
+              width={12 * invScale}
+              height={12 * invScale}
+              rx={2 * invScale}
+              fill={MEASURE_PRIMARY}
+            />
+            <text
+              x={3.5 * invScale}
+              y={-0.5 * invScale}
+              textAnchor="middle"
+              fontSize={Math.max(0.85, 8.8 * invScale)}
+              fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+              fontWeight="700"
+              fill="#ffffff"
+            >
+              {badge}
+            </text>
+          </g>
+        </g>
+      );
+    };
+
+    const renderCalloutText = (
+      x: number,
+      y: number,
+      text: string,
+      color = MEASURE_PRIMARY,
+      anchor: 'middle' | 'start' = 'middle'
+    ) => (
+      <g transform={uprightTransform(x, y)}>
+        <text
+          x={0}
+          y={0}
+          textAnchor={anchor}
+          fontSize={Math.max(0.9, 10 * invScale)}
+          fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+          fontWeight="700"
+          fill={color}
+          stroke="#ffffff"
+          strokeWidth={3.0 * invScale}
+          paintOrder="stroke"
+        >
+          {text}
+        </text>
+      </g>
+    );
+
+    const renderVertexAngleArc = (
+      vertexPt: RenderPoint2D,
+      angleRes: VertexAngleMeasurementResult,
+      testId: string,
+      isPreview = false
+    ) => {
+      if (!angleRes.incomingUnitTangent || !angleRes.outgoingUnitTangent) {
+        return (
+          <g data-testid={testId}>
+            <circle
+              cx={vertexPt.x}
+              cy={vertexPt.y}
+              r={6 * invScale}
+              fill="#fef3c7"
+              stroke={MEASURE_PRIMARY}
+              strokeWidth={1.8 * invScale}
+            />
+          </g>
+        );
+      }
+
+      const ux = -angleRes.incomingUnitTangent.x;
+      const uy = -angleRes.incomingUnitTangent.y;
+      const vx = angleRes.outgoingUnitTangent.x;
+      const vy = angleRes.outgoingUnitTangent.y;
+
+      const rayLen = 28 * invScale;
+      const arcR = 16 * invScale;
+
+      const inEnd = { x: vertexPt.x + ux * rayLen, y: vertexPt.y + uy * rayLen };
+      const outEnd = { x: vertexPt.x + vx * rayLen, y: vertexPt.y + vy * rayLen };
+
+      const arcStart = { x: vertexPt.x + vx * arcR, y: vertexPt.y + vy * arcR };
+      const arcEnd = { x: vertexPt.x + ux * arcR, y: vertexPt.y + uy * arcR };
+
+      const useInterior =
+        angleRes.interiorExteriorStatus === 'determined' &&
+        angleRes.interiorAngleDeg !== null &&
+        angleRes.contourOrientation.orientationSign !== null;
+
+      let sweepFlag: 0 | 1;
+      let largeArcFlag: 0 | 1;
+      let displayDeg: number;
+      let bisectorAngleRad: number;
+
+      const thetaV = Math.atan2(vy, vx);
+      if (useInterior) {
+        const sign = angleRes.contourOrientation.orientationSign!;
+        displayDeg = angleRes.interiorAngleDeg!;
+        sweepFlag = sign > 0 ? 1 : 0;
+        largeArcFlag = displayDeg > 180 ? 1 : 0;
+        bisectorAngleRad = thetaV + sign * ((displayDeg * Math.PI) / 360);
+      } else {
+        displayDeg = angleRes.includedAngleDeg ?? 0;
+        const crossVU = vx * uy - vy * ux;
+        const sign = crossVU >= 0 ? 1 : -1;
+        sweepFlag = sign > 0 ? 1 : 0;
+        largeArcFlag = 0;
+        bisectorAngleRad = thetaV + sign * ((displayDeg * Math.PI) / 360);
+      }
+
+      const canDrawArc = displayDeg > 0.5 && displayDeg < 359.5;
+      const arcPath = canDrawArc
+        ? `M ${arcStart.x} ${arcStart.y} A ${arcR} ${arcR} 0 ${largeArcFlag} ${sweepFlag} ${arcEnd.x} ${arcEnd.y}`
+        : null;
+
+      const labelDist = 25 * invScale;
+      const lx = vertexPt.x + Math.cos(bisectorAngleRad) * labelDist;
+      const ly = vertexPt.y + Math.sin(bisectorAngleRad) * labelDist;
+      const tag = useInterior ? 'INT' : 'INC';
+
+      return (
+        <g data-testid={testId} opacity={isPreview ? 0.72 : 1}>
+          {/* Incoming & outgoing tangent guide rays */}
+          <line
+            x1={vertexPt.x}
+            y1={vertexPt.y}
+            x2={inEnd.x}
+            y2={inEnd.y}
+            stroke={MEASURE_ACCENT}
+            strokeWidth={1.6 * invScale}
+            strokeDasharray={`${4 * invScale} ${2.5 * invScale}`}
+          />
+          <line
+            x1={vertexPt.x}
+            y1={vertexPt.y}
+            x2={outEnd.x}
+            y2={outEnd.y}
+            stroke={MEASURE_ACCENT}
+            strokeWidth={1.6 * invScale}
+            strokeDasharray={`${4 * invScale} ${2.5 * invScale}`}
+          />
+          {/* Angle arc */}
+          {arcPath && (
+            <path
+              d={arcPath}
+              fill="none"
+              stroke={MEASURE_PRIMARY}
+              strokeWidth={(isPreview ? 1.8 : 2.3) * invScale}
+              strokeDasharray={isPreview ? `${3 * invScale} ${2 * invScale}` : undefined}
+            />
+          )}
+          <circle
+            cx={vertexPt.x}
+            cy={vertexPt.y}
+            r={4.2 * invScale}
+            fill="#ffffff"
+            stroke={MEASURE_PRIMARY}
+            strokeWidth={1.8 * invScale}
+          />
+          {!isPreview && renderCalloutText(lx, ly, `${displayDeg.toFixed(1)}° ${tag}`)}
+        </g>
+      );
+    };
+
+    const renderHoverCandidate = () => {
+      if (!isMeasureMode || !measurementHoverEntity) return null;
+      const pt = resolveLivePoint(measurementHoverEntity);
+      const off = getEffectiveOffset(measurementHoverEntity.pieceId);
+      return (
+        <g
+          data-testid="cad-measure-hover"
+          data-entity-kind={measurementHoverEntity.entityKind}
+          data-presentation-ref={measurementHoverEntity.presentationRef}
+        >
+          {measurementHoverEntity.entityKind === 'edge' && (
+            <line
+              x1={measurementHoverEntity.startLocalCm.x + off.offsetXCm}
+              y1={measurementHoverEntity.startLocalCm.y + off.offsetYCm}
+              x2={measurementHoverEntity.endLocalCm.x + off.offsetXCm}
+              y2={measurementHoverEntity.endLocalCm.y + off.offsetYCm}
+              stroke={MEASURE_ACCENT}
+              strokeWidth={2.4 * invScale}
+              strokeDasharray={`${4 * invScale} ${2.5 * invScale}`}
+              strokeLinecap="round"
+            />
+          )}
+          {measurementHoverEntity.entityKind === 'curve' && (
+            <path
+              d={`M ${measurementHoverEntity.p0LocalCm.x + off.offsetXCm} ${measurementHoverEntity.p0LocalCm.y + off.offsetYCm} C ${measurementHoverEntity.p1LocalCm.x + off.offsetXCm} ${measurementHoverEntity.p1LocalCm.y + off.offsetYCm}, ${measurementHoverEntity.p2LocalCm.x + off.offsetXCm} ${measurementHoverEntity.p2LocalCm.y + off.offsetYCm}, ${measurementHoverEntity.p3LocalCm.x + off.offsetXCm} ${measurementHoverEntity.p3LocalCm.y + off.offsetYCm}`}
+              fill="none"
+              stroke={MEASURE_ACCENT}
+              strokeWidth={2.4 * invScale}
+              strokeDasharray={`${4 * invScale} ${2.5 * invScale}`}
+              strokeLinecap="round"
+            />
+          )}
+          <circle
+            cx={pt.x}
+            cy={pt.y}
+            r={5.8 * invScale}
+            fill="rgba(217, 119, 6, 0.14)"
+            stroke={MEASURE_ACCENT}
+            strokeWidth={1.6 * invScale}
+            strokeDasharray={`${3 * invScale} ${2 * invScale}`}
+          />
+          <circle cx={pt.x} cy={pt.y} r={2.2 * invScale} fill={MEASURE_ACCENT} />
+        </g>
+      );
+    };
+
+    return (
+      <g data-testid="cad-measurement-overlay" className="pointer-events-none">
+        {renderHoverCandidate()}
+
+        {/* 1. Awaiting second anchor: Anchor A + live dashed distance preview line + optional vertex angle preview */}
+        {measurementEvaluation.kind === 'awaiting-second-anchor' && (() => {
+          const ptA = resolveLivePoint(measurementEvaluation.anchorA);
+          const previewTarget =
+            isMeasureMode && measurementHoverEntity
+              ? resolveLivePoint(measurementHoverEntity)
+              : isMeasureMode && cursorCm
+                ? cursorCm
+                : null;
+          const previewDist = previewTarget
+            ? Math.hypot(previewTarget.x - ptA.x, previewTarget.y - ptA.y)
+            : null;
+          const midX = previewTarget ? (ptA.x + previewTarget.x) * 0.5 : ptA.x;
+          const midY = previewTarget ? (ptA.y + previewTarget.y) * 0.5 : ptA.y;
+
+          return (
+            <g data-testid="cad-measure-pending">
+              {measurementEvaluation.previewVertexAngle &&
+                renderVertexAngleArc(
+                  ptA,
+                  measurementEvaluation.previewVertexAngle,
+                  'cad-measure-vertex-preview',
+                  true
+                )}
+              {previewTarget && previewDist !== null && previewDist > 1e-4 && (
+                <g data-testid="cad-measure-preview-line">
+                  <line
+                    x1={ptA.x}
+                    y1={ptA.y}
+                    x2={previewTarget.x}
+                    y2={previewTarget.y}
+                    stroke={MEASURE_PREVIEW}
+                    strokeWidth={1.6 * invScale}
+                    strokeDasharray={`${5 * invScale} ${3 * invScale}`}
+                  />
+                  {renderCalloutText(
+                    midX,
+                    isYUp ? midY + 9 * invScale : midY - 9 * invScale,
+                    `${previewDist.toFixed(2)} cm`,
+                    MEASURE_PREVIEW
+                  )}
+                </g>
+              )}
+              {renderAnchorBadge(ptA, 'A', 'cad-measure-anchor-a')}
+            </g>
+          );
+        })()}
+
+        {/* 2. Completed Pair Distance (reactive to live board placement / dragPreview) */}
+        {measurementEvaluation.kind === 'pair-distance' && (() => {
+          const ptA = resolveLivePoint(measurementEvaluation.anchorA);
+          const ptB = resolveLivePoint(measurementEvaluation.anchorB);
+          const dx = ptB.x - ptA.x;
+          const dy = ptB.y - ptA.y;
+          const liveDist = Math.hypot(dx, dy);
+          const midX = (ptA.x + ptB.x) * 0.5;
+          const midY = (ptA.y + ptB.y) * 0.5;
+          const isSamePiece = measurementEvaluation.result.isSamePiece;
+          const label = `${liveDist.toFixed(2)} cm${isSamePiece ? '' : ' · BOARD'}`;
+
+          // Perpendicular end ticks
+          const tickHalf = 4.5 * invScale;
+          const nx = liveDist > 1e-9 ? -dy / liveDist : 0;
+          const ny = liveDist > 1e-9 ? dx / liveDist : 1;
+
+          return (
+            <g data-testid="cad-measure-pair-line">
+              {/* Subtle Δx / Δy right-triangle helper legs */}
+              {Math.abs(dx) > 1e-3 && Math.abs(dy) > 1e-3 && (
+                <g opacity="0.55">
+                  <line
+                    x1={ptA.x}
+                    y1={ptA.y}
+                    x2={ptB.x}
+                    y2={ptA.y}
+                    stroke={MEASURE_ACCENT}
+                    strokeWidth={1.0 * invScale}
+                    strokeDasharray={`${3 * invScale} ${3 * invScale}`}
+                  />
+                  <line
+                    x1={ptB.x}
+                    y1={ptA.y}
+                    x2={ptB.x}
+                    y2={ptB.y}
+                    stroke={MEASURE_ACCENT}
+                    strokeWidth={1.0 * invScale}
+                    strokeDasharray={`${3 * invScale} ${3 * invScale}`}
+                  />
+                </g>
+              )}
+              {/* Main dimension line */}
+              <line
+                x1={ptA.x}
+                y1={ptA.y}
+                x2={ptB.x}
+                y2={ptB.y}
+                stroke={MEASURE_PRIMARY}
+                strokeWidth={2.2 * invScale}
+                strokeLinecap="round"
+              />
+              {/* End ticks */}
+              {liveDist > 1e-6 && (
+                <>
+                  <line
+                    x1={ptA.x - nx * tickHalf}
+                    y1={ptA.y - ny * tickHalf}
+                    x2={ptA.x + nx * tickHalf}
+                    y2={ptA.y + ny * tickHalf}
+                    stroke={MEASURE_PRIMARY}
+                    strokeWidth={1.6 * invScale}
+                  />
+                  <line
+                    x1={ptB.x - nx * tickHalf}
+                    y1={ptB.y - ny * tickHalf}
+                    x2={ptB.x + nx * tickHalf}
+                    y2={ptB.y + ny * tickHalf}
+                    stroke={MEASURE_PRIMARY}
+                    strokeWidth={1.6 * invScale}
+                  />
+                </>
+              )}
+              {renderAnchorBadge(ptA, 'A', 'cad-measure-anchor-a')}
+              {renderAnchorBadge(ptB, 'B', 'cad-measure-anchor-b')}
+              {renderCalloutText(
+                midX,
+                isYUp ? midY + 10 * invScale : midY - 10 * invScale,
+                label
+              )}
+            </g>
+          );
+        })()}
+
+        {/* 3. Completed Straight Edge Measurement */}
+        {measurementEvaluation.kind === 'straight-edge' && (() => {
+          const edge = measurementEvaluation.entity;
+          const res = measurementEvaluation.result;
+          const off = getEffectiveOffset(edge.pieceId);
+          const p0 = {
+            x: edge.startLocalCm.x + off.offsetXCm,
+            y: edge.startLocalCm.y + off.offsetYCm
+          };
+          const p1 = {
+            x: edge.endLocalCm.x + off.offsetXCm,
+            y: edge.endLocalCm.y + off.offsetYCm
+          };
+          const midX = (p0.x + p1.x) * 0.5;
+          const midY = (p0.y + p1.y) * 0.5;
+          const label =
+            res.lengthCm !== null
+              ? res.angles
+                ? `${res.lengthCm.toFixed(2)} cm · ${res.angles.undirectedOrientationDeg.toFixed(1)}°`
+                : `${res.lengthCm.toFixed(2)} cm`
+              : '0.00 cm (Degenerate)';
+
+          return (
+            <g data-testid="cad-measure-edge-line">
+              <line
+                x1={p0.x}
+                y1={p0.y}
+                x2={p1.x}
+                y2={p1.y}
+                stroke={MEASURE_PRIMARY}
+                strokeWidth={3.2 * invScale}
+                strokeLinecap="round"
+              />
+              <circle
+                cx={p0.x}
+                cy={p0.y}
+                r={3.8 * invScale}
+                fill="#ffffff"
+                stroke={MEASURE_PRIMARY}
+                strokeWidth={1.8 * invScale}
+              />
+              <circle
+                cx={p1.x}
+                cy={p1.y}
+                r={3.8 * invScale}
+                fill="#ffffff"
+                stroke={MEASURE_PRIMARY}
+                strokeWidth={1.8 * invScale}
+              />
+              {renderCalloutText(
+                midX,
+                isYUp ? midY + 10 * invScale : midY - 10 * invScale,
+                label
+              )}
+            </g>
+          );
+        })()}
+
+        {/* 4. Completed Vertex Angle Measurement */}
+        {measurementEvaluation.kind === 'vertex-angle' &&
+          renderVertexAngleArc(
+            resolveLivePoint(measurementEvaluation.entity),
+            measurementEvaluation.result,
+            'cad-measure-vertex-angle',
+            false
+          )}
+
+        {/* 5. Completed Cubic Bézier Differential & Arc-Length Measurement */}
+        {measurementEvaluation.kind === 'cubic-bezier' && (() => {
+          const curve = measurementEvaluation.entity;
+          const { differential, fullArcLength, partialArcLength } = measurementEvaluation.result;
+          const off = getEffectiveOffset(curve.pieceId);
+          const p0 = { x: curve.p0LocalCm.x + off.offsetXCm, y: curve.p0LocalCm.y + off.offsetYCm };
+          const p1 = { x: curve.p1LocalCm.x + off.offsetXCm, y: curve.p1LocalCm.y + off.offsetYCm };
+          const p2 = { x: curve.p2LocalCm.x + off.offsetXCm, y: curve.p2LocalCm.y + off.offsetYCm };
+          const p3 = { x: curve.p3LocalCm.x + off.offsetXCm, y: curve.p3LocalCm.y + off.offsetYCm };
+          const evalPt = resolveLivePoint(curve);
+          const curveD = `M ${p0.x} ${p0.y} C ${p1.x} ${p1.y}, ${p2.x} ${p2.y}, ${p3.x} ${p3.y}`;
+
+          const tangent = differential.unitTangent;
+          const tangentLen = 24 * invScale;
+          const arrowLen = 6 * invScale;
+          const tEnd = tangent
+            ? { x: evalPt.x + tangent.x * tangentLen, y: evalPt.y + tangent.y * tangentLen }
+            : null;
+          // Unit normal rotated +90° from tangent for arrowhead & subtle curvature indicator
+          const perp = tangent ? { x: -tangent.y, y: tangent.x } : null;
+          const kappaSign =
+            differential.signedCurvatureInvCm !== null &&
+            Math.abs(differential.signedCurvatureInvCm) > 1e-9
+              ? Math.sign(differential.signedCurvatureInvCm)
+              : 0;
+          const normalLen = 12 * invScale;
+
+          const fullLenText =
+            fullArcLength.arcLengthCm !== null
+              ? `L ≈ ${fullArcLength.arcLengthCm.toFixed(2)} cm`
+              : 'L indeterminate';
+          const partialText =
+            partialArcLength.arcLengthCm !== null &&
+            curve.parameterT > 1e-3 &&
+            curve.parameterT < 1 - 1e-3
+              ? ` (0→t ${partialArcLength.arcLengthCm.toFixed(2)})`
+              : '';
+
+          return (
+            <g data-testid="cad-measure-cubic-curve">
+              <path
+                d={curveD}
+                fill="none"
+                stroke={MEASURE_PRIMARY}
+                strokeWidth={3.2 * invScale}
+                strokeLinecap="round"
+              />
+              {/* Endpoint markers */}
+              <circle
+                cx={p0.x}
+                cy={p0.y}
+                r={3.2 * invScale}
+                fill="#ffffff"
+                stroke={MEASURE_PRIMARY}
+                strokeWidth={1.6 * invScale}
+              />
+              <circle
+                cx={p3.x}
+                cy={p3.y}
+                r={3.2 * invScale}
+                fill="#ffffff"
+                stroke={MEASURE_PRIMARY}
+                strokeWidth={1.6 * invScale}
+              />
+              {/* Unit tangent vector arrow at evaluated parameter t */}
+              {tangent && tEnd && perp && !differential.isStationary && (
+                <g data-testid="cad-measure-cubic-tangent">
+                  <line
+                    x1={evalPt.x}
+                    y1={evalPt.y}
+                    x2={tEnd.x}
+                    y2={tEnd.y}
+                    stroke="#0369a1"
+                    strokeWidth={2.0 * invScale}
+                    strokeLinecap="round"
+                  />
+                  <polyline
+                    points={`${tEnd.x - tangent.x * arrowLen + perp.x * (arrowLen * 0.45)},${tEnd.y - tangent.y * arrowLen + perp.y * (arrowLen * 0.45)} ${tEnd.x},${tEnd.y} ${tEnd.x - tangent.x * arrowLen - perp.x * (arrowLen * 0.45)},${tEnd.y - tangent.y * arrowLen - perp.y * (arrowLen * 0.45)}`}
+                    fill="none"
+                    stroke="#0369a1"
+                    strokeWidth={1.8 * invScale}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  {/* Subtle inward normal tick indicating curvature direction */}
+                  {kappaSign !== 0 && (
+                    <line
+                      x1={evalPt.x}
+                      y1={evalPt.y}
+                      x2={evalPt.x + perp.x * kappaSign * normalLen}
+                      y2={evalPt.y + perp.y * kappaSign * normalLen}
+                      stroke={MEASURE_ACCENT}
+                      strokeWidth={1.4 * invScale}
+                      strokeDasharray={`${2.5 * invScale} ${2 * invScale}`}
+                    />
+                  )}
+                </g>
+              )}
+              {/* Evaluated point at t */}
+              <circle
+                cx={evalPt.x}
+                cy={evalPt.y}
+                r={4.8 * invScale}
+                fill="#ffffff"
+                stroke={MEASURE_PRIMARY}
+                strokeWidth={2.0 * invScale}
+              />
+              <circle cx={evalPt.x} cy={evalPt.y} r={2.0 * invScale} fill={MEASURE_PRIMARY} />
+              {renderCalloutText(
+                evalPt.x,
+                isYUp ? evalPt.y + 12 * invScale : evalPt.y - 12 * invScale,
+                `${fullLenText}${partialText}`
+              )}
+            </g>
+          );
+        })()}
+      </g>
+    );
   };
 
   return (
@@ -1699,10 +2378,10 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
                 {orderedVisiblePieces.map(piece => renderStandardPiece(piece))}
 
                 {/* UX-2.3.3.1: Dedicated Read-Only Entity Inspection Overlay (pointer-events-none) */}
-                {(isInspectMode || hoveredEntity || inspectedEntity) && (
+                {(isInspectMode || isMeasureMode || hoveredEntity || inspectedEntity) && (
                   <g data-testid="cad-inspection-overlay" className="pointer-events-none">
-                    {/* Subtle inspectable contour vertex markers while inspect-entity tool is active */}
-                    {isInspectMode && inspectVertexHints.length > 0 && (
+                    {/* Subtle inspectable/measurable contour vertex markers while inspect or measure tool is active */}
+                    {(isInspectMode || isMeasureMode) && inspectVertexHints.length > 0 && (
                       <g data-testid="cad-inspect-vertex-hints" opacity="0.72">
                         {inspectVertexHints.map(v => (
                           <circle
@@ -1711,7 +2390,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
                             cy={v.y}
                             r={2.4 * invScale}
                             fill="#ffffff"
-                            stroke="#475569"
+                            stroke={isMeasureMode ? '#b45309' : '#475569'}
                             strokeWidth={1.0 * invScale}
                           />
                         ))}
@@ -1816,6 +2495,9 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
                     {inspectedEntity && renderEntityHighlight(inspectedEntity, 'selected')}
                   </g>
                 )}
+
+                {/* UX-2.3.3.2: Dedicated Advisory Precision Measurement Overlay (pointer-events-none) */}
+                {renderMeasurementOverlay()}
 
                 {/* Visual Overlap Advisory Overlays (Advisory Only — Never Certification) */}
                 {overlapAdvisories.length > 0 && (

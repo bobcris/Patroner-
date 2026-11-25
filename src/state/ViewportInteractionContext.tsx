@@ -203,6 +203,14 @@ export const ENVIRONMENT_TOOLS: Record<StudioEnvironment, readonly ToolDefinitio
       actionType: 'mode'
     },
     {
+      id: 'measure-preview',
+      label: 'Measure Geometry',
+      shortKey: 'M',
+      description: 'Advisory drafting measurements: pair distances, straight edges, vertex angles & cubic arc lengths (non-certified)',
+      available: true,
+      actionType: 'mode'
+    },
+    {
       id: 'pan',
       label: 'Pan Viewport',
       shortKey: 'H',

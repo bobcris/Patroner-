@@ -158,6 +158,21 @@ export const ContextualInspector: React.FC = React.memo(() => {
       if (mode === 'grading') return 'Grading Matrix';
       if (mode === 'fit') return 'Prototype Fit';
       if (mode === 'simulation') return '3D Drape Preview';
+      const meas = patternAtelier?.measurementEvaluation;
+      if (meas && meas.kind !== 'empty') {
+        switch (meas.kind) {
+          case 'pair-distance':
+            return 'Measure · Pair Distance';
+          case 'straight-edge':
+            return 'Measure · Straight Edge';
+          case 'vertex-angle':
+            return 'Measure · Vertex Angle';
+          case 'cubic-bezier':
+            return 'Measure · Cubic Bézier';
+          case 'awaiting-second-anchor':
+            return 'Measure · Select Anchor B';
+        }
+      }
       const inspected = patternAtelier?.inspectedEntity;
       if (inspected) {
         switch (inspected.entityKind) {
