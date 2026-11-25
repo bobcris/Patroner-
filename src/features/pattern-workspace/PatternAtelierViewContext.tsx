@@ -66,6 +66,14 @@ import {
   swapMeasurementAnchors,
   transitionMeasurementSessionOnToolExit
 } from './precision-measurement';
+import {
+  DEFAULT_DIAGNOSTIC_SEVERITY_FILTER,
+  DiagnosticSeverity,
+  DiagnosticSeverityFilter,
+  ResolvedArtifactDiagnostics,
+  reconcileDiagnosticSelection,
+  resolveArtifactDiagnostics
+} from './spatial-diagnostics';
 
 export type PatternCadViewMode = 'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation';
 
@@ -182,6 +190,27 @@ export interface PatternAtelierViewContextValue {
   readonly lockPendingVertexAngle: () => void;
   readonly clearMeasurementSession: () => void;
   readonly handleMeasurementToolTransition: (nextTool: string) => void;
+
+  // UX-2.3.3.3: Ephemeral Read-Only Spatial Diagnostic State (D3/D4/F)
+  // Strictly outside boardHistory, ProjectWorkspaceContext, measurementSession, and inspectedEntity.
+  readonly resolvedDiagnostics: ResolvedArtifactDiagnostics;
+  readonly showDiagnosticsOverlay: boolean;
+  readonly setShowDiagnosticsOverlay: (show: boolean) => void;
+  readonly toggleDiagnosticsOverlay: () => void;
+  readonly diagnosticSeverityFilter: DiagnosticSeverityFilter;
+  readonly toggleDiagnosticSeverityFilter: (severity: DiagnosticSeverity) => void;
+  readonly selectedDiagnosticKey: string | null;
+  readonly hoveredDiagnosticKey: string | null;
+  readonly selectDiagnostic: (diagnosticKey: string | null) => void;
+  readonly setHoveredDiagnosticKey: (diagnosticKey: string | null) => void;
+  readonly clearDiagnosticSelection: () => void;
+  readonly diagnosticLocateRequest: {
+    readonly diagnosticKey: string;
+    readonly version: number;
+  } | null;
+  readonly locateDiagnosticOnCanvas: (diagnosticKey: string) => void;
+  readonly diagnosticReconciliationNotice: string | null;
+  readonly dismissDiagnosticReconciliationNotice: () => void;
 }
 
 const DEFAULT_CAMERA: CadCamera = { zoom: 1.0, panX: 48, panY: 48 };
@@ -246,6 +275,20 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     useState<CadInspectableEntity | null>(null);
   const [rawMeasurementSession, setRawMeasurementSession] = useState<MeasurementSession>(
     EMPTY_MEASUREMENT_SESSION
+  );
+
+  // UX-2.3.3.3 Ephemeral Spatial Diagnostic State (D3: enabled by default; D4: independent of inspect/measure)
+  const [showDiagnosticsOverlay, setShowDiagnosticsOverlay] = useState<boolean>(true);
+  const [diagnosticSeverityFilter, setDiagnosticSeverityFilter] =
+    useState<DiagnosticSeverityFilter>(DEFAULT_DIAGNOSTIC_SEVERITY_FILTER);
+  const [rawSelectedDiagnosticKey, setRawSelectedDiagnosticKey] = useState<string | null>(null);
+  const [hoveredDiagnosticKey, setHoveredDiagnosticKey] = useState<string | null>(null);
+  const [diagnosticLocateRequest, setDiagnosticLocateRequest] = useState<{
+    readonly diagnosticKey: string;
+    readonly version: number;
+  } | null>(null);
+  const [dismissedReconcileArtifactKey, setDismissedReconcileArtifactKey] = useState<string | null>(
+    null
   );
 
   // Camera actions (never touch boardHistory)
@@ -317,6 +360,7 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     setActiveArtifact(artifact);
     setHoveredEntity(null);
     setMeasurementHoverEntity(null);
+    setHoveredDiagnosticKey(null);
     setBoardHistory(prev => reconcileBoardHistoryWithArtifact(prev, artifact));
   }, []);
 
@@ -354,6 +398,38 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       setMeasurementHoverEntity(null);
     }
     setRawMeasurementSession(prev => transitionMeasurementSessionOnToolExit(prev, nextTool));
+  }, []);
+
+  const toggleDiagnosticsOverlay = useCallback(() => {
+    setShowDiagnosticsOverlay(prev => !prev);
+  }, []);
+
+  const toggleDiagnosticSeverityFilter = useCallback((severity: DiagnosticSeverity) => {
+    setDiagnosticSeverityFilter(prev => ({
+      ...prev,
+      [severity]: !prev[severity]
+    }));
+  }, []);
+
+  const selectDiagnostic = useCallback((diagnosticKey: string | null) => {
+    setRawSelectedDiagnosticKey(diagnosticKey);
+    setDismissedReconcileArtifactKey(null);
+  }, []);
+
+  const clearDiagnosticSelection = useCallback(() => {
+    setRawSelectedDiagnosticKey(null);
+    setHoveredDiagnosticKey(null);
+    setDismissedReconcileArtifactKey(null);
+  }, []);
+
+  const locateDiagnosticOnCanvas = useCallback((diagnosticKey: string) => {
+    setRawSelectedDiagnosticKey(diagnosticKey);
+    setShowDiagnosticsOverlay(true);
+    setDismissedReconcileArtifactKey(null);
+    setDiagnosticLocateRequest(prev => ({
+      diagnosticKey,
+      version: (prev?.version ?? 0) + 1
+    }));
   }, []);
 
   // Selection actions (ephemeral — do not push to arrangement undo stack)
@@ -583,6 +659,29 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
     return evaluateMeasurementSession(measurementSession, activeArtifact, boardHistory.present);
   }, [measurementSession, activeArtifact, boardHistory.present]);
 
+  // Stage-1 Artifact-Level Diagnostic Resolution: strictly memoized on `activeArtifact` ONLY
+  // so board dragging/repositioning never recomputes artifact-level diagnostic resolution.
+  const resolvedDiagnostics = useMemo<ResolvedArtifactDiagnostics>(() => {
+    return resolveArtifactDiagnostics(activeArtifact);
+  }, [activeArtifact]);
+
+  const diagnosticReconciliation = useMemo(
+    () => reconcileDiagnosticSelection(rawSelectedDiagnosticKey, resolvedDiagnostics),
+    [rawSelectedDiagnosticKey, resolvedDiagnostics]
+  );
+
+  const selectedDiagnosticKey = diagnosticReconciliation.selectedDiagnosticKey;
+  const diagnosticReconciliationNotice =
+    diagnosticReconciliation.wasClearedDueToStaleArtifact &&
+    dismissedReconcileArtifactKey !== resolvedDiagnostics.artifactIdentityKey
+      ? `Previous diagnostic selection (${diagnosticReconciliation.previousKey}) was cleared because the pattern artifact changed.`
+      : null;
+
+  const dismissDiagnosticReconciliationNotice = useCallback(() => {
+    setDismissedReconcileArtifactKey(resolvedDiagnostics.artifactIdentityKey);
+    setRawSelectedDiagnosticKey(null);
+  }, [resolvedDiagnostics.artifactIdentityKey]);
+
   const value = useMemo<PatternAtelierViewContextValue>(
     () => ({
       camera,
@@ -653,7 +752,22 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       swapMeasurementAnchors: handleSwapMeasurementAnchors,
       lockPendingVertexAngle,
       clearMeasurementSession,
-      handleMeasurementToolTransition
+      handleMeasurementToolTransition,
+      resolvedDiagnostics,
+      showDiagnosticsOverlay,
+      setShowDiagnosticsOverlay,
+      toggleDiagnosticsOverlay,
+      diagnosticSeverityFilter,
+      toggleDiagnosticSeverityFilter,
+      selectedDiagnosticKey,
+      hoveredDiagnosticKey,
+      selectDiagnostic,
+      setHoveredDiagnosticKey,
+      clearDiagnosticSelection,
+      diagnosticLocateRequest,
+      locateDiagnosticOnCanvas,
+      diagnosticReconciliationNotice,
+      dismissDiagnosticReconciliationNotice
     }),
     [
       camera,
@@ -711,7 +825,20 @@ export const PatternAtelierViewProvider: React.FC<{ children: React.ReactNode }>
       handleSwapMeasurementAnchors,
       lockPendingVertexAngle,
       clearMeasurementSession,
-      handleMeasurementToolTransition
+      handleMeasurementToolTransition,
+      resolvedDiagnostics,
+      showDiagnosticsOverlay,
+      toggleDiagnosticsOverlay,
+      diagnosticSeverityFilter,
+      toggleDiagnosticSeverityFilter,
+      selectedDiagnosticKey,
+      hoveredDiagnosticKey,
+      selectDiagnostic,
+      clearDiagnosticSelection,
+      diagnosticLocateRequest,
+      locateDiagnosticOnCanvas,
+      diagnosticReconciliationNotice,
+      dismissDiagnosticReconciliationNotice
     ]
   );
 

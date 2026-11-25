@@ -8,6 +8,8 @@ import {
   validateOffsetValidationRecordCrossFieldInvariants
 } from '../../../../packages/contracts/src/cross-field-validators';
 import type {
+  DiagnosticContourScope,
+  DiagnosticParameterInterval,
   PatternArtifactBundle,
   PatternPieceRenderModel,
   PythonBezierSegment,
@@ -41,6 +43,26 @@ function isFinitePoint(pt: unknown): pt is RenderPoint2D {
     Number.isFinite((pt as RenderPoint2D).x) &&
     Number.isFinite((pt as RenderPoint2D).y)
   );
+}
+
+function resolvePythonSegmentContour(
+  sewIds: ReadonlySet<string>,
+  cutIds: ReadonlySet<string>,
+  segmentId: string | undefined
+): DiagnosticContourScope | undefined {
+  if (!segmentId) return undefined;
+  const inSew = sewIds.has(segmentId);
+  const inCut = cutIds.has(segmentId);
+  if (inSew && !inCut) return 'sew';
+  if (inCut && !inSew) return 'cut';
+  return undefined;
+}
+
+function copyParameterIntervals(
+  intervals: readonly (readonly [number, number])[] | undefined
+): readonly DiagnosticParameterInterval[] | undefined {
+  if (!intervals || intervals.length === 0) return undefined;
+  return intervals.map(pair => [pair[0], pair[1]] as const);
 }
 
 /**
@@ -126,6 +148,8 @@ export function adaptPythonPatternArtifact(
 
   for (const piece of input.pieces) {
     let pieceHasBlockingError = false;
+    const sewSegmentIds = new Set((piece.sewBoundarySegments ?? []).map(s => s.id));
+    const cutSegmentIds = new Set((piece.cutBoundarySegments ?? []).map(s => s.id));
 
     // 1. Validate coordinate frame contract parity with contracts.py CoordinateFrameSpec
     const cf = piece.coordinateFrame;
@@ -144,7 +168,9 @@ export function adaptPythonPatternArtifact(
         code: 'CONTRACT_COORDINATE_FRAME_INVALID',
         severity: 'CRITICAL_BLOCKING',
         pieceId: piece.pieceId,
-        message: 'Supplied coordinateFrame does not match canonical Python right-handed Cartesian cm/CCW specification.'
+        message: 'Supplied coordinateFrame does not match canonical Python right-handed Cartesian cm/CCW specification.',
+        failureCategory: 'CONTRACT_COORDINATE_FRAME_INVALID',
+        diagnosticOrigin: 'python-contract'
       });
     }
 
@@ -152,9 +178,17 @@ export function adaptPythonPatternArtifact(
     const allSegs = [...(piece.sewBoundarySegments ?? []), ...(piece.cutBoundarySegments ?? [])];
     if (piece.sewBoundarySegments.length === 0 || piece.cutBoundarySegments.length === 0) {
       pieceHasBlockingError = true;
-      validationErrors.push(
-        `Piece ${piece.pieceId}: sewBoundarySegments and cutBoundarySegments must each contain >= 1 BezierSegment.`
-      );
+      const emptyMsg = `Piece ${piece.pieceId}: sewBoundarySegments and cutBoundarySegments must each contain >= 1 BezierSegment.`;
+      validationErrors.push(emptyMsg);
+      diagnostics.push({
+        id: `py-empty-contour-${piece.pieceId}`,
+        code: 'CONTRACT_EMPTY_CONTOUR',
+        severity: 'CRITICAL_BLOCKING',
+        pieceId: piece.pieceId,
+        message: emptyMsg,
+        failureCategory: 'CONTRACT_EMPTY_CONTOUR',
+        diagnosticOrigin: 'python-contract'
+      });
     }
 
     for (const seg of allSegs) {
@@ -172,7 +206,10 @@ export function adaptPythonPatternArtifact(
           severity: 'CRITICAL_BLOCKING',
           pieceId: piece.pieceId,
           segmentId: seg.id,
-          message: `Segment ${seg.id} contains non-finite coordinates.`
+          contour: resolvePythonSegmentContour(sewSegmentIds, cutSegmentIds, seg.id),
+          message: `Segment ${seg.id} contains non-finite coordinates.`,
+          failureCategory: 'CONTRACT_NON_FINITE_COORDINATE',
+          diagnosticOrigin: 'python-contract'
         });
       }
     }
@@ -185,7 +222,11 @@ export function adaptPythonPatternArtifact(
       allRecordsProductionReady = false;
     }
 
+    const coveredOffsetOutcomeKeys = new Set<string>();
+    const coveredRootBracketSegments = new Set<string>();
+
     for (const rec of valRecords) {
+      const recContour = resolvePythonSegmentContour(sewSegmentIds, cutSegmentIds, rec.segment_id);
       const cfCheck = validateOffsetValidationRecordCrossFieldInvariants(rec);
       if (!cfCheck.valid) {
         pieceHasBlockingError = true;
@@ -199,37 +240,143 @@ export function adaptPythonPatternArtifact(
             severity: 'CRITICAL_BLOCKING',
             pieceId: piece.pieceId,
             segmentId: rec.segment_id,
+            contour: recContour,
             message: v.message,
             verificationOutcome: rec.verification_outcome,
             canonicalOffsetClassification: rec.canonical_offset_classification,
+            failureCategory: rec.failure_category,
+            diagnosticOrigin: 'python-contract',
             workingPrecisionBits: rec.working_precision_bits
           });
         }
       }
 
+      const unresolvedIntervals = copyParameterIntervals(rec.unresolved_intervals);
       if (rec.verification_outcome !== 'CERTIFIED_VALID') {
         pieceHasBlockingError = true;
         allRecordsCertifiedValid = false;
         allRecordsProductionReady = false;
+        coveredOffsetOutcomeKeys.add(
+          `${piece.pieceId}::${rec.segment_id}::${rec.verification_outcome}::${rec.failure_category}`
+        );
         diagnostics.push({
           id: `py-ovr-${piece.pieceId}-${rec.segment_id}`,
           code: rec.failure_category || 'ADR009_OFFSET_VERIFICATION_FAILED',
           severity: rec.verification_outcome === 'CERTIFIED_INVALID' ? 'CRITICAL_BLOCKING' : 'ERROR',
           pieceId: piece.pieceId,
           segmentId: rec.segment_id,
+          contour: recContour,
+          parameterIntervals: unresolvedIntervals,
           message: `Offset verification ${rec.verification_outcome}: ${rec.canonical_offset_classification}`,
           verificationOutcome: rec.verification_outcome,
           canonicalOffsetClassification: rec.canonical_offset_classification,
+          failureCategory: rec.failure_category,
+          diagnosticOrigin: 'python-offset-validation',
           maxGeometricDeviationBoundCm: rec.max_geometric_deviation_bound_cm,
           workingPrecisionBits: rec.working_precision_bits
         });
-      } else if (!rec.is_production_ready) {
-        allRecordsProductionReady = false;
+      } else {
+        if (!rec.is_production_ready) {
+          allRecordsProductionReady = false;
+        }
+        if (unresolvedIntervals && unresolvedIntervals.length > 0) {
+          diagnostics.push({
+            id: `py-ovr-unresolved-${piece.pieceId}-${rec.segment_id}`,
+            code: 'ADR009_UNRESOLVED_INTERVALS',
+            severity: 'ERROR',
+            pieceId: piece.pieceId,
+            segmentId: rec.segment_id,
+            contour: recContour,
+            parameterIntervals: unresolvedIntervals,
+            message: `Unresolved offset verification interval(s) present on segment ${rec.segment_id}.`,
+            verificationOutcome: rec.verification_outcome,
+            canonicalOffsetClassification: rec.canonical_offset_classification,
+            failureCategory: rec.failure_category,
+            diagnosticOrigin: 'python-offset-validation',
+            maxGeometricDeviationBoundCm: rec.max_geometric_deviation_bound_cm,
+            workingPrecisionBits: rec.working_precision_bits
+          });
+        }
+      }
+
+      // Preserve isolated cusp root brackets from contracts.py OffsetValidationRecord
+      const cuspBrackets = copyParameterIntervals(rec.isolated_cusp_roots_t);
+      if (cuspBrackets && cuspBrackets.length > 0) {
+        coveredRootBracketSegments.add(`${piece.pieceId}::${rec.segment_id}`);
+        diagnostics.push({
+          id: `py-cusp-${piece.pieceId}-${rec.segment_id}`,
+          code: 'ADR009_ISOLATED_CUSP_ROOT',
+          severity:
+            rec.verification_outcome === 'CERTIFIED_INVALID'
+              ? 'CRITICAL_BLOCKING'
+              : rec.verification_outcome === 'INCONCLUSIVE'
+                ? 'ERROR'
+                : 'WARNING',
+          pieceId: piece.pieceId,
+          segmentId: rec.segment_id,
+          contour: recContour,
+          parameterIntervals: cuspBrackets,
+          message: `Isolated cusp root bracket(s) (${cuspBrackets.length}) on segment ${rec.segment_id} (${rec.canonical_offset_classification}).`,
+          verificationOutcome: rec.verification_outcome,
+          canonicalOffsetClassification: rec.canonical_offset_classification,
+          failureCategory: rec.failure_category,
+          diagnosticOrigin: 'python-offset-validation',
+          maxGeometricDeviationBoundCm: rec.max_geometric_deviation_bound_cm,
+          workingPrecisionBits: rec.working_precision_bits
+        });
+      }
+
+      // Preserve explicit 2D SelfIntersectionCertificate coordinates & incident segment pairs
+      const selfIntersections = rec.isolated_self_intersections ?? [];
+      for (let idx = 0; idx < selfIntersections.length; idx++) {
+        const cert = selfIntersections[idx];
+        const segAContour = resolvePythonSegmentContour(
+          sewSegmentIds,
+          cutSegmentIds,
+          cert.segmentIdA
+        );
+        const secondarySegs =
+          cert.segmentIdB && cert.segmentIdB !== cert.segmentIdA ? [cert.segmentIdB] : undefined;
+        const intervals: DiagnosticParameterInterval[] =
+          cert.segmentIdB === cert.segmentIdA
+            ? [
+                [cert.t1Bracket[0], cert.t1Bracket[1]] as const,
+                [cert.t2Bracket[0], cert.t2Bracket[1]] as const
+              ]
+            : [[cert.t1Bracket[0], cert.t1Bracket[1]] as const];
+
+        diagnostics.push({
+          id: `py-self-intersect-${piece.pieceId}-${rec.segment_id}-${idx}`,
+          code:
+            cert.scope === 'LOCAL'
+              ? 'ADR009_LOCAL_SELF_INTERSECTION'
+              : 'ADR009_GLOBAL_SELF_INTERSECTION',
+          severity: 'CRITICAL_BLOCKING',
+          pieceId: piece.pieceId,
+          segmentId: cert.segmentIdA,
+          secondarySegmentIds: secondarySegs,
+          contour: segAContour,
+          parameterIntervals: intervals,
+          anchorPointCm: {
+            x: cert.intersectionPointCm.x,
+            y: cert.intersectionPointCm.y
+          },
+          anchorCoordinateSpace: 'piece-local',
+          message: `${cert.scope} self-intersection between ${cert.segmentIdA} and ${cert.segmentIdB} (residual ${cert.residualDistanceCm} cm).`,
+          verificationOutcome: rec.verification_outcome,
+          canonicalOffsetClassification: rec.canonical_offset_classification,
+          failureCategory: rec.failure_category,
+          diagnosticOrigin: 'python-offset-validation',
+          maxGeometricDeviationBoundCm: rec.max_geometric_deviation_bound_cm,
+          workingPrecisionBits: rec.working_precision_bits,
+          residualDistanceCm: cert.residualDistanceCm
+        });
       }
     }
 
-    // 4. Validate OffsetClassificationReport cross-field numeric invariants
+    // 4. Validate OffsetClassificationReport cross-field numeric invariants & preserve non-success reports
     for (const rep of piece.offsetReports ?? []) {
+      const repContour = resolvePythonSegmentContour(sewSegmentIds, cutSegmentIds, rep.segmentId);
       const repCheck = validateOffsetClassificationReportCrossFieldInvariants(rep);
       if (!repCheck.valid) {
         pieceHasBlockingError = true;
@@ -243,23 +390,83 @@ export function adaptPythonPatternArtifact(
             severity: 'CRITICAL_BLOCKING',
             pieceId: piece.pieceId,
             segmentId: rep.segmentId,
+            contour: repContour,
             message: v.message,
             verificationOutcome: rep.verificationOutcome,
-            canonicalOffsetClassification: rep.canonicalOffsetClassification
+            canonicalOffsetClassification: rep.canonicalOffsetClassification,
+            failureCategory: rep.failureCategory,
+            diagnosticOrigin: 'python-contract'
           });
         }
       }
+
+      const rootIntervals: readonly DiagnosticParameterInterval[] | undefined =
+        rep.isolatedRoots && rep.isolatedRoots.length > 0
+          ? rep.isolatedRoots.map(r => [r.tLower, r.tUpper] as const)
+          : undefined;
 
       if (rep.verificationOutcome !== 'CERTIFIED_VALID') {
         pieceHasBlockingError = true;
         allRecordsCertifiedValid = false;
         allRecordsProductionReady = false;
+        const outcomeKey = `${piece.pieceId}::${rep.segmentId}::${rep.verificationOutcome}::${rep.failureCategory}`;
+        if (!coveredOffsetOutcomeKeys.has(outcomeKey)) {
+          coveredOffsetOutcomeKeys.add(outcomeKey);
+          diagnostics.push({
+            id: `py-ocr-${piece.pieceId}-${rep.segmentId}`,
+            code: rep.failureCategory || 'ADR009_OFFSET_CLASSIFICATION_FAILED',
+            severity:
+              rep.verificationOutcome === 'CERTIFIED_INVALID' ? 'CRITICAL_BLOCKING' : 'ERROR',
+            pieceId: piece.pieceId,
+            segmentId: rep.segmentId,
+            contour: repContour,
+            parameterIntervals: rootIntervals,
+            message: `Offset classification report ${rep.verificationOutcome}: ${rep.canonicalOffsetClassification}`,
+            verificationOutcome: rep.verificationOutcome,
+            canonicalOffsetClassification: rep.canonicalOffsetClassification,
+            failureCategory: rep.failureCategory,
+            diagnosticOrigin: 'python-offset-report',
+            maxGeometricDeviationBoundCm: rep.certifiedIntervalErrorCm
+          });
+          if (rootIntervals) {
+            coveredRootBracketSegments.add(`${piece.pieceId}::${rep.segmentId}`);
+          }
+        }
       } else if (!rep.isProductionReady) {
         allRecordsProductionReady = false;
       }
+
+      // Preserve isolatedRoots from OffsetClassificationReport when not already emitted
+      if (
+        rootIntervals &&
+        rootIntervals.length > 0 &&
+        !coveredRootBracketSegments.has(`${piece.pieceId}::${rep.segmentId}`)
+      ) {
+        coveredRootBracketSegments.add(`${piece.pieceId}::${rep.segmentId}`);
+        diagnostics.push({
+          id: `py-ocr-roots-${piece.pieceId}-${rep.segmentId}`,
+          code: 'ADR009_ISOLATED_ROOT_BRACKET',
+          severity:
+            rep.verificationOutcome === 'CERTIFIED_INVALID'
+              ? 'CRITICAL_BLOCKING'
+              : rep.verificationOutcome === 'INCONCLUSIVE'
+                ? 'ERROR'
+                : 'WARNING',
+          pieceId: piece.pieceId,
+          segmentId: rep.segmentId,
+          contour: repContour,
+          parameterIntervals: rootIntervals,
+          message: `Isolated root bracket(s) (${rootIntervals.length}) on segment ${rep.segmentId} (${rep.canonicalOffsetClassification}).`,
+          verificationOutcome: rep.verificationOutcome,
+          canonicalOffsetClassification: rep.canonicalOffsetClassification,
+          failureCategory: rep.failureCategory,
+          diagnosticOrigin: 'python-offset-report',
+          maxGeometricDeviationBoundCm: rep.certifiedIntervalErrorCm
+        });
+      }
     }
 
-    // 5. Project explicit GeometryWarning entries
+    // 5. Project explicit GeometryWarning entries verbatim (no clamping of parameterT)
     for (const warn of piece.warnings ?? []) {
       if (warn.severity === 'CRITICAL_BLOCKING' || warn.severity === 'ERROR') {
         pieceHasBlockingError = true;
@@ -272,10 +479,13 @@ export function adaptPythonPatternArtifact(
         severity: warn.severity,
         pieceId: warn.pieceId,
         segmentId: warn.segmentId,
+        contour: resolvePythonSegmentContour(sewSegmentIds, cutSegmentIds, warn.segmentId),
         parameterT: warn.parameterT ?? undefined,
         message: warn.message,
         remediationAction: warn.remediationAction,
-        canonicalOffsetClassification: warn.classification
+        canonicalOffsetClassification: warn.classification,
+        failureCategory: warn.classification,
+        diagnosticOrigin: 'python-warning'
       });
     }
 

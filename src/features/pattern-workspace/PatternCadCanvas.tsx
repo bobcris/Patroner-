@@ -59,6 +59,18 @@ import {
   MeasurementSession,
   VertexAngleMeasurementResult
 } from './precision-measurement';
+import {
+  BoardPieceOffsetVisibility,
+  DEFAULT_DIAGNOSTIC_SEVERITY_FILTER,
+  DiagnosticMarkerCluster,
+  DiagnosticSeverity,
+  DiagnosticSeverityFilter,
+  EMPTY_RESOLVED_DIAGNOSTICS,
+  ProjectedDiagnosticItem,
+  ResolvedArtifactDiagnostics,
+  computeDiagnosticFocusBoundsCm,
+  projectDiagnosticsForCanvas
+} from './spatial-diagnostics';
 
 const SIZE_PALETTE: Record<string, { stroke: string; label: string }> = {
   XS: { stroke: '#9333ea', label: 'XS (EU 34)' },
@@ -132,6 +144,18 @@ export interface PatternCadCanvasProps {
   readonly onMeasurementHoverEntity?: (entity: CadInspectableEntity | null) => void;
   readonly onMeasureEntityClick?: (entity: CadInspectableEntity) => void;
   readonly onClearMeasurement?: () => void;
+  // UX-2.3.3.3 spatial diagnostic mapping overlay props
+  readonly resolvedDiagnostics?: ResolvedArtifactDiagnostics;
+  readonly showDiagnosticsOverlay?: boolean;
+  readonly diagnosticSeverityFilter?: DiagnosticSeverityFilter;
+  readonly selectedDiagnosticKey?: string | null;
+  readonly hoveredDiagnosticKey?: string | null;
+  readonly diagnosticLocateRequest?: {
+    readonly diagnosticKey: string;
+    readonly version: number;
+  } | null;
+  readonly onSelectDiagnostic?: (diagnosticKey: string | null) => void;
+  readonly onHoverDiagnostic?: (diagnosticKey: string | null) => void;
 }
 
 /**
@@ -187,7 +211,15 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   measurementEvaluation = { kind: 'empty' },
   onMeasurementHoverEntity,
   onMeasureEntityClick,
-  onClearMeasurement
+  onClearMeasurement,
+  resolvedDiagnostics = EMPTY_RESOLVED_DIAGNOSTICS,
+  showDiagnosticsOverlay = true,
+  diagnosticSeverityFilter = DEFAULT_DIAGNOSTIC_SEVERITY_FILTER,
+  selectedDiagnosticKey = null,
+  hoveredDiagnosticKey = null,
+  diagnosticLocateRequest = null,
+  onSelectDiagnostic,
+  onHoverDiagnostic
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -367,6 +399,8 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         if (measurementSessionRef.current.mode !== 'idle') {
           onClearMeasurement?.();
         }
+        onSelectDiagnostic?.(null);
+        onHoverDiagnostic?.(null);
         onClearBoardSelection?.();
         return;
       }
@@ -428,14 +462,16 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     onInspectEntity,
     onHoverEntity,
     onClearMeasurement,
-    onMeasurementHoverEntity
+    onMeasurementHoverEntity,
+    onSelectDiagnostic,
+    onHoverDiagnostic
   ]);
 
   // Fit All when explicitly requested, garment changes, mode changes, or initial size measured
   const lastFitSigRef = useRef<string>('');
   useEffect(() => {
     if (!activeBoundsCm || viewportSize.width < 120 || viewportSize.height < 120) return;
-    const sig = `${fitRequestVersion}::${layoutResetKey}::${effectiveViewMode}`;
+    const sig = `${fitRequestVersion}::${layoutResetKey}::${effectiveViewMode}::${projection.yAxisDirection}`;
     if (lastFitSigRef.current === sig) return;
     lastFitSigRef.current = sig;
 
@@ -452,6 +488,56 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     fitRequestVersion,
     layoutResetKey,
     effectiveViewMode,
+    viewportSize.width,
+    viewportSize.height,
+    projection,
+    onChangeCamera
+  ]);
+
+  // UX-2.3.3.3: Locate diagnostic on canvas (camera-only focus; never touches boardHistory)
+  const lastLocatedVersionRef = useRef<number>(0);
+  useEffect(() => {
+    if (
+      !diagnosticLocateRequest ||
+      diagnosticLocateRequest.version === lastLocatedVersionRef.current ||
+      viewportSize.width < 120 ||
+      viewportSize.height < 120
+    ) {
+      return;
+    }
+    const target = resolvedDiagnostics.byKey.get(diagnosticLocateRequest.diagnosticKey);
+    if (!target || !target.isMapped) return;
+    lastLocatedVersionRef.current = diagnosticLocateRequest.version;
+
+    const pl = target.pieceId ? boardStateRef.current.placementsByPieceId[target.pieceId] : undefined;
+    const offset = { offsetXCm: pl?.offsetXCm ?? 0, offsetYCm: pl?.offsetYCm ?? 0 };
+    const focusBounds = computeDiagnosticFocusBoundsCm(target, {
+      x: offset.offsetXCm,
+      y: offset.offsetYCm
+    });
+    if (!focusBounds) return;
+
+    const fitCam = computeFitCameraCm(
+      focusBounds,
+      viewportSize.width,
+      viewportSize.height,
+      projection,
+      80
+    );
+    const boundedZoom = clampCadZoom(Math.min(3.2, Math.max(1.0, fitCam.zoom)));
+    const centerWorldX = (focusBounds.minX + focusBounds.maxX) / 2;
+    const centerWorldY = (focusBounds.minY + focusBounds.maxY) / 2;
+    const scale = getPixelsPerCm(boundedZoom, BASE_PX_PER_CM);
+    const ySign = projection.yAxisDirection === 'cartesian-y-up' ? -1 : 1;
+
+    onChangeCamera({
+      zoom: boundedZoom,
+      panX: viewportSize.width / 2 - centerWorldX * scale,
+      panY: viewportSize.height / 2 - centerWorldY * ySign * scale
+    });
+  }, [
+    diagnosticLocateRequest,
+    resolvedDiagnostics,
     viewportSize.width,
     viewportSize.height,
     projection,
@@ -563,6 +649,12 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         if (hitRes.hit?.entity) {
           onMeasureEntityClick?.(hitRes.hit.entity);
         }
+        return;
+      }
+
+      // 1d. UX-2.3.3.3: Clicking a diagnostic marker/cluster in Select mode focuses it without dragging pieces
+      if (activeTool === 'select' && target?.closest?.('[data-cad-diagnostic-marker]')) {
+        e.preventDefault();
         return;
       }
 
@@ -1983,6 +2075,473 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     );
   };
 
+  // UX-2.3.3.3: Stage-2 Board Projection & Screen-Space Clustering (zero artifact remapping on drag)
+  const projectedDiagnostics = useMemo(() => {
+    if (effectiveViewMode !== 'pieces' || !showDiagnosticsOverlay || resolvedDiagnostics.mappedItems.length === 0) {
+      return {
+        visibleItems: [] as readonly ProjectedDiagnosticItem[],
+        clusters: [] as readonly DiagnosticMarkerCluster[],
+        hiddenByLayerCount: 0,
+        hiddenByFilterCount: 0,
+        culledOffscreenCount: 0
+      };
+    }
+
+    const offsetsMap: Record<string, BoardPieceOffsetVisibility> = {};
+    for (const piece of artifact.pieces) {
+      const eff = getEffectiveOffset(piece.pieceId);
+      offsetsMap[piece.pieceId] = {
+        offsetXCm: eff.offsetXCm,
+        offsetYCm: eff.offsetYCm,
+        visible: isPieceEffectivelyVisible(boardState, piece.pieceId)
+      };
+    }
+
+    return projectDiagnosticsForCanvas(
+      resolvedDiagnostics,
+      offsetsMap,
+      layerVisibility,
+      camera,
+      projection,
+      viewportSize,
+      {
+        showOverlay: showDiagnosticsOverlay,
+        severityFilter: diagnosticSeverityFilter,
+        selectedDiagnosticKey,
+        hoveredDiagnosticKey
+      }
+    );
+  }, [
+    effectiveViewMode,
+    showDiagnosticsOverlay,
+    resolvedDiagnostics,
+    artifact.pieces,
+    boardState,
+    dragPreview,
+    layerVisibility,
+    camera,
+    projection,
+    viewportSize,
+    diagnosticSeverityFilter,
+    selectedDiagnosticKey,
+    hoveredDiagnosticKey
+  ]);
+
+  const canInteractWithDiagnostics =
+    effectiveViewMode === 'pieces' &&
+    activeTool === 'select' &&
+    !spacePressed &&
+    !dragPreview &&
+    !marqueePreviewCm;
+
+  const renderDiagnosticsOverlay = () => {
+    // Clean-draft & toggle guard: emit literally zero diagnostic SVG elements when nothing to draw
+    if (
+      effectiveViewMode !== 'pieces' ||
+      !showDiagnosticsOverlay ||
+      projectedDiagnostics.clusters.length === 0
+    ) {
+      return null;
+    }
+
+    const getDiagnosticPalette = (severity: DiagnosticSeverity, isInconclusive: boolean) => {
+      if (isInconclusive) {
+        return {
+          stroke: '#7c3aed',
+          fill: '#f5f3ff',
+          badgeBg: '#6d28d9',
+          glyph: '?'
+        };
+      }
+      switch (severity) {
+        case 'CRITICAL_BLOCKING':
+          return {
+            stroke: '#991b1b',
+            fill: '#fef2f2',
+            badgeBg: '#b91c1c',
+            glyph: '!'
+          };
+        case 'ERROR':
+          return {
+            stroke: '#dc2626',
+            fill: '#fef2f2',
+            badgeBg: '#dc2626',
+            glyph: '!'
+          };
+        case 'WARNING':
+          return {
+            stroke: '#d97706',
+            fill: '#fffbeb',
+            badgeBg: '#b45309',
+            glyph: '!'
+          };
+        case 'INFO':
+          return {
+            stroke: '#4f46e5',
+            fill: '#eef2ff',
+            badgeBg: '#4338ca',
+            glyph: 'i'
+          };
+      }
+    };
+
+    const uprightTransform = (x: number, y: number) =>
+      isYUp ? `translate(${x}, ${y}) scale(1, -1)` : `translate(${x}, ${y})`;
+
+    const segmentToBoardSvgPath = (
+      seg: ProjectedDiagnosticItem['resolved']['resolvedSegments'][number]['segment'],
+      off: RenderPoint2D
+    ): string => {
+      if (seg.kind === 'cubic-bezier' && seg.p1 && seg.p2) {
+        return `M ${seg.p0.x + off.x} ${seg.p0.y + off.y} C ${seg.p1.x + off.x} ${seg.p1.y + off.y}, ${seg.p2.x + off.x} ${seg.p2.y + off.y}, ${seg.p3.x + off.x} ${seg.p3.y + off.y}`;
+      }
+      return `M ${seg.p0.x + off.x} ${seg.p0.y + off.y} L ${seg.p3.x + off.x} ${seg.p3.y + off.y}`;
+    };
+
+    const handleClusterActivate = (cluster: DiagnosticMarkerCluster, e: React.MouseEvent) => {
+      if (!canInteractWithDiagnostics) return;
+      e.stopPropagation();
+      if (cluster.members.length === 1) {
+        const key = cluster.primaryMember.resolved.diagnosticKey;
+        onSelectDiagnostic?.(selectedDiagnosticKey === key ? null : key);
+        return;
+      }
+      const currentIdx = cluster.members.findIndex(
+        m => m.resolved.diagnosticKey === selectedDiagnosticKey
+      );
+      const nextIdx = currentIdx === -1 ? 0 : (currentIdx + 1) % cluster.members.length;
+      onSelectDiagnostic?.(cluster.members[nextIdx].resolved.diagnosticKey);
+    };
+
+    return (
+      <g
+        data-testid="cad-diagnostics-overlay"
+        data-marker-count={projectedDiagnostics.clusters.length}
+        data-visible-item-count={projectedDiagnostics.visibleItems.length}
+        className="pointer-events-none"
+      >
+        {/* Layer 1: Underlying spatial geometry highlights (piece frames, segments, exact De Casteljau intervals) */}
+        {projectedDiagnostics.visibleItems.map(item => {
+          const { resolved, boardOffsetCm, boardBoundsCm, isSelected, isHovered } = item;
+          const pal = getDiagnosticPalette(resolved.source.severity, resolved.isInconclusive);
+          const isEmphasized = isSelected || isHovered;
+          const baseOpacity = isEmphasized ? 1 : 0.82;
+
+          return (
+            <g
+              key={`diag-geom-${resolved.diagnosticKey}`}
+              data-testid={`cad-diag-geom-${resolved.outcome}`}
+              data-diagnostic-key={resolved.diagnosticKey}
+              opacity={baseOpacity}
+            >
+              {/* Piece-level dashed frame highlight */}
+              {resolved.outcome === 'mapped-piece' && boardBoundsCm && (
+                <rect
+                  x={boardBoundsCm.minX - 0.5}
+                  y={boardBoundsCm.minY - 0.5}
+                  width={Math.max(1, boardBoundsCm.maxX - boardBoundsCm.minX + 1.0)}
+                  height={Math.max(1, boardBoundsCm.maxY - boardBoundsCm.minY + 1.0)}
+                  fill={isEmphasized ? pal.fill : 'none'}
+                  fillOpacity={isEmphasized ? 0.25 : 0}
+                  stroke={pal.stroke}
+                  strokeWidth={(isEmphasized ? 2.4 : 1.6) * invScale}
+                  strokeDasharray={`${5 * invScale} ${3 * invScale}`}
+                />
+              )}
+
+              {/* Segment & Multi-Segment Highlights */}
+              {(resolved.outcome === 'mapped-segment' ||
+                resolved.outcome === 'mapped-parameter' ||
+                resolved.outcome === 'mapped-interval' ||
+                (resolved.outcome === 'mapped-point' && isEmphasized)) &&
+                resolved.resolvedSegments.map(segEntry => {
+                  const d = segmentToBoardSvgPath(segEntry.segment, boardOffsetCm);
+                  const isContextOnly =
+                    resolved.outcome === 'mapped-parameter' ||
+                    resolved.outcome === 'mapped-interval' ||
+                    resolved.outcome === 'mapped-point';
+                  return (
+                    <path
+                      key={`seg-${resolved.diagnosticKey}-${segEntry.contour}-${segEntry.segmentId}`}
+                      data-testid={
+                        segEntry.isPrimary
+                          ? 'cad-diag-primary-segment'
+                          : 'cad-diag-secondary-segment'
+                      }
+                      d={d}
+                      fill="none"
+                      stroke={pal.stroke}
+                      strokeWidth={
+                        (isContextOnly
+                          ? isEmphasized
+                            ? 2.2
+                            : 1.3
+                          : segEntry.isPrimary
+                            ? isEmphasized
+                              ? 4.0
+                              : 3.0
+                            : isEmphasized
+                              ? 3.2
+                              : 2.4) * invScale
+                      }
+                      strokeDasharray={
+                        resolved.isInconclusive
+                          ? `${4 * invScale} ${2.5 * invScale}`
+                          : !segEntry.isPrimary || isContextOnly
+                            ? `${5 * invScale} ${3 * invScale}`
+                            : undefined
+                      }
+                      strokeOpacity={isContextOnly && !isEmphasized ? 0.55 : 0.95}
+                      strokeLinecap="round"
+                    />
+                  );
+                })}
+
+              {/* Exact De Casteljau / Line Parameter Intervals & Collapsed Root Brackets */}
+              {resolved.outcome === 'mapped-interval' &&
+                resolved.extractedIntervals.map((interval, idx) => {
+                  if (interval.kind === 'collapsed-point') {
+                    const cx = interval.pointCm.x + boardOffsetCm.x;
+                    const cy = interval.pointCm.y + boardOffsetCm.y;
+                    const r = 6.5 * invScale;
+                    return (
+                      <g
+                        key={`int-col-${idx}`}
+                        data-testid="cad-diag-collapsed-bracket"
+                      >
+                        <polygon
+                          points={`${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`}
+                          fill={pal.fill}
+                          stroke={pal.stroke}
+                          strokeWidth={(isEmphasized ? 2.4 : 1.8) * invScale}
+                          strokeDasharray={
+                            resolved.isInconclusive ? `${2.5 * invScale} ${1.5 * invScale}` : undefined
+                          }
+                        />
+                      </g>
+                    );
+                  }
+
+                  const p0x = interval.p0.x + boardOffsetCm.x;
+                  const p0y = interval.p0.y + boardOffsetCm.y;
+                  const p3x = interval.p3.x + boardOffsetCm.x;
+                  const p3y = interval.p3.y + boardOffsetCm.y;
+                  const d =
+                    interval.kind === 'cubic-subsegment'
+                      ? `M ${p0x} ${p0y} C ${interval.p1.x + boardOffsetCm.x} ${interval.p1.y + boardOffsetCm.y}, ${interval.p2.x + boardOffsetCm.x} ${interval.p2.y + boardOffsetCm.y}, ${p3x} ${p3y}`
+                      : `M ${p0x} ${p0y} L ${p3x} ${p3y}`;
+
+                  return (
+                    <g key={`int-sub-${idx}`} data-testid="cad-diag-interval-subsegment">
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke={pal.stroke}
+                        strokeWidth={(isEmphasized ? 5.0 : 3.8) * invScale}
+                        strokeDasharray={
+                          resolved.isInconclusive ? `${5 * invScale} ${2.5 * invScale}` : undefined
+                        }
+                        strokeLinecap="round"
+                      />
+                      {/* End-bracket ticks at tStart and tEnd */}
+                      <circle
+                        cx={p0x}
+                        cy={p0y}
+                        r={3.2 * invScale}
+                        fill="#ffffff"
+                        stroke={pal.stroke}
+                        strokeWidth={1.6 * invScale}
+                      />
+                      <circle
+                        cx={p3x}
+                        cy={p3y}
+                        r={3.2 * invScale}
+                        fill="#ffffff"
+                        stroke={pal.stroke}
+                        strokeWidth={1.6 * invScale}
+                      />
+                    </g>
+                  );
+                })}
+            </g>
+          );
+        })}
+
+        {/* Layer 2: Constant-size interactive markers & screen-space clusters */}
+        {projectedDiagnostics.clusters.map(cluster => {
+          const isCluster = cluster.members.length > 1;
+          const primary = cluster.primaryMember;
+          const pal = getDiagnosticPalette(
+            cluster.highestSeverity,
+            cluster.hasInconclusive &&
+              cluster.members.every(m => m.resolved.isInconclusive)
+          );
+          const bx = cluster.boardAnchorCm.x;
+          const by = cluster.boardAnchorCm.y;
+          const isEmphasized = cluster.containsSelected || cluster.containsHovered;
+          const markerR = (isCluster ? 9.2 : isEmphasized ? 8.2 : 7.0) * invScale;
+          const activeItem =
+            cluster.members.find(m => m.isSelected) ??
+            cluster.members.find(m => m.isHovered) ??
+            primary;
+          const showLabel = isEmphasized;
+
+          return (
+            <g
+              key={cluster.clusterId}
+              data-cad-diagnostic-marker="true"
+              data-testid={
+                isCluster
+                  ? 'cad-diag-cluster'
+                  : `cad-diag-marker-${primary.resolved.outcome}`
+              }
+              data-diagnostic-key={primary.resolved.diagnosticKey}
+              data-severity={cluster.highestSeverity}
+              data-inconclusive={cluster.hasInconclusive ? 'true' : 'false'}
+              data-hidden-host-layer={primary.hiddenHostLayer ?? ''}
+              data-selected={cluster.containsSelected ? 'true' : 'false'}
+              className={canInteractWithDiagnostics ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none'}
+              onClick={e => handleClusterActivate(cluster, e)}
+              onPointerEnter={() => {
+                if (canInteractWithDiagnostics) {
+                  onHoverDiagnostic?.(primary.resolved.diagnosticKey);
+                }
+              }}
+              onPointerLeave={() => {
+                if (canInteractWithDiagnostics) {
+                  onHoverDiagnostic?.(null);
+                }
+              }}
+            >
+              {/* Selection / Hover outer halo */}
+              {isEmphasized && (
+                <circle
+                  cx={bx}
+                  cy={by}
+                  r={markerR + 4.0 * invScale}
+                  fill="none"
+                  stroke={pal.stroke}
+                  strokeWidth={1.8 * invScale}
+                  strokeDasharray={
+                    cluster.hasInconclusive ? `${3 * invScale} ${2 * invScale}` : undefined
+                  }
+                />
+              )}
+
+              {/* D5 Hidden host layer dashed ring cue */}
+              {cluster.hasHiddenHostLayer && (
+                <circle
+                  cx={bx}
+                  cy={by}
+                  r={markerR + 2.4 * invScale}
+                  fill="none"
+                  stroke="#0f172a"
+                  strokeWidth={1.2 * invScale}
+                  strokeDasharray={`${2.5 * invScale} ${2 * invScale}`}
+                />
+              )}
+
+              {/* Explicit point reticle crosshair for mapped-point */}
+              {!isCluster && primary.resolved.outcome === 'mapped-point' && (
+                <g>
+                  <line
+                    x1={bx - 11 * invScale}
+                    y1={by}
+                    x2={bx + 11 * invScale}
+                    y2={by}
+                    stroke={pal.stroke}
+                    strokeWidth={1.3 * invScale}
+                  />
+                  <line
+                    x1={bx}
+                    y1={by - 11 * invScale}
+                    x2={bx}
+                    y2={by + 11 * invScale}
+                    stroke={pal.stroke}
+                    strokeWidth={1.3 * invScale}
+                  />
+                </g>
+              )}
+
+              {/* Distinct diamond shape for INCONCLUSIVE or mapped-point; circle otherwise */}
+              {!isCluster &&
+              (primary.resolved.isInconclusive || primary.resolved.outcome === 'mapped-point') ? (
+                <polygon
+                  points={`${bx},${by - markerR} ${bx + markerR},${by} ${bx},${by + markerR} ${bx - markerR},${by}`}
+                  fill={cluster.containsSelected ? pal.badgeBg : pal.fill}
+                  stroke={pal.stroke}
+                  strokeWidth={1.8 * invScale}
+                  strokeDasharray={
+                    primary.resolved.isInconclusive ? `${2.5 * invScale} ${1.5 * invScale}` : undefined
+                  }
+                />
+              ) : (
+                <circle
+                  cx={bx}
+                  cy={by}
+                  r={markerR}
+                  fill={cluster.containsSelected || isCluster ? pal.badgeBg : pal.fill}
+                  stroke={pal.stroke}
+                  strokeWidth={1.8 * invScale}
+                  strokeDasharray={
+                    cluster.hasInconclusive ? `${3 * invScale} ${1.5 * invScale}` : undefined
+                  }
+                />
+              )}
+
+              {/* Upright marker glyph / cluster count */}
+              <g transform={uprightTransform(bx, by)}>
+                <text
+                  x={0}
+                  y={3.2 * invScale}
+                  textAnchor="middle"
+                  fontSize={Math.max(0.04, (isCluster ? 8.8 : 9.2) * invScale)}
+                  fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                  fontWeight="800"
+                  fill={cluster.containsSelected || isCluster ? '#ffffff' : pal.stroke}
+                >
+                  {isCluster ? String(cluster.members.length) : pal.glyph}
+                </text>
+              </g>
+
+              {/* Progressive callout label on hover/selection only (upright in both Y-up & Y-down) */}
+              {showLabel && (
+                <g
+                  data-testid="cad-diag-callout"
+                  transform={uprightTransform(
+                    bx + markerR + 6 * invScale,
+                    isYUp ? by + 3 * invScale : by - 3 * invScale
+                  )}
+                >
+                  <text
+                    x={0}
+                    y={0}
+                    textAnchor="start"
+                    fontSize={Math.max(0.04, 10.0 * invScale)}
+                    fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                    fontWeight="700"
+                    fill={pal.stroke}
+                    stroke="#ffffff"
+                    strokeWidth={3.2 * invScale}
+                    paintOrder="stroke"
+                  >
+                    {isCluster
+                      ? `${cluster.members.length} diagnostics · ${activeItem.resolved.source.code}`
+                      : activeItem.resolved.source.code}
+                    {activeItem.resolved.isInconclusive ? ' [INCONCLUSIVE]' : ''}
+                    {activeItem.hiddenHostLayer
+                      ? ` (${activeItem.hiddenHostLayer.toUpperCase()} HIDDEN)`
+                      : ''}
+                  </text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </g>
+    );
+  };
+
   return (
     <div
       ref={containerRef}
@@ -2498,6 +3057,9 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
                 {/* UX-2.3.3.2: Dedicated Advisory Precision Measurement Overlay (pointer-events-none) */}
                 {renderMeasurementOverlay()}
+
+                {/* UX-2.3.3.3: Spatial Diagnostic Mapping Overlay (read-only presentation localization) */}
+                {renderDiagnosticsOverlay()}
 
                 {/* Visual Overlap Advisory Overlays (Advisory Only — Never Certification) */}
                 {overlapAdvisories.length > 0 && (

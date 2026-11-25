@@ -63,7 +63,7 @@ import { PatternCadCanvas } from './PatternCadCanvas';
 import { PatternAtelierStatusBar } from './PatternAtelierStatusBar';
 import { PatternLayersDrawer } from './PatternLayersDrawer';
 import { SNAP_INTERVAL_OPTIONS_CM } from './board-arrangement';
-import type { RenderPoint2D } from './contracts/pattern-render-artifact';
+import type { PatternArtifactBundle, RenderPoint2D } from './contracts/pattern-render-artifact';
 import type { CadInspectableEntity } from './entity-hit-test';
 import {
   EMPTY_MEASUREMENT_SESSION,
@@ -74,6 +74,10 @@ import {
   evaluateMeasurementSession,
   transitionMeasurementSessionOnToolExit
 } from './precision-measurement';
+import {
+  DEFAULT_DIAGNOSTIC_SEVERITY_FILTER,
+  resolveArtifactDiagnostics
+} from './spatial-diagnostics';
 import { useOptionalViewportInteraction } from '../../state/ViewportInteractionContext';
 
 interface PatternWorkspaceProps {
@@ -199,6 +203,24 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const [localMeasureSession, setLocalMeasureSession] = useState<MeasurementSession>(
     EMPTY_MEASUREMENT_SESSION
   );
+  const [localShowDiagnosticsOverlay, setLocalShowDiagnosticsOverlay] = useState<boolean>(true);
+  const [localSelectedDiagKey, setLocalSelectedDiagKey] = useState<string | null>(null);
+  const [localHoveredDiagKey, setLocalHoveredDiagKey] = useState<string | null>(null);
+  // Dev-only non-UI artifact override slot for offline Python contract verification in headless Chromium
+  const [devArtifactOverride, setDevArtifactOverride] = useState<PatternArtifactBundle | null>(null);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      if (typeof window === 'undefined') return;
+      const onOverride = (event: Event) => {
+        const custom = event as CustomEvent<PatternArtifactBundle | null>;
+        setDevArtifactOverride(custom.detail ?? null);
+      };
+      window.addEventListener('patroner:dev-artifact-override', onOverride);
+      return () => window.removeEventListener('patroner:dev-artifact-override', onOverride);
+    }
+    return undefined;
+  }, []);
 
   const bodiceDartStyle = externalBodiceDartStyle ?? localBodiceDartStyle;
   const setBodiceDartStyle = externalOnChangeBodiceDartStyle ?? setLocalBodiceDartStyle;
@@ -356,7 +378,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
   const pieces: PatternPiece[] = useMemo(() => [...bundlePieces], [bundlePieces]);
 
   // Read-only UX-2.3.1 render artifact bundle adapted from C0-Legacy TS output
-  const renderArtifact = useMemo(
+  const c0RenderArtifact = useMemo(
     () =>
       adaptC0LegacyBundleToRenderArtifact({
         workspaceBundle,
@@ -367,11 +389,28 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     [workspaceBundle, liveSnapshot?.revisionId, currentSpec.id, currentSpec.version, activeSize]
   );
 
+  const renderArtifact = import.meta.env.DEV && devArtifactOverride ? devArtifactOverride : c0RenderArtifact;
+
   // Reconcile UX-2.3.2 CAD board presentation state with the active immutable artifact
   const syncAtelierArtifact = atelierCtx?.syncArtifact;
   useEffect(() => {
     syncAtelierArtifact?.(renderArtifact);
   }, [syncAtelierArtifact, renderArtifact]);
+
+  const localResolvedDiagnostics = useMemo(
+    () => (atelierCtx ? null : resolveArtifactDiagnostics(renderArtifact)),
+    [atelierCtx, renderArtifact]
+  );
+  const resolvedDiagnostics = atelierCtx?.resolvedDiagnostics ?? localResolvedDiagnostics!;
+  const showDiagnosticsOverlay = atelierCtx?.showDiagnosticsOverlay ?? localShowDiagnosticsOverlay;
+  const toggleDiagnosticsOverlay =
+    atelierCtx?.toggleDiagnosticsOverlay ?? (() => setLocalShowDiagnosticsOverlay(prev => !prev));
+  const diagnosticSeverityFilter =
+    atelierCtx?.diagnosticSeverityFilter ?? DEFAULT_DIAGNOSTIC_SEVERITY_FILTER;
+  const selectedDiagnosticKey = atelierCtx?.selectedDiagnosticKey ?? localSelectedDiagKey;
+  const hoveredDiagnosticKey = atelierCtx?.hoveredDiagnosticKey ?? localHoveredDiagKey;
+  const selectDiagnostic = atelierCtx?.selectDiagnostic ?? setLocalSelectedDiagKey;
+  const setHoveredDiagnosticKey = atelierCtx?.setHoveredDiagnosticKey ?? setLocalHoveredDiagKey;
 
   // Synchronize external entity strip piece selection ONLY when externalSelectedPieceId changes,
   // so clearing board selection (Escape, empty canvas click, Clear) is never immediately overridden.
@@ -904,6 +943,37 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   </button>
                 );
               })}
+              <button
+                type="button"
+                aria-pressed={showDiagnosticsOverlay}
+                data-testid="atelier-diagnostics-toggle"
+                onClick={toggleDiagnosticsOverlay}
+                title={
+                  showDiagnosticsOverlay
+                    ? 'Hide spatial diagnostic markers on canvas (D3: on by default)'
+                    : 'Show spatial diagnostic markers on canvas'
+                }
+                className={`px-1.5 py-0.5 rounded-xs border text-[10px] font-mono inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                  showDiagnosticsOverlay
+                    ? resolvedDiagnostics.summary.total > 0
+                      ? resolvedDiagnostics.summary.bySeverity.CRITICAL_BLOCKING > 0 ||
+                        resolvedDiagnostics.summary.bySeverity.ERROR > 0
+                        ? 'bg-rose-700 text-white border-rose-700'
+                        : 'bg-amber-700 text-white border-amber-700'
+                      : 'bg-neutral-900 text-white border-neutral-900'
+                    : 'bg-white text-neutral-500 border-neutral-300 hover:text-neutral-900'
+                }`}
+              >
+                <span>Diag</span>
+                {resolvedDiagnostics.summary.total > 0 && (
+                  <span
+                    data-testid="atelier-diagnostics-count"
+                    className="font-bold"
+                  >
+                    ({resolvedDiagnostics.summary.total})
+                  </span>
+                )}
+              </button>
             </div>
           )}
 
@@ -1120,6 +1190,14 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               onMeasurementHoverEntity={setMeasurementHoverEntity}
               onMeasureEntityClick={recordMeasurementEntityClick}
               onClearMeasurement={clearMeasurementSession}
+              resolvedDiagnostics={resolvedDiagnostics}
+              showDiagnosticsOverlay={showDiagnosticsOverlay}
+              diagnosticSeverityFilter={diagnosticSeverityFilter}
+              selectedDiagnosticKey={selectedDiagnosticKey}
+              hoveredDiagnosticKey={hoveredDiagnosticKey}
+              diagnosticLocateRequest={atelierCtx?.diagnosticLocateRequest ?? null}
+              onSelectDiagnostic={selectDiagnostic}
+              onHoverDiagnostic={setHoveredDiagnosticKey}
             />
           </div>
 

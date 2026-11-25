@@ -49,6 +49,8 @@ export const PatternLayersDrawer: React.FC<PatternLayersDrawerProps> = React.mem
       activeArtifact,
       boardState,
       overlapAdvisories,
+      resolvedDiagnostics,
+      locateDiagnosticOnCanvas,
       layersDrawerOpen,
       setLayersDrawerOpen,
       selectPiece,
@@ -100,6 +102,17 @@ export const PatternLayersDrawer: React.FC<PatternLayersDrawerProps> = React.mem
         a => a.pieceAId === pieceId || a.pieceBId === pieceId
       );
       const overlapDot = getOverlapSeverityColor(pieceAdvisories);
+      const pieceDiag = resolvedDiagnostics.summaryByPieceId[pieceId];
+      const diagBadgeStyle = pieceDiag
+        ? pieceDiag.inconclusiveCount > 0 && pieceDiag.blockingCount === 0
+          ? 'bg-violet-100 text-violet-900 border-violet-300'
+          : pieceDiag.highestSeverity === 'CRITICAL_BLOCKING' ||
+              pieceDiag.highestSeverity === 'ERROR'
+            ? 'bg-rose-100 text-rose-900 border-rose-300'
+            : pieceDiag.highestSeverity === 'WARNING'
+              ? 'bg-amber-100 text-amber-900 border-amber-300'
+              : 'bg-indigo-100 text-indigo-900 border-indigo-300'
+        : null;
 
       return (
         <div
@@ -143,6 +156,26 @@ export const PatternLayersDrawer: React.FC<PatternLayersDrawerProps> = React.mem
               </span>
             </span>
           </button>
+
+          {pieceDiag && pieceDiag.total > 0 && diagBadgeStyle && (
+            <button
+              type="button"
+              data-testid={`layer-diag-badge-${pieceId}`}
+              data-diag-count={pieceDiag.total}
+              data-diag-severity={pieceDiag.highestSeverity}
+              onClick={e => {
+                e.stopPropagation();
+                locateDiagnosticOnCanvas(pieceDiag.firstDiagnosticKey);
+              }}
+              aria-label={`${pieceDiag.total} diagnostic(s) on ${piece.pieceCode}`}
+              title={`Diagnostics on ${piece.pieceCode}: ${pieceDiag.total} total (${pieceDiag.blockingCount} blocking, ${pieceDiag.warningCount} warning, ${pieceDiag.inconclusiveCount} inconclusive) — click to locate`}
+              className={`px-1 py-0.5 rounded-xs border font-mono text-[9.5px] font-bold leading-none shrink-0 cursor-pointer ${diagBadgeStyle}`}
+            >
+              {pieceDiag.inconclusiveCount > 0 && pieceDiag.blockingCount === 0
+                ? `?${pieceDiag.total}`
+                : `!${pieceDiag.total}`}
+            </button>
+          )}
 
           <div className="flex items-center gap-0.5 shrink-0">
             <button

@@ -94,20 +94,41 @@ export interface RenderPieceSeamSummary {
   readonly pairedSeamName?: string;
 }
 
+export type DiagnosticContourScope = 'sew' | 'cut';
+
+export type DiagnosticCoordinateSpace = 'piece-local' | 'board';
+
+export type DiagnosticOrigin =
+  | 'c0-validation'
+  | 'c0-offset'
+  | 'python-contract'
+  | 'python-offset-validation'
+  | 'python-offset-report'
+  | 'python-warning';
+
+export type DiagnosticParameterInterval = readonly [number, number];
+
 export interface RenderSpatialDiagnostic {
   readonly id: string;
   readonly code: string;
   readonly severity: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL_BLOCKING';
   readonly pieceId?: string;
   readonly segmentId?: string;
+  readonly secondarySegmentIds?: readonly string[];
+  readonly contour?: DiagnosticContourScope;
   readonly parameterT?: number;
+  readonly parameterIntervals?: readonly DiagnosticParameterInterval[];
   readonly anchorPointCm?: RenderPoint2D;
+  readonly anchorCoordinateSpace?: DiagnosticCoordinateSpace;
   readonly message: string;
   readonly remediationAction?: string;
   readonly verificationOutcome?: 'CERTIFIED_VALID' | 'CERTIFIED_INVALID' | 'INCONCLUSIVE';
   readonly canonicalOffsetClassification?: string;
+  readonly failureCategory?: string;
+  readonly diagnosticOrigin?: DiagnosticOrigin;
   readonly maxGeometricDeviationBoundCm?: number;
   readonly workingPrecisionBits?: number;
+  readonly residualDistanceCm?: number;
 }
 
 export interface PatternPieceRenderModel {
@@ -214,6 +235,25 @@ export interface PythonNotch {
   readonly arcLengthResidualCm: number;
 }
 
+export interface PythonRootBracketCertificate {
+  readonly tLower: number;
+  readonly tUpper: number;
+  readonly deltaT: number;
+  readonly maxSpeedOnBracket: number;
+  readonly deltaPosCm: number;
+  readonly multiplicityOrOrder: string;
+}
+
+export interface PythonSelfIntersectionCertificate {
+  readonly scope: 'LOCAL' | 'GLOBAL';
+  readonly segmentIdA: string;
+  readonly segmentIdB: string;
+  readonly t1Bracket: readonly [number, number];
+  readonly t2Bracket: readonly [number, number];
+  readonly intersectionPointCm: PythonPoint2D;
+  readonly residualDistanceCm: number;
+}
+
 export interface PythonOffsetValidationRecord {
   readonly segment_id: string;
   readonly piece_id: string;
@@ -228,6 +268,8 @@ export interface PythonOffsetValidationRecord {
   readonly has_tangent_reversal_on_domain: boolean;
   readonly stationary_parameterization_status: string;
   readonly base_curve_singularity_classification: string;
+  readonly isolated_cusp_roots_t?: readonly (readonly [number, number])[];
+  readonly isolated_self_intersections?: readonly PythonSelfIntersectionCertificate[];
   readonly max_geometric_deviation_bound_cm: number;
   readonly max_certified_radial_error_cm?: number | null;
   readonly primary_span_coverage_ratio: number;
@@ -236,6 +278,7 @@ export interface PythonOffsetValidationRecord {
   readonly unresolved_intervals: readonly (readonly [number, number])[];
   readonly verification_outcome: 'CERTIFIED_VALID' | 'CERTIFIED_INVALID' | 'INCONCLUSIVE';
   readonly failure_category: string;
+  readonly detected_failure_categories?: readonly string[];
   readonly canonical_offset_classification: string;
   readonly active_classifications_on_domain: readonly string[];
   readonly working_precision_bits: number;
@@ -260,6 +303,7 @@ export interface PythonOffsetClassificationReport {
   readonly maxJoinTangentDeltaDeg: number;
   readonly reparameterized: boolean;
   readonly trimmed: boolean;
+  readonly isolatedRoots?: readonly PythonRootBracketCertificate[];
   readonly oracleTierUsed: string;
   readonly isProductionReady: boolean;
 }
