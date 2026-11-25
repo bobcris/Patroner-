@@ -14,6 +14,8 @@ import {
   createStudioDraftBriefFromSpec,
   deriveDraftingOptionsForSpecChange,
   formatOversizeImageMb,
+  normalizeBodiceDartStyle,
+  normalizeSleeveEaseStrategy,
   resolveTabForExperienceMode,
   validateReferenceImageFile
 } from '../ProjectWorkspaceContext.tsx';
@@ -254,4 +256,26 @@ test('Checkpoint N M-B7-01: DesignSpecificationView SHA-256 lineage row wraps cl
     false
   );
 });
+
+test('Bodice dart style normalization prevents unsupported values like "princess" from crashing draftBodiceBlock', () => {
+  assert.equal(normalizeBodiceDartStyle('waist'), 'waist');
+  assert.equal(normalizeBodiceDartStyle('side-bust'), 'side-bust');
+  assert.equal(normalizeBodiceDartStyle('shoulder'), 'shoulder');
+  assert.equal(normalizeBodiceDartStyle('french'), 'french');
+  assert.equal(normalizeBodiceDartStyle('waist-and-side'), 'waist-and-side');
+  assert.equal(normalizeBodiceDartStyle('princess'), 'waist');
+  assert.equal(normalizeBodiceDartStyle(undefined), 'waist');
+  assert.equal(normalizeSleeveEaseStrategy('tailored'), 'tailored');
+  assert.equal(normalizeSleeveEaseStrategy('unknown'), 'classic');
+
+  const patternWorkspaceSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/features/pattern-workspace/PatternWorkspace.tsx'),
+    'utf-8'
+  );
+  assert.equal(patternWorkspaceSource.includes('<option value="princess">'), false);
+  assert.ok(patternWorkspaceSource.includes('<option value="side-bust">'));
+  assert.ok(patternWorkspaceSource.includes('<option value="shoulder">'));
+  assert.ok(patternWorkspaceSource.includes('<option value="waist-and-side">'));
+});
+
 

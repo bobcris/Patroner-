@@ -91,6 +91,38 @@ export function createStudioDraftBriefFromSpec(spec: DesignSpecification): Studi
   };
 }
 
+const VALID_BODICE_DART_STYLES: ReadonlySet<BodiceDartStyle> = new Set([
+  'waist',
+  'side-bust',
+  'shoulder',
+  'french',
+  'waist-and-side'
+]);
+
+const VALID_SLEEVE_EASE_STRATEGIES: ReadonlySet<SleeveEaseStrategy> = new Set([
+  'tailored',
+  'classic',
+  'fitted',
+  'flat'
+]);
+
+export function normalizeBodiceDartStyle(style: unknown): BodiceDartStyle {
+  if (typeof style === 'string' && VALID_BODICE_DART_STYLES.has(style as BodiceDartStyle)) {
+    return style as BodiceDartStyle;
+  }
+  return 'waist';
+}
+
+export function normalizeSleeveEaseStrategy(strategy: unknown): SleeveEaseStrategy {
+  if (
+    typeof strategy === 'string' &&
+    VALID_SLEEVE_EASE_STRATEGIES.has(strategy as SleeveEaseStrategy)
+  ) {
+    return strategy as SleeveEaseStrategy;
+  }
+  return 'classic';
+}
+
 /**
  * Pure helper computing drafting option updates when currentSpec changes, avoiding nested setState
  * inside React functional state updaters (M-B3-01).
@@ -104,17 +136,17 @@ export function deriveDraftingOptionsForSpecChange(
 
   if (isSwitchingGarment) {
     return {
-      bodiceDartStyle: nextSpec.dartStyle ?? 'waist',
-      sleeveEaseStrategy: nextSpec.sleeveEaseStrategy ?? 'classic'
+      bodiceDartStyle: normalizeBodiceDartStyle(nextSpec.dartStyle),
+      sleeveEaseStrategy: normalizeSleeveEaseStrategy(nextSpec.sleeveEaseStrategy)
     };
   }
 
   const delta: { bodiceDartStyle?: BodiceDartStyle; sleeveEaseStrategy?: SleeveEaseStrategy } = {};
   if (nextSpec.dartStyle !== prevSpec.dartStyle) {
-    delta.bodiceDartStyle = nextSpec.dartStyle ?? 'waist';
+    delta.bodiceDartStyle = normalizeBodiceDartStyle(nextSpec.dartStyle);
   }
   if (nextSpec.sleeveEaseStrategy !== prevSpec.sleeveEaseStrategy) {
-    delta.sleeveEaseStrategy = nextSpec.sleeveEaseStrategy ?? 'classic';
+    delta.sleeveEaseStrategy = normalizeSleeveEaseStrategy(nextSpec.sleeveEaseStrategy);
   }
   return delta;
 }
@@ -274,12 +306,18 @@ export const ProjectWorkspaceProvider: React.FC<ProjectWorkspaceProviderProps> =
   const [bomControls, setBomControls] = useState<ProductionWorkspaceBomControls>(
     DEFAULT_PRODUCTION_WORKSPACE_BOM_CONTROLS
   );
-  const [bodiceDartStyle, setBodiceDartStyle] = useState<BodiceDartStyle>(
-    initialSpec.dartStyle ?? 'waist'
+  const [bodiceDartStyle, setBodiceDartStyleState] = useState<BodiceDartStyle>(() =>
+    normalizeBodiceDartStyle(initialSpec.dartStyle)
   );
-  const [sleeveEaseStrategy, setSleeveEaseStrategy] = useState<SleeveEaseStrategy>(
-    initialSpec.sleeveEaseStrategy ?? 'classic'
+  const setBodiceDartStyle = useCallback((next: BodiceDartStyle) => {
+    setBodiceDartStyleState(normalizeBodiceDartStyle(next));
+  }, []);
+  const [sleeveEaseStrategy, setSleeveEaseStrategyState] = useState<SleeveEaseStrategy>(() =>
+    normalizeSleeveEaseStrategy(initialSpec.sleeveEaseStrategy)
   );
+  const setSleeveEaseStrategy = useCallback((next: SleeveEaseStrategy) => {
+    setSleeveEaseStrategyState(normalizeSleeveEaseStrategy(next));
+  }, []);
   const [strictUncertaintyGate, setStrictUncertaintyGate] = useState<boolean>(true);
   const [requireApprovedGovernance, setRequireApprovedGovernance] = useState<boolean>(false);
 
@@ -351,8 +389,8 @@ export const ProjectWorkspaceProvider: React.FC<ProjectWorkspaceProviderProps> =
         activeSize: String(activeSize),
         bomControls,
         governance: {
-          bodiceDartStyle,
-          sleeveEaseStrategy,
+          bodiceDartStyle: normalizeBodiceDartStyle(bodiceDartStyle),
+          sleeveEaseStrategy: normalizeSleeveEaseStrategy(sleeveEaseStrategy),
           strictUncertaintyGate,
           requireApprovedGovernance,
           measurementProvenance,

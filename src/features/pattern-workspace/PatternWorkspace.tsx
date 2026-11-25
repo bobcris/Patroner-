@@ -891,12 +891,25 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   aria-label="Bodice Dart Style"
                   data-testid="bodice-dart-select"
                   value={bodiceDartStyle}
-                  onChange={e => setBodiceDartStyle(e.target.value as BodiceDartStyle)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (
+                      val === 'waist' ||
+                      val === 'side-bust' ||
+                      val === 'shoulder' ||
+                      val === 'french' ||
+                      val === 'waist-and-side'
+                    ) {
+                      setBodiceDartStyle(val);
+                    }
+                  }}
                   className="h-6 px-1.5 bg-white border border-neutral-300 rounded-xs text-[11px] text-neutral-900 font-medium cursor-pointer"
                 >
                   <option value="waist">Waist Dart</option>
-                  <option value="princess">Princess Seam</option>
+                  <option value="side-bust">Side Bust Dart</option>
+                  <option value="shoulder">Shoulder Dart</option>
                   <option value="french">French Dart</option>
+                  <option value="waist-and-side">Waist &amp; Side Dart</option>
                 </select>
               </label>
 
@@ -906,9 +919,20 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   aria-label="Sleeve Ease Strategy"
                   data-testid="sleeve-ease-select"
                   value={sleeveEaseStrategy}
-                  onChange={e => setSleeveEaseStrategy(e.target.value as SleeveEaseStrategy)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (
+                      val === 'tailored' ||
+                      val === 'classic' ||
+                      val === 'fitted' ||
+                      val === 'flat'
+                    ) {
+                      setSleeveEaseStrategy(val);
+                    }
+                  }}
                   className="h-6 px-1.5 bg-white border border-neutral-300 rounded-xs text-[11px] text-neutral-900 font-medium cursor-pointer"
                 >
+                  <option value="tailored">Tailored Cap</option>
                   <option value="classic">Classic Cap</option>
                   <option value="fitted">Fitted Cap</option>
                   <option value="flat">Flat / Low Cap</option>
