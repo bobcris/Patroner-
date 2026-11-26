@@ -97,6 +97,7 @@ export type WorkspaceToolId =
   | 'add-mood-card'
   | 'add-palette'
   | 'measure-preview'
+  | 'edit-contour'
   | 'orbit-camera'
   | 'inspect-fit';
 
@@ -243,11 +244,11 @@ export const ENVIRONMENT_TOOLS: Record<StudioEnvironment, readonly ToolDefinitio
       actionType: 'instant'
     },
     {
-      id: 'bezier-pen-upcoming',
-      label: 'Bézier Anchor Edit',
-      description: 'Direct curve anchor editing planned for UX-2.3',
-      available: false,
-      unavailableReason: 'Planned for UX-2.3 Pattern Atelier',
+      id: 'edit-contour',
+      label: 'Edit Contour',
+      shortKey: 'A',
+      description: 'Proposal-based sew-contour vertex, Bézier handle, subdivision & controlled approximation editing (unverified visual proposal)',
+      available: true,
       actionType: 'mode'
     },
     {

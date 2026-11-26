@@ -76,6 +76,25 @@ import {
   computeDiagnosticFocusBoundsCm,
   projectDiagnosticsForCanvas
 } from './spatial-diagnostics';
+import {
+  ContourEditSelection,
+  createProposalStateFromArtifact,
+  DEFAULT_SNAP_CONSTRAINT_CONFIG,
+  getEditableSewVerticesForPiece,
+  HandleContinuityMode,
+  moveBezierHandle,
+  moveContourVertex,
+  PatternGeometryProposalState,
+  PendingApproximateOperationPreview,
+  ProposalIntegrityReport,
+  snapAndConstrainPoint
+} from './geometry-edit-proposal';
+import {
+  ActiveContourDragPreview,
+  ContourEditHoverTarget,
+  hitTestContourEditTarget,
+  PatternContourEditOverlay
+} from './PatternContourEditOverlay';
 
 const SIZE_PALETTE: Record<string, { stroke: string; label: string }> = {
   XS: { stroke: '#9333ea', label: 'XS (EU 34)' },
@@ -161,6 +180,30 @@ export interface PatternCadCanvasProps {
   } | null;
   readonly onSelectDiagnostic?: (diagnosticKey: string | null) => void;
   readonly onHoverDiagnostic?: (diagnosticKey: string | null) => void;
+  // UX-2.3.3.4 proposal-based sew-contour editing props
+  readonly inspectionTargetArtifact?: PatternArtifactBundle;
+  readonly proposalState?: PatternGeometryProposalState | null;
+  readonly proposalIntegrity?: ProposalIntegrityReport | null;
+  readonly compareOriginalGeometry?: boolean;
+  readonly contourEditSelection?: ContourEditSelection | null;
+  readonly translateAdjacentHandles?: boolean;
+  readonly activeContinuityMode?: HandleContinuityMode;
+  readonly pendingApproximatePreview?: PendingApproximateOperationPreview | null;
+  readonly onSelectContourEditTarget?: (selection: ContourEditSelection | null) => void;
+  readonly onCommitMoveContourVertex?: (
+    pieceId: string,
+    vertexRef: string,
+    nextLocalCm: RenderPoint2D
+  ) => boolean;
+  readonly onCommitMoveBezierHandle?: (
+    pieceId: string,
+    segmentId: string,
+    handleSlot: 'p1' | 'p2',
+    nextLocalCm: RenderPoint2D
+  ) => boolean;
+  readonly onCancelPendingApproximatePreview?: () => void;
+  readonly onUndoProposal?: () => void;
+  readonly onRedoProposal?: () => void;
 }
 
 const MeasurePendingPreviewLine: React.FC<{
@@ -286,7 +329,21 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   hoveredDiagnosticKey = null,
   diagnosticLocateRequest = null,
   onSelectDiagnostic,
-  onHoverDiagnostic
+  onHoverDiagnostic,
+  inspectionTargetArtifact,
+  proposalState = null,
+  proposalIntegrity = null,
+  compareOriginalGeometry = false,
+  contourEditSelection = null,
+  translateAdjacentHandles = true,
+  activeContinuityMode = 'c0-corner',
+  pendingApproximatePreview = null,
+  onSelectContourEditTarget,
+  onCommitMoveContourVertex,
+  onCommitMoveBezierHandle,
+  onCancelPendingApproximatePreview,
+  onUndoProposal,
+  onRedoProposal
 }) => {
   const contextCamera = useOptionalPatternAtelierCamera();
   const camera: CadCamera = contextCamera ?? propCamera ?? { zoom: 1, panX: 48, panY: 48 };
@@ -307,6 +364,12 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     start: RenderPoint2D;
     current: RenderPoint2D;
   } | null>(null);
+  const [contourHoverTarget, setContourHoverTarget] = useState<ContourEditHoverTarget | null>(null);
+  const [contourDragPreview, setContourDragPreview] = useState<ActiveContourDragPreview | null>(
+    null
+  );
+
+  const effectiveInspectionArtifact = inspectionTargetArtifact ?? artifact;
 
   const fallbackBoardState = useMemo(() => createInitialBoardSnapshot(artifact, 8), [artifact]);
   const boardState = externalBoardState ?? fallbackBoardState;
@@ -317,6 +380,20 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   boardStateRef.current = boardState;
   const artifactRef = useRef<PatternArtifactBundle>(artifact);
   artifactRef.current = artifact;
+  const inspectionArtifactRef = useRef<PatternArtifactBundle>(effectiveInspectionArtifact);
+  inspectionArtifactRef.current = effectiveInspectionArtifact;
+  const proposalStateRef = useRef<PatternGeometryProposalState | null>(proposalState);
+  proposalStateRef.current = proposalState;
+  const contourSelectionRef = useRef<ContourEditSelection | null>(contourEditSelection);
+  contourSelectionRef.current = contourEditSelection;
+  const pendingApproxRef = useRef<PendingApproximateOperationPreview | null>(
+    pendingApproximatePreview
+  );
+  pendingApproxRef.current = pendingApproximatePreview;
+  const translateAdjacentHandlesRef = useRef<boolean>(translateAdjacentHandles);
+  translateAdjacentHandlesRef.current = translateAdjacentHandles;
+  const activeContinuityModeRef = useRef<HandleContinuityMode>(activeContinuityMode);
+  activeContinuityModeRef.current = activeContinuityMode;
   const layerVisibilityRef = useRef<PatternCadLayerVisibility>(layerVisibility);
   layerVisibilityRef.current = layerVisibility;
   const hoveredEntityRef = useRef<CadInspectableEntity | null>(hoveredEntity);
@@ -353,6 +430,20 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     startWorldCm: RenderPoint2D;
     currentWorldCm: RenderPoint2D;
     shiftKey: boolean;
+    moved: boolean;
+  } | null>(null);
+
+  const contourDragSessionRef = useRef<{
+    pointerId: number;
+    pieceId: string;
+    dragKind: 'vertex' | 'handle';
+    vertexRef?: string;
+    segmentId?: string;
+    handleSlot?: 'p1' | 'p2';
+    originLocalCm: RenderPoint2D;
+    lastLocalCm: RenderPoint2D;
+    startClientX: number;
+    startClientY: number;
     moved: boolean;
   } | null>(null);
 
@@ -474,6 +565,38 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         return;
       }
 
+      // UX-2.3.3.4 (D4): Edit-contour mode routes undo/redo strictly to geometry proposal history
+      // and never mutates board arrangement history.
+      if (activeTool === 'edit-contour') {
+        const modEdit = e.metaKey || e.ctrlKey;
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          if (contourDragSessionRef.current) {
+            contourDragSessionRef.current = null;
+            setContourDragPreview(null);
+          } else if (pendingApproxRef.current) {
+            onCancelPendingApproximatePreview?.();
+          } else {
+            onSelectContourEditTarget?.(null);
+          }
+          return;
+        }
+        if (modEdit && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          onUndoProposal?.();
+          return;
+        }
+        if (
+          (modEdit && e.key.toLowerCase() === 'z' && e.shiftKey) ||
+          (modEdit && e.key.toLowerCase() === 'y')
+        ) {
+          e.preventDefault();
+          onRedoProposal?.();
+          return;
+        }
+        return;
+      }
+
       const mod = e.metaKey || e.ctrlKey;
       if (e.key === 'Escape') {
         if (measurementSessionRef.current.mode !== 'idle') {
@@ -544,7 +667,11 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     onClearMeasurement,
     onMeasurementHoverEntity,
     onSelectDiagnostic,
-    onHoverDiagnostic
+    onHoverDiagnostic,
+    onCancelPendingApproximatePreview,
+    onSelectContourEditTarget,
+    onUndoProposal,
+    onRedoProposal
   ]);
 
   // Fit All when explicitly requested, garment changes, mode changes, or initial size measured
@@ -688,7 +815,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
       if (e.button !== 0 || effectiveViewMode !== 'pieces') return;
 
-      // 1b. UX-2.3.3.1 Read-only geometric entity inspection mode (strictly isolated from drag/marquee)
+      // 1b. UX-2.3.3.1 Read-only geometric entity inspection mode (D3: targets proposed sew contour when aligned)
       if (activeTool === 'inspect-entity') {
         e.preventDefault();
         const hitRadiusPx =
@@ -697,7 +824,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
           localPx,
           cameraRef.current,
           projection,
-          artifactRef.current,
+          inspectionArtifactRef.current,
           boardStateRef.current,
           layerVisibilityRef.current,
           {
@@ -709,7 +836,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         return;
       }
 
-      // 1c. UX-2.3.3.2 Advisory Precision Measurement mode (strictly isolated from drag/marquee)
+      // 1c. UX-2.3.3.2 Advisory Precision Measurement mode (D3: targets proposed sew contour when aligned)
       if (activeTool === 'measure-preview') {
         e.preventDefault();
         const hitRadiusPx =
@@ -718,7 +845,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
           localPx,
           cameraRef.current,
           projection,
-          artifactRef.current,
+          inspectionArtifactRef.current,
           boardStateRef.current,
           layerVisibilityRef.current,
           {
@@ -732,7 +859,74 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         return;
       }
 
-      // 1d. UX-2.3.3.3: Clicking a diagnostic marker/cluster in Select mode focuses it without dragging pieces
+      // 1d. UX-2.3.3.4 Proposal-Based Precision Sew-Contour Editing mode (strictly sew-only, isolated from board drag)
+      if (activeTool === 'edit-contour') {
+        e.preventDefault();
+        const hitRadiusPx =
+          e.pointerType === 'touch' ? TOUCH_HIT_RADIUS_PX + 2 : DEFAULT_HIT_RADIUS_PX + 2;
+        const pxPerCm = getPixelsPerCm(cameraRef.current.zoom, BASE_PX_PER_CM);
+        const hitRadiusCm = hitRadiusPx / Math.max(0.5, pxPerCm);
+
+        const visibleNow: PatternPieceRenderModel[] = [];
+        for (const pid of boardStateRef.current.layerOrder) {
+          if (!isPieceEffectivelyVisible(boardStateRef.current, pid)) continue;
+          const piece = artifactRef.current.pieces.find(p => p.pieceId === pid);
+          if (piece) visibleNow.push(piece);
+        }
+        const getOffNow = (pid: string) => {
+          const pl = boardStateRef.current.placementsByPieceId[pid];
+          return { offsetXCm: pl?.offsetXCm ?? 0, offsetYCm: pl?.offsetYCm ?? 0 };
+        };
+
+        const hit = hitTestContourEditTarget(
+          worldPt,
+          visibleNow,
+          proposalStateRef.current,
+          getOffNow,
+          contourSelectionRef.current,
+          hitRadiusCm
+        );
+
+        if (!hit) {
+          onSelectContourEditTarget?.(null);
+          return;
+        }
+
+        onSelectPieceId(hit.pieceId);
+        onSelectContourEditTarget?.({
+          pieceId: hit.pieceId,
+          kind: hit.kind,
+          vertexRef: hit.vertexRef,
+          segmentId: hit.segmentId,
+          handleSlot: hit.handleSlot
+        });
+
+        const isAlignedNow =
+          !proposalStateRef.current || proposalStateRef.current.reconciliationStatus === 'aligned';
+        if (isAlignedNow && (hit.kind === 'vertex' || hit.kind === 'handle')) {
+          contourDragSessionRef.current = {
+            pointerId: e.pointerId,
+            pieceId: hit.pieceId,
+            dragKind: hit.kind,
+            vertexRef: hit.vertexRef,
+            segmentId: hit.segmentId,
+            handleSlot: hit.handleSlot,
+            originLocalCm: hit.localPointCm,
+            lastLocalCm: hit.localPointCm,
+            startClientX: e.clientX,
+            startClientY: e.clientY,
+            moved: false
+          };
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            // Safe no-op
+          }
+        }
+        return;
+      }
+
+      // 1e. UX-2.3.3.3: Clicking a diagnostic marker/cluster in Select mode focuses it without dragging pieces
       if (activeTool === 'select' && target?.closest?.('[data-cad-diagnostic-marker]')) {
         e.preventDefault();
         return;
@@ -806,7 +1000,8 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
       onSelectBoardPiece,
       onSelectPieceId,
       onInspectEntity,
-      onMeasureEntityClick
+      onMeasureEntityClick,
+      onSelectContourEditTarget
     ]
   );
 
@@ -832,7 +1027,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
       const worldPt = screenToWorldCm(localPx, cameraRef.current, projection);
       onChangeCursorCm(worldPt);
 
-      // UX-2.3.3.1: Hover entity hit-testing in inspection mode (strictly isolated from drag/marquee)
+      // UX-2.3.3.1: Hover entity hit-testing in inspection mode (D3: targets proposed sew contour when aligned)
       if (effectiveViewMode === 'pieces' && activeTool === 'inspect-entity') {
         const hitRadiusPx =
           e.pointerType === 'touch' ? TOUCH_HIT_RADIUS_PX : DEFAULT_HIT_RADIUS_PX;
@@ -840,7 +1035,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
           localPx,
           cameraRef.current,
           projection,
-          artifactRef.current,
+          inspectionArtifactRef.current,
           boardStateRef.current,
           layerVisibilityRef.current,
           {
@@ -864,7 +1059,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         return;
       }
 
-      // UX-2.3.3.2: Hover entity hit-testing in measurement mode (strictly isolated from drag/marquee)
+      // UX-2.3.3.2: Hover entity hit-testing in measurement mode (D3: targets proposed sew contour when aligned)
       if (effectiveViewMode === 'pieces' && activeTool === 'measure-preview') {
         const hitRadiusPx =
           e.pointerType === 'touch' ? TOUCH_HIT_RADIUS_PX : DEFAULT_HIT_RADIUS_PX;
@@ -872,7 +1067,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
           localPx,
           cameraRef.current,
           projection,
-          artifactRef.current,
+          inspectionArtifactRef.current,
           boardStateRef.current,
           layerVisibilityRef.current,
           {
@@ -893,6 +1088,130 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         if (!unchanged) {
           onMeasurementHoverEntity?.(nextEntity);
         }
+        return;
+      }
+
+      // UX-2.3.3.4: Contour edit live drag preview & hover hit-testing (no history commits during drag)
+      if (effectiveViewMode === 'pieces' && activeTool === 'edit-contour') {
+        const contourDrag = contourDragSessionRef.current;
+        if (contourDrag && contourDrag.pointerId === e.pointerId) {
+          const screenDist = Math.hypot(
+            e.clientX - contourDrag.startClientX,
+            e.clientY - contourDrag.startClientY
+          );
+          if (!contourDrag.moved && screenDist < 2.5) return;
+          contourDrag.moved = true;
+
+          const pl = boardStateRef.current.placementsByPieceId[contourDrag.pieceId];
+          const offX = pl?.offsetXCm ?? 0;
+          const offY = pl?.offsetYCm ?? 0;
+          const rawLocalCm = { x: worldPt.x - offX, y: worldPt.y - offY };
+
+          const baseProposal =
+            proposalStateRef.current ?? createProposalStateFromArtifact(artifactRef.current);
+          const srcPiece = artifactRef.current.pieces.find(p => p.pieceId === contourDrag.pieceId);
+          const currentSewSegs =
+            baseProposal.pieceProposals[contourDrag.pieceId]?.sewSegments ??
+            srcPiece?.sewSegments ??
+            [];
+          const candidateVerts = getEditableSewVerticesForPiece(contourDrag.pieceId, currentSewSegs)
+            .filter(v => v.entityRef !== contourDrag.vertexRef)
+            .map(v => v.localPointCm);
+
+          const snapRes = snapAndConstrainPoint(
+            rawLocalCm,
+            contourDrag.originLocalCm,
+            artifactRef.current.coordinateFrame,
+            {
+              ...DEFAULT_SNAP_CONSTRAINT_CONFIG,
+              gridSnapEnabled: snapConfig.enabled,
+              gridStepCm: snapConfig.gridIntervalCm,
+              vertexSnapEnabled: snapConfig.enabled
+            },
+            { shiftKey: e.shiftKey, altKey: e.altKey },
+            candidateVerts
+          );
+
+          contourDrag.lastLocalCm = snapRes.pointCm;
+          const previewRes =
+            contourDrag.dragKind === 'vertex' && contourDrag.vertexRef
+              ? moveContourVertex(
+                  baseProposal,
+                  artifactRef.current,
+                  contourDrag.pieceId,
+                  contourDrag.vertexRef,
+                  snapRes.pointCm,
+                  { translateAdjacentHandles: translateAdjacentHandlesRef.current }
+                )
+              : contourDrag.segmentId && contourDrag.handleSlot
+                ? moveBezierHandle(
+                    baseProposal,
+                    artifactRef.current,
+                    contourDrag.pieceId,
+                    contourDrag.segmentId,
+                    contourDrag.handleSlot,
+                    snapRes.pointCm,
+                    { continuityMode: activeContinuityModeRef.current }
+                  )
+                : null;
+
+          const previewSegs =
+            previewRes && previewRes.ok
+              ? previewRes.state.pieceProposals[contourDrag.pieceId]?.sewSegments ?? currentSewSegs
+              : currentSewSegs;
+
+          setContourDragPreview({
+            pieceId: contourDrag.pieceId,
+            dragKind: contourDrag.dragKind,
+            vertexRef: contourDrag.vertexRef,
+            segmentId: contourDrag.segmentId,
+            handleSlot: contourDrag.handleSlot,
+            originLocalCm: contourDrag.originLocalCm,
+            currentLocalCm: snapRes.pointCm,
+            snapResult: snapRes,
+            previewSewSegments: previewSegs
+          });
+          return;
+        }
+
+        // Hover hit-test for edit-contour
+        const hitRadiusPx =
+          e.pointerType === 'touch' ? TOUCH_HIT_RADIUS_PX + 2 : DEFAULT_HIT_RADIUS_PX + 2;
+        const pxPerCm = getPixelsPerCm(cameraRef.current.zoom, BASE_PX_PER_CM);
+        const hitRadiusCm = hitRadiusPx / Math.max(0.5, pxPerCm);
+        const visibleNow: PatternPieceRenderModel[] = [];
+        for (const pid of boardStateRef.current.layerOrder) {
+          if (!isPieceEffectivelyVisible(boardStateRef.current, pid)) continue;
+          const piece = artifactRef.current.pieces.find(p => p.pieceId === pid);
+          if (piece) visibleNow.push(piece);
+        }
+        const getOffNow = (pid: string) => {
+          const pl = boardStateRef.current.placementsByPieceId[pid];
+          return { offsetXCm: pl?.offsetXCm ?? 0, offsetYCm: pl?.offsetYCm ?? 0 };
+        };
+        const hit = hitTestContourEditTarget(
+          worldPt,
+          visibleNow,
+          proposalStateRef.current,
+          getOffNow,
+          contourSelectionRef.current,
+          hitRadiusCm
+        );
+        setContourHoverTarget(prev => {
+          if (!prev && !hit) return prev;
+          if (
+            prev &&
+            hit &&
+            prev.pieceId === hit.pieceId &&
+            prev.kind === hit.kind &&
+            prev.vertexRef === hit.vertexRef &&
+            prev.segmentId === hit.segmentId &&
+            prev.handleSlot === hit.handleSlot
+          ) {
+            return prev;
+          }
+          return hit;
+        });
         return;
       }
 
@@ -1005,20 +1324,62 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         }
       }
 
+      if (
+        contourDragSessionRef.current &&
+        contourDragSessionRef.current.pointerId === e.pointerId
+      ) {
+        const finished = contourDragSessionRef.current;
+        contourDragSessionRef.current = null;
+        setContourDragPreview(null);
+        if (finished.moved && e.type !== 'pointercancel') {
+          if (finished.dragKind === 'vertex' && finished.vertexRef) {
+            onCommitMoveContourVertex?.(
+              finished.pieceId,
+              finished.vertexRef,
+              finished.lastLocalCm
+            );
+          } else if (
+            finished.dragKind === 'handle' &&
+            finished.segmentId &&
+            finished.handleSlot
+          ) {
+            onCommitMoveBezierHandle?.(
+              finished.pieceId,
+              finished.segmentId,
+              finished.handleSlot,
+              finished.lastLocalCm
+            );
+          }
+        }
+      }
+
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {
         // Safe no-op
       }
     },
-    [onCommitMovePieces, onSetActiveSnapGuides, onSelectMarqueeRect, onClearBoardSelection]
+    [
+      onCommitMovePieces,
+      onSetActiveSnapGuides,
+      onSelectMarqueeRect,
+      onClearBoardSelection,
+      onCommitMoveContourVertex,
+      onCommitMoveBezierHandle
+    ]
   );
 
   const handlePointerLeave = useCallback(() => {
-    if (!panSessionRef.current && !dragSessionRef.current && !marqueeSessionRef.current) {
+    if (
+      !panSessionRef.current &&
+      !dragSessionRef.current &&
+      !marqueeSessionRef.current &&
+      !contourDragSessionRef.current
+    ) {
       onChangeCursorCm(null);
       onHoverEntity?.(null);
       onMeasurementHoverEntity?.(null);
+      setContourHoverTarget(null);
     }
   }, [onChangeCursorCm, onHoverEntity, onMeasurementHoverEntity]);
 
@@ -1042,14 +1403,15 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
   const isInspectMode = effectiveViewMode === 'pieces' && activeTool === 'inspect-entity';
   const isMeasureMode = effectiveViewMode === 'pieces' && activeTool === 'measure-preview';
+  const isEditContourMode = effectiveViewMode === 'pieces' && activeTool === 'edit-contour';
 
   const panCursorClass = isPanning
     ? 'cursor-grabbing'
-    : dragPreview
+    : dragPreview || contourDragPreview
       ? 'cursor-move'
       : activeTool === 'pan' || spacePressed
         ? 'cursor-grab'
-        : isInspectMode || isMeasureMode
+        : isInspectMode || isMeasureMode || isEditContourMode
           ? 'cursor-crosshair'
           : 'cursor-default';
 
@@ -1136,28 +1498,54 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
           />
         )}
 
-        {/* Exterior Cut Line */}
-        {layerVisibility.showSeamAllowance && cutD && (
-          <path
-            d={cutD}
-            fill={
-              isSelected
-                ? piece.hasBlockingError
-                  ? '#FEF2F2'
-                  : '#FFFFFF'
-                : piece.hasBlockingError
-                  ? '#FFF5F5'
-                  : '#FAF8F4'
-            }
-            stroke={piece.hasBlockingError ? '#dc2626' : isSelected ? '#0f172a' : '#52525b'}
-            strokeWidth={piece.hasBlockingError ? 2.1 * invScale : isSelected ? 1.8 * invScale : cutStrokeCm}
-            strokeDasharray={piece.hasBlockingError ? `${5 * invScale} ${2.5 * invScale}` : undefined}
-            strokeLinejoin="round"
-          />
-        )}
+        {/* Exterior Cut Line (D2: strictly read-only original cut contour; styled distinctly when sew proposal makes it potentially stale) */}
+        {layerVisibility.showSeamAllowance && cutD && (() => {
+          const isCutStale = Boolean(
+            proposalState?.reconciliationStatus === 'aligned' &&
+              proposalState.pieceProposals[piece.pieceId]?.modifiedFromOriginal
+          );
+          return (
+            <path
+              d={cutD}
+              fill={
+                isSelected
+                  ? piece.hasBlockingError
+                    ? '#FEF2F2'
+                    : '#FFFFFF'
+                  : piece.hasBlockingError
+                    ? '#FFF5F5'
+                    : '#FAF8F4'
+              }
+              stroke={
+                piece.hasBlockingError
+                  ? '#dc2626'
+                  : isCutStale
+                    ? '#b45309'
+                    : isSelected
+                      ? '#0f172a'
+                      : '#52525b'
+              }
+              strokeOpacity={isCutStale ? 0.6 : 1}
+              strokeWidth={
+                piece.hasBlockingError ? 2.1 * invScale : isSelected ? 1.8 * invScale : cutStrokeCm
+              }
+              strokeDasharray={
+                piece.hasBlockingError
+                  ? `${5 * invScale} ${2.5 * invScale}`
+                  : isCutStale
+                    ? `${6 * invScale} ${3 * invScale}`
+                    : undefined
+              }
+              strokeLinejoin="round"
+            />
+          );
+        })()}
 
-        {/* Interior Stitch Line */}
-        {layerVisibility.showSewLines && sewD && (
+        {/* Interior Stitch Line (muted when replaced on-canvas by active proposed sew contour overlay) */}
+        {layerVisibility.showSewLines && sewD && !(
+          proposalState?.reconciliationStatus === 'aligned' &&
+          proposalState.pieceProposals[piece.pieceId]?.modifiedFromOriginal
+        ) && (
           <path
             d={sewD}
             fill="none"
@@ -1350,11 +1738,17 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     return frames;
   }, [effectiveViewMode, boardState, piecesById, dragPreview]);
 
-  // Subtle inspectable/measurable vertex hints rendered while inspect or measure mode is active
+  // Subtle inspectable/measurable vertex hints rendered while inspect or measure mode is active (D3: uses effectiveInspectionArtifact)
+  const inspectPiecesById = useMemo(
+    () => new Map(effectiveInspectionArtifact.pieces.map(p => [p.pieceId, p])),
+    [effectiveInspectionArtifact.pieces]
+  );
+
   const inspectVertexHints = useMemo(() => {
     if (!isInspectMode && !isMeasureMode) return [];
     const hints: { key: string; x: number; y: number }[] = [];
-    for (const piece of orderedVisiblePieces) {
+    for (const origPiece of orderedVisiblePieces) {
+      const piece = inspectPiecesById.get(origPiece.pieceId) ?? origPiece;
       const off = getEffectiveOffset(piece.pieceId);
       if (layerVisibility.showSewLines) {
         const { vertices } = extractContourVertices(piece.pieceId, 'sew', piece.sewSegments);
@@ -1382,19 +1776,20 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
     isInspectMode,
     isMeasureMode,
     orderedVisiblePieces,
+    inspectPiecesById,
     layerVisibility.showSewLines,
     layerVisibility.showSeamAllowance,
     boardState,
     dragPreview
   ]);
 
-  // Resolve active Bézier segment for optional control-polygon overlay
+  // Resolve active Bézier segment for optional control-polygon overlay (D3: uses inspectPiecesById)
   const activeControlPolygonSpec = useMemo(() => {
     if (!showControlPolygon || !inspectedEntity) return null;
     if (inspectedEntity.entityKind !== 'curve' && inspectedEntity.entityKind !== 'bezier-handle') {
       return null;
     }
-    const piece = piecesById.get(inspectedEntity.pieceId);
+    const piece = inspectPiecesById.get(inspectedEntity.pieceId);
     if (!piece) return null;
     const segs = inspectedEntity.contour === 'sew' ? piece.sewSegments : piece.cutSegments;
     const seg = segs.find(s => s.id === inspectedEntity.segmentId);
@@ -1409,7 +1804,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
       p2: { x: seg.p2.x + off.offsetXCm, y: seg.p2.y + off.offsetYCm },
       p3: { x: seg.p3.x + off.offsetXCm, y: seg.p3.y + off.offsetYCm }
     };
-  }, [showControlPolygon, inspectedEntity, piecesById, boardState, dragPreview]);
+  }, [showControlPolygon, inspectedEntity, inspectPiecesById, boardState, dragPreview]);
 
   const renderEntityHighlight = (entity: CadInspectableEntity, variant: 'hover' | 'selected') => {
     const off = getEffectiveOffset(entity.pieceId);
@@ -2577,6 +2972,23 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
 
                 {/* Pattern Pieces in Authoritative Layer Order */}
                 {orderedVisiblePieces.map(piece => renderStandardPiece(piece))}
+
+                {/* UX-2.3.3.4: Proposal-Based Sew-Contour Editing & Original Ghost Overlay */}
+                <PatternContourEditOverlay
+                  artifact={artifact}
+                  visiblePieces={orderedVisiblePieces}
+                  getEffectiveOffset={getEffectiveOffset}
+                  proposalState={proposalState}
+                  proposalIntegrity={proposalIntegrity}
+                  isEditContourMode={isEditContourMode}
+                  compareOriginalGeometry={compareOriginalGeometry}
+                  selection={contourEditSelection}
+                  hoverTarget={contourHoverTarget}
+                  dragPreview={contourDragPreview}
+                  pendingApproximatePreview={pendingApproximatePreview}
+                  invScale={invScale}
+                  isYUp={isYUp}
+                />
 
                 {/* UX-2.3.3.1: Dedicated Read-Only Entity Inspection Overlay (pointer-events-none) */}
                 {(isInspectMode || isMeasureMode || hoveredEntity || inspectedEntity) && (

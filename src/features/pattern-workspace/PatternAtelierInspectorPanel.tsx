@@ -50,6 +50,7 @@ import type {
   SpatialMappingOutcome
 } from './spatial-diagnostics';
 import { AssemblyInspectionPanel } from './AssemblyInspectionPanel';
+import { PatternContourEditInspectorSection } from './PatternContourEditInspectorSection';
 import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
 import { assembleBodiceSleeve, formatSignedCm } from '../../engine/assembly';
 import { DEFAULT_SIZE_RANGE } from '../../engine/grading';
@@ -564,6 +565,7 @@ interface SpatialDiagnosticsInspectorSectionProps {
   readonly diagnosticReconciliationNotice: string | null;
   readonly dismissDiagnosticReconciliationNotice: () => void;
   readonly layerVisibility: PatternCadLayerVisibility;
+  readonly hasActiveProposal?: boolean;
 }
 
 const SpatialDiagnosticsInspectorSection: React.FC<SpatialDiagnosticsInspectorSectionProps> =
@@ -580,7 +582,8 @@ const SpatialDiagnosticsInspectorSection: React.FC<SpatialDiagnosticsInspectorSe
       locateDiagnosticOnCanvas,
       diagnosticReconciliationNotice,
       dismissDiagnosticReconciliationNotice,
-      layerVisibility
+      layerVisibility,
+      hasActiveProposal = false
     }) => {
       const summary = resolvedDiagnostics.summary;
       const selectedDiag: ResolvedSpatialDiagnostic | undefined = selectedDiagnosticKey
@@ -615,6 +618,18 @@ const SpatialDiagnosticsInspectorSection: React.FC<SpatialDiagnosticsInspectorSe
 
       return (
         <div className="space-y-2" data-testid="inspector-spatial-diagnostics">
+          {/* UX-2.3.3.4 (D3): Explicit notice that spatial diagnostics remain anchored to the original artifact */}
+          {hasActiveProposal && (
+            <div
+              data-testid="inspector-diag-original-anchor-notice"
+              className="px-2 py-1.5 rounded-xs border border-amber-300 bg-amber-50/90 text-[10px] text-amber-950 leading-snug"
+            >
+              <strong>Original Artifact Anchor (D3):</strong> Spatial diagnostics remain strictly
+              anchored to the immutable original source artifact and are not silently migrated to
+              unverified proposal geometry.
+            </div>
+          )}
+
           {/* Overlay toggle & summary strip */}
           <div className="flex items-center justify-between gap-1.5 flex-wrap bg-neutral-50 border border-neutral-200 rounded-xs px-2 py-1.5">
             <div className="flex items-center gap-1.5 font-mono text-[10px] text-neutral-700 flex-wrap">
@@ -1005,6 +1020,13 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
 
   const selectedPiece = pieces.find(p => p.id === selectedPieceId) ?? pieces[0];
   const activeArtifact = atelier?.activeArtifact ?? null;
+  const inspectionTargetArtifact = atelier?.inspectionTargetArtifact ?? activeArtifact;
+  const proposalState = atelier?.proposalState ?? null;
+  const isInspectingProposal = atelier?.isInspectingProposal ?? false;
+  const compareOriginalGeometry = atelier?.compareOriginalGeometry ?? false;
+  const hasAlignedActiveProposal = Boolean(
+    proposalState?.hasEdits && proposalState.reconciliationStatus === 'aligned'
+  );
   const inspectedEntity = atelier?.inspectedEntity ?? null;
   const measurementEvaluation = atelier?.measurementEvaluation ?? { kind: 'empty' as const };
   const selectedArtifactPiece =
@@ -1364,13 +1386,22 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
     );
   }
 
-  // Default: Pieces Mode — Advisory Measurement, Entity Inspection, Board Placement, Piece Summary & Validation Engine
+  // Default: Pieces Mode — Contour Proposal Editing, Advisory Measurement, Entity Inspection, Board Placement, Piece Summary & Validation Engine
   return (
     <div className="space-y-4 text-xs" data-testid="inspector-atelier-pieces">
+      {/* UX-2.3.3.4: Proposal-Based Precision Contour & Bézier Anchor Editing Inspector */}
+      {atelier && (
+        <PatternContourEditInspectorSection
+          activeTool={activeTool}
+          selectedPieceId={selectedPiece?.id ?? null}
+        />
+      )}
+
       {/* UX-2.3.3.2: Advisory Precision Measurement Section */}
       {atelier && activeArtifact && measurementEvaluation.kind !== 'empty' && (() => {
+        const targetArtifact = inspectionTargetArtifact ?? activeArtifact;
         const frameLabel =
-          activeArtifact.coordinateFrame.yAxisDirection === 'cartesian-y-up'
+          targetArtifact.coordinateFrame.yAxisDirection === 'cartesian-y-up'
             ? 'Cartesian Y-Up'
             : 'SVG Y-Down';
 
@@ -1444,6 +1475,40 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
               </div>
             </div>
 
+            {/* UX-2.3.3.4 (D3): Geometry Source Disclosure & Original Comparison Toggle */}
+            {hasAlignedActiveProposal && (
+              <div
+                data-testid="inspector-d3-measurement-source-banner"
+                className={`p-1.5 rounded-xs border flex flex-wrap items-center justify-between gap-1.5 text-[10px] leading-snug ${
+                  isInspectingProposal
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-950'
+                    : 'bg-neutral-100 border-neutral-300 text-neutral-800'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="font-semibold">
+                    {isInspectingProposal
+                      ? 'Measuring Proposed Sew Contour'
+                      : 'Measuring Original Source Artifact'}
+                  </div>
+                  <div className="font-mono text-[9px] opacity-90">
+                    {isInspectingProposal
+                      ? 'UNVERIFIED_VISUAL_PROPOSAL · cut contour read-only'
+                      : 'Original comparison mode · proposal preserved'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={atelier.toggleCompareOriginalGeometry}
+                  aria-pressed={compareOriginalGeometry}
+                  data-testid="inspector-measure-compare-original-toggle"
+                  className="px-1.5 py-0.5 rounded-xs border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-900 font-mono text-[9.5px] font-semibold shrink-0 cursor-pointer"
+                >
+                  {compareOriginalGeometry ? 'Use Proposal' : 'Compare Original'}
+                </button>
+              </div>
+            )}
+
             {/* Mandatory Non-Certified Advisory Disclosure */}
             <div
               data-testid="inspector-measurement-disclosure"
@@ -1453,8 +1518,8 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
                 {ADVISORY_MEASUREMENT_DISCLOSURE}
               </div>
               <div className="font-mono text-[9.5px] text-amber-900">
-                isCertified: false · {activeArtifact.authorityTier} · isProductionReady:{' '}
-                {String(activeArtifact.isProductionReady)}
+                isCertified: false · {targetArtifact.authorityTier} · isProductionReady:{' '}
+                {String(targetArtifact.isProductionReady)}
               </div>
             </div>
 
@@ -1777,6 +1842,30 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
             <p className="text-[10px] font-medium text-amber-900 bg-amber-50 border border-amber-200 rounded-xs px-2 py-1">
               {ADVISORY_MEASUREMENT_DISCLOSURE}
             </p>
+            {hasAlignedActiveProposal && (
+              <div
+                data-testid="inspector-d3-measurement-prompt-source"
+                className="p-1.5 rounded-xs border border-indigo-200 bg-indigo-50/80 text-indigo-950 flex flex-wrap items-center justify-between gap-1.5 text-[10px]"
+              >
+                <span>
+                  Target:{' '}
+                  <strong>
+                    {isInspectingProposal
+                      ? 'Proposed Sew (UNVERIFIED_VISUAL_PROPOSAL)'
+                      : 'Original Artifact'}
+                  </strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={atelier.toggleCompareOriginalGeometry}
+                  aria-pressed={compareOriginalGeometry}
+                  data-testid="inspector-measure-prompt-compare-toggle"
+                  className="px-1.5 py-0.5 rounded-xs border border-indigo-300 bg-white text-indigo-900 font-mono text-[9.5px] font-semibold shrink-0 cursor-pointer"
+                >
+                  {compareOriginalGeometry ? 'Use Proposal' : 'Compare Original'}
+                </button>
+              </div>
+            )}
             <p className="text-[11px] text-neutral-600 leading-relaxed">
               Click any straight edge or cubic curve for instant length, tangent &amp; curvature,
               click two entities for local/board distance, or double-click a vertex (or switch to
@@ -1814,6 +1903,40 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {/* UX-2.3.3.4 (D3): Geometry Source Disclosure & Original Comparison Toggle */}
+          {hasAlignedActiveProposal && (
+            <div
+              data-testid="inspector-d3-entity-source-banner"
+              className={`p-1.5 rounded-xs border flex flex-wrap items-center justify-between gap-1.5 text-[10px] leading-snug ${
+                isInspectingProposal
+                  ? 'bg-indigo-50 border-indigo-300 text-indigo-950'
+                  : 'bg-neutral-100 border-neutral-300 text-neutral-800'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="font-semibold">
+                  {isInspectingProposal
+                    ? 'Inspecting Proposed Sew Contour'
+                    : 'Inspecting Original Source Artifact'}
+                </div>
+                <div className="font-mono text-[9px] opacity-90">
+                  {isInspectingProposal
+                    ? 'UNVERIFIED_VISUAL_PROPOSAL · isCertified: false'
+                    : 'Original comparison mode · proposal preserved'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={atelier.toggleCompareOriginalGeometry}
+                aria-pressed={compareOriginalGeometry}
+                data-testid="inspector-entity-compare-original-toggle"
+                className="px-1.5 py-0.5 rounded-xs border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-900 font-mono text-[9.5px] font-semibold shrink-0 cursor-pointer"
+              >
+                {compareOriginalGeometry ? 'Use Proposal' : 'Compare Original'}
+              </button>
+            </div>
+          )}
 
           {/* Presentation Reference (Explicitly Non-Authoritative) */}
           <div className="space-y-1 bg-white border border-teal-200/80 rounded-xs p-2">
@@ -2062,39 +2185,44 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
           </div>
 
           {/* Coordinate Frame, Authority Tier & Certification Disclosure */}
-          <dl className="space-y-1 pt-1 border-t border-teal-200/70 text-[10px]">
-            <div className="flex items-baseline justify-between gap-2">
-              <dt className="text-neutral-500 shrink-0">Coordinate Frame</dt>
-              <dd
-                data-testid="inspector-entity-coord-frame"
-                className="font-mono text-neutral-900 text-right whitespace-nowrap"
-              >
-                {activeArtifact.coordinateFrame.yAxisDirection === 'cartesian-y-up'
-                  ? `Cartesian Y-Up (${activeArtifact.coordinateFrame.exteriorWinding} · ${activeArtifact.coordinateFrame.geometryUnit})`
-                  : `SVG Y-Down (${activeArtifact.coordinateFrame.exteriorWinding} · ${activeArtifact.coordinateFrame.geometryUnit})`}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-2">
-              <dt className="text-neutral-500">Artifact Authority</dt>
-              <dd
-                data-testid="inspector-entity-authority-tier"
-                className="font-mono font-semibold text-neutral-900 text-right"
-              >
-                {activeArtifact.authorityTier}
-              </dd>
-            </div>
-            <div
-              data-testid="inspector-entity-certification"
-              className="mt-1 p-1.5 rounded-xs bg-amber-50 border border-amber-200 text-amber-900 space-y-0.5 leading-snug"
-            >
-              <div className="font-medium">{activeArtifact.provenance.disclosureLabel}</div>
-              <div className="font-mono text-[9.5px] text-amber-800">
-                isCertified: {String(activeArtifact.isCertified)} · isProductionReady:{' '}
-                {String(activeArtifact.isProductionReady)} · externalCadInteroperabilityVerified:{' '}
-                {String(activeArtifact.externalCadInteroperabilityVerified)}
-              </div>
-            </div>
-          </dl>
+          {(() => {
+            const targetArtifact = inspectionTargetArtifact ?? activeArtifact;
+            return (
+              <dl className="space-y-1 pt-1 border-t border-teal-200/70 text-[10px]">
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-neutral-500 shrink-0">Coordinate Frame</dt>
+                  <dd
+                    data-testid="inspector-entity-coord-frame"
+                    className="font-mono text-neutral-900 text-right whitespace-nowrap"
+                  >
+                    {targetArtifact.coordinateFrame.yAxisDirection === 'cartesian-y-up'
+                      ? `Cartesian Y-Up (${targetArtifact.coordinateFrame.exteriorWinding} · ${targetArtifact.coordinateFrame.geometryUnit})`
+                      : `SVG Y-Down (${targetArtifact.coordinateFrame.exteriorWinding} · ${targetArtifact.coordinateFrame.geometryUnit})`}
+                  </dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-neutral-500">Artifact Authority</dt>
+                  <dd
+                    data-testid="inspector-entity-authority-tier"
+                    className="font-mono font-semibold text-neutral-900 text-right"
+                  >
+                    {targetArtifact.authorityTier}
+                  </dd>
+                </div>
+                <div
+                  data-testid="inspector-entity-certification"
+                  className="mt-1 p-1.5 rounded-xs bg-amber-50 border border-amber-200 text-amber-900 space-y-0.5 leading-snug"
+                >
+                  <div className="font-medium">{targetArtifact.provenance.disclosureLabel}</div>
+                  <div className="font-mono text-[9.5px] text-amber-800">
+                    isCertified: {String(targetArtifact.isCertified)} · isProductionReady:{' '}
+                    {String(targetArtifact.isProductionReady)} · externalCadInteroperabilityVerified:{' '}
+                    {String(targetArtifact.externalCadInteroperabilityVerified)}
+                  </div>
+                </div>
+              </dl>
+            );
+          })()}
         </section>
       )}
 
@@ -2102,12 +2230,36 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
       {atelier && !inspectedEntity && activeTool === 'inspect-entity' && (
         <section
           data-testid="inspector-cad-entity-prompt"
-          className="pb-3 border-b border-teal-200/80 space-y-1"
+          className="pb-3 border-b border-teal-200/80 space-y-1.5"
         >
           <div className="flex items-center gap-1.5 text-teal-900 font-semibold text-[11px]">
             <Crosshair className="w-3.5 h-3.5 text-teal-700" />
             <span>Inspect Geometry Mode (Read-Only)</span>
           </div>
+          {hasAlignedActiveProposal && (
+            <div
+              data-testid="inspector-d3-entity-prompt-source"
+              className="p-1.5 rounded-xs border border-indigo-200 bg-indigo-50/80 text-indigo-950 flex flex-wrap items-center justify-between gap-1.5 text-[10px]"
+            >
+              <span>
+                Target:{' '}
+                <strong>
+                  {isInspectingProposal
+                    ? 'Proposed Sew (UNVERIFIED_VISUAL_PROPOSAL)'
+                    : 'Original Artifact'}
+                </strong>
+              </span>
+              <button
+                type="button"
+                onClick={atelier.toggleCompareOriginalGeometry}
+                aria-pressed={compareOriginalGeometry}
+                data-testid="inspector-entity-prompt-compare-toggle"
+                className="px-1.5 py-0.5 rounded-xs border border-indigo-300 bg-white text-indigo-900 font-mono text-[9.5px] font-semibold shrink-0 cursor-pointer"
+              >
+                {compareOriginalGeometry ? 'Use Proposal' : 'Compare Original'}
+              </button>
+            </div>
+          )}
           <p className="text-[11px] text-neutral-600 leading-relaxed">
             Hover and click any vertex, straight edge, cubic curve, control handle, notch, or dart
             on the canvas to inspect its unrounded coordinates and topology without moving pieces.
@@ -2695,6 +2847,7 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
             diagnosticReconciliationNotice={atelier.diagnosticReconciliationNotice}
             dismissDiagnosticReconciliationNotice={atelier.dismissDiagnosticReconciliationNotice}
             layerVisibility={atelier.layerVisibility}
+            hasActiveProposal={hasAlignedActiveProposal}
           />
         )}
 

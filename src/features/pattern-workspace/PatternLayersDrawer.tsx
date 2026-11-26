@@ -60,7 +60,8 @@ export const PatternLayersDrawer: React.FC<PatternLayersDrawerProps> = React.mem
       togglePieceVisible,
       toggleGroupVisible,
       reorderPiece,
-      resetBoardLayout
+      resetBoardLayout,
+      proposalState
     } = usePatternAtelierView();
 
     if (!layersDrawerOpen) return null;
@@ -156,6 +157,24 @@ export const PatternLayersDrawer: React.FC<PatternLayersDrawerProps> = React.mem
               </span>
             </span>
           </button>
+
+          {proposalState?.pieceProposals[pieceId]?.modifiedFromOriginal && (
+            <span
+              data-testid={`layer-proposal-badge-${pieceId}`}
+              title={
+                proposalState.reconciliationStatus !== 'aligned'
+                  ? 'Stale sew-contour proposal (source artifact changed — discard or reset)'
+                  : 'Active unverified sew-contour proposal (original cut contour unchanged)'
+              }
+              className={`px-1 py-0.5 rounded-xs border font-mono text-[9px] font-bold leading-none shrink-0 ${
+                proposalState.reconciliationStatus !== 'aligned'
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-indigo-100 text-indigo-900 border-indigo-300'
+              }`}
+            >
+              {proposalState.reconciliationStatus !== 'aligned' ? 'STALE' : 'EDITED'}
+            </span>
+          )}
 
           {pieceDiag && pieceDiag.total > 0 && diagBadgeStyle && (
             <button

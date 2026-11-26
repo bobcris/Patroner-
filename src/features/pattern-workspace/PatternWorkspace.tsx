@@ -41,6 +41,7 @@ import {
   FolderPlus,
   Layers,
   Magnet,
+  PenTool,
   Redo2,
   Ruler,
   Undo2,
@@ -289,6 +290,8 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
         viewportCtx.setActiveTool('inspect-entity', 'pattern-atelier');
       } else if (key === 'm') {
         viewportCtx.setActiveTool('measure-preview', 'pattern-atelier');
+      } else if (key === 'a') {
+        viewportCtx.setActiveTool('edit-contour', 'pattern-atelier');
       } else if (key === 'v') {
         viewportCtx.setActiveTool('select', 'pattern-atelier');
       } else if (key === 'h') {
@@ -661,6 +664,35 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                 <span>{activeTool === 'measure-preview' ? 'Measuring (Advisory)' : 'Measure'}</span>
               </button>
 
+              <button
+                type="button"
+                aria-pressed={activeTool === 'edit-contour'}
+                data-testid="atelier-edit-contour-mode-btn"
+                onClick={() =>
+                  viewportCtx.setActiveTool(
+                    activeTool === 'edit-contour' ? 'select' : 'edit-contour',
+                    'pattern-atelier'
+                  )
+                }
+                className={`px-2 py-0.5 rounded-xs border text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                  activeTool === 'edit-contour'
+                    ? 'bg-indigo-700 text-white border-indigo-700'
+                    : atelierCtx?.proposalState?.hasEdits
+                      ? 'bg-indigo-50 text-indigo-900 border-indigo-300 hover:bg-indigo-100'
+                      : 'bg-white text-neutral-700 border-neutral-300 hover:text-neutral-900'
+                }`}
+                title="Toggle Proposal-Based Sew Contour Editing (A) — Unverified Visual Proposal"
+              >
+                <PenTool className="w-3 h-3" />
+                <span>
+                  {activeTool === 'edit-contour'
+                    ? 'Editing Contour (Proposal)'
+                    : atelierCtx?.proposalState?.hasEdits
+                      ? 'Edit Contour · Active'
+                      : 'Edit Contour'}
+                </span>
+              </button>
+
               {activeTool === 'measure-preview' && (
                 <div
                   role="group"
@@ -814,6 +846,59 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               >
                 <Redo2 className="w-3 h-3" />
               </button>
+
+              {(activeTool === 'edit-contour' || atelierCtx.proposalState?.hasEdits) && (
+                <>
+                  <span className="text-neutral-300 mx-0.5" aria-hidden="true">|</span>
+                  <div
+                    className="inline-flex items-center gap-1"
+                    data-testid="atelier-proposal-history-controls"
+                  >
+                    <span className="text-[10px] font-mono uppercase tracking-tight text-indigo-800 font-semibold">
+                      Proposal
+                    </span>
+                    <button
+                      type="button"
+                      disabled={!atelierCtx.canUndoProposal}
+                      onClick={atelierCtx.undoProposal}
+                      data-testid="atelier-proposal-undo-btn"
+                      title="Undo geometry proposal edit (Ctrl/Cmd+Z in Edit Contour mode)"
+                      aria-label="Undo geometry proposal"
+                      className={`p-1 rounded-xs border transition-colors ${
+                        atelierCtx.canUndoProposal
+                          ? 'bg-indigo-50 text-indigo-900 border-indigo-300 hover:bg-indigo-100 cursor-pointer'
+                          : 'bg-neutral-100 text-neutral-400 border-neutral-200 cursor-not-allowed'
+                      }`}
+                    >
+                      <Undo2 className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!atelierCtx.canRedoProposal}
+                      onClick={atelierCtx.redoProposal}
+                      data-testid="atelier-proposal-redo-btn"
+                      title="Redo geometry proposal edit (Ctrl/Cmd+Shift+Z in Edit Contour mode)"
+                      aria-label="Redo geometry proposal"
+                      className={`p-1 rounded-xs border transition-colors ${
+                        atelierCtx.canRedoProposal
+                          ? 'bg-indigo-50 text-indigo-900 border-indigo-300 hover:bg-indigo-100 cursor-pointer'
+                          : 'bg-neutral-100 text-neutral-400 border-neutral-200 cursor-not-allowed'
+                      }`}
+                    >
+                      <Redo2 className="w-3 h-3" />
+                    </button>
+                    {atelierCtx.proposalState &&
+                      atelierCtx.proposalState.reconciliationStatus !== 'aligned' && (
+                        <span
+                          data-testid="atelier-stale-proposal-pill"
+                          className="px-1.5 py-0.5 rounded-xs border border-amber-400 bg-amber-100 text-amber-950 font-mono text-[10px] font-semibold"
+                        >
+                          Stale Proposal
+                        </span>
+                      )}
+                  </div>
+                </>
+              )}
 
               <span className="text-neutral-300 mx-0.5" aria-hidden="true">|</span>
 
@@ -1218,6 +1303,20 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
               diagnosticLocateRequest={atelierCtx?.diagnosticLocateRequest ?? null}
               onSelectDiagnostic={selectDiagnostic}
               onHoverDiagnostic={setHoveredDiagnosticKey}
+              inspectionTargetArtifact={atelierCtx?.inspectionTargetArtifact ?? renderArtifact}
+              proposalState={atelierCtx?.proposalState ?? null}
+              proposalIntegrity={atelierCtx?.proposalIntegrity ?? null}
+              compareOriginalGeometry={atelierCtx?.compareOriginalGeometry ?? false}
+              contourEditSelection={atelierCtx?.contourEditSelection ?? null}
+              translateAdjacentHandles={atelierCtx?.translateAdjacentHandles ?? true}
+              activeContinuityMode={atelierCtx?.activeContinuityMode ?? 'c0-corner'}
+              pendingApproximatePreview={atelierCtx?.pendingApproximatePreview ?? null}
+              onSelectContourEditTarget={atelierCtx?.setContourEditSelection}
+              onCommitMoveContourVertex={atelierCtx?.commitMoveContourVertex}
+              onCommitMoveBezierHandle={atelierCtx?.commitMoveBezierHandle}
+              onCancelPendingApproximatePreview={atelierCtx?.cancelPendingApproximateOperation}
+              onUndoProposal={atelierCtx?.undoProposal}
+              onRedoProposal={atelierCtx?.redoProposal}
             />
           </div>
 

@@ -74,6 +74,37 @@ import {
   reconcileDiagnosticSelection,
   resolveArtifactDiagnostics
 } from './spatial-diagnostics';
+import {
+  alignVertexToReference,
+  applyCubicToLineApproximation,
+  applyRemoveVertexAndMerge,
+  buildProposedInspectionArtifact,
+  canRedoProposal,
+  canUndoProposal,
+  commitProposalOperation,
+  ContourEditSelection,
+  createEmptyProposalHistory,
+  DEFAULT_APPROXIMATION_TOLERANCE_CM,
+  discardAllProposal,
+  discardPieceProposal,
+  elevateLineToCubicExact,
+  evaluateProposalIntegrity,
+  GeometryProposalHistoryState,
+  HandleContinuityMode,
+  moveBezierHandle,
+  moveContourVertex,
+  PatternGeometryProposalState,
+  PendingApproximateOperationPreview,
+  previewCubicToLineApproximation,
+  previewRemoveVertexAndMerge,
+  ProposalIntegrityReport,
+  reconcileProposalHistoryWithArtifact,
+  redoProposalHistory,
+  setVertexContinuityMode,
+  splitSewSegmentAtT,
+  undoProposalHistory,
+  updateProposalTolerance
+} from './geometry-edit-proposal';
 
 export type PatternCadViewMode = 'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation';
 
@@ -210,6 +241,78 @@ export interface PatternAtelierViewContextValue {
   readonly locateDiagnosticOnCanvas: (diagnosticKey: string) => void;
   readonly diagnosticReconciliationNotice: string | null;
   readonly dismissDiagnosticReconciliationNotice: () => void;
+
+  // UX-2.3.3.4: Proposal-Based Sew-Contour Editing State & Independent Bounded History (D1-D5, R1-R4)
+  // Strictly isolated from boardHistory, immutable activeArtifact, and spatial diagnostics.
+  readonly proposalHistory: GeometryProposalHistoryState | null;
+  readonly proposalState: PatternGeometryProposalState | null;
+  readonly proposedArtifact: PatternArtifactBundle | null;
+  /** Artifact currently targeted by Inspect (I) and Measure (M) per D3 (proposed sew contour unless comparing original). */
+  readonly inspectionTargetArtifact: PatternArtifactBundle | null;
+  readonly isInspectingProposal: boolean;
+  readonly compareOriginalGeometry: boolean;
+  readonly setCompareOriginalGeometry: (compare: boolean) => void;
+  readonly toggleCompareOriginalGeometry: () => void;
+  readonly proposalIntegrity: ProposalIntegrityReport | null;
+  readonly contourEditSelection: ContourEditSelection | null;
+  readonly setContourEditSelection: (selection: ContourEditSelection | null) => void;
+  readonly clearContourEditSelection: () => void;
+  readonly translateAdjacentHandles: boolean;
+  readonly setTranslateAdjacentHandles: (translate: boolean) => void;
+  readonly activeContinuityMode: HandleContinuityMode;
+  readonly setActiveContinuityMode: (mode: HandleContinuityMode) => void;
+  readonly pendingApproximatePreview: PendingApproximateOperationPreview | null;
+  readonly proposalActionNotice: {
+    readonly kind: 'info' | 'warning' | 'error';
+    readonly message: string;
+  } | null;
+  readonly clearProposalActionNotice: () => void;
+  readonly commitMoveContourVertex: (
+    pieceId: string,
+    vertexRef: string,
+    nextLocalCm: RenderPoint2D,
+    options?: { readonly translateAdjacentHandles?: boolean }
+  ) => boolean;
+  readonly commitMoveBezierHandle: (
+    pieceId: string,
+    segmentId: string,
+    handleSlot: 'p1' | 'p2',
+    nextLocalCm: RenderPoint2D,
+    options?: { readonly continuityMode?: HandleContinuityMode }
+  ) => boolean;
+  readonly commitSetVertexContinuity: (
+    pieceId: string,
+    vertexRef: string,
+    mode: HandleContinuityMode
+  ) => boolean;
+  readonly commitAlignVertex: (
+    pieceId: string,
+    vertexRef: string,
+    axis: 'horizontal' | 'vertical',
+    referenceLocalCm: RenderPoint2D
+  ) => boolean;
+  readonly commitSplitSewSegment: (pieceId: string, segmentId: string, t: number) => boolean;
+  readonly commitElevateLineToCubic: (pieceId: string, segmentId: string) => boolean;
+  readonly requestCubicToLinePreview: (
+    pieceId: string,
+    segmentId: string,
+    toleranceCm?: number
+  ) => void;
+  readonly requestRemoveVertexPreview: (
+    pieceId: string,
+    vertexRef: string,
+    toleranceCm?: number
+  ) => void;
+  readonly confirmPendingApproximateOperation: () => boolean;
+  readonly cancelPendingApproximateOperation: () => void;
+  readonly setProposalApproximationTolerance: (toleranceCm: number) => void;
+  readonly undoProposal: () => void;
+  readonly redoProposal: () => void;
+  readonly canUndoProposal: boolean;
+  readonly canRedoProposal: boolean;
+  readonly lastProposalActionLabel: string | null;
+  readonly discardPieceProposalEdits: (pieceId: string) => void;
+  readonly discardAllProposalEdits: () => void;
 }
 
 const DEFAULT_CAMERA: CadCamera = { zoom: 1.0, panX: 48, panY: 48 };
@@ -397,6 +500,20 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
     null
   );
 
+  // UX-2.3.3.4: Independent Geometry Proposal History & Ephemeral Contour Edit State (D4)
+  const [proposalHistory, setProposalHistory] = useState<GeometryProposalHistoryState | null>(null);
+  const [compareOriginalGeometry, setCompareOriginalGeometry] = useState<boolean>(false);
+  const [contourEditSelection, setContourEditSelection] = useState<ContourEditSelection | null>(null);
+  const [translateAdjacentHandles, setTranslateAdjacentHandles] = useState<boolean>(true);
+  const [activeContinuityMode, setActiveContinuityMode] =
+    useState<HandleContinuityMode>('c0-corner');
+  const [pendingApproximatePreview, setPendingApproximatePreview] =
+    useState<PendingApproximateOperationPreview | null>(null);
+  const [proposalActionNotice, setProposalActionNotice] = useState<{
+    readonly kind: 'info' | 'warning' | 'error';
+    readonly message: string;
+  } | null>(null);
+
   const requestFitAll = useCallback(() => {
     setFitRequestVersion(v => v + 1);
   }, []);
@@ -409,7 +526,7 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
     setLayerVisibility(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  // Reconcile board arrangement & entity inspection deterministically when artifact updates
+  // Reconcile board arrangement, entity inspection, & geometry proposal deterministically when artifact updates
   const syncArtifact = useCallback((artifact: PatternArtifactBundle) => {
     if (lastSyncedArtifactRef.current === artifact) return;
     lastSyncedArtifactRef.current = artifact;
@@ -417,7 +534,11 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
     setHoveredEntity(null);
     setMeasurementHoverEntity(null);
     setHoveredDiagnosticKey(null);
+    setPendingApproximatePreview(null);
     setBoardHistory(prev => reconcileBoardHistoryWithArtifact(prev, artifact));
+    setProposalHistory(prev =>
+      prev ? reconcileProposalHistoryWithArtifact(prev, artifact) : createEmptyProposalHistory(artifact)
+    );
   }, []);
 
   const setInspectedEntity = useCallback((entity: CadInspectableEntity | null) => {
@@ -688,35 +809,446 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
     }));
   }, []);
 
+  const proposalState = proposalHistory?.present ?? null;
+
+  const proposedArtifact = useMemo<PatternArtifactBundle | null>(() => {
+    if (!activeArtifact) return null;
+    if (!proposalState) return activeArtifact;
+    return buildProposedInspectionArtifact(activeArtifact, proposalState);
+  }, [activeArtifact, proposalState]);
+
+  const inspectionTargetArtifact = useMemo<PatternArtifactBundle | null>(() => {
+    if (!activeArtifact) return null;
+    if (
+      compareOriginalGeometry ||
+      !proposalState ||
+      !proposalState.hasEdits ||
+      proposalState.reconciliationStatus !== 'aligned'
+    ) {
+      return activeArtifact;
+    }
+    return proposedArtifact ?? activeArtifact;
+  }, [activeArtifact, compareOriginalGeometry, proposalState, proposedArtifact]);
+
+  const isInspectingProposal = Boolean(
+    activeArtifact && inspectionTargetArtifact && inspectionTargetArtifact !== activeArtifact
+  );
+
+  const proposalIntegrity = useMemo<ProposalIntegrityReport | null>(() => {
+    if (!activeArtifact || !proposalState) return null;
+    return evaluateProposalIntegrity(proposalState, activeArtifact, contourEditSelection?.pieceId);
+  }, [activeArtifact, proposalState, contourEditSelection?.pieceId]);
+
+  const toggleCompareOriginalGeometry = useCallback(() => {
+    setCompareOriginalGeometry(prev => !prev);
+  }, []);
+
+  const clearContourEditSelection = useCallback(() => {
+    setContourEditSelection(null);
+    setPendingApproximatePreview(null);
+  }, []);
+
+  const clearProposalActionNotice = useCallback(() => {
+    setProposalActionNotice(null);
+  }, []);
+
+  const commitMoveContourVertex = useCallback(
+    (
+      pieceId: string,
+      vertexRef: string,
+      nextLocalCm: RenderPoint2D,
+      options?: { readonly translateAdjacentHandles?: boolean }
+    ): boolean => {
+      if (!activeArtifact) return false;
+      let applied = false;
+      setPendingApproximatePreview(null);
+      setProposalHistory(prev => {
+        const current = prev ?? createEmptyProposalHistory(activeArtifact);
+        const res = moveContourVertex(current.present, activeArtifact, pieceId, vertexRef, nextLocalCm, {
+          translateAdjacentHandles: options?.translateAdjacentHandles ?? translateAdjacentHandles
+        });
+        if (!res.ok) {
+          if (res.errorCode !== 'NO_OP') {
+            setProposalActionNotice({ kind: 'error', message: res.message });
+          }
+          return current;
+        }
+        applied = true;
+        setProposalActionNotice(null);
+        return commitProposalOperation(current, res.state, res.actionLabel, res.pieceId);
+      });
+      return applied;
+    },
+    [activeArtifact, translateAdjacentHandles]
+  );
+
+  const commitMoveBezierHandle = useCallback(
+    (
+      pieceId: string,
+      segmentId: string,
+      handleSlot: 'p1' | 'p2',
+      nextLocalCm: RenderPoint2D,
+      options?: { readonly continuityMode?: HandleContinuityMode }
+    ): boolean => {
+      if (!activeArtifact) return false;
+      let applied = false;
+      setPendingApproximatePreview(null);
+      setProposalHistory(prev => {
+        const current = prev ?? createEmptyProposalHistory(activeArtifact);
+        const res = moveBezierHandle(
+          current.present,
+          activeArtifact,
+          pieceId,
+          segmentId,
+          handleSlot,
+          nextLocalCm,
+          { continuityMode: options?.continuityMode ?? activeContinuityMode }
+        );
+        if (!res.ok) {
+          if (res.errorCode !== 'NO_OP') {
+            setProposalActionNotice({ kind: 'error', message: res.message });
+          }
+          return current;
+        }
+        applied = true;
+        setProposalActionNotice(null);
+        return commitProposalOperation(current, res.state, res.actionLabel, res.pieceId);
+      });
+      return applied;
+    },
+    [activeArtifact, activeContinuityMode]
+  );
+
+  const commitSetVertexContinuity = useCallback(
+    (pieceId: string, vertexRef: string, mode: HandleContinuityMode): boolean => {
+      setActiveContinuityMode(mode);
+      if (!activeArtifact) return false;
+      let applied = false;
+      setProposalHistory(prev => {
+        const current = prev ?? createEmptyProposalHistory(activeArtifact);
+        const res = setVertexContinuityMode(current.present, activeArtifact, pieceId, vertexRef, mode);
+        if (!res.ok) {
+          setProposalActionNotice({ kind: 'error', message: res.message });
+          return current;
+        }
+        applied = true;
+        setProposalActionNotice({ kind: 'info', message: res.actionLabel });
+        return commitProposalOperation(current, res.state, res.actionLabel, res.pieceId);
+      });
+      return applied;
+    },
+    [activeArtifact]
+  );
+
+  const commitAlignVertex = useCallback(
+    (
+      pieceId: string,
+      vertexRef: string,
+      axis: 'horizontal' | 'vertical',
+      referenceLocalCm: RenderPoint2D
+    ): boolean => {
+      if (!activeArtifact) return false;
+      let applied = false;
+      setPendingApproximatePreview(null);
+      setProposalHistory(prev => {
+        const current = prev ?? createEmptyProposalHistory(activeArtifact);
+        const res = alignVertexToReference(
+          current.present,
+          activeArtifact,
+          pieceId,
+          vertexRef,
+          axis,
+          referenceLocalCm,
+          translateAdjacentHandles
+        );
+        if (!res.ok) {
+          if (res.errorCode !== 'NO_OP') {
+            setProposalActionNotice({ kind: 'error', message: res.message });
+          }
+          return current;
+        }
+        applied = true;
+        setProposalActionNotice({ kind: 'info', message: res.actionLabel });
+        return commitProposalOperation(current, res.state, res.actionLabel, res.pieceId);
+      });
+      return applied;
+    },
+    [activeArtifact, translateAdjacentHandles]
+  );
+
+  const commitSplitSewSegment = useCallback(
+    (pieceId: string, segmentId: string, t: number): boolean => {
+      if (!activeArtifact) return false;
+      let applied = false;
+      let nextVertexRef: string | undefined;
+      setPendingApproximatePreview(null);
+      setProposalHistory(prev => {
+        const current = prev ?? createEmptyProposalHistory(activeArtifact);
+        const res = splitSewSegmentAtT(current.present, activeArtifact, pieceId, segmentId, t);
+        if (!res.ok) {
+          setProposalActionNotice({ kind: 'error', message: res.message });
+          return current;
+        }
+        applied = true;
+        nextVertexRef = res.nextSelectedVertexRef;
+        setProposalActionNotice({ kind: 'info', message: res.actionLabel });
+        return commitProposalOperation(current, res.state, res.actionLabel, res.pieceId);
+      });
+      if (nextVertexRef) {
+        setContourEditSelection({ pieceId, kind: 'vertex', vertexRef: nextVertexRef });
+      }
+      return applied;
+    },
+    [activeArtifact]
+  );
+
+  const commitElevateLineToCubic = useCallback(
+    (pieceId: string, segmentId: string): boolean => {
+      if (!activeArtifact) return false;
+      let applied = false;
+      setPendingApproximatePreview(null);
+      setProposalHistory(prev => {
+        const current = prev ?? createEmptyProposalHistory(activeArtifact);
+        const res = elevateLineToCubicExact(current.present, activeArtifact, pieceId, segmentId);
+        if (!res.ok) {
+          setProposalActionNotice({ kind: 'error', message: res.message });
+          return current;
+        }
+        applied = true;
+        setProposalActionNotice({ kind: 'info', message: res.actionLabel });
+        return commitProposalOperation(current, res.state, res.actionLabel, res.pieceId);
+      });
+      return applied;
+    },
+    [activeArtifact]
+  );
+
+  const requestCubicToLinePreview = useCallback(
+    (pieceId: string, segmentId: string, toleranceCm?: number) => {
+      if (!activeArtifact || !proposalState) return;
+      const preview = previewCubicToLineApproximation(
+        proposalState,
+        activeArtifact,
+        pieceId,
+        segmentId,
+        toleranceCm ?? proposalState.defaultApproximationToleranceCm
+      );
+      if ('ok' in preview) {
+        setPendingApproximatePreview(null);
+        setProposalActionNotice({ kind: 'error', message: preview.message });
+        return;
+      }
+      setPendingApproximatePreview(preview);
+      setProposalActionNotice({
+        kind: preview.exceedsTolerance ? 'error' : 'warning',
+        message: preview.summaryLabel
+      });
+    },
+    [activeArtifact, proposalState]
+  );
+
+  const requestRemoveVertexPreview = useCallback(
+    (pieceId: string, vertexRef: string, toleranceCm?: number) => {
+      if (!activeArtifact || !proposalState) return;
+      const preview = previewRemoveVertexAndMerge(
+        proposalState,
+        activeArtifact,
+        pieceId,
+        vertexRef,
+        toleranceCm ?? proposalState.defaultApproximationToleranceCm
+      );
+      if ('ok' in preview) {
+        setPendingApproximatePreview(null);
+        setProposalActionNotice({ kind: 'error', message: preview.message });
+        return;
+      }
+      setPendingApproximatePreview(preview);
+      setProposalActionNotice({
+        kind: !preview.canApply ? 'error' : preview.isExact ? 'info' : 'warning',
+        message: preview.summaryLabel
+      });
+    },
+    [activeArtifact, proposalState]
+  );
+
+  const confirmPendingApproximateOperation = useCallback((): boolean => {
+    if (!activeArtifact || !pendingApproximatePreview) return false;
+    if (!pendingApproximatePreview.canApply) {
+      setProposalActionNotice({
+        kind: 'error',
+        message:
+          pendingApproximatePreview.rejectionReason ??
+          'Operation cannot be applied because tolerance or topology constraints are violated.'
+      });
+      return false;
+    }
+
+    let applied = false;
+    let nextSegId: string | undefined;
+    const preview = pendingApproximatePreview;
+
+    setProposalHistory(prev => {
+      const current = prev ?? createEmptyProposalHistory(activeArtifact);
+      const res =
+        preview.operationKind === 'cubic-to-line' && preview.targetSegmentId
+          ? applyCubicToLineApproximation(
+              current.present,
+              activeArtifact,
+              preview.pieceId,
+              preview.targetSegmentId,
+              {
+                toleranceCm: preview.toleranceCm,
+                confirmApproximation: true
+              }
+            )
+          : preview.targetVertexRef
+            ? applyRemoveVertexAndMerge(
+                current.present,
+                activeArtifact,
+                preview.pieceId,
+                preview.targetVertexRef,
+                {
+                  toleranceCm: preview.toleranceCm,
+                  confirmApproximation: true
+                }
+              )
+            : null;
+
+      if (!res || !res.ok) {
+        setProposalActionNotice({
+          kind: 'error',
+          message: res ? res.message : 'Unable to apply pending approximate operation.'
+        });
+        return current;
+      }
+      applied = true;
+      nextSegId = res.nextSelectedSegmentId;
+      setProposalActionNotice({ kind: 'info', message: res.actionLabel });
+      return commitProposalOperation(current, res.state, res.actionLabel, res.pieceId);
+    });
+
+    if (applied) {
+      setPendingApproximatePreview(null);
+      if (nextSegId) {
+        setContourEditSelection({
+          pieceId: preview.pieceId,
+          kind: 'segment',
+          segmentId: nextSegId
+        });
+      }
+    }
+    return applied;
+  }, [activeArtifact, pendingApproximatePreview]);
+
+  const cancelPendingApproximateOperation = useCallback(() => {
+    setPendingApproximatePreview(null);
+    setProposalActionNotice(null);
+  }, []);
+
+  const setProposalApproximationTolerance = useCallback(
+    (toleranceCm: number) => {
+      const safeVal =
+        Number.isFinite(toleranceCm) && toleranceCm >= 0
+          ? toleranceCm
+          : DEFAULT_APPROXIMATION_TOLERANCE_CM;
+      setProposalHistory(prev => (prev ? updateProposalTolerance(prev, safeVal) : prev));
+      // Refresh any active approximate preview against the updated tolerance
+      if (pendingApproximatePreview && activeArtifact && proposalState) {
+        const refreshed =
+          pendingApproximatePreview.operationKind === 'cubic-to-line' &&
+          pendingApproximatePreview.targetSegmentId
+            ? previewCubicToLineApproximation(
+                proposalState,
+                activeArtifact,
+                pendingApproximatePreview.pieceId,
+                pendingApproximatePreview.targetSegmentId,
+                safeVal
+              )
+            : pendingApproximatePreview.targetVertexRef
+              ? previewRemoveVertexAndMerge(
+                  proposalState,
+                  activeArtifact,
+                  pendingApproximatePreview.pieceId,
+                  pendingApproximatePreview.targetVertexRef,
+                  safeVal
+                )
+              : null;
+        if (refreshed && !('ok' in refreshed)) {
+          setPendingApproximatePreview(refreshed);
+        }
+      }
+    },
+    [activeArtifact, pendingApproximatePreview, proposalState]
+  );
+
+  const undoProposal = useCallback(() => {
+    setPendingApproximatePreview(null);
+    setProposalHistory(prev => (prev ? undoProposalHistory(prev) : prev));
+  }, []);
+
+  const redoProposal = useCallback(() => {
+    setPendingApproximatePreview(null);
+    setProposalHistory(prev => (prev ? redoProposalHistory(prev) : prev));
+  }, []);
+
+  const discardPieceProposalEdits = useCallback((pieceId: string) => {
+    setPendingApproximatePreview(null);
+    setProposalHistory(prev => (prev ? discardPieceProposal(prev, pieceId) : prev));
+    setProposalActionNotice({ kind: 'info', message: `Discarded proposal edits for piece ${pieceId}.` });
+  }, []);
+
+  const discardAllProposalEdits = useCallback(() => {
+    if (!activeArtifact) return;
+    setPendingApproximatePreview(null);
+    setContourEditSelection(null);
+    setCompareOriginalGeometry(false);
+    setProposalHistory(prev =>
+      discardAllProposal(
+        activeArtifact,
+        prev?.present.defaultApproximationToleranceCm ?? DEFAULT_APPROXIMATION_TOLERANCE_CM
+      )
+    );
+    setProposalActionNotice({
+      kind: 'info',
+      message: 'Discarded all geometry proposal edits and realigned with source artifact.'
+    });
+  }, [activeArtifact]);
+
   const overlapAdvisories = useMemo<readonly BoardOverlapAdvisory[]>(() => {
     if (!activeArtifact || activeArtifact.pieces.length === 0) return [];
     return analyzeBoardOverlaps(boardHistory.present, activeArtifact);
   }, [boardHistory.present, activeArtifact]);
 
+  // D3: Inspect and Measure operate on `inspectionTargetArtifact` (active proposed sew contour
+  // when aligned edits exist, or original `activeArtifact` when comparing original).
   const inspectedEntity = useMemo<CadInspectableEntity | null>(() => {
     return reconcileInspectedEntityWithArtifact(
       rawInspectedEntity,
-      activeArtifact,
+      inspectionTargetArtifact,
       boardHistory.present,
       layerVisibility
     );
-  }, [rawInspectedEntity, activeArtifact, boardHistory.present, layerVisibility]);
+  }, [rawInspectedEntity, inspectionTargetArtifact, boardHistory.present, layerVisibility]);
 
   const measurementSession = useMemo<MeasurementSession>(() => {
     return reconcileMeasurementSessionWithArtifact(
       rawMeasurementSession,
-      activeArtifact,
+      inspectionTargetArtifact,
       boardHistory.present,
       layerVisibility
     );
-  }, [rawMeasurementSession, activeArtifact, boardHistory.present, layerVisibility]);
+  }, [rawMeasurementSession, inspectionTargetArtifact, boardHistory.present, layerVisibility]);
 
   const measurementEvaluation = useMemo<MeasurementEvaluation>(() => {
-    return evaluateMeasurementSession(measurementSession, activeArtifact, boardHistory.present);
-  }, [measurementSession, activeArtifact, boardHistory.present]);
+    return evaluateMeasurementSession(
+      measurementSession,
+      inspectionTargetArtifact,
+      boardHistory.present
+    );
+  }, [measurementSession, inspectionTargetArtifact, boardHistory.present]);
 
-  // Stage-1 Artifact-Level Diagnostic Resolution: strictly memoized on `activeArtifact` ONLY
-  // so board dragging/repositioning never recomputes artifact-level diagnostic resolution.
+  // Stage-1 Artifact-Level Diagnostic Resolution: strictly memoized on immutable `activeArtifact` ONLY (D3)
+  // Spatial diagnostics NEVER silently migrate to proposal geometry.
   const resolvedDiagnostics = useMemo<ResolvedArtifactDiagnostics>(() => {
     return resolveArtifactDiagnostics(activeArtifact);
   }, [activeArtifact]);
@@ -821,7 +1353,44 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
       diagnosticLocateRequest,
       locateDiagnosticOnCanvas,
       diagnosticReconciliationNotice,
-      dismissDiagnosticReconciliationNotice
+      dismissDiagnosticReconciliationNotice,
+      proposalHistory,
+      proposalState,
+      proposedArtifact,
+      inspectionTargetArtifact,
+      isInspectingProposal,
+      compareOriginalGeometry,
+      setCompareOriginalGeometry,
+      toggleCompareOriginalGeometry,
+      proposalIntegrity,
+      contourEditSelection,
+      setContourEditSelection,
+      clearContourEditSelection,
+      translateAdjacentHandles,
+      setTranslateAdjacentHandles,
+      activeContinuityMode,
+      setActiveContinuityMode,
+      pendingApproximatePreview,
+      proposalActionNotice,
+      clearProposalActionNotice,
+      commitMoveContourVertex,
+      commitMoveBezierHandle,
+      commitSetVertexContinuity,
+      commitAlignVertex,
+      commitSplitSewSegment,
+      commitElevateLineToCubic,
+      requestCubicToLinePreview,
+      requestRemoveVertexPreview,
+      confirmPendingApproximateOperation,
+      cancelPendingApproximateOperation,
+      setProposalApproximationTolerance,
+      undoProposal,
+      redoProposal,
+      canUndoProposal: proposalHistory ? canUndoProposal(proposalHistory) : false,
+      canRedoProposal: proposalHistory ? canRedoProposal(proposalHistory) : false,
+      lastProposalActionLabel: proposalHistory?.lastActionLabel ?? null,
+      discardPieceProposalEdits,
+      discardAllProposalEdits
     }),
     [
       setCamera,
@@ -891,7 +1460,37 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
       diagnosticLocateRequest,
       locateDiagnosticOnCanvas,
       diagnosticReconciliationNotice,
-      dismissDiagnosticReconciliationNotice
+      dismissDiagnosticReconciliationNotice,
+      proposalHistory,
+      proposalState,
+      proposedArtifact,
+      inspectionTargetArtifact,
+      isInspectingProposal,
+      compareOriginalGeometry,
+      toggleCompareOriginalGeometry,
+      proposalIntegrity,
+      contourEditSelection,
+      clearContourEditSelection,
+      translateAdjacentHandles,
+      activeContinuityMode,
+      pendingApproximatePreview,
+      proposalActionNotice,
+      clearProposalActionNotice,
+      commitMoveContourVertex,
+      commitMoveBezierHandle,
+      commitSetVertexContinuity,
+      commitAlignVertex,
+      commitSplitSewSegment,
+      commitElevateLineToCubic,
+      requestCubicToLinePreview,
+      requestRemoveVertexPreview,
+      confirmPendingApproximateOperation,
+      cancelPendingApproximateOperation,
+      setProposalApproximationTolerance,
+      undoProposal,
+      redoProposal,
+      discardPieceProposalEdits,
+      discardAllProposalEdits
     ]
   );
 

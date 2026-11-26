@@ -67,6 +67,7 @@ function renderToolIcon(toolId: ToolDefinition['id']) {
       return <Compass className="w-4 h-4" />;
     case 'inspect-fit':
       return <Activity className="w-4 h-4" />;
+    case 'edit-contour':
     case 'bezier-pen-upcoming':
       return <PenTool className="w-4 h-4" />;
     case 'dart-tool-upcoming':
