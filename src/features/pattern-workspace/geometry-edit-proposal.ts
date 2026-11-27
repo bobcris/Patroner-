@@ -41,6 +41,7 @@ import type {
   RenderCurveSegment,
   RenderPoint2D
 } from './contracts/pattern-render-artifact';
+import type { WpAEngineeringState } from './contracts/wp-a-shared-contracts';
 import {
   COINCIDENT_VERTEX_EPSILON_CM,
   evaluateCubicBezierUnrounded,
@@ -165,6 +166,8 @@ export interface PatternGeometryProposalState {
   readonly pieceProposals: Readonly<Record<string, PieceGeometryProposal>>;
   readonly defaultApproximationToleranceCm: number;
   readonly hasEdits: boolean;
+  /** WP-A5 unified parametric operation graph & engineering overlays (single history owner) */
+  readonly wpAState?: WpAEngineeringState;
 }
 
 export interface GeometryProposalHistoryEntry {
@@ -2717,20 +2720,49 @@ export function buildProposedInspectionArtifact(
     return sourceArtifact;
   }
 
+  const wpA = proposalState.wpAState;
   const projectedPieces: PatternPieceRenderModel[] = sourceArtifact.pieces.map((piece) => {
     const pieceProp = proposalState.pieceProposals[piece.pieceId];
-    if (!pieceProp || !pieceProp.modifiedFromOriginal) {
+    const pieceEng = wpA?.pieceEngineering[piece.pieceId];
+    const hasPieceContourEdit = Boolean(pieceProp && pieceProp.modifiedFromOriginal);
+    const hasPieceEngEdit = Boolean(
+      pieceEng &&
+        (pieceEng.proposedNotches.some((n) => n.origin === 'proposal-authored') ||
+          pieceEng.proposedDrillHoles.some((d) => d.origin === 'proposal-authored') ||
+          pieceEng.proposedDarts.length > 0 ||
+          pieceEng.allowanceRules?.grainlineOverride)
+    );
+    if (!hasPieceContourEdit && !hasPieceEngEdit) {
       return piece;
     }
+
+    const nextSewSegments = hasPieceContourEdit && pieceProp ? pieceProp.sewSegments : piece.sewSegments;
+    const nextNotches = pieceEng
+      ? pieceEng.proposedNotches.filter((n) => n.reconciliationStatus !== 'invalidated-missing-reference')
+      : piece.notches;
+    const nextDrills = pieceEng
+      ? pieceEng.proposedDrillHoles.map((d) => d.position)
+      : piece.drillHoles;
+    const nextGrainline = pieceEng?.allowanceRules?.grainlineOverride
+      ? {
+          start: pieceEng.allowanceRules.grainlineOverride.start,
+          end: pieceEng.allowanceRules.grainlineOverride.end,
+          direction: pieceEng.allowanceRules.grainlineOverride.direction
+        }
+      : piece.grainline;
+
     return {
       ...piece,
-      sewSegments: pieceProp.sewSegments,
-      // D2: cutSegments remain strictly original and read-only
+      sewSegments: nextSewSegments,
+      // D2: cutSegments remain strictly original and read-only (ZERO TS cut-offset regeneration)
       cutSegments: piece.cutSegments,
+      notches: nextNotches,
+      drillHoles: nextDrills,
+      grainline: nextGrainline,
       // Clear fallback SVG path for edited piece so renderers use sewSegments
-      fallbackSewSvgPath: undefined,
+      fallbackSewSvgPath: hasPieceContourEdit ? undefined : piece.fallbackSewSvgPath,
       boundingBoxCm: computeBoundingBoxForSegments(
-        pieceProp.sewSegments,
+        nextSewSegments,
         piece.cutSegments,
         piece.boundingBoxCm
       )

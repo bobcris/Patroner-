@@ -98,6 +98,11 @@ export type WorkspaceToolId =
   | 'add-palette'
   | 'measure-preview'
   | 'edit-contour'
+  | 'seam-walk'
+  | 'construction-draw'
+  | 'notch-drill'
+  | 'dart-author'
+  | 'allowance-rule'
   | 'orbit-camera'
   | 'inspect-fit';
 
@@ -238,7 +243,7 @@ export const ENVIRONMENT_TOOLS: Record<StudioEnvironment, readonly ToolDefinitio
     {
       id: 'visual-note',
       label: 'Drafting Guide Note',
-      shortKey: 'N',
+      shortKey: 'G',
       description: 'Add an unverified drafting callout note (undoable, non-canonical)',
       available: true,
       actionType: 'instant'
@@ -252,11 +257,43 @@ export const ENVIRONMENT_TOOLS: Record<StudioEnvironment, readonly ToolDefinitio
       actionType: 'mode'
     },
     {
-      id: 'dart-tool-upcoming',
-      label: 'Interactive Dart Tool',
-      description: 'Direct dart slash & pivot planned for UX-2.3',
-      available: false,
-      unavailableReason: 'Planned for UX-2.3 Pattern Atelier',
+      id: 'seam-walk',
+      label: 'Seam Walk & True',
+      shortKey: 'W',
+      description: 'Seam correspondence pairing, interactive walking, ease comparison & advisory sew-contour endpoint trueing',
+      available: true,
+      actionType: 'mode'
+    },
+    {
+      id: 'construction-draw',
+      label: 'Construction & Lines',
+      shortKey: 'L',
+      description: 'Author non-cutting construction lines, reference axes, circles, internal lines & geometric constraints',
+      available: true,
+      actionType: 'mode'
+    },
+    {
+      id: 'notch-drill',
+      label: 'Notch & Drill',
+      shortKey: 'N',
+      description: 'Place anchored sew-edge notches and interior drill holes with lineage reprojection',
+      available: true,
+      actionType: 'mode'
+    },
+    {
+      id: 'dart-author',
+      label: 'Dart Authoring',
+      shortKey: 'D',
+      description: 'Author proposal darts, slash-and-spread transfer, C0 bodice dart bridge & conservation checks',
+      available: true,
+      actionType: 'mode'
+    },
+    {
+      id: 'allowance-rule',
+      label: 'Seam Allowance Rules',
+      shortKey: 'S',
+      description: 'Declarative per-piece/per-segment allowance rules, corner join styles & production annotations (no TS cut offsets)',
+      available: true,
       actionType: 'mode'
     }
   ],

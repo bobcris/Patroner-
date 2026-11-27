@@ -29,7 +29,8 @@ import {
   PatternCadLayerVisibility,
   PatternCadViewMode,
   useOptionalPatternAtelierCamera,
-  useOptionalPatternAtelierCursor
+  useOptionalPatternAtelierCursor,
+  useOptionalPatternAtelierView
 } from './PatternAtelierViewContext';
 import { PatternDiagnosticsOverlay } from './PatternDiagnosticsOverlay';
 import type { BodiceSleeveAssemblyResult } from '../../engine/assembly';
@@ -95,6 +96,26 @@ import {
   hitTestContourEditTarget,
   PatternContourEditOverlay
 } from './PatternContourEditOverlay';
+import { PatternSeamWalkOverlay } from './PatternSeamWalkOverlay';
+import {
+  ActiveConstructionDrawPreview,
+  PatternConstructionOverlay
+} from './PatternConstructionOverlay';
+import { PatternDartOverlay } from './PatternDartOverlay';
+import { PatternAllowanceRuleOverlay } from './PatternAllowanceRuleOverlay';
+import { evaluateUnifiedCadSnap } from './cad-snapping';
+import { isProposalAuthoringTool, resolveUndoHistoryTargetForTool } from './tool-dispatch';
+import {
+  createConstructionCircle,
+  createConstructionLine,
+  createInternalLine,
+  createReferenceAxis
+} from './construction-geometry';
+import { evaluateSegmentArcLengthCm } from './seam-correspondence';
+import {
+  WP_A_AUTHORITY_TIER,
+  type UnifiedSnapResult
+} from './contracts/wp-a-shared-contracts';
 
 const SIZE_PALETTE: Record<string, { stroke: string; label: string }> = {
   XS: { stroke: '#9333ea', label: 'XS (EU 34)' },
@@ -346,6 +367,7 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   onRedoProposal
 }) => {
   const contextCamera = useOptionalPatternAtelierCamera();
+  const atelierView = useOptionalPatternAtelierView();
   const camera: CadCamera = contextCamera ?? propCamera ?? { zoom: 1, panX: 48, panY: 48 };
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -368,6 +390,12 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
   const [contourDragPreview, setContourDragPreview] = useState<ActiveContourDragPreview | null>(
     null
   );
+  const [constructionDrawPreview, setConstructionDrawPreview] =
+    useState<ActiveConstructionDrawPreview | null>(null);
+  const [activeUnifiedSnap, setActiveUnifiedSnap] = useState<{
+    readonly pieceId: string | null;
+    readonly result: UnifiedSnapResult;
+  } | null>(null);
 
   const effectiveInspectionArtifact = inspectionTargetArtifact ?? artifact;
 
@@ -565,13 +593,16 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         return;
       }
 
-      // UX-2.3.3.4 (D4): Edit-contour mode routes undo/redo strictly to geometry proposal history
-      // and never mutates board arrangement history.
-      if (activeTool === 'edit-contour') {
+      // UX-2.3.3.4 (D4) & WP-A6: All proposal authoring tools (A, W, L, N, D, S) route undo/redo
+      // strictly to the unified geometry proposal history and never mutate board arrangement history.
+      if (resolveUndoHistoryTargetForTool(activeTool) === 'proposal') {
         const modEdit = e.metaKey || e.ctrlKey;
         if (e.key === 'Escape') {
           e.preventDefault();
-          if (contourDragSessionRef.current) {
+          if (constructionDrawPreview) {
+            setConstructionDrawPreview(null);
+            setActiveUnifiedSnap(null);
+          } else if (contourDragSessionRef.current) {
             contourDragSessionRef.current = null;
             setContourDragPreview(null);
           } else if (pendingApproxRef.current) {
@@ -926,6 +957,191 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
         return;
       }
 
+      // 1d-wpA. WP-A6 Unified Engineering Tool Pointer Dispatch (construction-draw, notch-drill, allowance-rule, seam-walk, dart-author)
+      if (
+        effectiveViewMode === 'pieces' &&
+        activeTool !== 'edit-contour' &&
+        isProposalAuthoringTool(activeTool) &&
+        atelierView
+      ) {
+        e.preventDefault();
+        const pxPerCm = getPixelsPerCm(cameraRef.current.zoom, BASE_PX_PER_CM);
+        const targetArt = inspectionArtifactRef.current;
+        const activePieceId = selectedPieceId ?? targetArt.pieces[0]?.pieceId ?? null;
+        const activePiece = targetArt.pieces.find(p => p.pieceId === activePieceId) ?? targetArt.pieces[0] ?? null;
+        const pl = activePiece ? boardStateRef.current.placementsByPieceId[activePiece.pieceId] : undefined;
+        const offX = pl?.offsetXCm ?? 0;
+        const offY = pl?.offsetYCm ?? 0;
+        const rawLocalCm = { x: worldPt.x - offX, y: worldPt.y - offY };
+
+        if (activeTool === 'construction-draw' && activePiece) {
+          const snapRes = evaluateUnifiedCadSnap(rawLocalCm, {
+            sewSegments: activePiece.sewSegments,
+            constructions: Object.values(atelierView.wpAState?.constructions ?? {}),
+            coordinateFrame: targetArt.coordinateFrame,
+            pixelsPerCm: pxPerCm,
+            referenceAnchorCm: constructionDrawPreview?.startLocalCm ?? null,
+            constrainAxis: e.shiftKey,
+            config: atelierView.unifiedSnapConfig
+          });
+          if (!constructionDrawPreview) {
+            setConstructionDrawPreview({
+              kind: atelierView.constructionDrawSubMode,
+              pieceId: activePiece.pieceId,
+              startLocalCm: snapRes.pointCm,
+              currentLocalCm: snapRes.pointCm
+            });
+          } else {
+            const start = constructionDrawPreview.startLocalCm;
+            const end = snapRes.pointCm;
+            const seq = atelierView.nextParametricOpSequence();
+            const id = `const::canvas::${seq}`;
+            const built =
+              constructionDrawPreview.kind === 'construction-circle'
+                ? createConstructionCircle({
+                    id,
+                    pieceId: activePiece.pieceId,
+                    center: start,
+                    radiusCm: Math.hypot(end.x - start.x, end.y - start.y)
+                  })
+                : constructionDrawPreview.kind === 'reference-axis'
+                  ? createReferenceAxis({
+                      id,
+                      pieceId: activePiece.pieceId,
+                      axisRole: 'custom',
+                      start,
+                      end
+                    })
+                  : constructionDrawPreview.kind === 'internal-line'
+                    ? createInternalLine({
+                        id,
+                        pieceId: activePiece.pieceId,
+                        role: 'stitch-guide',
+                        start,
+                        end
+                      })
+                    : createConstructionLine({
+                        id,
+                        pieceId: activePiece.pieceId,
+                        start,
+                        end
+                      });
+            if (built.ok) {
+              atelierView.dispatchParametricOp({
+                opId: `op::const::${seq}`,
+                sequence: seq,
+                domain: 'construction',
+                kind: 'upsert-construction',
+                label: `Add ${built.entity.label}`,
+                pieceId: activePiece.pieceId,
+                dependsOnIds: [],
+                enabled: true,
+                provenance: {
+                  createdSequence: seq,
+                  sourceTool: 'construction-draw',
+                  authorityTier: WP_A_AUTHORITY_TIER
+                },
+                params: { entity: built.entity }
+              });
+            }
+            setConstructionDrawPreview(null);
+            setActiveUnifiedSnap(null);
+          }
+          return;
+        }
+
+        if (activeTool === 'notch-drill' && activePiece) {
+          const seq = atelierView.nextParametricOpSequence();
+          if (atelierView.notchDrillSubMode === 'drill') {
+            atelierView.dispatchParametricOp({
+              opId: `op::drill::${seq}`,
+              sequence: seq,
+              domain: 'notch-drill',
+              kind: 'upsert-drill',
+              label: `Place Drill (${activePiece.pieceCode})`,
+              pieceId: activePiece.pieceId,
+              dependsOnIds: [],
+              enabled: true,
+              provenance: {
+                createdSequence: seq,
+                sourceTool: 'notch-drill',
+                authorityTier: WP_A_AUTHORITY_TIER
+              },
+              params: {
+                drillId: `drill::canvas::${seq}`,
+                positionCm: rawLocalCm,
+                radiusCm: 0.25,
+                label: `D${seq}`
+              }
+            });
+            return;
+          }
+          // Notch mode: hit-test nearest sew edge via hitTestPatternEntities
+          const hitRes = hitTestPatternEntities(
+            localPx,
+            cameraRef.current,
+            projection,
+            targetArt,
+            boardStateRef.current,
+            layerVisibilityRef.current,
+            { hitRadiusPx: DEFAULT_HIT_RADIUS_PX + 6, activeCurve: null }
+          );
+          const ent = hitRes.hit?.entity;
+          if (ent && (ent.entityKind === 'edge' || ent.entityKind === 'curve') && ent.contour === 'sew') {
+            const hitPiece = targetArt.pieces.find(p => p.pieceId === ent.pieceId);
+            const seg = hitPiece?.sewSegments.find(s => s.id === ent.segmentId);
+            if (hitPiece && seg) {
+              const tParam = ent.parameterT;
+              const arcRes = evaluateSegmentArcLengthCm(seg, targetArt.coordinateFrame, hitPiece.pieceId, [0, tParam]);
+              atelierView.dispatchParametricOp({
+                opId: `op::notch::${seq}`,
+                sequence: seq,
+                domain: 'notch-drill',
+                kind: 'upsert-notch',
+                label: `Place Notch on ${seg.id}`,
+                pieceId: hitPiece.pieceId,
+                dependsOnIds: [`seg:${seg.id}`],
+                enabled: true,
+                provenance: {
+                  createdSequence: seq,
+                  sourceTool: 'notch-drill',
+                  authorityTier: WP_A_AUTHORITY_TIER
+                },
+                params: {
+                  notchId: `notch::canvas::${seq}`,
+                  segmentId: seg.id,
+                  targetArcLengthCm: arcRes.ok ? arcRes.lengthCm : 3.0,
+                  notchType: atelierView.activeNotchType,
+                  label: `N${seq}`
+                }
+              });
+              onSelectPieceId(hitPiece.pieceId);
+            }
+          }
+          return;
+        }
+
+        if (activeTool === 'allowance-rule' || activeTool === 'seam-walk' || activeTool === 'dart-author') {
+          const hitRes = hitTestPatternEntities(
+            localPx,
+            cameraRef.current,
+            projection,
+            targetArt,
+            boardStateRef.current,
+            layerVisibilityRef.current,
+            { hitRadiusPx: DEFAULT_HIT_RADIUS_PX + 6, activeCurve: null }
+          );
+          const ent = hitRes.hit?.entity;
+          if (ent) {
+            onSelectPieceId(ent.pieceId);
+            if (activeTool === 'allowance-rule' && (ent.entityKind === 'edge' || ent.entityKind === 'curve')) {
+              atelierView.setSelectedAllowanceSegmentId(ent.segmentId);
+            }
+          }
+          return;
+        }
+      }
+
       // 1e. UX-2.3.3.3: Clicking a diagnostic marker/cluster in Select mode focuses it without dragging pieces
       if (activeTool === 'select' && target?.closest?.('[data-cad-diagnostic-marker]')) {
         e.preventDefault();
@@ -1087,6 +1303,37 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
                 Math.abs(prevEntity.localPointCm.y - nextEntity.localPointCm.y) < 1e-3;
         if (!unchanged) {
           onMeasurementHoverEntity?.(nextEntity);
+        }
+        return;
+      }
+
+      // WP-A2: Live unified snap & 2-click construction draw preview
+      if (effectiveViewMode === 'pieces' && activeTool === 'construction-draw' && atelierView) {
+        const pxPerCm = getPixelsPerCm(cameraRef.current.zoom, BASE_PX_PER_CM);
+        const targetArt = inspectionArtifactRef.current;
+        const activePieceId = selectedPieceId ?? targetArt.pieces[0]?.pieceId ?? null;
+        const activePiece = targetArt.pieces.find(p => p.pieceId === activePieceId) ?? targetArt.pieces[0] ?? null;
+        if (activePiece) {
+          const pl = boardStateRef.current.placementsByPieceId[activePiece.pieceId];
+          const rawLocalCm = {
+            x: worldPt.x - (pl?.offsetXCm ?? 0),
+            y: worldPt.y - (pl?.offsetYCm ?? 0)
+          };
+          const snapRes = evaluateUnifiedCadSnap(rawLocalCm, {
+            sewSegments: activePiece.sewSegments,
+            constructions: Object.values(atelierView.wpAState?.constructions ?? {}),
+            coordinateFrame: targetArt.coordinateFrame,
+            pixelsPerCm: pxPerCm,
+            referenceAnchorCm: constructionDrawPreview?.startLocalCm ?? null,
+            constrainAxis: e.shiftKey,
+            config: atelierView.unifiedSnapConfig
+          });
+          setActiveUnifiedSnap({ pieceId: activePiece.pieceId, result: snapRes });
+          if (constructionDrawPreview) {
+            setConstructionDrawPreview(prev =>
+              prev ? { ...prev, currentLocalCm: snapRes.pointCm } : null
+            );
+          }
         }
         return;
       }
@@ -2989,6 +3236,65 @@ export const PatternCadCanvas: React.FC<PatternCadCanvasProps> = ({
                   invScale={invScale}
                   isYUp={isYUp}
                 />
+
+                {/* WP-A1..A4 Integrated Engineering Overlays (Non-Cutting, Read-Only SVG Presentation) */}
+                {atelierView?.wpAState && (
+                  <>
+                    <PatternSeamWalkOverlay
+                      artifact={effectiveInspectionArtifact}
+                      visiblePieces={orderedVisiblePieces}
+                      getEffectiveOffset={getEffectiveOffset}
+                      activePair={
+                        (atelierView.activeSeamPairId
+                          ? atelierView.wpAState.seamCorrespondences[atelierView.activeSeamPairId]
+                          : null) ??
+                        Object.values(atelierView.wpAState.seamCorrespondences)[0] ??
+                        null
+                      }
+                      evaluation={atelierView.activeSeamWalkEvaluation}
+                      showGhostPieceB={atelierView.showSeamWalkGhostB}
+                      visible={
+                        (layerVisibility.showSeamWalkOverlay ?? true) &&
+                        (activeTool === 'seam-walk' || Boolean(atelierView.activeSeamPairId))
+                      }
+                      invScale={invScale}
+                      isYUp={isYUp}
+                    />
+                    <PatternConstructionOverlay
+                      constructions={atelierView.wpAState.constructions}
+                      getEffectiveOffset={getEffectiveOffset}
+                      showConstructions={layerVisibility.showConstructions ?? true}
+                      showInternalLines={layerVisibility.showInternalLines ?? true}
+                      showAnnotations={layerVisibility.showProductionAnnotations ?? true}
+                      selectedConstructionId={atelierView.selectedConstructionId}
+                      drawPreview={constructionDrawPreview}
+                      activeSnapResult={activeUnifiedSnap?.result ?? null}
+                      activeSnapPieceId={activeUnifiedSnap?.pieceId ?? null}
+                      invScale={invScale}
+                      isYUp={isYUp}
+                    />
+                    <PatternDartOverlay
+                      visiblePieces={orderedVisiblePieces}
+                      pieceEngineering={atelierView.wpAState.pieceEngineering}
+                      getEffectiveOffset={getEffectiveOffset}
+                      selectedDartId={atelierView.selectedDartId}
+                      visible={layerVisibility.showDarts}
+                      invScale={invScale}
+                      isYUp={isYUp}
+                    />
+                    <PatternAllowanceRuleOverlay
+                      visiblePieces={orderedVisiblePieces}
+                      pieceEngineering={atelierView.wpAState.pieceEngineering}
+                      getEffectiveOffset={getEffectiveOffset}
+                      selectedSegmentId={atelierView.selectedAllowanceSegmentId}
+                      showRuleBadges={layerVisibility.showAllowanceRuleBadges ?? true}
+                      showProductionAnnotations={layerVisibility.showProductionAnnotations ?? true}
+                      isAllowanceToolActive={activeTool === 'allowance-rule'}
+                      invScale={invScale}
+                      isYUp={isYUp}
+                    />
+                  </>
+                )}
 
                 {/* UX-2.3.3.1: Dedicated Read-Only Entity Inspection Overlay (pointer-events-none) */}
                 {(isInspectMode || isMeasureMode || hoveredEntity || inspectedEntity) && (

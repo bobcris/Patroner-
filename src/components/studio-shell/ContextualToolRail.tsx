@@ -23,7 +23,11 @@ import {
   Palette,
   Magnet,
   Crosshair,
-  Ruler
+  Ruler,
+  GitCompareArrows,
+  DraftingCompass,
+  CircleDot,
+  SlidersHorizontal
 } from 'lucide-react';
 import {
   ENVIRONMENT_TOOLS,
@@ -70,8 +74,17 @@ function renderToolIcon(toolId: ToolDefinition['id']) {
     case 'edit-contour':
     case 'bezier-pen-upcoming':
       return <PenTool className="w-4 h-4" />;
+    case 'seam-walk':
+      return <GitCompareArrows className="w-4 h-4" />;
+    case 'construction-draw':
+      return <DraftingCompass className="w-4 h-4" />;
+    case 'notch-drill':
+      return <CircleDot className="w-4 h-4" />;
+    case 'dart-author':
     case 'dart-tool-upcoming':
       return <Scissors className="w-4 h-4" />;
+    case 'allowance-rule':
+      return <SlidersHorizontal className="w-4 h-4" />;
     case 'cloth-pin-upcoming':
       return <Pin className="w-4 h-4" />;
     default:

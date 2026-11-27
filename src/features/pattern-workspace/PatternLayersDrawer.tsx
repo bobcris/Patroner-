@@ -61,7 +61,9 @@ export const PatternLayersDrawer: React.FC<PatternLayersDrawerProps> = React.mem
       toggleGroupVisible,
       reorderPiece,
       resetBoardLayout,
-      proposalState
+      proposalState,
+      layerVisibility,
+      toggleLayerVisibility
     } = usePatternAtelierView();
 
     if (!layersDrawerOpen) return null;
@@ -406,6 +408,49 @@ export const PatternLayersDrawer: React.FC<PatternLayersDrawerProps> = React.mem
               </>
             )}
           </div>
+
+          {/* WP-A Engineering & Annotation Layer Toggles */}
+          {isCadSupported && (
+            <div
+              data-testid="layers-wp-a-engineering-toggles"
+              className="px-2.5 py-2 border-t border-neutral-300/80 bg-[#F4F1EA] space-y-1.5 shrink-0"
+            >
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+                Engineering & Annotation Layers
+              </div>
+              <div className="grid grid-cols-2 gap-1 text-[10px]">
+                {(
+                  [
+                    ['showConstructions', 'Constructions'],
+                    ['showInternalLines', 'Internal Lines'],
+                    ['showSeamWalkOverlay', 'Seam Walk'],
+                    ['showAllowanceRuleBadges', 'SA Badges'],
+                    ['showProductionAnnotations', 'Prod Notes'],
+                    ['showNotches', 'Notches'],
+                    ['showDarts', 'Darts']
+                  ] as const
+                ).map(([key, label]) => {
+                  const active = layerVisibility[key];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      data-testid={`layer-toggle-${key}`}
+                      onClick={() => toggleLayerVisibility(key)}
+                      className={`flex items-center justify-between px-1.5 py-1 rounded-xs border text-left transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-neutral-900 text-white border-neutral-900'
+                          : 'bg-white text-neutral-600 border-neutral-300 hover:bg-neutral-50'
+                      }`}
+                    >
+                      <span className="truncate">{label}</span>
+                      {active ? <Eye className="w-2.5 h-2.5 shrink-0" /> : <EyeOff className="w-2.5 h-2.5 shrink-0 opacity-60" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Drawer Footer Quick Group Action */}
           {isCadSupported && boardState.layerOrder.length > 0 && (

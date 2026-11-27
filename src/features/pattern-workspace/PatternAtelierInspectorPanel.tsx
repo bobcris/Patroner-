@@ -51,6 +51,13 @@ import type {
 } from './spatial-diagnostics';
 import { AssemblyInspectionPanel } from './AssemblyInspectionPanel';
 import { PatternContourEditInspectorSection } from './PatternContourEditInspectorSection';
+import { PatternSeamInspectorSection } from './PatternSeamInspectorSection';
+import { PatternConstructionInspectorSection } from './PatternConstructionInspectorSection';
+import { PatternDartInspectorSection } from './PatternDartInspectorSection';
+import { PatternAllowanceInspectorSection } from './PatternAllowanceInspectorSection';
+import { PatternOperationHistorySection } from './PatternOperationHistorySection';
+import { isProposalAuthoringTool } from './tool-dispatch';
+import { WP_A_AUTHORITY_TIER } from './contracts/wp-a-shared-contracts';
 import { draftSleeveBlock } from '../../engine/drafting/sleeve-block';
 import { assembleBodiceSleeve, formatSignedCm } from '../../engine/assembly';
 import { DEFAULT_SIZE_RANGE } from '../../engine/grading';
@@ -969,6 +976,8 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
     measurementProvenance,
     measurementApprovalState,
     workspaceBundle,
+    bodiceDartStyle,
+    setBodiceDartStyle,
     sleeveEaseStrategy,
     strictUncertaintyGate,
     setStrictUncertaintyGate,
@@ -1389,13 +1398,526 @@ export const PatternAtelierInspectorPanel: React.FC = () => {
   // Default: Pieces Mode — Contour Proposal Editing, Advisory Measurement, Entity Inspection, Board Placement, Piece Summary & Validation Engine
   return (
     <div className="space-y-4 text-xs" data-testid="inspector-atelier-pieces">
-      {/* UX-2.3.3.4: Proposal-Based Precision Contour & Bézier Anchor Editing Inspector */}
-      {atelier && (
-        <PatternContourEditInspectorSection
-          activeTool={activeTool}
-          selectedPieceId={selectedPiece?.id ?? null}
-        />
-      )}
+      {/* UX-2.3.3.4: Contour Proposal Inspector on top when Edit Contour (or non-WP-A tool) is active */}
+      {atelier &&
+        activeTool !== 'seam-walk' &&
+        activeTool !== 'construction-draw' &&
+        activeTool !== 'notch-drill' &&
+        activeTool !== 'dart-author' &&
+        activeTool !== 'allowance-rule' && (
+          <PatternContourEditInspectorSection
+            activeTool={activeTool}
+            selectedPieceId={selectedPiece?.id ?? null}
+          />
+        )}
+
+      {/* WP-A1..A5 Integrated Pattern Engineering Inspector Sections */}
+      {atelier && activeArtifact && atelier.wpAState && (() => {
+        const targetArt = inspectionTargetArtifact ?? activeArtifact;
+        const activePieceModel =
+          targetArt.pieces.find(p => p.pieceId === (selectedPiece?.id ?? '')) ??
+          targetArt.pieces[0] ??
+          null;
+        const activePieceEng = activePieceModel
+          ? atelier.wpAState.pieceEngineering[activePieceModel.pieceId]
+          : undefined;
+
+        return (
+          <>
+            {activeTool === 'seam-walk' && (
+              <section className="pb-3.5 border-b border-indigo-200/80">
+                <PatternSeamInspectorSection
+                  artifact={targetArt}
+                  seamPairs={Object.values(atelier.wpAState.seamCorrespondences)}
+                  activePairId={atelier.activeSeamPairId}
+                  onSelectPairId={(id) => atelier.setActiveSeamPairId(id)}
+                  evaluation={atelier.activeSeamWalkEvaluation}
+                  walkFraction={atelier.seamWalkFraction}
+                  onChangeWalkFraction={atelier.setSeamWalkFraction}
+                  showGhostPieceB={atelier.showSeamWalkGhostB}
+                  onToggleGhostPieceB={atelier.setShowSeamWalkGhostB}
+                  onUpsertSeamPair={(pair) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::seam-pair::${seq}`,
+                      sequence: seq,
+                      domain: 'seam-correspondence',
+                      kind: 'upsert-seam-pair',
+                      label: `Seam Pair: ${pair.label}`,
+                      pieceId: pair.sideA.pieceId,
+                      dependsOnIds: [
+                        ...pair.sideA.segmentIds.map(s => `seg:${s}`),
+                        ...pair.sideB.segmentIds.map(s => `seg:${s}`)
+                      ],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'seam-walk',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { pair }
+                    });
+                  }}
+                  onRemoveSeamPair={(pairId) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::rm-seam-pair::${seq}`,
+                      sequence: seq,
+                      domain: 'seam-correspondence',
+                      kind: 'remove-seam-pair',
+                      label: `Remove Seam Pair`,
+                      pieceId: activePieceModel?.pieceId ?? '',
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'seam-walk',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { pairId }
+                    });
+                  }}
+                  onTrueSeamEndpoint={(args) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::true-seam::${seq}`,
+                      sequence: seq,
+                      domain: 'seam-trueing',
+                      kind: 'true-seam-endpoint',
+                      label: `True Seam (${args.endpoint}, ${args.targetJoinAngleDeg}°)`,
+                      pieceId: activePieceModel?.pieceId ?? '',
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'seam-walk',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: args
+                    });
+                  }}
+                />
+              </section>
+            )}
+
+            {(activeTool === 'construction-draw' || activeTool === 'notch-drill') && (
+              <section className="pb-3.5 border-b border-sky-200/80">
+                <PatternConstructionInspectorSection
+                  mode={activeTool}
+                  activePiece={activePieceModel}
+                  drawSubMode={atelier.constructionDrawSubMode}
+                  onChangeDrawSubMode={atelier.setConstructionDrawSubMode}
+                  notchDrillSubMode={atelier.notchDrillSubMode}
+                  onChangeNotchDrillSubMode={atelier.setNotchDrillSubMode}
+                  activeNotchType={atelier.activeNotchType}
+                  onChangeActiveNotchType={atelier.setActiveNotchType}
+                  constructions={Object.values(atelier.wpAState.constructions)}
+                  constraints={Object.values(atelier.wpAState.constraints)}
+                  constraintEvaluations={atelier.wpAState.constraintEvaluations}
+                  proposedNotches={activePieceEng?.proposedNotches ?? []}
+                  proposedDrills={activePieceEng?.proposedDrillHoles ?? []}
+                  onUpsertConstruction={(entity) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::const::${seq}`,
+                      sequence: seq,
+                      domain: 'construction',
+                      kind: 'upsert-construction',
+                      label: `Construction: ${entity.label}`,
+                      pieceId: entity.pieceId ?? activePieceModel?.pieceId ?? '',
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'construction-draw',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { entity }
+                    });
+                  }}
+                  onRemoveConstruction={(entityId) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::rm-const::${seq}`,
+                      sequence: seq,
+                      domain: 'construction',
+                      kind: 'remove-construction',
+                      label: `Remove Construction`,
+                      pieceId: activePieceModel?.pieceId ?? '',
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'construction-draw',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { entityId }
+                    });
+                  }}
+                  onUpsertConstraint={(constraint) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::constraint::${seq}`,
+                      sequence: seq,
+                      domain: 'constraint',
+                      kind: 'upsert-constraint',
+                      label: `Constraint: ${constraint.kind}`,
+                      pieceId: constraint.pieceId,
+                      dependsOnIds: [...constraint.entityRefs],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'construction-draw',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { constraint }
+                    });
+                  }}
+                  onRemoveConstraint={(constraintId) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::rm-constraint::${seq}`,
+                      sequence: seq,
+                      domain: 'constraint',
+                      kind: 'remove-constraint',
+                      label: `Remove Constraint`,
+                      pieceId: activePieceModel?.pieceId ?? '',
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'construction-draw',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { constraintId }
+                    });
+                  }}
+                  onUpsertNotch={(args) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::notch::${seq}`,
+                      sequence: seq,
+                      domain: 'notch-drill',
+                      kind: 'upsert-notch',
+                      label: `Notch ${args.label ?? args.notchId}`,
+                      pieceId: args.pieceId,
+                      dependsOnIds: [`seg:${args.segmentId}`],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'notch-drill',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: {
+                        notchId: args.notchId,
+                        segmentId: args.segmentId,
+                        targetArcLengthCm: args.targetArcLengthCm,
+                        notchType: args.notchType,
+                        label: args.label
+                      }
+                    });
+                  }}
+                  onRemoveNotch={(pieceId, notchId) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::rm-notch::${seq}`,
+                      sequence: seq,
+                      domain: 'notch-drill',
+                      kind: 'remove-notch',
+                      label: `Remove Notch`,
+                      pieceId,
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'notch-drill',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { notchId }
+                    });
+                  }}
+                  onUpsertDrill={(args) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::drill::${seq}`,
+                      sequence: seq,
+                      domain: 'notch-drill',
+                      kind: 'upsert-drill',
+                      label: `Drill ${args.label ?? args.drillId}`,
+                      pieceId: args.pieceId,
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'notch-drill',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: {
+                        drillId: args.drillId,
+                        positionCm: args.positionCm,
+                        radiusCm: args.radiusCm,
+                        label: args.label
+                      }
+                    });
+                  }}
+                  onRemoveDrill={(pieceId, drillId) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::rm-drill::${seq}`,
+                      sequence: seq,
+                      domain: 'notch-drill',
+                      kind: 'remove-drill',
+                      label: `Remove Drill`,
+                      pieceId,
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'notch-drill',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { drillId }
+                    });
+                  }}
+                />
+              </section>
+            )}
+
+            {activeTool === 'dart-author' && (
+              <section className="pb-3.5 border-b border-rose-200/80">
+                <PatternDartInspectorSection
+                  activePiece={activePieceModel}
+                  isBodiceGarment={currentSpec.garmentCategory === 'bodice'}
+                  currentBodiceDartStyle={bodiceDartStyle}
+                  onChangeBodiceDartStyle={setBodiceDartStyle}
+                  proposedDarts={activePieceEng?.proposedDarts ?? []}
+                  selectedDartId={atelier.selectedDartId}
+                  onSelectDartId={atelier.setSelectedDartId}
+                  conservationReport={activePieceEng?.dartConservation ?? null}
+                  onCreateDart={(args) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::create-dart::${seq}`,
+                      sequence: seq,
+                      domain: 'dart',
+                      kind: 'create-dart',
+                      label: `Create ${args.label}`,
+                      pieceId: args.pieceId,
+                      dependsOnIds: [`seg:${args.hostSegmentId}`],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'dart-author',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: {
+                        dartId: args.dartId,
+                        label: args.label,
+                        hostSegmentId: args.hostSegmentId,
+                        centerParameterT: args.centerParameterT,
+                        intakeWidthCm: args.intakeWidthCm,
+                        pivotApexCm: args.pivotApexCm,
+                        backoffCm: args.backoffCm,
+                        foldDirection: args.foldDirection
+                      }
+                    });
+                  }}
+                  onEditDart={(args) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::edit-dart::${seq}`,
+                      sequence: seq,
+                      domain: 'dart',
+                      kind: 'edit-dart',
+                      label: `Edit Dart ${args.dartId}`,
+                      pieceId: args.pieceId,
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'dart-author',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: {
+                        dartId: args.dartId,
+                        intakeWidthCm: args.intakeWidthCm,
+                        backoffCm: args.backoffCm,
+                        foldDirection: args.foldDirection
+                      }
+                    });
+                  }}
+                  onTransferDart={(args) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::xfer-dart::${seq}`,
+                      sequence: seq,
+                      domain: 'dart',
+                      kind: 'rotate-transfer-dart',
+                      label: `Transfer Dart (${Math.round(args.transferRatio * 100)}%)`,
+                      pieceId: args.pieceId,
+                      dependsOnIds: [`seg:${args.targetHostSegmentId}`],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'dart-author',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: {
+                        sourceDartId: args.sourceDartId,
+                        newDartId: args.newDartId,
+                        targetHostSegmentId: args.targetHostSegmentId,
+                        targetParameterT: args.targetParameterT,
+                        transferRatio: args.transferRatio,
+                        backoffCm: args.backoffCm,
+                        foldDirection: args.foldDirection
+                      }
+                    });
+                  }}
+                  onCloseOrOpenDart={(pieceId, dartId, closed) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::toggle-dart::${seq}`,
+                      sequence: seq,
+                      domain: 'dart',
+                      kind: 'close-or-open-dart',
+                      label: closed ? `Close Dart` : `Open Dart`,
+                      pieceId,
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'dart-author',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { dartId, closed }
+                    });
+                  }}
+                />
+              </section>
+            )}
+
+            {activeTool === 'allowance-rule' && (
+              <section className="pb-3.5 border-b border-amber-200/80">
+                <PatternAllowanceInspectorSection
+                  activePiece={activePieceModel}
+                  selectedSegmentId={atelier.selectedAllowanceSegmentId}
+                  onSelectSegmentId={atelier.setSelectedAllowanceSegmentId}
+                  proposal={activePieceEng?.allowanceRules ?? null}
+                  evaluation={activePieceEng?.allowanceEvaluation ?? null}
+                  onSetPieceDefaultAllowance={(pieceId, defaultAllowanceCm) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::default-sa::${seq}`,
+                      sequence: seq,
+                      domain: 'allowance-rule',
+                      kind: 'set-piece-default-allowance',
+                      label: `Default SA ${defaultAllowanceCm.toFixed(2)} cm`,
+                      pieceId,
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'allowance-rule',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { defaultAllowanceCm }
+                    });
+                  }}
+                  onSetSegmentAllowanceRule={(pieceId, rule) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::seg-sa::${seq}`,
+                      sequence: seq,
+                      domain: 'allowance-rule',
+                      kind: 'set-segment-allowance-rule',
+                      label: `Rule ${rule.segmentId} (${rule.distanceCm.toFixed(1)} cm)`,
+                      pieceId,
+                      dependsOnIds: [`seg:${rule.segmentId}`],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'allowance-rule',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { rule }
+                    });
+                  }}
+                  onSetVertexCornerRule={(pieceId, override) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::corner-sa::${seq}`,
+                      sequence: seq,
+                      domain: 'allowance-rule',
+                      kind: 'set-vertex-corner-rule',
+                      label: `Corner ${override.joinStyle}`,
+                      pieceId,
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'allowance-rule',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: { override }
+                    });
+                  }}
+                  onSetProductionAnnotation={(pieceId, patch) => {
+                    const seq = atelier.nextParametricOpSequence();
+                    atelier.dispatchParametricOp({
+                      opId: `op::prod-note::${seq}`,
+                      sequence: seq,
+                      domain: 'production-annotation',
+                      kind: 'set-production-annotation',
+                      label: `Update Production Notes`,
+                      pieceId,
+                      dependsOnIds: [],
+                      enabled: true,
+                      provenance: {
+                        createdSequence: seq,
+                        sourceTool: 'allowance-rule',
+                        authorityTier: WP_A_AUTHORITY_TIER
+                      },
+                      params: patch
+                    });
+                  }}
+                />
+              </section>
+            )}
+
+            {(isProposalAuthoringTool(activeTool) || atelier.wpAState.operations.length > 0) &&
+              atelier.proposalHistory && (
+                <section className="pb-3.5 border-b border-neutral-200">
+                  <PatternOperationHistorySection
+                    sourceArtifact={activeArtifact}
+                    proposalHistory={atelier.proposalHistory}
+                    wpAState={atelier.wpAState}
+                    onUpdateParametricOp={atelier.updateParametricOp}
+                    onToggleParametricOp={atelier.toggleParametricOp}
+                    onRemoveParametricOp={atelier.removeParametricOp}
+                    onRebindInvalidatedOp={atelier.rebindInvalidatedOp}
+                    onUndoProposal={atelier.undoProposal}
+                    onRedoProposal={atelier.redoProposal}
+                    canUndoProposal={atelier.canUndoProposal}
+                    canRedoProposal={atelier.canRedoProposal}
+                  />
+                </section>
+              )}
+          </>
+        );
+      })()}
+
+      {/* UX-2.3.3.4: Contour Proposal Summary below active WP-A tool controls */}
+      {atelier &&
+        (activeTool === 'seam-walk' ||
+          activeTool === 'construction-draw' ||
+          activeTool === 'notch-drill' ||
+          activeTool === 'dart-author' ||
+          activeTool === 'allowance-rule') && (
+          <PatternContourEditInspectorSection
+            activeTool={activeTool}
+            selectedPieceId={selectedPiece?.id ?? null}
+          />
+        )}
 
       {/* UX-2.3.3.2: Advisory Precision Measurement Section */}
       {atelier && activeArtifact && measurementEvaluation.kind !== 'empty' && (() => {

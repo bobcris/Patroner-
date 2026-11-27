@@ -105,6 +105,29 @@ import {
   undoProposalHistory,
   updateProposalTolerance
 } from './geometry-edit-proposal';
+import type {
+  RenderNotch
+} from './contracts/pattern-render-artifact';
+import type {
+  ParametricProposalOp,
+  SeamWalkEvaluation,
+  UnifiedSnapConfig,
+  WpAEngineeringState
+} from './contracts/wp-a-shared-contracts';
+import { DEFAULT_UNIFIED_SNAP_CONFIG } from './contracts/wp-a-shared-contracts';
+import {
+  appendParametricOpToHistory,
+  createInitialWpAEngineeringState,
+  rebindInvalidatedOpTargetInHistory,
+  removeParametricOpFromHistory,
+  toggleParametricOpInHistory,
+  updateParametricOpInHistory
+} from './parametric-proposal-engine';
+import { evaluateSeamWalk } from './seam-correspondence';
+import type {
+  ConstructionDrawSubMode,
+  NotchDrillSubMode
+} from './PatternConstructionInspectorSection';
 
 export type PatternCadViewMode = 'pieces' | 'assembly' | 'grading' | 'fit' | 'simulation';
 
@@ -115,6 +138,11 @@ export interface PatternCadLayerVisibility {
   readonly showNotches: boolean;
   readonly showDarts: boolean;
   readonly showDimensions: boolean;
+  readonly showConstructions?: boolean;
+  readonly showInternalLines?: boolean;
+  readonly showSeamWalkOverlay?: boolean;
+  readonly showAllowanceRuleBadges?: boolean;
+  readonly showProductionAnnotations?: boolean;
 }
 
 export interface PatternAtelierViewContextValue {
@@ -313,6 +341,40 @@ export interface PatternAtelierViewContextValue {
   readonly lastProposalActionLabel: string | null;
   readonly discardPieceProposalEdits: (pieceId: string) => void;
   readonly discardAllProposalEdits: () => void;
+
+  // WP-A1..A6 Unified Engineering State & Parametric Operations (Single Proposal History Owner)
+  readonly wpAState: WpAEngineeringState | null;
+  readonly activeSeamPairId: string | null;
+  readonly setActiveSeamPairId: (pairId: string | null) => void;
+  readonly seamWalkFraction: number;
+  readonly setSeamWalkFraction: (fraction: number) => void;
+  readonly showSeamWalkGhostB: boolean;
+  readonly setShowSeamWalkGhostB: (show: boolean) => void;
+  readonly activeSeamWalkEvaluation: SeamWalkEvaluation | null;
+  readonly constructionDrawSubMode: ConstructionDrawSubMode;
+  readonly setConstructionDrawSubMode: (mode: ConstructionDrawSubMode) => void;
+  readonly notchDrillSubMode: NotchDrillSubMode;
+  readonly setNotchDrillSubMode: (mode: NotchDrillSubMode) => void;
+  readonly activeNotchType: RenderNotch['notchType'];
+  readonly setActiveNotchType: (type: RenderNotch['notchType']) => void;
+  readonly selectedConstructionId: string | null;
+  readonly setSelectedConstructionId: (id: string | null) => void;
+  readonly selectedDartId: string | null;
+  readonly setSelectedDartId: (id: string | null) => void;
+  readonly selectedAllowanceSegmentId: string | null;
+  readonly setSelectedAllowanceSegmentId: (id: string | null) => void;
+  readonly unifiedSnapConfig: UnifiedSnapConfig;
+  readonly updateUnifiedSnapConfig: (patch: Partial<UnifiedSnapConfig>) => void;
+  readonly dispatchParametricOp: (op: ParametricProposalOp) => void;
+  readonly updateParametricOp: (
+    opId: string,
+    updater: (op: ParametricProposalOp) => ParametricProposalOp,
+    actionLabel?: string
+  ) => void;
+  readonly toggleParametricOp: (opId: string) => void;
+  readonly removeParametricOp: (opId: string) => void;
+  readonly rebindInvalidatedOp: (opId: string, newTargetSegmentId: string) => void;
+  readonly nextParametricOpSequence: () => number;
 }
 
 const DEFAULT_CAMERA: CadCamera = { zoom: 1.0, panX: 48, panY: 48 };
@@ -332,7 +394,12 @@ const DEFAULT_LAYER_VISIBILITY: PatternCadLayerVisibility = {
   showGrainline: true,
   showNotches: true,
   showDarts: true,
-  showDimensions: true
+  showDimensions: true,
+  showConstructions: true,
+  showInternalLines: true,
+  showSeamWalkOverlay: true,
+  showAllowanceRuleBadges: true,
+  showProductionAnnotations: true
 };
 
 interface PatternAtelierCameraActions {
@@ -513,6 +580,32 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
     readonly kind: 'info' | 'warning' | 'error';
     readonly message: string;
   } | null>(null);
+
+  // WP-A ephemeral tool sub-states (outside geometry proposal undo history)
+  const [activeSeamPairId, setActiveSeamPairId] = useState<string | null>(null);
+  const [seamWalkFraction, setSeamWalkFraction] = useState<number>(0.5);
+  const [showSeamWalkGhostB, setShowSeamWalkGhostB] = useState<boolean>(true);
+  const [constructionDrawSubMode, setConstructionDrawSubMode] =
+    useState<ConstructionDrawSubMode>('construction-line');
+  const [notchDrillSubMode, setNotchDrillSubMode] = useState<NotchDrillSubMode>('notch');
+  const [activeNotchType, setActiveNotchType] = useState<RenderNotch['notchType']>('v-notch');
+  const [selectedConstructionId, setSelectedConstructionId] = useState<string | null>(null);
+  const [selectedDartId, setSelectedDartId] = useState<string | null>(null);
+  const [selectedAllowanceSegmentId, setSelectedAllowanceSegmentId] = useState<string | null>(null);
+  const [unifiedSnapConfig, setUnifiedSnapConfig] = useState<UnifiedSnapConfig>(
+    DEFAULT_UNIFIED_SNAP_CONFIG
+  );
+  const opSequenceRef = useRef<number>(1);
+
+  const nextParametricOpSequence = useCallback(() => {
+    const seq = opSequenceRef.current;
+    opSequenceRef.current += 1;
+    return seq;
+  }, []);
+
+  const updateUnifiedSnapConfig = useCallback((patch: Partial<UnifiedSnapConfig>) => {
+    setUnifiedSnapConfig((prev) => ({ ...prev, ...patch }));
+  }, []);
 
   const requestFitAll = useCallback(() => {
     setFitRequestVersion(v => v + 1);
@@ -1270,6 +1363,100 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
     setRawSelectedDiagnosticKey(null);
   }, [resolvedDiagnostics.artifactIdentityKey]);
 
+  // WP-A derived engineering state (falls back cleanly to artifact-derived initial state)
+  const wpAState = useMemo<WpAEngineeringState | null>(() => {
+    if (!activeArtifact) return null;
+    if (proposalState?.wpAState) return proposalState.wpAState;
+    return createInitialWpAEngineeringState(activeArtifact);
+  }, [activeArtifact, proposalState?.wpAState]);
+
+  const activeSeamWalkEvaluation = useMemo<SeamWalkEvaluation | null>(() => {
+    const targetArtifact = inspectionTargetArtifact ?? activeArtifact;
+    if (!targetArtifact || !wpAState) return null;
+    const pairs = Object.values(wpAState.seamCorrespondences);
+    if (pairs.length === 0) return null;
+    const pair = (activeSeamPairId ? wpAState.seamCorrespondences[activeSeamPairId] : null) ?? pairs[0];
+    if (!pair) return null;
+
+    const lineageByPieceId: Record<string, Readonly<Record<string, import('./geometry-edit-proposal').ProposalSegmentLineage>>> = {};
+    if (proposalState) {
+      for (const [pid, prop] of Object.entries(proposalState.pieceProposals)) {
+        lineageByPieceId[pid] = prop.segmentLineage;
+      }
+    }
+    const proposedNotchesByPieceId: Record<string, readonly import('./contracts/wp-a-shared-contracts').ProposedNotchRecord[]> = {};
+    for (const [pid, ov] of Object.entries(wpAState.pieceEngineering)) {
+      proposedNotchesByPieceId[pid] = ov.proposedNotches;
+    }
+
+    return evaluateSeamWalk({
+      artifact: targetArtifact,
+      pair,
+      walkCursorFraction: seamWalkFraction,
+      lineageByPieceId,
+      proposedNotchesByPieceId
+    });
+  }, [inspectionTargetArtifact, activeArtifact, wpAState, activeSeamPairId, seamWalkFraction, proposalState]);
+
+  const dispatchParametricOp = useCallback(
+    (op: ParametricProposalOp) => {
+      if (!activeArtifact) return;
+      setProposalHistory((prev) => {
+        const base = prev ?? createEmptyProposalHistory(activeArtifact);
+        return appendParametricOpToHistory(activeArtifact, base, op);
+      });
+    },
+    [activeArtifact]
+  );
+
+  const updateParametricOp = useCallback(
+    (
+      opId: string,
+      updater: (op: ParametricProposalOp) => ParametricProposalOp,
+      actionLabel?: string
+    ) => {
+      if (!activeArtifact) return;
+      setProposalHistory((prev) => {
+        if (!prev) return prev;
+        return updateParametricOpInHistory(activeArtifact, prev, opId, updater, actionLabel);
+      });
+    },
+    [activeArtifact]
+  );
+
+  const toggleParametricOp = useCallback(
+    (opId: string) => {
+      if (!activeArtifact) return;
+      setProposalHistory((prev) => {
+        if (!prev) return prev;
+        return toggleParametricOpInHistory(activeArtifact, prev, opId);
+      });
+    },
+    [activeArtifact]
+  );
+
+  const removeParametricOp = useCallback(
+    (opId: string) => {
+      if (!activeArtifact) return;
+      setProposalHistory((prev) => {
+        if (!prev) return prev;
+        return removeParametricOpFromHistory(activeArtifact, prev, opId);
+      });
+    },
+    [activeArtifact]
+  );
+
+  const rebindInvalidatedOp = useCallback(
+    (opId: string, newTargetSegmentId: string) => {
+      if (!activeArtifact) return;
+      setProposalHistory((prev) => {
+        if (!prev) return prev;
+        return rebindInvalidatedOpTargetInHistory(activeArtifact, prev, opId, newTargetSegmentId);
+      });
+    },
+    [activeArtifact]
+  );
+
   const value = useMemo<PatternAtelierViewContextValue>(
     () => ({
       setCamera,
@@ -1390,7 +1577,35 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
       canRedoProposal: proposalHistory ? canRedoProposal(proposalHistory) : false,
       lastProposalActionLabel: proposalHistory?.lastActionLabel ?? null,
       discardPieceProposalEdits,
-      discardAllProposalEdits
+      discardAllProposalEdits,
+      wpAState,
+      activeSeamPairId,
+      setActiveSeamPairId,
+      seamWalkFraction,
+      setSeamWalkFraction,
+      showSeamWalkGhostB,
+      setShowSeamWalkGhostB,
+      activeSeamWalkEvaluation,
+      constructionDrawSubMode,
+      setConstructionDrawSubMode,
+      notchDrillSubMode,
+      setNotchDrillSubMode,
+      activeNotchType,
+      setActiveNotchType,
+      selectedConstructionId,
+      setSelectedConstructionId,
+      selectedDartId,
+      setSelectedDartId,
+      selectedAllowanceSegmentId,
+      setSelectedAllowanceSegmentId,
+      unifiedSnapConfig,
+      updateUnifiedSnapConfig,
+      dispatchParametricOp,
+      updateParametricOp,
+      toggleParametricOp,
+      removeParametricOp,
+      rebindInvalidatedOp,
+      nextParametricOpSequence
     }),
     [
       setCamera,
@@ -1490,7 +1705,26 @@ const PatternAtelierViewStateProvider: React.FC<{ children: React.ReactNode }> =
       undoProposal,
       redoProposal,
       discardPieceProposalEdits,
-      discardAllProposalEdits
+      discardAllProposalEdits,
+      wpAState,
+      activeSeamPairId,
+      seamWalkFraction,
+      showSeamWalkGhostB,
+      activeSeamWalkEvaluation,
+      constructionDrawSubMode,
+      notchDrillSubMode,
+      activeNotchType,
+      selectedConstructionId,
+      selectedDartId,
+      selectedAllowanceSegmentId,
+      unifiedSnapConfig,
+      updateUnifiedSnapConfig,
+      dispatchParametricOp,
+      updateParametricOp,
+      toggleParametricOp,
+      removeParametricOp,
+      rebindInvalidatedOp,
+      nextParametricOpSequence
     ]
   );
 

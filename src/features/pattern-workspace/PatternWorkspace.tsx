@@ -117,6 +117,8 @@ interface PatternWorkspaceProps {
   showGrid?: boolean;
 }
 
+import { resolvePatternAtelierShortcut } from './tool-dispatch';
+
 const DEFAULT_LOCAL_CAMERA: CadCamera = { zoom: 1.0, panX: 48, panY: 48 };
 const DEFAULT_LOCAL_LAYERS: PatternCadLayerVisibility = {
   showSeamAllowance: true,
@@ -124,7 +126,12 @@ const DEFAULT_LOCAL_LAYERS: PatternCadLayerVisibility = {
   showGrainline: true,
   showNotches: true,
   showDarts: true,
-  showDimensions: true
+  showDimensions: true,
+  showConstructions: true,
+  showInternalLines: true,
+  showSeamWalkOverlay: true,
+  showAllowanceRuleBadges: true,
+  showProductionAnnotations: true
 };
 
 const LAYER_TOGGLE_ITEMS: ReadonlyArray<{
@@ -274,7 +281,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     externalOnSelectPieceId?.(nextId);
   };
 
-  // Keyboard shortcuts for Pattern Atelier tool modes (V = Select, I = Inspect, M = Measure, H = Pan)
+  // Keyboard shortcuts for Pattern Atelier tool modes (V/H/I/M/A/W/L/N/D/S + G for Drafting Guide Note)
   useEffect(() => {
     if (!viewportCtx) return;
     const isTypingTarget = (target: EventTarget | null) =>
@@ -286,16 +293,13 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase();
-      if (key === 'i') {
-        viewportCtx.setActiveTool('inspect-entity', 'pattern-atelier');
-      } else if (key === 'm') {
-        viewportCtx.setActiveTool('measure-preview', 'pattern-atelier');
-      } else if (key === 'a') {
-        viewportCtx.setActiveTool('edit-contour', 'pattern-atelier');
-      } else if (key === 'v') {
-        viewportCtx.setActiveTool('select', 'pattern-atelier');
-      } else if (key === 'h') {
-        viewportCtx.setActiveTool('pan', 'pattern-atelier');
+      if (key === 'g') {
+        viewportCtx.addEphemeralOverlay();
+        return;
+      }
+      const mappedTool = resolvePatternAtelierShortcut(key);
+      if (mappedTool) {
+        viewportCtx.setActiveTool(mappedTool, 'pattern-atelier');
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -688,7 +692,7 @@ export const PatternWorkspace: React.FC<PatternWorkspaceProps> = ({
                   {activeTool === 'edit-contour'
                     ? 'Editing Contour (Proposal)'
                     : atelierCtx?.proposalState?.hasEdits
-                      ? 'Edit Contour · Active'
+                      ? 'Edit Contour (Proposal)'
                       : 'Edit Contour'}
                 </span>
               </button>
